@@ -1,0 +1,40 @@
+<script setup lang="ts">
+import { useBookmarkStore } from '@/stores/bookmark'
+
+const store = useBookmarkStore()
+
+const handleGroupClick = (groupId: string) => {
+  store.selectGroup(groupId)
+}
+
+const handleSubClick = (groupId: string, subId: string) => {
+  store.selectGroup(groupId, subId)
+}
+</script>
+
+<template>
+  <div class="flex flex-col gap-3">
+    <div v-for="group in store.groups" :key="group.id" class="space-y-2">
+      <button
+        class="flex items-center justify-between w-full px-3 py-2 rounded-2xl text-left hover:bg-white/70 dark:hover:bg-white/10 transition-colors"
+        :class="group.id === store.activeGroupId ? 'bg-white/80 dark:bg-white/10 font-semibold' : 'bg-transparent'"
+        @click="handleGroupClick(group.id)"
+      >
+        <span class="truncate">{{ group.name }}</span>
+        <span class="i-mdi-chevron-right text-muted" />
+      </button>
+      <div class="pl-4 flex flex-col gap-1">
+        <button
+          v-for="sub in group.children"
+          :key="sub.id"
+          class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm hover:bg-white/60 dark:hover:bg-white/10"
+          :class="sub.id === store.activeSubGroupId ? 'bg-white/70 dark:bg-white/10 text-accent' : 'bg-transparent'"
+          @click="handleSubClick(group.id, sub.id)"
+        >
+          <span class="i-mdi-circle-medium text-xs" />
+          <span class="truncate">{{ sub.name }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</template>
