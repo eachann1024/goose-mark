@@ -1,0 +1,17 @@
+{
+  "pluginName": "极简书签",
+  "description": "参考 noice.so 风格的 uTools 书签插件，支持二级分类、搜索、图标缓存与无效检测",
+  "version": "0.1.0",
+  "author": "eachann",
+  "homepage": "",
+  "preload": "preload/preload.js",
+  "main": "dist/index.html",
+  "logo": "logo.png",
+  "features": [
+    {
+      "code": "bookmarks",
+      "explain": "打开极简书签",
+      "cmds": ["书签", "bookmark", "bookmarks"]
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+export type IconSource =
+  | { type: 'file'; path: string; hash?: string; fetchedAt?: number }
+  | { type: 'remote'; src: string; fetchedAt?: number }
+  | { type: 'text'; value: string; bgColor?: string }
+
+export interface BookmarkLocation {
+  groupId: string
+  subGroupId: string
+}
+
+export interface Bookmark {
+  id: string
+  title: string
+  url: string
+  desc?: string
+  tags: string[]
+  icon?: IconSource
+  pinned?: boolean
+  locations?: BookmarkLocation[]  // 支持多分组，可选以保持向后兼容
+}
+
+export interface SubGroup {
+  id: string
+  name: string
+  bookmarkIds: string[]  // 改为 ID 引用，书签数据提升到顶层
+}
+
+export interface Group {
+  id: string
+  name: string
+  children: SubGroup[]
+}

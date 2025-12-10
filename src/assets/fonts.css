@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
+:root {
+  --bg: #f4f4f4;
+  --fg: #0f1115;
+  --muted: #5f6472;
+  --accent: #5c7cfa;
+  --card: #ffffff;
+  --surface: #eef0f5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #303133;
+    --fg: #f4f6fb;
+    --muted: #9aa0b5;
+    --accent: #8bb0ff;
+    --card: #0f1115;
+    --surface: #161920;
+  }
+}
+
+body {
+  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
