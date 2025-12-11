@@ -21,6 +21,7 @@ import { Image } from '@/components/ui/image'
 import IconSelector from '@/components/IconSelector.vue'
 
 import { useDark, useToggle, onClickOutside, useDebounceFn, useEventListener } from '@vueuse/core'
+import PinyinMatch from 'pinyin-match'
 import { probeUrl } from '@/services/siteProbe'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
@@ -72,6 +73,18 @@ const buildTextIcon = (): IconSource => {
 // 键盘导航状态
 const selectedIndex = ref(-1)
 const bookmarkGridRef = ref<HTMLElement | null>(null)
+const scrollSelectedIntoView = () => {
+  nextTick(() => {
+    const gridEl = bookmarkGridRef.value
+    if (!gridEl) return
+    const cards = gridEl.querySelectorAll<HTMLElement>('[data-bookmark-index]')
+    const target = cards[selectedIndex.value]
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
+  })
+}
+watch(selectedIndex, (v) => {
+  if (v >= 0) scrollSelectedIntoView()
+})
 
 
 
@@ -83,6 +96,12 @@ const isDark = useDark({
 })
 const toggleDark = useToggle(isDark)
 const isUTools = ref(typeof window !== 'undefined' && !!window.utools)
+const isMac = computed(() => {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const platform = (navigator as any).platform || ''
+  return /mac/i.test(platform) || /macintosh/i.test(ua)
+})
 
 // Theme Logic
 import { useThemeStore } from '@/stores/theme'
@@ -204,6 +223,7 @@ type UToolsExtendedApi = {
   isDarkColors?: () => boolean
   onPluginEnter?: (cb: () => void) => void
   setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
+  subInputFocus?: () => void
 }
 
 const notifyCopySuccess = () => {
@@ -242,13 +262,57 @@ const setBookmarkGridRef = (el: HTMLElement | null) => {
   bookmarkGridRef.value = el
 }
 
+const localSearchInputRef = ref<HTMLInputElement | { $el?: HTMLElement } | null>(null)
 const searchValue = computed({
   get: () => store.search,
   set: v => store.setSearch(v as string)
 })
 
+const handleSubInput = ({ text }: { text: string }) => {
+  store.setSearch(text)
+}
+
 const searchViewOpen = ref(false)
 let searchAutoExitTimer: ReturnType<typeof setTimeout> | null = null
+
+// CMD 快捷跳转提示
+const cmdPressed = ref(false)
+const showCmdHints = ref(false)
+let cmdHoldTimer: ReturnType<typeof setTimeout> | null = null
+const hintKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
+const hintKeyById = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  activeBookmarks.value.slice(0, hintKeys.length).forEach((b, idx) => {
+    map[b.id] = hintKeys[idx]
+  })
+  return map
+})
+const clearCmdTimer = () => {
+  if (cmdHoldTimer) {
+    clearTimeout(cmdHoldTimer)
+    cmdHoldTimer = null
+  }
+}
+let cmdHideTimer: ReturnType<typeof setTimeout> | null = null
+const scheduleHideCmdHints = () => {
+  if (cmdHideTimer) {
+    clearTimeout(cmdHideTimer)
+    cmdHideTimer = null
+  }
+  cmdHideTimer = setTimeout(() => {
+    cmdPressed.value = false
+    showCmdHints.value = false
+  }, 200)
+}
+const hideCmdHints = () => {
+  clearCmdTimer()
+  if (cmdHideTimer) {
+    clearTimeout(cmdHideTimer)
+    cmdHideTimer = null
+  }
+  cmdPressed.value = false
+  showCmdHints.value = false
+}
 
 const searchResults = computed(() => {
   const query = store.search.trim().toLowerCase()
@@ -260,8 +324,11 @@ const searchResults = computed(() => {
   })
 
   return pool.filter(item => {
-    const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
-    return haystack.includes(query)
+    const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ')
+    // 普通匹配
+    if (haystack.toLowerCase().includes(query)) return true
+    // 拼音匹配
+    return !!PinyinMatch.match(haystack, query)
   })
 })
 
@@ -280,13 +347,39 @@ const getGridColumns = (): number => {
   return columns.split(' ').filter(Boolean).length || 1
 }
 
-const focusSearchInput = () => {
+const focusUToolsInput = () => {
+  const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+  if (!utoolsApi) return
+  if (typeof utoolsApi.subInputFocus === 'function') {
+    utoolsApi.subInputFocus()
+  }
+}
+
+const getLocalSearchInputEl = () => {
+  const holder = localSearchInputRef.value
+  if (!holder) return null
+  if (holder instanceof HTMLElement) return holder as HTMLInputElement
+  const el = holder.$el
+  return el instanceof HTMLInputElement ? el : null
+}
+
+const focusLocalSearchInput = (selectText = false) => {
   nextTick(() => {
-    const el = document.querySelector<HTMLInputElement>('[data-search-input="true"]')
-    if (el) {
+    requestAnimationFrame(() => {
+      const el = getLocalSearchInputEl()
+      if (!el) return
       el.focus()
-      el.select()
-    }
+      if (selectText) {
+        el.select?.()
+      } else {
+        const len = el.value?.length ?? 0
+        try {
+          el.setSelectionRange(len, len)
+        } catch {
+          // ignore
+        }
+      }
+    })
   })
 }
 
@@ -302,6 +395,7 @@ const closeSearchView = () => {
   clearSearchAutoExit()
   store.setSearch('')
   selectedIndex.value = -1
+  hideCmdHints()
 }
 
 const scheduleSearchAutoExit = () => {
@@ -314,12 +408,30 @@ const scheduleSearchAutoExit = () => {
   }, minutes * 60 * 1000)
 }
 
-const openSearchView = () => {
+type OpenSearchOptions = { initialQuery?: string; selectText?: boolean }
+const openSearchView = (options: OpenSearchOptions = {}) => {
+  const { initialQuery, selectText = false } = options
   tab.value = 'bookmarks'
   searchViewOpen.value = true
   contextMenu.show = false
-  focusSearchInput()
+  selectedIndex.value = -1
+  if (typeof initialQuery === 'string') {
+    store.setSearch(initialQuery)
+  }
   scheduleSearchAutoExit()
+  if (settingsStore.enableSubInput) {
+    focusUToolsInput()
+  } else {
+    focusLocalSearchInput(selectText)
+  }
+}
+
+const openBookmarkLink = (bookmark: Bookmark) => {
+  if (window.utools) {
+    window.utools.shellOpenExternal(bookmark.url)
+  } else {
+    window.open(bookmark.url, '_blank')
+  }
 }
 
 // 键盘导航处理
@@ -328,69 +440,39 @@ const handleKeyNavigation = (e: KeyboardEvent) => {
   if (showAdd.value || showDeleteConfirm.value || showIconSelector.value || tab.value !== 'bookmarks') return
   
   const active = document.activeElement as HTMLElement
-  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
+  if (!searchViewOpen.value && active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
   
+  const key = e.key
   const bookmarks = activeBookmarks.value
   if (bookmarks.length === 0) return
   
-  const key = e.key
   const cols = getGridColumns()
   const total = bookmarks.length
-  
-  // 添加卡片占据最后一个位置（如果不在回收站）
-  const hasAddCard = !isTrashActive.value
-  const totalSlots = hasAddCard ? total + 1 : total
   
   let newIndex = selectedIndex.value
   
   switch (key) {
     case 'ArrowRight':
       e.preventDefault()
-      if (selectedIndex.value < 0) {
-        newIndex = 0
-      } else {
-        newIndex = Math.min(selectedIndex.value + 1, total - 1)
-      }
+      newIndex = selectedIndex.value < 0 ? 0 : Math.min(selectedIndex.value + 1, total - 1)
       break
     case 'ArrowLeft':
       e.preventDefault()
-      if (selectedIndex.value < 0) {
-        newIndex = 0
-      } else {
-        newIndex = Math.max(selectedIndex.value - 1, 0)
-      }
+      newIndex = selectedIndex.value < 0 ? 0 : Math.max(selectedIndex.value - 1, 0)
       break
     case 'ArrowDown':
       e.preventDefault()
-      if (selectedIndex.value < 0) {
-        newIndex = 0
-      } else {
-        // 移动到下一行同一列
-        const nextRowIndex = selectedIndex.value + cols
-        newIndex = Math.min(nextRowIndex, total - 1)
-      }
+      newIndex = selectedIndex.value < 0 ? 0 : Math.min(selectedIndex.value + cols, total - 1)
       break
     case 'ArrowUp':
       e.preventDefault()
-      if (selectedIndex.value < 0) {
-        newIndex = 0
-      } else {
-        // 移动到上一行同一列
-        const prevRowIndex = selectedIndex.value - cols
-        newIndex = Math.max(prevRowIndex, 0)
-      }
+      newIndex = selectedIndex.value < 0 ? 0 : Math.max(selectedIndex.value - cols, 0)
       break
     case 'Enter':
       e.preventDefault()
-      if (selectedIndex.value >= 0 && selectedIndex.value < total) {
+      if (selectedIndex.value >= 0 && selectedIndex.value < bookmarks.length) {
         const bookmark = bookmarks[selectedIndex.value]
-        if (bookmark) {
-          if (window.utools) {
-            window.utools.shellOpenExternal(bookmark.url)
-          } else {
-            window.open(bookmark.url, '_blank')
-          }
-        }
+        if (bookmark) openBookmarkLink(bookmark)
       }
       return
     default:
@@ -398,6 +480,48 @@ const handleKeyNavigation = (e: KeyboardEvent) => {
   }
   
   selectedIndex.value = newIndex
+  if (newIndex >= 0) scrollSelectedIntoView()
+}
+
+const handleLocalSearchKey = (e: KeyboardEvent) => {
+  if (settingsStore.enableSubInput) return
+  const key = e.key
+  if (key === 'ArrowDown' || key === 'ArrowUp') {
+    e.preventDefault()
+    e.stopPropagation()
+    handleKeyNavigation(e)
+  }
+}
+
+const isEditableElement = (el: HTMLElement | null) => {
+  if (!el) return false
+  const tag = el.tagName
+  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable
+}
+
+const handleTypeToSearch = (e: KeyboardEvent) => {
+  if (showAdd.value || showDeleteConfirm.value || showIconSelector.value) return
+  const active = document.activeElement as HTMLElement | null
+  if (isEditableElement(active)) return
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const key = e.key
+  if (!key || key.length !== 1) return
+  if (key === ' ' || key < ' ') return
+  e.preventDefault()
+
+  if (!searchViewOpen.value) {
+    store.setSearch(key)
+    openSearchView()
+    return
+  }
+
+  // 搜索已打开但焦点不在输入框时，继续累加字符并聚焦
+  store.setSearch(store.search + key)
+  if (settingsStore.enableSubInput) {
+    focusUToolsInput()
+  } else {
+    focusLocalSearchInput()
+  }
 }
 
 // 监听键盘事件
@@ -408,13 +532,56 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
     closeSearchView()
   }
 })
+useEventListener(window, 'keydown', handleTypeToSearch)
+const isHintHoldKey = (key: string) => {
+  if (isMac.value) return key === 'Alt' || key === 'Control'
+  return key === 'Alt'
+}
+useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+  if (isHintHoldKey(e.key)) {
+    if (!cmdPressed.value) {
+      cmdPressed.value = true
+      if (cmdHideTimer) {
+        clearTimeout(cmdHideTimer)
+        cmdHideTimer = null
+      }
+      clearCmdTimer()
+      cmdHoldTimer = setTimeout(() => {
+        showCmdHints.value = true
+      }, 200)
+    }
+    return
+  }
+  if (showCmdHints.value && cmdPressed.value) {
+    const key = e.key
+    const targetId = Object.entries(hintKeyById.value).find(([, k]) => k === key)?.[0]
+    if (targetId) {
+      const bookmark = activeBookmarks.value.find(b => b.id === targetId)
+      if (bookmark) {
+        e.preventDefault()
+        e.stopPropagation()
+        openBookmarkLink(bookmark)
+      }
+    }
+  }
+})
+useEventListener(window, 'keyup', (e: KeyboardEvent) => {
+  if (isHintHoldKey(e.key)) {
+    scheduleHideCmdHints()
+  }
+})
 
 // 搜索变化时重置选中索引
 watch(() => store.search, (val) => {
-  const list = activeBookmarks.value
-  selectedIndex.value = list.length > 0 ? 0 : -1
+  if (searchViewOpen.value) {
+    selectedIndex.value = -1
+  } else {
+    const list = activeBookmarks.value
+    selectedIndex.value = list.length > 0 ? 0 : -1
+  }
   if (val && !searchViewOpen.value) openSearchView()
   if (searchViewOpen.value) scheduleSearchAutoExit()
+  hideCmdHints()
 })
 
 watch(() => settingsStore.searchAutoExitMinutes, () => {
@@ -424,6 +591,11 @@ watch(() => settingsStore.searchAutoExitMinutes, () => {
 // 切换分组时重置选中索引
 watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   selectedIndex.value = -1
+  hideCmdHints()
+})
+
+watch(() => tab.value, () => {
+  hideCmdHints()
 })
 
 const fetchPageTitle = async (url: string): Promise<string | null> => {
@@ -523,6 +695,9 @@ onMounted(() => {
   store.migrateFromLegacy()
   statsStore.recordUse('open')
   
+  // 强制关闭 uTools 子输入框（功能已隐藏）
+  settingsStore.setEnableSubInput(false)
+  
   const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
   if (utoolsApi) {
     const syncTheme = () => {
@@ -535,13 +710,21 @@ onMounted(() => {
     }
     
     syncTheme()
+    if (settingsStore.enableSubInput) {
+      utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
+    }
     
     utoolsApi.onPluginEnter?.(() => {
        syncTheme()
-       openSearchView()
-       utoolsApi.setSubInput?.(({ text }) => {
-         store.setSearch(text)
-       }, '搜索书签...', true)
+       // 每次打开插件时清空搜索状态
+       store.setSearch('')
+       searchViewOpen.value = false
+       selectedIndex.value = -1
+       
+       if (settingsStore.enableSubInput) {
+         utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
+         focusUToolsInput()
+       }
     })
   }
 })
@@ -673,13 +856,15 @@ const handleSave = async () => {
     const iconToSave = previewIcon.value ?? buildTextIcon()
 
     if (editingId.value) {
-      // 更新书签属性（不修改分组位置）
+      // 更新书签属性
       store.updateBookmark(editingId.value, {
         title: draft.title.trim(),
         url: draft.url.trim(),
         desc: draft.desc.trim(),
         icon: iconToSave
       })
+      // 更新分组位置
+      store.updateBookmarkLocations(editingId.value, draftLocations.value)
     } else {
       const created = store.addBookmark(
         {
@@ -806,31 +991,70 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
             <Button variant="ghost" size="icon" class="h-11 w-11" @click="closeSearchView">
               <span class="i-mdi-arrow-left text-xl" />
             </Button>
-            <Input
-              v-model="searchValue"
-              data-search-input="true"
-              placeholder="输入关键字搜索书签..."
-              class="flex-1 h-12 text-base bg-muted/50 border-border focus-visible:ring-2 focus-visible:ring-primary/40"
-            />
-            <Button variant="secondary" class="h-11 px-4" @click="closeSearchView">
-              退出
-            </Button>
-          </div>
-          <div class="text-xs text-muted-foreground flex items-center gap-2 px-1">
-            <span class="i-mdi-information-outline" />
-            <span>按 ESC 退出；{{ searchAutoExitText }}</span>
+            <template v-if="settingsStore.enableSubInput">
+              <div class="flex-1 h-12 rounded-xl border border-border bg-muted/50 px-4 flex items-center justify-between">
+                <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span class="i-mdi-magnify text-base" />
+                  <span>请在 uTools 输入框输入关键字进行搜索</span>
+                </div>
+                <div v-if="store.search" class="text-xs text-muted-foreground flex items-center gap-1">
+                  <span class="i-mdi-ray-start-vertex" />
+                  <span>当前：{{ store.search }}</span>
+                </div>
+              </div>
+            </template>
+            <template v-else>
+              <Input
+                v-model="searchValue"
+                ref="localSearchInputRef"
+                @keydown="handleLocalSearchKey"
+                placeholder="输入关键字搜索书签..."
+                class="flex-1 h-12 text-base bg-muted/50 border-border focus-visible:ring-2 focus-visible:ring-primary/40"
+              />
+            </template>
+            <Button variant="secondary" class="h-11 px-4" @click="closeSearchView">退出</Button>
           </div>
           <div
             v-if="!store.search"
             class="rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground"
           >
-            输入关键字开始搜索
+            <div>输入关键字开始搜索</div>
+            <div class="space-y-1 text-[13px] text-muted-foreground flex flex-col gap-1 px-1 mt-3">
+              <div class="flex items-center gap-2 justify-center">
+                <span class="i-mdi-information-outline" />
+                <span>按 ESC 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
+              </div>
+              <div class="flex items-center gap-2 justify-center">
+                <span class="i-mdi-information-outline" />
+                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入；若导航被焦点影响，可在设置中关闭后改用本界面输入或快捷键。</span>
+                <span v-else>当前使用本界面输入框，可直接输入，或用快捷键快速进入搜索。</span>
+              </div>
+              <div class="flex items-center gap-2 justify-center">
+                <span class="i-mdi-keyboard-outline" />
+                <span>快捷键：Cmd/Ctrl + L / I / K 聚焦搜索</span>
+              </div>
+            </div>
           </div>
           <div
             v-else-if="searchResults.length === 0"
             class="rounded-lg border border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground"
           >
-            未找到匹配结果
+            <div>未找到匹配结果</div>
+            <div class="space-y-1 text-[13px] text-muted-foreground flex flex-col gap-1 px-1 mt-3">
+              <div class="flex items-center gap-2 justify-center">
+                <span class="i-mdi-information-outline" />
+                <span>按 ESC 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
+              </div>
+              <div class="flex items-center gap-2 justify-center">
+                <span class="i-mdi-information-outline" />
+                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入；若导航被焦点影响，可在设置中关闭后改用本界面输入或快捷键。</span>
+                <span v-else>当前使用本界面输入框，可直接输入，或用快捷键快速进入搜索。</span>
+              </div>
+              <div class="flex items-center gap-2 justify-center">
+                <span class="i-mdi-keyboard-outline" />
+                <span>快捷键：Cmd/Ctrl + L / I / K 聚焦搜索</span>
+              </div>
+            </div>
           </div>
           <BookmarksGrid
             v-else
@@ -840,6 +1064,8 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
             :columns="settingsStore.gridColumns"
             :set-grid-ref="setBookmarkGridRef"
             :hide-add-card="true"
+            :show-command-hints="showCmdHints"
+            :hint-key-by-id="hintKeyById"
             @remove="handleRemove"
             @edit="openEdit"
             @contextmenu="handleContextMenu"
@@ -865,6 +1091,8 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
         :is-trash-active="isTrashActive"
         :columns="settingsStore.gridColumns"
         :set-grid-ref="setBookmarkGridRef"
+        :show-command-hints="showCmdHints"
+        :hint-key-by-id="hintKeyById"
         @remove="handleRemove"
         @edit="openEdit"
       @contextmenu="handleContextMenu"
@@ -993,8 +1221,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                 <div class="relative" ref="categorySelectContainer">
                    <div 
                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-muted/50"
-                    :class="isEditing ? 'opacity-70 cursor-not-allowed' : ''"
-                    @click="isEditing ? null : showCategorySelector = !showCategorySelector"
+                    @click="showCategorySelector = !showCategorySelector"
                    >
                      <div v-if="selectedLocationsLabel" class="flex items-center gap-2 truncate text-primary font-medium">
                         {{ selectedLocationsLabel }}
@@ -1004,15 +1231,13 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                    </div>
 
                    <!-- Multi-Select Dropdown -->
-                   <div v-if="showCategorySelector && !isEditing" class="absolute top-full left-0 z-50 mt-1">
+                   <div v-if="showCategorySelector" class="absolute top-full left-0 z-50 mt-1">
                       <CategoryMultiSelect 
                         v-model="draftLocations"
-                        :readonly="isEditing"
                         @close="showCategorySelector = false"
                       />
                    </div>
                 </div>
-                <p v-if="isEditing" class="text-xs text-muted-foreground">编辑时分类位置不可修改</p>
              </div>
          </div>
 

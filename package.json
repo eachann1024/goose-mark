@@ -18,11 +18,13 @@
     "lucide-vue-next": "^0.559.0",
     "pinia": "^2.1.7",
     "pinia-plugin-persistedstate": "^4.7.1",
+    "pinyin-match": "^1.2.10",
     "radix-vue": "^1.9.17",
     "tailwind-merge": "^3.4.0",
     "unocss": "^0.63.4",
     "vue": "^3.4.38",
-    "vue-color-kit": "^1.0.6"
+    "vue-color-kit": "^1.0.6",
+    "vuedraggable": "^4.1.0"
   },
   "devDependencies": {
     "@types/node": "^22.7.4",

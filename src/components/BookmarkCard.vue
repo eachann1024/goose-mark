@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
-const props = defineProps<{ bookmark: Bookmark; selected?: boolean }>()
+const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string }>()
 const emit = defineEmits<{
   edit: [Bookmark]
   remove: [Bookmark]
@@ -28,66 +28,104 @@ const letters = computed(() => {
 })
 const isEmptyDesc = computed(() => !props.bookmark.desc || props.bookmark.desc.trim().length === 0)
 
+const cardEl = ref<InstanceType<typeof Card> | null>(null)
 const descEl = ref<HTMLElement | null>(null)
 const isDescTruncated = ref(false)
-const toastCooling = ref(false)
 let fallbackToastEl: HTMLDivElement | null = null
-let fallbackTimer: number | null = null
+let descResizeObserver: ResizeObserver | null = null
 
 const clearFallbackToast = () => {
-  if (fallbackTimer) {
-    clearTimeout(fallbackTimer)
-    fallbackTimer = null
-  }
   if (fallbackToastEl) {
-    fallbackToastEl.remove()
+    fallbackToastEl.style.opacity = '0'
+    fallbackToastEl.style.transform = 'translateY(4px)'
+    const el = fallbackToastEl
     fallbackToastEl = null
+    window.setTimeout(() => el.remove(), 150)
   }
 }
 
-const showFallbackToast = (message: string) => {
-  clearFallbackToast()
+const showFallbackToast = (message: string, anchor?: HTMLElement) => {
+  if (fallbackToastEl) return // 已显示则不重复创建
   const el = document.createElement('div')
   el.textContent = message
   el.style.position = 'fixed'
-  el.style.bottom = '16px'
-  el.style.right = '16px'
-  el.style.maxWidth = '320px'
-  el.style.padding = '10px 12px'
+  const getCssVar = (name: string, fallback: string) => {
+    const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+    return val || fallback
+  }
+  const bg = getCssVar('--card', 'rgba(24,24,27,0.92)')
+  const border = getCssVar('--border', 'rgba(255,255,255,0.08)')
+  const fg = getCssVar('--foreground', '#e5e7eb')
+
+  el.style.maxWidth = '420px'
+  el.style.padding = '10px 14px'
   el.style.borderRadius = '12px'
-  el.style.background = 'rgba(24,24,27,0.9)'
-  el.style.color = '#fff'
-  el.style.fontSize = '12px'
-  el.style.lineHeight = '1.4'
-  el.style.boxShadow = '0 10px 30px rgba(0,0,0,0.25)'
-  el.style.backdropFilter = 'blur(8px)'
+  el.style.background = bg
+  el.style.color = fg
+  el.style.fontSize = '13px'
+  el.style.lineHeight = '1.5'
+  el.style.boxShadow = '0 12px 36px rgba(0,0,0,0.32)'
+  el.style.backdropFilter = 'blur(10px)'
+  el.style.border = `1px solid ${border}`
+  el.style.whiteSpace = 'pre-wrap'
+  el.style.wordBreak = 'break-word'
   el.style.zIndex = '9999'
+  el.style.pointerEvents = 'none'
+  el.style.opacity = '0'
+  el.style.transform = 'translateY(4px)'
+  el.style.transition = 'opacity 120ms ease, transform 120ms ease'
   document.body.appendChild(el)
+
+  const anchorRect = anchor?.getBoundingClientRect()
+  const toastRect = el.getBoundingClientRect()
+  let top = anchorRect ? anchorRect.top - toastRect.height - 10 : window.innerHeight - toastRect.height - 16
+  let left = anchorRect ? anchorRect.left + anchorRect.width / 2 - toastRect.width / 2 : window.innerWidth - toastRect.width - 16
+  const maxLeft = window.innerWidth - toastRect.width - 8
+  top = Math.max(8, top)
+  left = Math.max(8, Math.min(left, maxLeft))
+  el.style.top = `${top}px`
+  el.style.left = `${left}px`
+  requestAnimationFrame(() => {
+    el.style.opacity = '1'
+    el.style.transform = 'translateY(0)'
+  })
   fallbackToastEl = el
-  fallbackTimer = window.setTimeout(clearFallbackToast, 2200)
 }
 
-const showDescToast = () => {
-  if (!isDescTruncated.value || !props.bookmark.desc || toastCooling.value) return
-  toastCooling.value = true
-  const message = props.bookmark.desc
-  if (window.utools?.showNotification) {
-    window.utools.showNotification(message)
-  } else {
-    showFallbackToast(message)
-  }
-  window.setTimeout(() => {
-    toastCooling.value = false
-  }, 800)
+const onCardEnter = () => {
+  checkDescTruncate()
+  if (!isDescTruncated.value || !props.bookmark.desc) return
+  const anchor = (cardEl.value?.$el ?? cardEl.value) as HTMLElement | undefined
+  showFallbackToast(props.bookmark.desc, anchor)
+}
+
+const hideDescToast = () => {
+  clearFallbackToast()
 }
 
 const checkDescTruncate = () => {
   const el = descEl.value
-  if (!el) return
-  isDescTruncated.value = el.scrollWidth - el.clientWidth > 1
+  if (!el) {
+    isDescTruncated.value = false
+    return
+  }
+  const horizOverflow = el.scrollWidth - el.clientWidth > 1
+  const vertOverflow = el.scrollHeight - el.clientHeight > 1
+  const descLen = props.bookmark.desc?.length ?? 0
+  const approxCharCap = Math.max(30, Math.floor(el.clientWidth / 7))
+  const heuristicOverflow = descLen > approxCharCap
+  isDescTruncated.value = horizOverflow || vertOverflow || heuristicOverflow
 }
 
 onMounted(() => nextTick(checkDescTruncate))
+onMounted(() => {
+  nextTick(() => {
+    const target = descEl.value
+    if (!target) return
+    descResizeObserver = new ResizeObserver(() => checkDescTruncate())
+    descResizeObserver.observe(target)
+  })
+})
 
 watch(
   () => props.bookmark.desc,
@@ -96,6 +134,10 @@ watch(
 
 onBeforeUnmount(() => {
   clearFallbackToast()
+  if (descResizeObserver) {
+    descResizeObserver.disconnect()
+    descResizeObserver = null
+  }
 })
 
 const openLink = () => {
@@ -115,11 +157,20 @@ const deletePopoverOpen = ref(false)
 
 <template>
   <Card 
+    ref="cardEl"
     class="relative group hover:shadow-lg transition-all dark:hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col justify-center"
     :class="{ 'border-primary ring-1 ring-primary': selected }"
     @click="openLink"
     @contextmenu.prevent="emit('contextmenu', $event)"
+    @mouseenter="onCardEnter"
+    @mouseleave="hideDescToast"
   >
+    <div
+      v-if="showHint && hintKey"
+      class="absolute top-1.5 right-1.5 z-20 h-6 min-w-[24px] px-2 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold shadow"
+    >
+      {{ hintKey }}
+    </div>
     <div class="px-4 py-3 flex gap-3 items-center">
        <!-- Icon -->
        <div class="shrink-0">
@@ -162,7 +213,6 @@ const deletePopoverOpen = ref(false)
             <p
               ref="descEl"
               class="text-[10px] text-muted-foreground truncate min-h-[16px] leading-[1.2]"
-              @mouseenter="showDescToast"
             >
               {{ bookmark.desc || ' ' }}
             </p>

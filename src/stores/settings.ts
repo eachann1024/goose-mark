@@ -1,11 +1,13 @@
 import { defineStore } from 'pinia'
+import { utoolsStorage } from '@/lib/utoolsStorage'
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
     autoGenerateAI: false, // 自动使用 AI 生成标题和描述
-    gridColumns: 4,
-    searchAutoExitMinutes: 3,
-    groupTabsLayout: 'wrap' as 'wrap' | 'scroll'
+    gridColumns: 3,
+    searchAutoExitMinutes: 5,
+    groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
+    enableSubInput: false
   }),
   actions: {
     setAutoGenerateAI(value: boolean) {
@@ -21,7 +23,10 @@ export const useSettingsStore = defineStore('settings', {
     setSearchAutoExitMinutes(value: number) {
       const num = Number.isFinite(value) ? value : 0
       this.searchAutoExitMinutes = num < 0 ? 0 : Math.round(num)
+    },
+    setEnableSubInput(value: boolean) {
+      this.enableSubInput = !!value
     }
   },
-  persist: true
+  persist: { storage: utoolsStorage }
 })

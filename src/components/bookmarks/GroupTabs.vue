@@ -49,37 +49,59 @@ const groupContainerClass = computed(() => {
     </div>
 
     <div class="flex items-center gap-2 shrink-0 ml-4">
-      <Button
-        variant="outline"
-        size="sm"
-        class="h-9 rounded-full px-3 flex items-center gap-1"
-        :class="{ 'border-primary text-primary bg-primary/10': searching }"
-        @click="emit('open-search')"
-      >
-        <span class="i-mdi-magnify text-lg" />
-        <span class="text-xs">搜索</span>
-      </Button>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-9 rounded-full px-3 flex items-center gap-1"
+            :class="{ 'border-primary text-primary bg-primary/10': searching }"
+            @click="emit('open-search')"
+          >
+            <span class="i-mdi-magnify text-lg" />
+            <span class="text-xs">搜索</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p class="text-xs space-y-1">
+            <span class="block">直接输入字符即可搜索</span>
+            <span class="block text-muted-foreground">快捷键: ⌘/Ctrl + L / I / K</span>
+          </p>
+        </TooltipContent>
+      </Tooltip>
 
       <div class="h-6 w-px bg-border mx-2"></div>
 
-      <Button
-        variant="ghost"
-        size="sm"
-        class="text-xs text-muted-foreground hover:text-foreground"
-        :class="{ 'bg-muted text-foreground': tab === 'bookmarks' }"
-        @click="setTab('bookmarks')"
-      >
-        View
-      </Button>
-      <Button
-        variant="ghost"
-        size="sm"
-        class="text-xs text-muted-foreground hover:text-foreground"
-        :class="{ 'bg-muted text-foreground': tab === 'settings' }"
-        @click="setTab('settings')"
-      >
-        Config
-      </Button>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="w-8 h-8 text-muted-foreground hover:text-foreground"
+            :class="{ 'bg-muted text-foreground': tab === 'bookmarks' }"
+            @click="setTab('bookmarks')"
+            aria-label="查看"
+          >
+            <span class="i-mdi-view-grid-outline text-lg" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent><p>查看</p></TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="w-8 h-8 text-muted-foreground hover:text-foreground"
+            :class="{ 'bg-muted text-foreground': tab === 'settings' }"
+            @click="setTab('settings')"
+            aria-label="设置"
+          >
+            <span class="i-mdi-cog-outline text-lg" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent><p>设置</p></TooltipContent>
+      </Tooltip>
 
       <div class="h-6 w-px bg-border mx-2"></div>
 
