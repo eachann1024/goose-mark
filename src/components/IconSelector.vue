@@ -31,7 +31,10 @@ const getInitialTab = () => {
 }
 
 const activeTab = ref<'image' | 'text'>(getInitialTab())
-const localColor = ref(props.modelValue?.type === 'text' ? props.modelValue.bgColor || '#3B82F6' : '#3B82F6')
+// 背景色：undefined 表示无背景色，保留用户原始选择
+const localColor = ref<string | undefined>(
+  props.modelValue?.type === 'text' ? props.modelValue.bgColor : undefined
+)
 const customText = ref(props.modelValue?.type === 'text' ? props.modelValue.value || '' : '')
 
 // 图片相关状态
@@ -40,6 +43,9 @@ const localImageSrc = ref<string | null>(
     ? (props.modelValue.type === 'file' ? props.modelValue.path : props.modelValue.src) 
     : null
 )
+
+// 随机颜色生成函数
+const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)]
 
 const colors = [
   '#F87171', '#FB923C', '#FACC15', '#A3E635', '#34D399', 
@@ -63,35 +69,42 @@ const selectColor = (c: string) => {
 }
 
 const clearColor = () => {
-  localColor.value = '#3B82F6'
+  localColor.value = undefined  // 清除背景色，设为无背景
   emitChange()
 }
 
 const emitChange = () => {
+  // 根据用户当前所在 tab 决定保存的图标类型
   if (activeTab.value === 'text') {
     emit('update:modelValue', {
       type: 'text',
       value: letters.value,
-      bgColor: localColor.value
+      bgColor: localColor.value  // undefined 表示无背景色
     })
-  } else if (localImageSrc.value) {
-    // 判断图片类型：http/https/data: 开头用 remote，file:// 开头用 file
-    if (localImageSrc.value.startsWith('http') || localImageSrc.value.startsWith('data:')) {
-      emit('update:modelValue', {
-        type: 'remote',
-        src: localImageSrc.value
-      })
-    } else if (localImageSrc.value.startsWith('file://')) {
-      emit('update:modelValue', {
-        type: 'file',
-        path: localImageSrc.value.replace('file://', '')
-      })
+  } else {
+    // 图片模式
+    if (localImageSrc.value) {
+      // 判断图片类型：http/https/data: 开头用 remote，file:// 开头用 file
+      if (localImageSrc.value.startsWith('http') || localImageSrc.value.startsWith('data:')) {
+        emit('update:modelValue', {
+          type: 'remote',
+          src: localImageSrc.value
+        })
+      } else if (localImageSrc.value.startsWith('file://')) {
+        emit('update:modelValue', {
+          type: 'file',
+          path: localImageSrc.value.replace('file://', '')
+        })
+      } else {
+        // 本地路径
+        emit('update:modelValue', {
+          type: 'file',
+          path: localImageSrc.value
+        })
+      }
     } else {
-      // 本地路径
-      emit('update:modelValue', {
-        type: 'file',
-        path: localImageSrc.value
-      })
+      // 图片模式但没有图片，emit null 让外部使用默认 fallback
+      emit('update:modelValue', null)
     }
   }
 }
@@ -145,7 +158,11 @@ const handleFileSelect = (e: Event) => {
 }
 
 // Tab 切换时同步状态
-watch(activeTab, () => {
+watch(activeTab, (newTab, oldTab) => {
+  // 用户手动切换到 text tab 时，如果当前无背景色，给一个随机背景色
+  if (newTab === 'text' && oldTab === 'image' && !localColor.value) {
+    localColor.value = getRandomColor()
+  }
   emitChange()
 })
 </script>
@@ -183,9 +200,10 @@ watch(activeTab, () => {
         <div class="relative">
           <div 
             class="w-28 h-28 rounded-full flex items-center justify-center shrink-0 shadow-lg overflow-hidden border border-border/50"
-            :style="{ backgroundColor: activeTab === 'text' ? localColor : '#1a1c20' }"
+            :class="{ 'bg-muted/30': activeTab === 'text' && !localColor }"
+            :style="activeTab === 'text' && localColor ? { backgroundColor: localColor } : activeTab === 'image' ? { backgroundColor: '#1a1c20' } : {}"
           >
-             <span v-if="activeTab === 'text'" class="text-white font-bold text-3xl">{{ letters }}</span>
+             <span v-if="activeTab === 'text'" class="font-bold text-3xl" :class="localColor ? 'text-white' : 'text-foreground'">{{ letters }}</span>
              <Image v-else-if="previewImageUrl" :src="previewImageUrl" class="w-full h-full object-cover" />
              <span v-else class="i-mdi-image-outline text-4xl text-muted-foreground" />
           </div>
@@ -271,7 +289,7 @@ watch(activeTab, () => {
      <!-- Footer -->
      <div class="flex justify-end gap-2 mt-6">
          <Button variant="outline" size="sm" @click="$emit('close')">取消</Button>
-         <Button size="sm" class="bg-primary hover:bg-primary/90" @click="$emit('confirm')">确定</Button>
+         <Button size="sm" class="bg-primary hover:bg-primary/90" @click="emitChange(); $emit('confirm')">确定</Button>
      </div>
      
      <!-- Hidden file input -->

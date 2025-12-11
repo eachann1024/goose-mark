@@ -48,8 +48,8 @@ const deletePopoverOpen = ref(false)
        <!-- Icon -->
        <div class="shrink-0">
           <div 
-            class="w-10 h-10 rounded-lg border border-border flex items-center justify-center overflow-hidden transition-colors" 
-            :class="{ 'bg-muted/30': !bookmark.icon || bookmark.icon.type !== 'text' || !bookmark.icon.bgColor }"
+            class="w-10 h-10 rounded-lg border border-border flex items-center justify-center overflow-hidden transition-colors"
+            :class="{ 'bg-muted/30': !iconUrl && (!bookmark.icon?.bgColor) }"
             :style="bookmark.icon?.type === 'text' && bookmark.icon.bgColor ? { backgroundColor: bookmark.icon.bgColor } : {}"
           >
              <Image 
@@ -59,8 +59,8 @@ const deletePopoverOpen = ref(false)
              />
              <span 
                 v-else 
-                class="text-xs font-bold text-foreground"
-                :class="{ 'text-white': bookmark.icon?.type === 'text' && bookmark.icon.bgColor }"
+                class="text-xs font-bold"
+                :class="bookmark.icon?.type === 'text' && bookmark.icon.bgColor ? 'text-white' : 'text-foreground'"
              >{{ letters }}</span>
           </div>
        </div>
@@ -95,7 +95,7 @@ const deletePopoverOpen = ref(false)
              <div class="inline-block" @click.stop> <!-- 阻止点击事件冒泡到卡片 -->
                <Tooltip>
                  <TooltipTrigger as-child>
-                    <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted hover:text-destructive" @click.stop>
+                    <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted hover:text-destructive">
                       <span class="i-mdi-delete-outline text-xs" />
                     </Button>
                  </TooltipTrigger>

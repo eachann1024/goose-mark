@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onMounted, nextTick } from 'vue'
 
-import BookmarkCard from '@/components/BookmarkCard.vue'
 import SettingsPanel from '@/views/SettingsPanel.vue'
 import ContextMenu from '@/components/ContextMenu.vue'
 import CategoryMultiSelect from '@/components/CategoryMultiSelect.vue'
+import GroupTabs from '@/components/bookmarks/GroupTabs.vue'
+import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
+import BookmarksGrid from '@/components/bookmarks/BookmarksGrid.vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
@@ -29,6 +31,30 @@ const editingId = ref('')
 // Delete confirmation state
 const showDeleteConfirm = ref(false)
 const confirmDeleteId = ref('')
+const draft = reactive({ title: '', url: '', desc: '' })
+const draftLocations = ref<BookmarkLocation[]>([])
+const showCategorySelector = ref(false)
+const showIconSelector = ref(false)
+const previewIcon = ref<IconSource | null>(null)
+const formError = ref('')  // 验证错误提示
+let previewTimer: ReturnType<typeof setTimeout> | null = null
+let titleTimer: ReturnType<typeof setTimeout> | null = null
+const titleFetchFailed = ref(false)
+const iconLoading = ref(false)
+
+const previewIconStyle = computed(() => {
+  if (previewIcon.value?.type === 'text' && previewIcon.value.bgColor) {
+    return { backgroundColor: previewIcon.value.bgColor }
+  }
+  return {}  // 无背景色时返回空，让 CSS 类处理
+})
+
+const previewText = computed(() => {
+  const text = (draft.title || draft.url || '').trim()
+  return text ? text.slice(0, 4) : 'ICON'
+})
+
+const previewIconUrl = computed(() => iconToDisplayUrl(previewIcon.value ?? undefined))
 
 // 键盘导航状态
 const selectedIndex = ref(-1)
@@ -137,6 +163,10 @@ onClickOutside(categorySelectContainer, () => {
   showCategorySelector.value = false
 })
 
+const setBookmarkGridRef = (el: HTMLElement | null) => {
+  bookmarkGridRef.value = el
+}
+
 const searchValue = computed({
   get: () => store.search,
   set: v => store.setSearch(v as string)
@@ -241,27 +271,23 @@ watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   selectedIndex.value = -1
 })
 
-const draft = reactive({ title: '', url: '', desc: '' })
-const draftLocations = ref<BookmarkLocation[]>([])
-const showCategorySelector = ref(false)
-const showIconSelector = ref(false)
-const previewIcon = ref<IconSource | null>(null)
-const formError = ref('')  // 验证错误提示
-let previewTimer: ReturnType<typeof setTimeout> | null = null
-
-const previewIconStyle = computed(() => {
-  if (previewIcon.value?.type === 'text' && previewIcon.value.bgColor) {
-    return { backgroundColor: previewIcon.value.bgColor }
+const fetchPageTitle = async (url: string): Promise<string | null> => {
+  if (!window.utools?.ubrowser) return null
+  try {
+    const result = await window.utools.ubrowser
+      .goto(url)
+      .wait(2000)
+      .evaluate(() => {
+        const title = (document.title || document.querySelector('title')?.textContent || '').trim()
+        return title || null
+      })
+      .run({ width: 1024, height: 768, show: false })
+    return result && result.length > 0 ? (result[0] as string | null) : null
+  } catch (e) {
+    console.warn('[Bookmark] fetchPageTitle failed', e)
+    return null
   }
-  return { backgroundColor: 'hsl(var(--background))' }
-})
-
-const previewText = computed(() => {
-  const text = (draft.title || draft.url || '').trim()
-  return text ? text.slice(0, 4) : 'ICON'
-})
-
-const previewIconUrl = computed(() => iconToDisplayUrl(previewIcon.value ?? undefined))
+}
 
 // 选中的分类标签显示
 const selectedLocationsLabel = computed(() => {
@@ -366,21 +392,31 @@ watch(() => draft.url, async (val) => {
   if (editingId.value) return
   
   if (!val) {
+    if (previewTimer) clearTimeout(previewTimer)
+    if (titleTimer) clearTimeout(titleTimer)
     previewIcon.value = null
+    titleFetchFailed.value = false
+    iconLoading.value = false
     return
   }
-  
-  if (!draft.title) {
+
+  const resolveHostname = () => {
     try {
-      const url = new URL(val)
-      if (url.hostname) {
-        draft.title = url.hostname
-      }
-    } catch (e) { }
+      const u = new URL(val)
+      return u.hostname
+    } catch {
+      return ''
+    }
+  }
+  
+  const hostname = resolveHostname()
+  if (!draft.title) {
+    if (hostname) draft.title = hostname
   }
 
   if (previewTimer) clearTimeout(previewTimer)
   previewTimer = setTimeout(async () => {
+    iconLoading.value = true
     try {
       const icon = await ensureIconForBookmark({
         id: 'temp',
@@ -388,18 +424,41 @@ watch(() => draft.url, async (val) => {
         url: val,
         desc: draft.desc,
         tags: []
-      })
+      }, true)
       previewIcon.value = icon ?? null
     } catch {
       previewIcon.value = null
+    } finally {
+      iconLoading.value = false
     }
   }, 300)
+
+  if (titleTimer) clearTimeout(titleTimer)
+  titleTimer = setTimeout(async () => {
+    // 只有在标题为空或仍为默认域名时才自动覆盖
+    const currentTitle = draft.title.trim()
+    const shouldUpdate = !currentTitle || currentTitle === hostname
+    if (!shouldUpdate) return
+    titleFetchFailed.value = false
+    const pageTitle = await fetchPageTitle(val)
+    if (pageTitle) {
+      // 再次确认用户未手动修改
+      const latest = draft.title.trim()
+      if (!latest || latest === hostname) {
+        draft.title = pageTitle
+      }
+      titleFetchFailed.value = false
+    } else {
+      titleFetchFailed.value = true
+    }
+  }, 600)
 })
 
 watch(showAdd, (v) => {
   if (!v) {
     previewIcon.value = null
     showCategorySelector.value = false
+    iconLoading.value = false
   }
 })
 
@@ -415,7 +474,25 @@ const handleSave = async () => {
     return
   }
 
-  const iconToSave = previewIcon.value ?? undefined
+  let iconToSave = previewIcon.value ?? undefined
+  if (!iconToSave && draft.url) {
+    iconLoading.value = true
+    try {
+      const fetched = await ensureIconForBookmark({
+        id: 'temp',
+        title: draft.title || draft.url,
+        url: draft.url,
+        desc: draft.desc,
+        tags: []
+      }, true)
+      if (fetched && fetched.type !== 'text') {
+        iconToSave = fetched
+        previewIcon.value = fetched
+      }
+    } finally {
+      iconLoading.value = false
+    }
+  }
 
   if (editingId.value) {
     // 更新书签属性
@@ -506,133 +583,42 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
   <div class="min-h-screen flex flex-col bg-background text-foreground" @click="contextMenu.show = false">
     <!-- Top Navigation for Groups -->
     <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
-       <div class="flex items-center justify-between">
-          <div class="flex items-center gap-2 overflow-x-auto no-scrollbar mask-gradient-right">
-            <Button
-              v-for="group in visibleGroups"
-              :key="group.id"
-              variant="ghost"
-              size="sm"
-              class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-md"
-              :data-active="store.activeGroupId === group.id ? 'true' : undefined"
-              @click="store.selectGroup(group.id); tab = 'bookmarks'"
-            >
-              {{ group.name }}
-            </Button>
-          </div>
-          <div class="flex items-center gap-2 shrink-0 ml-4">
-             <Input v-if="!isUTools" class="w-64 h-9 bg-muted/50 border-transparent focus-visible:bg-background focus-visible:border-input transition-all" v-model="searchValue" placeholder="搜索..." />
-             <div class="h-6 w-px bg-border mx-2"></div>
-             <Button
-               variant="ghost"
-               size="sm"
-               class="text-xs text-muted-foreground hover:text-foreground"
-               :class="{ 'bg-muted text-foreground': tab === 'bookmarks' }"
-               @click="tab = 'bookmarks'"
-             >View</Button>
-             <Button
-               variant="ghost"
-               size="sm"
-               class="text-xs text-muted-foreground hover:text-foreground"
-               :class="{ 'bg-muted text-foreground': tab === 'settings' }"
-               @click="tab = 'settings'"
-             >Config</Button>
-              <div class="h-6 w-px bg-border mx-2"></div>
-              <Tooltip>
-                <TooltipTrigger as-child>
-                  <Button
-                    variant="ghost" 
-                    size="icon"
-                    class="w-7 h-7 text-muted-foreground hover:text-foreground"
-                    @click="toggleDark()"
-                  >
-                     <span class="i-mdi-theme-light-dark text-lg" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent><p>切换主题</p></TooltipContent>
-              </Tooltip>
-
-              <div class="h-6 w-px bg-border mx-2"></div>
-              
-              <!-- Trash Icon -->
-              <Tooltip>
-                <TooltipTrigger as-child>
-                   <Button
-                     variant="ghost"
-                     size="icon"
-                     class="w-7 h-7 text-muted-foreground hover:text-destructive transition-colors"
-                     :class="{ 'bg-destructive/10 text-destructive': isTrashActive }"
-                     @click="store.selectGroup(TRASH_GROUP_ID); tab = 'bookmarks'"
-                   >
-                      <span class="i-mdi-trash-can-outline text-lg" />
-                   </Button>
-                </TooltipTrigger>
-                <TooltipContent><p>回收站</p></TooltipContent>
-              </Tooltip>
-          </div>
-       </div>
+       <GroupTabs
+         :visible-groups="visibleGroups"
+         :active-group-id="store.activeGroupId"
+         :tab="tab"
+         :is-u-tools="isUTools"
+         :search="searchValue"
+         :is-trash-active="isTrashActive"
+         @update:tab="tab = $event"
+         @select-group="(id) => { store.selectGroup(id); tab = 'bookmarks' }"
+         @select-trash="store.selectGroup(TRASH_GROUP_ID); tab = 'bookmarks'"
+         @update:search="searchValue = $event"
+         @toggle-dark="toggleDark()"
+       />
     </header>
 
     <!-- Main Content with Sub-groups sidebar -->
     <main class="flex-1 flex px-6 pb-6 gap-4">
-      <!-- Sub-groups Sidebar (图二布局) -->
-      <aside 
-        v-if="tab === 'bookmarks' && shouldShowSubs" 
-        class="shrink-0 w-32 flex flex-col gap-1"
-      >
-        <button
-            v-for="sub in activeSubGroups"
-            :key="sub.id"
-            class="text-left px-3 py-2 rounded-md text-sm transition-all"
-            :class="{
-              'text-primary font-medium border-l-2 border-primary bg-primary/5': store.activeSubGroupId === sub.id,
-              'text-muted-foreground hover:text-foreground hover:bg-muted/50': store.activeSubGroupId !== sub.id
-            }"
-            @click="store.selectSubGroup(sub.id)"
-        >
-          {{ sub.name }}
-        </button>
-      </aside>
+      <SubGroupSidebar
+        :show="tab === 'bookmarks' && shouldShowSubs"
+        :active-sub-groups="activeSubGroups"
+        :active-sub-group-id="store.activeSubGroupId"
+        @select="store.selectSubGroup"
+      />
 
-      <!-- Bookmarks Grid -->
-      <section 
-        v-if="tab === 'bookmarks'" 
-        ref="bookmarkGridRef"
-        class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 content-start"
-      >
-        <BookmarkCard
-          v-for="(bookmark, index) in store.filteredBookmarks"
-          :key="bookmark.id"
-          :bookmark="bookmark"
-          :selected="selectedIndex === index"
-          @remove="handleRemove"
-          @edit="openEdit"
-          @contextmenu="handleContextMenu($event, bookmark)"
-        />
-        
-        <!-- Add New Card (Hidden in Trash) -->
-        <Tooltip v-if="!isTrashActive">
-          <TooltipTrigger as-child>
-             <button 
-                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border border-dashed border-border py-4 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer h-full min-h-[72px] w-full"
-                @click="openAdd"
-             >
-                <div class="group-hover:scale-110 transition-transform">
-                  <span class="i-mdi-plus text-3xl" />
-                </div>
-             </button>
-          </TooltipTrigger>
-          <TooltipContent><p>添加书签</p></TooltipContent>
-        </Tooltip>
-
-        <!-- Empty Trash Button -->
-        <div v-if="isTrashActive && store.filteredBookmarks.length > 0" class="col-span-full flex justify-center py-8">
-           <Button variant="destructive" @click="emptyTrash">
-              <span class="i-mdi-delete-empty mr-2" />
-              清空回收站
-           </Button>
-        </div>
-      </section>
+      <BookmarksGrid
+        v-if="tab === 'bookmarks'"
+        :bookmarks="store.filteredBookmarks"
+        :selected-index="selectedIndex"
+        :is-trash-active="isTrashActive"
+        :set-grid-ref="setBookmarkGridRef"
+        @remove="handleRemove"
+        @edit="openEdit"
+        @contextmenu="handleContextMenu"
+        @add="openAdd"
+        @emptyTrash="emptyTrash"
+      />
 
       <section v-else class="max-w-4xl mx-auto w-full">
         <SettingsPanel />
@@ -702,13 +688,17 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                  <div class="shrink-0">
                      <div 
                         class="w-16 h-16 rounded-xl border border-border flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
+                        :class="{ 'bg-muted/30': !previewIconUrl && !(previewIcon?.type === 'text' && previewIcon.bgColor) }"
                         :style="previewIconStyle"
                         @click="showIconSelector = true"
                      >
-                        <Image v-if="previewIconUrl" :src="previewIconUrl" class="w-full h-full object-contain" />
-                        <span v-else class="text-sm font-semibold text-muted-foreground px-1 text-center" :class="{ 'text-white': previewIcon?.type === 'text' && previewIcon.bgColor }">
-                          {{ previewIcon?.type === 'text' ? previewIcon.value : previewText }}
-                        </span>
+                        <div v-if="iconLoading" class="w-8 h-8 border-2 border-primary/60 border-t-transparent rounded-full animate-spin" />
+                        <template v-else>
+                          <Image v-if="previewIconUrl" :src="previewIconUrl" class="w-full h-full object-contain" />
+                          <span v-else class="text-sm font-semibold px-1 text-center" :class="previewIcon?.type === 'text' && previewIcon.bgColor ? 'text-white' : 'text-muted-foreground'">
+                            {{ previewIcon?.type === 'text' ? previewIcon.value : previewText }}
+                          </span>
+                        </template>
                      </div>
                  </div>
                  
@@ -720,6 +710,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                           class="h-9 border-0 border-b border-border rounded-none px-0 bg-transparent focus-visible:ring-0 focus-visible:border-primary shadow-none font-bold text-lg placeholder:text-muted-foreground/50 placeholder:font-normal"
                        />
                        <span class="absolute right-0 top-2 text-xs text-muted-foreground">{{ draft.title?.length ?? 0 }} / 50</span>
+                       <p v-if="titleFetchFailed" class="text-xs text-muted-foreground mt-1">未能自动获取标题，请手动输入。</p>
                      </div>
                      <Textarea 
                         v-model="draft.desc" 
