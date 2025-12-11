@@ -2,6 +2,8 @@
 import { computed, ref, nextTick } from 'vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useThemeStore } from '@/stores/theme'
+import { useSettingsStore } from '@/stores/settings'
+import { useStatsStore } from '@/stores/stats'
 import { probeUrl, type ProbeResult } from '@/services/siteProbe'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -13,6 +15,8 @@ import FaqNotice from '@/components/FaqNotice.vue'
 
 const store = useBookmarkStore()
 const themeStore = useThemeStore()
+const settingsStore = useSettingsStore()
+const statsStore = useStatsStore()
 
 
 const matching = ref(false)
@@ -32,20 +36,55 @@ const importing = ref(false)
 const importMode = ref<'overwrite' | 'merge'>('merge')
 const showImportConfirm = ref(false)
 const pendingImportData = ref<{ groups: typeof store.groups; bookmarks: typeof store.bookmarks } | null>(null)
+const showClearConfirm = ref(false)
+const clearConfirmText = ref('')
+const requiredClearText = '确认清空'
+const usageMode = ref<'day' | 'month'>('day')
 
 const missingCount = computed(() =>
   store.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
 )
 
+const usageRows = computed(() => {
+  const map = new Map<string, { total: number; open: number; add: number }>()
+  const formatKey = (ts: string) => {
+    const date = ts.slice(0, 10)
+    return usageMode.value === 'day' ? date : date.slice(0, 7)
+  }
+  statsStore.usageEvents.forEach(ev => {
+    const key = formatKey(ev.timestamp)
+    const row = map.get(key) ?? { total: 0, open: 0, add: 0 }
+    row.total += 1
+    if (ev.type === 'open') row.open += 1
+    if (ev.type === 'add') row.add += 1
+    map.set(key, row)
+  })
+  return [...map.entries()]
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, usageMode.value === 'day' ? 14 : 12)
+    .map(([key, val]) => ({ key, ...val }))
+})
+
+const usageTotals = computed(() => {
+  let open = 0
+  let add = 0
+  statsStore.usageEvents.forEach(ev => {
+    if (ev.type === 'open') open += 1
+    if (ev.type === 'add') add += 1
+  })
+  return { open, add }
+})
+
+const buildBackupPayload = () => ({
+  version: 1,
+  exportedAt: new Date().toISOString(),
+  groups: store.groups,
+  bookmarks: store.bookmarks
+})
+
 // 导出数据
 const exportData = () => {
-  const data = {
-    version: 1,
-    exportedAt: new Date().toISOString(),
-    groups: store.groups,
-    bookmarks: store.bookmarks
-  }
-  const json = JSON.stringify(data, null, 2)
+  const json = JSON.stringify(buildBackupPayload(), null, 2)
   const blob = new Blob([json], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   
@@ -151,6 +190,51 @@ const confirmImport = () => {
 const cancelImport = () => {
   showImportConfirm.value = false
   pendingImportData.value = null
+}
+
+const copyAllData = async () => {
+  const json = JSON.stringify(buildBackupPayload(), null, 2)
+  if (!navigator.clipboard) return alert('当前环境不支持剪贴板复制')
+  try {
+    await navigator.clipboard.writeText(json)
+  } catch {
+    alert('复制失败，请检查权限后重试')
+  }
+}
+
+const clearAllBookmarks = () => {
+  store.$patch({
+    groups: [
+      {
+        id: 'g-default',
+        name: '默认分组',
+        children: [
+          {
+            id: 'sg-default',
+            name: '未分组',
+            bookmarkIds: []
+          }
+        ]
+      },
+      {
+        id: TRASH_GROUP_ID,
+        name: '回收站',
+        children: [
+          {
+            id: 'sg-trash',
+            name: '已删除',
+            bookmarkIds: []
+          }
+        ]
+      }
+    ],
+    bookmarks: [],
+    search: '',
+    activeGroupId: 'g-default',
+    activeSubGroupId: 'sg-default'
+  })
+  showClearConfirm.value = false
+  clearConfirmText.value = ''
 }
 
 const matchMissing = async () => {
@@ -281,6 +365,35 @@ const cancelAddSub = () => {
                >醇香拿铁</span>
             </div>
           </div>
+       </CardContent>
+    </Card>
+
+    <!-- AI Settings Card -->
+    <Card>
+       <CardHeader>
+         <CardTitle>AI 功能</CardTitle>
+         <CardDescription>配置 AI 智能辅助功能（需在 uTools 中开启 AI）</CardDescription>
+       </CardHeader>
+       <CardContent>
+          <label class="flex items-center justify-between cursor-pointer">
+            <div class="space-y-0.5">
+              <div class="text-sm font-medium">自动生成标题和描述</div>
+              <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
+            </div>
+            <button 
+              type="button"
+              role="switch"
+              :aria-checked="settingsStore.autoGenerateAI"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              :class="settingsStore.autoGenerateAI ? 'bg-primary' : 'bg-input'"
+              @click="settingsStore.setAutoGenerateAI(!settingsStore.autoGenerateAI)"
+            >
+              <span 
+                class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
+                :class="settingsStore.autoGenerateAI ? 'translate-x-5' : 'translate-x-0'"
+              />
+            </button>
+          </label>
        </CardContent>
     </Card>
 
@@ -485,13 +598,80 @@ const cancelAddSub = () => {
            </CardContent>
         </Card>
         
+        <!-- Usage Stats -->
+        <Card class="md:col-span-2">
+          <CardHeader class="pb-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <CardTitle class="text-base">使用统计</CardTitle>
+                <CardDescription>按日/按月查看插件使用与新增书签次数</CardDescription>
+              </div>
+              <div class="flex gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :class="usageMode === 'day' ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
+                  @click="usageMode = 'day'"
+                >
+                  按日
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :class="usageMode === 'month' ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
+                  @click="usageMode = 'month'"
+                >
+                  按月
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent class="space-y-4">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div class="rounded-lg border border-border bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">启动次数</p>
+                <p class="text-lg font-semibold">{{ usageTotals.open }}</p>
+              </div>
+              <div class="rounded-lg border border-border bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">新增书签</p>
+                <p class="text-lg font-semibold">{{ usageTotals.add }}</p>
+              </div>
+              <div class="rounded-lg border border-border bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">分组数量</p>
+                <p class="text-lg font-semibold">{{ store.groups.length }}</p>
+              </div>
+              <div class="rounded-lg border border-border bg-muted/30 p-3">
+                <p class="text-xs text-muted-foreground">书签总数</p>
+                <p class="text-lg font-semibold">{{ store.bookmarks.length }}</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-60 overflow-y-auto custom-scroll">
+              <div
+                v-for="row in usageRows"
+                :key="row.key"
+                class="flex items-center justify-between rounded-lg border border-border bg-muted/20 px-3 py-2"
+              >
+                <div class="flex flex-col">
+                  <span class="text-sm font-medium text-foreground">{{ row.key }}</span>
+                  <span class="text-xs text-muted-foreground">总计 {{ row.total }} 次</span>
+                </div>
+                <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                  <span class="px-2 py-1 rounded bg-primary/10 text-primary font-medium">启动 {{ row.open }}</span>
+                  <span class="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 font-medium">新增 {{ row.add }}</span>
+                </div>
+              </div>
+              <p v-if="usageRows.length === 0" class="text-sm text-muted-foreground">暂无统计数据</p>
+            </div>
+          </CardContent>
+        </Card>
+
         <!-- Import/Export -->
         <Card class="md:col-span-2">
            <CardHeader class="pb-3">
               <CardTitle class="text-base">数据管理</CardTitle>
               <CardDescription>导入导出书签数据，便于备份与迁移</CardDescription>
            </CardHeader>
-           <CardContent>
+           <CardContent class="space-y-4">
               <div class="flex gap-3">
                  <Button class="flex-1" variant="secondary" @click="exportData">
                    <span class="i-mdi-export mr-2" />
@@ -509,9 +689,24 @@ const cancelAddSub = () => {
                    @change="handleFileSelect"
                  />
               </div>
-              <p class="text-xs text-muted-foreground mt-2">
+              <p class="text-xs text-muted-foreground">
                 导出的 JSON 文件包含所有分组和书签数据
               </p>
+              
+              <!-- Debug Tools -->
+              <div class="border-t border-border pt-4 mt-4">
+                 <p class="text-xs text-muted-foreground mb-3">调试工具（开发用）</p>
+                 <div class="flex gap-3">
+                  <Button class="flex-1" variant="outline" size="sm" @click="copyAllData">
+                    <span class="i-mdi-content-copy mr-2" />
+                    复制全部数据
+                  </Button>
+                    <Button class="flex-1" variant="destructive" size="sm" @click="showClearConfirm = true">
+                      <span class="i-mdi-delete-forever mr-2" />
+                      清空所有书签
+                    </Button>
+                 </div>
+              </div>
            </CardContent>
         </Card>
      </div>
@@ -565,37 +760,31 @@ const cancelAddSub = () => {
              
              <div class="space-y-3">
                 <span class="text-sm font-medium">导入模式</span>
-                <div class="grid gap-2">
-                   <label 
-                     class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                <div class="grid gap-3">
+                   <button 
+                     type="button"
+                     class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left"
                      :class="importMode === 'merge' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
+                     @click="importMode = 'merge'"
                    >
-                     <input 
-                       v-model="importMode" 
-                       type="radio" 
-                       value="merge" 
-                       class="h-4 w-4 text-primary"
-                     />
-                     <div>
+                     <span class="i-mdi-checkbox-blank-circle-outline text-primary" :class="importMode === 'merge' ? 'i-mdi-radiobox-marked' : ''" />
+                     <div class="space-y-1">
                         <div class="font-medium text-sm">合并模式</div>
                         <div class="text-xs text-muted-foreground">保留现有数据，仅添加新的书签和分组</div>
                      </div>
-                   </label>
-                   <label 
-                     class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                   </button>
+                   <button 
+                     type="button"
+                     class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left"
                      :class="importMode === 'overwrite' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
+                     @click="importMode = 'overwrite'"
                    >
-                     <input 
-                       v-model="importMode" 
-                       type="radio" 
-                       value="overwrite" 
-                       class="h-4 w-4 text-primary"
-                     />
-                     <div>
+                     <span class="i-mdi-checkbox-blank-circle-outline text-primary" :class="importMode === 'overwrite' ? 'i-mdi-radiobox-marked' : ''" />
+                     <div class="space-y-1">
                         <div class="font-medium text-sm">覆盖模式</div>
                         <div class="text-xs text-muted-foreground text-amber-500">清空现有数据，完全使用备份内容替换</div>
                      </div>
-                   </label>
+                   </button>
                 </div>
              </div>
           </div>
@@ -608,6 +797,38 @@ const cancelAddSub = () => {
              </Button>
           </DialogFooter>
        </DialogContent>
+    </Dialog>
+
+    <!-- Clear All Confirmation Dialog -->
+    <Dialog :open="showClearConfirm" @update:open="v => showClearConfirm = v">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>确认清空？</DialogTitle>
+          <DialogDescription>
+            此操作将删除所有书签数据，无法恢复。请输入
+            <span class="font-medium text-foreground">“{{ requiredClearText }}”</span>
+            确认。
+          </DialogDescription>
+        </DialogHeader>
+        <div class="space-y-3 py-2">
+          <Input
+            v-model="clearConfirmText"
+            placeholder="输入确认文案后才可清空"
+            class="w-full"
+          />
+          <p class="text-xs text-muted-foreground">可手动输入或粘贴确认文案，再点击确认。</p>
+        </div>
+        <DialogFooter class="gap-2 sm:gap-0">
+          <Button variant="ghost" @click="showClearConfirm = false">取消</Button>
+          <Button
+            variant="destructive"
+            :disabled="clearConfirmText.trim() !== requiredClearText"
+            @click="clearAllBookmarks"
+          >
+            确认清空
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   </div>
 </template>

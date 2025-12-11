@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Image } from '@/components/ui/image'
+import { Input } from '@/components/ui/input'
 import type { IconSource } from '@/types/bookmark'
 
 const props = defineProps<{
@@ -32,9 +33,7 @@ const getInitialTab = () => {
 
 const activeTab = ref<'image' | 'text'>(getInitialTab())
 // 背景色：undefined 表示无背景色，保留用户原始选择
-const localColor = ref<string | undefined>(
-  props.modelValue?.type === 'text' ? props.modelValue.bgColor : undefined
-)
+const localColor = ref<string | undefined>(props.modelValue?.bgColor)
 const customText = ref(props.modelValue?.type === 'text' ? props.modelValue.value || '' : '')
 
 // 图片相关状态
@@ -48,8 +47,9 @@ const localImageSrc = ref<string | null>(
 const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)]
 
 const colors = [
-  '#F87171', '#FB923C', '#FACC15', '#A3E635', '#34D399', 
-  '#22D3EE', '#3B82F6', '#818CF8', '#A78BFA', '#F472B6'
+  '#000000', '#FFFFFF', '#F87171', '#FB923C', '#FACC15',
+  '#A3E635', '#34D399', '#22D3EE', '#3B82F6', '#818CF8',
+  '#A78BFA', '#F472B6'
 ]
 
 const letters = computed(() => {
@@ -88,18 +88,21 @@ const emitChange = () => {
       if (localImageSrc.value.startsWith('http') || localImageSrc.value.startsWith('data:')) {
         emit('update:modelValue', {
           type: 'remote',
-          src: localImageSrc.value
+          src: localImageSrc.value,
+          bgColor: localColor.value
         })
       } else if (localImageSrc.value.startsWith('file://')) {
         emit('update:modelValue', {
           type: 'file',
-          path: localImageSrc.value.replace('file://', '')
+          path: localImageSrc.value.replace('file://', ''),
+          bgColor: localColor.value
         })
       } else {
         // 本地路径
         emit('update:modelValue', {
           type: 'file',
-          path: localImageSrc.value
+          path: localImageSrc.value,
+          bgColor: localColor.value
         })
       }
     } else {
@@ -139,6 +142,14 @@ const clearIcon = () => {
   emit('update:modelValue', null)
 }
 
+const colorInput = ref<HTMLInputElement | null>(null)
+const triggerPickColor = () => colorInput.value?.click()
+const handleColorPicked = (e: Event) => {
+  const val = (e.target as HTMLInputElement).value
+  localColor.value = val
+  emitChange()
+}
+
 // 触发文件选择
 const fileInput = ref<HTMLInputElement | null>(null)
 const triggerFileSelect = () => {
@@ -165,6 +176,16 @@ watch(activeTab, (newTab, oldTab) => {
   }
   emitChange()
 })
+
+watch(
+  () => props.modelValue,
+  (val) => {
+    if (val?.bgColor) {
+      localColor.value = val.bgColor
+    }
+  },
+  { deep: true }
+)
 </script>
 
 <template>
@@ -175,55 +196,51 @@ watch(activeTab, (newTab, oldTab) => {
     @paste="handlePaste"
   >
      <!-- Tabs -->
-     <div class="flex gap-6 border-b border-border pb-2 mb-5">
-        <button 
-          class="pb-2 text-sm font-medium transition-colors relative"
-          :class="activeTab === 'image' ? 'text-primary' : 'text-muted-foreground'"
+     <div class="flex gap-3 border-b border-border pb-3 mb-5">
+        <Button 
+          variant="ghost"
+          size="sm"
+          class="relative rounded-full"
+          :class="activeTab === 'image' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
           @click="activeTab = 'image'"
         >
            图片图标
-           <span v-if="activeTab === 'image'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-        </button>
-        <button 
-          class="pb-2 text-sm font-medium transition-colors relative"
-          :class="activeTab === 'text' ? 'text-primary' : 'text-muted-foreground'"
+        </Button>
+        <Button 
+          variant="ghost"
+          size="sm"
+          class="relative rounded-full"
+          :class="activeTab === 'text' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
           @click="activeTab = 'text'"
         >
            文字图标
-           <span v-if="activeTab === 'text'" class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full" />
-        </button>
+        </Button>
      </div>
 
-     <!-- Main Content -->
-     <div class="flex gap-5 mb-5">
-        <!-- Preview Circle -->
+    <!-- Main Content -->
+    <div class="flex gap-5 mb-5">
+        <!-- Preview Card -->
         <div class="relative">
           <div 
-            class="w-28 h-28 rounded-full flex items-center justify-center shrink-0 shadow-lg overflow-hidden border border-border/50"
-            :class="{ 'bg-muted/30': activeTab === 'text' && !localColor }"
-            :style="activeTab === 'text' && localColor ? { backgroundColor: localColor } : activeTab === 'image' ? { backgroundColor: '#1a1c20' } : {}"
+           class="w-28 h-28 rounded-xl flex items-center justify-center shrink-0 shadow-lg overflow-hidden border border-border/50 bg-muted/30"
+            :style="localColor ? { backgroundColor: localColor } : {}"
           >
-             <span v-if="activeTab === 'text'" class="font-bold text-3xl" :class="localColor ? 'text-white' : 'text-foreground'">{{ letters }}</span>
-             <Image v-else-if="previewImageUrl" :src="previewImageUrl" class="w-full h-full object-cover" />
-             <span v-else class="i-mdi-image-outline text-4xl text-muted-foreground" />
+             <span v-if="activeTab === 'text'" class="font-bold text-2xl" :class="localColor ? 'text-white' : 'text-foreground'">{{ letters }}</span>
+             <Image v-else-if="previewImageUrl" :src="previewImageUrl" class="w-20 h-20 object-contain" />
+             <span v-else class="i-mdi-image-outline text-3xl text-muted-foreground" />
           </div>
           
           <!-- Tool buttons -->
           <div class="absolute -right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1.5">
-             <button 
-               class="w-7 h-7 rounded-md bg-muted/80 hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-               title="编辑"
-               @click="activeTab === 'image' ? triggerFileSelect() : undefined"
-             >
-               <span class="i-mdi-pencil-outline text-sm" />
-             </button>
-             <button 
-               class="w-7 h-7 rounded-md bg-muted/80 hover:bg-muted flex items-center justify-center text-muted-foreground hover:text-destructive transition-colors"
+             <Button 
+               size="icon"
+               variant="secondary"
+               class="h-8 w-8 rounded-md text-muted-foreground hover:text-destructive"
                title="清除"
                @click="clearIcon"
              >
                <span class="i-mdi-eraser text-sm" />
-             </button>
+             </Button>
           </div>
           
           
@@ -233,12 +250,12 @@ watch(activeTab, (newTab, oldTab) => {
         <div class="flex-1 flex flex-col gap-3">
            <!-- Text input for text mode -->
            <div v-if="activeTab === 'text'" class="flex flex-col gap-2">
-              <input 
+              <Input 
                 v-model="customText" 
-                class="bg-muted/50 border border-input rounded-md px-3 py-2 text-sm w-full outline-none focus:ring-2 focus:ring-primary/20"
                 placeholder="输入文字..."
-                @input="emitChange"
                 maxlength="4"
+                class="bg-muted/50 border-input px-4 py-3"
+                @input="emitChange"
               />
            </div>
            
@@ -267,7 +284,7 @@ watch(activeTab, (newTab, oldTab) => {
      <!-- Color Picker -->
      <div>
         <div class="text-xs text-muted-foreground mb-2">背景颜色</div>
-        <div class="flex flex-wrap gap-2">
+        <div class="grid grid-cols-6 gap-2">
            <button 
              v-for="c in colors" 
              :key="c"
@@ -283,6 +300,20 @@ watch(activeTab, (newTab, oldTab) => {
            >
               <span class="i-mdi-close" />
            </button>
+           <button 
+             class="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+             title="透明"
+             @click="clearColor"
+           >
+             <span class="i-mdi-close-thick" />
+           </button>
+           <button 
+             class="px-2 h-8 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted transition-colors col-span-2"
+             type="button"
+             @click="triggerPickColor"
+           >
+             取色
+           </button>
         </div>
      </div>
      
@@ -293,12 +324,18 @@ watch(activeTab, (newTab, oldTab) => {
      </div>
      
      <!-- Hidden file input -->
-     <input 
+     <Input 
        ref="fileInput"
        type="file" 
        accept="image/*" 
        class="hidden"
        @change="handleFileSelect"
+     />
+     <input 
+       ref="colorInput"
+       type="color"
+       class="hidden"
+       @input="handleColorPicked"
      />
   </div>
 </template>

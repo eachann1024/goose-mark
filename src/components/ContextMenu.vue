@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   x: number
@@ -47,38 +48,38 @@ onUnmounted(() => {
     @contextmenu.prevent
   >
     <template v-if="!isTrash">
-      <button class="menu-item" @click="handleAction('open')">
+      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('open')">
         <span class="i-mdi-rocket-launch text-muted" />
         <span>网页快开</span>
-      </button>
+      </Button>
       
       <div class="h-px bg-white/10 my-0.5 mx-1" />
   
-      <button class="menu-item" @click="handleAction('edit')">
+      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('edit')">
         <span class="i-mdi-pencil-outline text-muted" />
         <span>编辑</span>
-      </button>
+      </Button>
 
       <div class="h-px bg-white/10 my-0.5 mx-1" />
       
-      <button class="menu-item text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
+      <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
         <span class="i-mdi-delete-outline" />
         <span>移除</span>
-      </button>
+      </Button>
     </template>
 
     <template v-else>
-      <button class="menu-item text-primary" @click="handleAction('restore')">
+      <Button variant="ghost" class="menu-item justify-start text-primary" @click="handleAction('restore')">
         <span class="i-mdi-restore" />
         <span>还原</span>
-      </button>
+      </Button>
 
       <div class="h-px bg-white/10 my-0.5 mx-1" />
 
-      <button class="menu-item text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
+      <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
         <span class="i-mdi-delete-forever-outline" />
         <span>彻底删除</span>
-      </button>
+      </Button>
     </template>
   </div>
 </template>

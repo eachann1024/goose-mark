@@ -178,13 +178,22 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
     // 新增书签，支持多分组位置
     addBookmark(payload: Omit<Bookmark, 'id'>, locations: BookmarkLocation[]) {
+      console.log('[Store] addBookmark called')
+      console.log('[Store] locations:', JSON.stringify(locations))
+      console.log('[Store] groups:', JSON.stringify(this.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => ({ id: c.id, name: c.name })) }))))
+      
       const bookmark: Bookmark = { ...payload, id: uid(), locations }
       this.bookmarks.push(bookmark)
+      console.log('[Store] bookmark created:', bookmark.id)
       
       // 将书签 ID 添加到所有指定位置
       locations.forEach(loc => {
+        console.log('[Store] Processing location:', JSON.stringify(loc))
         const group = this.groups.find(g => g.id === loc.groupId)
+        console.log('[Store] Found group:', group?.name || 'NOT FOUND')
+        
         let sub = group?.children.find(c => c.id === loc.subGroupId)
+        console.log('[Store] Found sub:', sub?.name || 'NOT FOUND')
         
         // 如果子分组不存在，创建默认子分组
         if (!sub && group) {
@@ -193,7 +202,8 @@ export const useBookmarkStore = defineStore('bookmark', {
         }
         
         if (sub && !sub.bookmarkIds.includes(bookmark.id)) {
-          sub.bookmarkIds.unshift(bookmark.id)
+          sub.bookmarkIds.push(bookmark.id)
+          console.log('[Store] Added bookmark to sub:', sub.name, 'bookmarkIds:', sub.bookmarkIds)
         }
       })
       
@@ -213,7 +223,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         const group = this.groups.find(g => g.id === loc.groupId)
         const sub = group?.children.find(c => c.id === loc.subGroupId)
         if (sub && !sub.bookmarkIds.includes(bookmarkId)) {
-          sub.bookmarkIds.unshift(bookmarkId)
+          sub.bookmarkIds.push(bookmarkId)
         }
       })
       
@@ -344,6 +354,18 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.activeSubGroupId = group.children[0]?.id ?? ''
       }
       return true
+    },
+    reorderInSub(groupId: string, subId: string, fromId: string, toId: string) {
+      const group = this.groups.find(g => g.id === groupId)
+      const sub = group?.children.find(c => c.id === subId)
+      if (!sub) return
+      const fromIdx = sub.bookmarkIds.indexOf(fromId)
+      const toIdx = sub.bookmarkIds.indexOf(toId)
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return
+      const list = [...sub.bookmarkIds]
+      const [moved] = list.splice(fromIdx, 1)
+      list.splice(toIdx, 0, moved)
+      sub.bookmarkIds = list
     }
   },
   persist: true,

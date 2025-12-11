@@ -14,6 +14,56 @@ export const iconToDisplayUrl = (icon?: IconSource) => {
   return null
 }
 
+const sampleTopLeftColor = async (url: string): Promise<string | undefined> => {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = 'anonymous'
+    const cleanUp = () => {
+      img.onload = null
+      img.onerror = null
+    }
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = 1
+        canvas.height = 1
+        const ctx = canvas.getContext('2d')
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, 1, 1)
+          const data = ctx.getImageData(0, 0, 1, 1).data
+          resolve(`rgb(${data[0]}, ${data[1]}, ${data[2]})`)
+        } else {
+          resolve(undefined)
+        }
+      } catch {
+        resolve(undefined)
+      } finally {
+        cleanUp()
+      }
+    }
+    img.onerror = () => {
+      cleanUp()
+      resolve(undefined)
+    }
+    img.src = url
+    if (img.complete) {
+      img.onload?.(null as unknown as Event)
+    }
+  })
+}
+
+const attachBgColor = async (icon: IconSource): Promise<IconSource> => {
+  if (icon.type === 'remote') {
+    const color = await sampleTopLeftColor(icon.src)
+    return color ? { ...icon, bgColor: color } : icon
+  }
+  if (icon.type === 'file') {
+    const color = await sampleTopLeftColor(`file://${icon.path}`)
+    return color ? { ...icon, bgColor: color } : icon
+  }
+  return icon
+}
+
 /**
  * 从 DuckDuckGo Icons 服务获取图标（主要方案）
  * 快速稳定，适合大多数网站
@@ -111,13 +161,13 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<Ic
   // 策略 1：DuckDuckGo Icons
   const ddgIcon = await fetchIconFromDuckDuckGo(host)
   if (ddgIcon) {
-    return { type: 'remote', src: ddgIcon, fetchedAt: Date.now() }
+    return attachBgColor({ type: 'remote', src: ddgIcon, fetchedAt: Date.now() })
   }
   
   // 策略 2：uTools ubrowser 解析 HTML
   const pageIcon = await fetchIconFromPage(targetUrl)
   if (pageIcon) {
-    return { type: 'remote', src: pageIcon, fetchedAt: Date.now() }
+    return attachBgColor({ type: 'remote', src: pageIcon, fetchedAt: Date.now() })
   }
   
   return null
@@ -148,4 +198,3 @@ export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<strin
   
   return result
 }
-
