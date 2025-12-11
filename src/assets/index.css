@@ -37,34 +37,34 @@
 
   /* Force dark mode variables when .dark class is present on html/body */
   .dark {
-    --background: 240 10% 3.9%;
+    --background: 220 3% 19.4%; /* #303133 */
     --foreground: 0 0% 98%;
 
-    --card: 240 10% 3.9%;
+    --card: 220 3% 22%; /* slightly lighter than bg */
     --card-foreground: 0 0% 98%;
 
-    --popover: 240 10% 3.9%;
+    --popover: 220 3% 22%;
     --popover-foreground: 0 0% 98%;
 
     /* Keep primary distinct in dark mode if needed, effectively white text on black bg */
     --primary: 0 0% 98%;
-    --primary-foreground: 240 5.9% 10%;
+    --primary-foreground: 220 3% 19.4%;
 
-    --secondary: 240 3.7% 15.9%;
+    --secondary: 220 3% 26%;
     --secondary-foreground: 0 0% 98%;
 
-    --muted: 240 3.7% 15.9%;
-    --muted-foreground: 240 5% 64.9%;
+    --muted: 220 3% 26%;
+    --muted-foreground: 220 3% 64%;
 
-    --accent: 240 3.7% 15.9%;
+    --accent: 220 3% 26%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
-    --ring: 240 4.9% 83.9%;
+    --border: 220 3% 26%;
+    --input: 220 3% 26%;
+    --ring: 220 3% 83%;
   }
 
   /* Coffee Theme */

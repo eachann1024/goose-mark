@@ -16,6 +16,9 @@
 - 图片：使用 `src/components/ui/image` 组件，禁用原生 `img` 标签。
 - 风格：Bento Grid 布局，圆角 Card，深色模式优先。
 
+## UI 规范
+- 常见问题/提示类信息统一使用 `src/components/FaqNotice.vue`，采用主题色（primary + muted-foreground），避免硬编码色值，确保暗黑/亮色一致。
+
 ## 书签功能约定
 - 支持一级/二级分类、搜索；添加书签默认存在一级分组，可按需创建二级。
 - 图标获取优先使用本机网络，成功后永久持久化到 userData/bookmarks-icons，24h 冷却；缺失图标支持批量补全；书签编辑时 URL 变更且无图标才重抓。

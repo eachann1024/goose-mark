@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import FaqNotice from '@/components/FaqNotice.vue'
 
 
 const store = useBookmarkStore()
@@ -448,14 +449,11 @@ const cancelAddSub = () => {
        </CardContent>
     </Card>
 
-    <!-- FAQ / Notice -->
-    <div class="rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 text-sm text-foreground/80">
-       <div class="flex items-center gap-2 font-medium text-blue-500 mb-1">
-          <span class="i-mdi-information-outline text-lg" />
-          <span>常见问题</span>
-       </div>
-       <p>当一个分组下只有 1 个子分组时，为了保持界面简洁，侧边栏将不会显示该子分组。</p>
-    </div>
+   <FaqNotice
+     class="mb-2"
+     title="常见问题"
+     description="当一个分组下只有 1 个子分组时，为了保持界面简洁，侧边栏将不会显示该子分组。"
+   />
            
     <!-- Tools Card -->
     <div class="grid md:grid-cols-2 gap-6">
