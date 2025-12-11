@@ -32,7 +32,9 @@ const getInitialTab = () => {
 }
 
 const activeTab = ref<'image' | 'text'>(getInitialTab())
-// 背景色：undefined 表示无背景色，保留用户原始选择
+// 独立记住图片/文字模式的背景色
+const imageColor = ref<string | undefined>(props.modelValue?.bgColor)
+const textColor = ref<string | undefined>(props.modelValue?.bgColor)
 const localColor = ref<string | undefined>(props.modelValue?.bgColor)
 const customText = ref(props.modelValue?.type === 'text' ? props.modelValue.value || '' : '')
 
@@ -43,13 +45,9 @@ const localImageSrc = ref<string | null>(
     : null
 )
 
-// 随机颜色生成函数
-const getRandomColor = () => colors[Math.floor(Math.random() * colors.length)]
-
 const colors = [
-  '#000000', '#FFFFFF', '#F87171', '#FB923C', '#FACC15',
-  '#A3E635', '#34D399', '#22D3EE', '#3B82F6', '#818CF8',
-  '#A78BFA', '#F472B6'
+  '#000000', '#FFFFFF', '#EF4444', '#F59E0B', '#22C55E',
+  '#0EA5E9', '#6366F1', '#F472B6'
 ]
 
 const letters = computed(() => {
@@ -63,15 +61,19 @@ const previewImageUrl = computed(() => {
   return localImageSrc.value
 })
 
-const selectColor = (c: string) => {
+const applyColor = (c: string | undefined) => {
   localColor.value = c
+  if (activeTab.value === 'image') {
+    imageColor.value = c
+  } else {
+    textColor.value = c
+  }
   emitChange()
 }
 
-const clearColor = () => {
-  localColor.value = undefined  // 清除背景色，设为无背景
-  emitChange()
-}
+const selectColor = (c: string) => applyColor(c)
+
+const clearColor = () => applyColor(undefined)  // 清除背景色，设为无背景
 
 const emitChange = () => {
   // 根据用户当前所在 tab 决定保存的图标类型
@@ -146,13 +148,13 @@ const colorInput = ref<HTMLInputElement | null>(null)
 const triggerPickColor = () => colorInput.value?.click()
 const handleColorPicked = (e: Event) => {
   const val = (e.target as HTMLInputElement).value
-  localColor.value = val
-  emitChange()
+  applyColor(val)
 }
 
 // 触发文件选择
 const fileInput = ref<HTMLInputElement | null>(null)
 const triggerFileSelect = () => {
+  activeTab.value = 'image'
   fileInput.value?.click()
 }
 
@@ -170,18 +172,23 @@ const handleFileSelect = (e: Event) => {
 
 // Tab 切换时同步状态
 watch(activeTab, (newTab, oldTab) => {
-  // 用户手动切换到 text tab 时，如果当前无背景色，给一个随机背景色
-  if (newTab === 'text' && oldTab === 'image' && !localColor.value) {
-    localColor.value = getRandomColor()
+  if (newTab === 'text') {
+    localColor.value = textColor.value
+  } else {
+    localColor.value = imageColor.value
   }
   emitChange()
-})
+}, { immediate: true })
 
 watch(
   () => props.modelValue,
   (val) => {
     if (val?.bgColor) {
       localColor.value = val.bgColor
+      imageColor.value = val.bgColor
+      if (activeTab.value === 'text') {
+        textColor.value = val.bgColor
+      }
     }
   },
   { deep: true }
@@ -191,7 +198,7 @@ watch(
 <template>
   <div 
     ref="rootEl"
-    class="p-5 bg-popover rounded-xl border border-border w-[420px] shadow-xl outline-none" 
+    class="relative p-5 bg-popover rounded-xl border border-border w-[420px] shadow-xl outline-none" 
     tabindex="0"
     @paste="handlePaste"
   >
@@ -222,8 +229,10 @@ watch(
         <!-- Preview Card -->
         <div class="relative">
           <div 
-           class="w-28 h-28 rounded-xl flex items-center justify-center shrink-0 shadow-lg overflow-hidden border border-border/50 bg-muted/30"
+           class="w-28 h-28 rounded-xl flex items-center justify-center shrink-0 shadow-lg overflow-hidden border border-border/50 cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
             :style="localColor ? { backgroundColor: localColor } : {}"
+            title="点击更换图片"
+            @click="triggerFileSelect"
           >
              <span v-if="activeTab === 'text'" class="font-bold text-2xl" :class="localColor ? 'text-white' : 'text-foreground'">{{ letters }}</span>
              <Image v-else-if="previewImageUrl" :src="previewImageUrl" class="w-20 h-20 object-contain" />
@@ -262,29 +271,19 @@ watch(
            <!-- Image upload area for image mode -->
            <div 
              v-else 
-             class="w-full h-20 border border-dashed border-border rounded-lg flex flex-col items-center justify-center text-muted-foreground text-xs gap-1 hover:bg-muted/20 cursor-pointer transition-colors"
+             class="w-full h-28 border border-dashed border-border rounded-lg flex flex-col items-center justify-center text-muted-foreground text-xs gap-1 hover:bg-muted/20 cursor-pointer transition-colors"
              @click="triggerFileSelect"
            >
               <span class="i-mdi-plus text-lg" />
               <span>粘贴图片或链接</span>
            </div>
-           
-           <!-- Edit Icon Button -->
-           <Button 
-             variant="outline" 
-             size="sm" 
-             class="w-full"
-             @click="triggerFileSelect"
-           >
-             选择文件
-           </Button>
         </div>
      </div>
 
      <!-- Color Picker -->
      <div>
         <div class="text-xs text-muted-foreground mb-2">背景颜色</div>
-        <div class="grid grid-cols-6 gap-2">
+        <div class="grid grid-cols-5 gap-2">
            <button 
              v-for="c in colors" 
              :key="c"
@@ -295,24 +294,17 @@ watch(
            />
            <button 
              class="w-8 h-8 rounded-lg border border-border flex items-center justify-center hover:bg-muted text-muted-foreground hover:text-destructive transition-colors"
-             title="清除颜色"
+             title="清除背景"
              @click="clearColor"
            >
-              <span class="i-mdi-close" />
+              <span class="i-mdi-close-thick" />
            </button>
            <button 
              class="w-8 h-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
-             title="透明"
-             @click="clearColor"
-           >
-             <span class="i-mdi-close-thick" />
-           </button>
-           <button 
-             class="px-2 h-8 rounded-lg border border-border text-xs text-muted-foreground hover:bg-muted transition-colors col-span-2"
-             type="button"
+             title="取色"
              @click="triggerPickColor"
            >
-             取色
+             <span class="i-mdi-eyedropper-variant" />
            </button>
         </div>
      </div>
@@ -331,11 +323,11 @@ watch(
        class="hidden"
        @change="handleFileSelect"
      />
-     <input 
-       ref="colorInput"
-       type="color"
-       class="hidden"
-       @input="handleColorPicked"
-     />
+    <input 
+      ref="colorInput"
+      type="color"
+      class="absolute left-1/2 top-1/2 w-0 h-0 opacity-0 pointer-events-none"
+      @input="handleColorPicked"
+    />
   </div>
 </template>

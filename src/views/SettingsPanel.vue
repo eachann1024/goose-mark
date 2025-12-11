@@ -31,6 +31,10 @@ const newGroupName = ref('')
 const addingSubGroupId = ref('')
 const newSubName = ref('')
 const groupInput = ref<HTMLInputElement[] | null>(null)
+const addGroupInput = ref<HTMLInputElement | null>(null)
+const addSubInput = ref<HTMLInputElement | null>(null)
+const groupListRef = ref<HTMLElement | null>(null)
+const groupRowRefs = ref<Record<string, HTMLElement | null>>({})
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const importing = ref(false)
 const importMode = ref<'overwrite' | 'merge'>('merge')
@@ -39,17 +43,41 @@ const pendingImportData = ref<{ groups: typeof store.groups; bookmarks: typeof s
 const showClearConfirm = ref(false)
 const clearConfirmText = ref('')
 const requiredClearText = '确认清空'
-const usageMode = ref<'day' | 'month'>('day')
+const usageMode = ref<'day' | 'week' | 'month'>('day')
+const debugOpen = ref(false)
+const editingLocked = computed(() => !!editingGroupId.value || !!editingSubId.value)
+const gridColumnsOptions = [2, 3, 4, 5]
+const groupLayoutOptions: Array<{ value: 'wrap' | 'scroll'; label: string }> = [
+  { value: 'wrap', label: '换行' },
+  { value: 'scroll', label: '横向滚动' }
+]
+
+const handleGridColumnsChange = (val: string | number) => {
+  const num = typeof val === 'number' ? val : Number(val)
+  if (Number.isFinite(num)) {
+    settingsStore.setGridColumns(num)
+  }
+}
 
 const missingCount = computed(() =>
   store.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
 )
 
-const usageRows = computed(() => {
+const toIsoWeekKey = (ts: string) => {
+  const date = new Date(ts)
+  const day = date.getUTCDay() || 7
+  const isoThursday = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + (4 - day)))
+  const yearStart = new Date(Date.UTC(isoThursday.getUTCFullYear(), 0, 1))
+  const week = Math.ceil(((isoThursday.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+  return `${isoThursday.getUTCFullYear()}-W${week.toString().padStart(2, '0')}`
+}
+
+const aggregateUsage = (mode: 'day' | 'week' | 'month') => {
   const map = new Map<string, { total: number; open: number; add: number }>()
   const formatKey = (ts: string) => {
-    const date = ts.slice(0, 10)
-    return usageMode.value === 'day' ? date : date.slice(0, 7)
+    if (mode === 'week') return toIsoWeekKey(ts)
+    if (mode === 'month') return ts.slice(0, 7)
+    return ts.slice(0, 10)
   }
   statsStore.usageEvents.forEach(ev => {
     const key = formatKey(ev.timestamp)
@@ -61,8 +89,33 @@ const usageRows = computed(() => {
   })
   return [...map.entries()]
     .sort((a, b) => b[0].localeCompare(a[0]))
-    .slice(0, usageMode.value === 'day' ? 14 : 12)
     .map(([key, val]) => ({ key, ...val }))
+}
+
+const usageRows = computed(() => {
+  const limit = usageMode.value === 'day' ? 14 : usageMode.value === 'week' ? 12 : 12
+  return aggregateUsage(usageMode.value)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .slice(0, limit)
+})
+
+const usageAverage = computed(() => {
+  const week = aggregateUsage('week')
+  const month = aggregateUsage('month')
+  const avg = (arr: { total: number; open: number; add: number }[], key: 'total' | 'open' | 'add') =>
+    arr.length ? arr.reduce((sum, item) => sum + item[key], 0) / arr.length : 0
+  return {
+    week: {
+      total: avg(week, 'total'),
+      open: avg(week, 'open'),
+      add: avg(week, 'add')
+    },
+    month: {
+      total: avg(month, 'total'),
+      open: avg(month, 'open'),
+      add: avg(month, 'add')
+    }
+  }
 })
 
 const usageTotals = computed(() => {
@@ -283,10 +336,17 @@ const saveEdit = () => {
   editName.value = ''
 }
 
+const cancelEdit = () => {
+  editingGroupId.value = ''
+  editingSubId.value = ''
+  editName.value = ''
+}
+
 // Add/Remove Logic
 const startAddGroup = () => {
   isAddingGroup.value = true
   newGroupName.value = ''
+  nextTick(() => addGroupInput.value?.focus())
 }
 
 const confirmAddGroup = () => {
@@ -299,6 +359,15 @@ const confirmAddGroup = () => {
 const startAddSub = (groupId: string) => {
   addingSubGroupId.value = groupId
   newSubName.value = ''
+  nextTick(() => {
+    const row = groupRowRefs.value[groupId]
+    if (row) {
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } else if (groupListRef.value) {
+      groupListRef.value.scrollTop = groupListRef.value.scrollHeight
+    }
+    addSubInput.value?.focus()
+  })
 }
 
 const confirmAddSub = () => {
@@ -368,6 +437,80 @@ const cancelAddSub = () => {
        </CardContent>
     </Card>
 
+    <!-- Layout Card -->
+    <Card>
+      <CardHeader>
+        <CardTitle>布局</CardTitle>
+        <CardDescription>设置主界面每行卡片数量（2-5）</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="flex items-center gap-3 max-w-xs">
+          <label class="text-sm text-muted-foreground shrink-0">每行数量</label>
+          <Input
+            type="number"
+            min="2"
+            max="5"
+            step="1"
+            class="h-9"
+            :value="settingsStore.gridColumns"
+            @input="handleGridColumnsChange(($event.target as HTMLInputElement).value)"
+          />
+          <div class="flex gap-2">
+            <Button
+              v-for="opt in gridColumnsOptions"
+              :key="opt"
+              size="sm"
+              :variant="settingsStore.gridColumns === opt ? 'default' : 'outline'"
+              class="h-8 px-3"
+              @click="settingsStore.setGridColumns(opt)"
+            >
+              {{ opt }}
+            </Button>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3 max-w-md mt-4">
+          <label class="text-sm text-muted-foreground shrink-0">主分类展示</label>
+          <div class="flex gap-2">
+            <Button
+              v-for="opt in groupLayoutOptions"
+              :key="opt.value"
+              size="sm"
+              :variant="settingsStore.groupTabsLayout === opt.value ? 'default' : 'outline'"
+              class="h-8 px-3"
+              @click="settingsStore.setGroupTabsLayout(opt.value)"
+            >
+              {{ opt.label }}
+            </Button>
+          </div>
+        </div>
+        <p class="text-xs text-muted-foreground mt-2">默认换行显示，分类过多时可切换为横向滚动。</p>
+      </CardContent>
+    </Card>
+
+    <Card>
+      <CardHeader>
+        <CardTitle>搜索体验</CardTitle>
+        <CardDescription>控制搜索界面的自动退出行为</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="flex flex-col gap-2 max-w-md">
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-muted-foreground shrink-0">自动退出（分钟）</label>
+            <Input
+              type="number"
+              min="0"
+              step="1"
+              class="h-9"
+              :value="settingsStore.searchAutoExitMinutes"
+              @input="settingsStore.setSearchAutoExitMinutes(Number(($event.target as HTMLInputElement).value))"
+            />
+          </div>
+          <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
+        </div>
+      </CardContent>
+    </Card>
+
     <!-- AI Settings Card -->
     <Card>
        <CardHeader>
@@ -404,30 +547,40 @@ const cancelAddSub = () => {
          <CardDescription>管理书签分组和子分组</CardDescription>
        </CardHeader>
        <CardContent class="space-y-4">
-         <div class="flex flex-col gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scroll">
-           <div v-for="group in store.groups.filter(g => g.id !== TRASH_GROUP_ID)" :key="group.id" class="flex flex-col gap-2 group/row border rounded-lg p-2 bg-card/50">
+        <div class="flex flex-col gap-4 max-h-[400px] overflow-y-auto pr-2 custom-scroll" ref="groupListRef">
+          <div
+            v-for="group in store.groups.filter(g => g.id !== TRASH_GROUP_ID)"
+            :key="group.id"
+            class="flex flex-col gap-2 group/row border rounded-lg p-2 bg-card/50"
+            :ref="(el) => { groupRowRefs[group.id] = el as HTMLElement | null }"
+          >
               <!-- Group Header -->
               <div class="flex items-center gap-2">
                 <span class="i-mdi-folder-outline text-xl text-primary shrink-0" />
                 
-                <div v-if="editingGroupId === group.id && !editingSubId" class="flex-1 flex gap-2">
+                <div v-if="editingGroupId === group.id && !editingSubId" class="flex-1 flex gap-2 items-center">
                    <Input 
                      v-model="editName" 
-                     class="flex-1 h-8"
+                     class="flex-1 h-9"
                      @keyup.enter="saveEdit"
-                     auto-focus
+                     autofocus
                    />
-                   <Button size="sm" class="h-8" @click="saveEdit">保存</Button>
+                   <Button size="sm" class="h-9 px-4 text-sm" @click="saveEdit">保存</Button>
+                   <Button size="sm" variant="ghost" class="h-9 px-4 text-sm" @click="cancelEdit">取消</Button>
                 </div>
                 <span v-else class="flex-1 text-sm font-bold text-foreground">{{ group.name }}</span>
                 
-                <div class="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity">
+                <div
+                  class="flex items-center gap-1 opacity-0 group-hover/row:opacity-100 transition-opacity"
+                  v-if="!(editingGroupId === group.id && !editingSubId)"
+                >
                    <Button 
                      v-if="editingGroupId !== group.id" 
                      variant="ghost" 
                      size="icon"
                      class="h-7 w-7 text-muted-foreground hover:text-primary"
                      title="重命名"
+                     :disabled="editingLocked"
                      @click="startEditGroup(group.id, group.name)"
                    >
                      <span class="i-mdi-rename-box text-base" />
@@ -437,6 +590,7 @@ const cancelAddSub = () => {
                      size="icon"
                      class="h-7 w-7 text-muted-foreground hover:text-primary"
                      title="添加子分类"
+                     :disabled="editingLocked"
                      @click="startAddSub(group.id)"
                    >
                      <span class="i-mdi-plus text-base" />
@@ -448,6 +602,7 @@ const cancelAddSub = () => {
                          size="icon"
                          class="h-7 w-7 text-muted-foreground hover:text-destructive"
                          title="删除分组"
+                         :disabled="editingLocked"
                        >
                          <span class="i-mdi-trash-can-outline text-base" />
                        </Button>
@@ -474,14 +629,16 @@ const cancelAddSub = () => {
                  <div v-for="sub in group.children" :key="sub.id" class="flex items-center gap-3 text-sm px-3 py-1.5 rounded-md hover:bg-muted/50 transition-colors group/sub">
                     <span class="i-mdi-subdirectory-arrow-right text-muted-foreground/30 shrink-0" />
                     
-                    <div v-if="editingSubId === sub.id" class="flex-1 flex gap-2">
+                    <div v-if="editingSubId === sub.id" class="flex-1 flex gap-2 items-center">
                        <Input 
                          v-model="editName" 
-                         class="flex-1 h-7 text-xs"
+                         class="flex-1 h-9 text-sm"
+                         :maxlength="8"
                          @keyup.enter="saveEdit"
-                         auto-focus
+                         autofocus
                        />
-                       <Button size="sm" class="h-7 px-2 text-xs" @click="saveEdit">保存</Button>
+                       <Button size="sm" class="h-9 px-4 text-sm" @click="saveEdit">保存</Button>
+                       <Button size="sm" variant="ghost" class="h-9 px-4 text-sm" @click="cancelEdit">取消</Button>
                     </div>
                     <span v-else class="flex-1 text-muted-foreground">{{ sub.name }}</span>
                     
@@ -492,6 +649,7 @@ const cancelAddSub = () => {
                           size="icon"
                           class="h-6 w-6 text-muted-foreground hover:text-primary"
                           title="重命名"
+                         :disabled="editingLocked"
                           @click="startEditSub(group.id, sub.id, sub.name)"
                         >
                           <span class="i-mdi-pencil text-xs" />
@@ -503,6 +661,7 @@ const cancelAddSub = () => {
                                  size="icon"
                                  class="h-6 w-6 text-muted-foreground hover:text-destructive"
                                  title="删除子分类"
+                                :disabled="editingLocked"
                               >
                                  <span class="i-mdi-close text-xs" />
                               </Button>
@@ -524,39 +683,44 @@ const cancelAddSub = () => {
                     </div>
                  </div>
 
-                 <!-- Add Sub Input -->
-                 <div v-if="addingSubGroupId === group.id" class="flex items-center gap-2 pl-8 mt-1 animate-in fade-in slide-in-from-left-2">
-                     <span class="i-mdi-subdirectory-arrow-right text-primary shrink-0" />
-                     <Input 
-                        v-model="newSubName" 
-                        class="flex-1 h-7 text-xs"
-                        placeholder="新子分类名称..."
-                        @keyup.enter="confirmAddSub"
-                        @blur="cancelAddSub"
-                        auto-focus
-                      />
-                 </div>
+                <!-- Add Sub Input -->
+                <div v-if="addingSubGroupId === group.id" class="flex items-center gap-2 pl-8 mt-1 animate-in fade-in slide-in-from-left-2">
+                    <span class="i-mdi-subdirectory-arrow-right text-primary shrink-0" />
+                <Input 
+                  ref="addSubInput"
+                       v-model="newSubName" 
+                       class="flex-1 h-9 text-sm"
+                       :maxlength="8"
+                       placeholder="输入子分组名称..."
+                       @keyup.enter="confirmAddSub"
+                       @blur="cancelAddSub"
+                       autofocus
+                     />
+                    <Button size="sm" class="h-9 px-4 text-sm" @click="confirmAddSub">确定</Button>
+                    <Button size="sm" variant="ghost" class="h-9 px-4 text-sm" @click="isAddingGroup = false">取消</Button>
+                </div>
               </div>
            </div>
          </div>
            
          <!-- Add Group -->
          <div class="pt-0">
-            <div v-if="!isAddingGroup" class="flex justify-center">
-                <Button variant="outline" class="w-full border-dashed border-input hover:border-primary hover:text-primary transition-colors" @click="startAddGroup">
+           <div v-if="!isAddingGroup" class="flex justify-center">
+               <Button variant="outline" class="w-full border-dashed border-input hover:border-primary hover:text-primary transition-colors" :disabled="editingLocked" @click="startAddGroup">
                   <span class="i-mdi-plus mr-2" /> 新建主分组
                 </Button>
             </div>
             <div v-else class="flex gap-2 animate-in fade-in slide-in-from-top-2">
                 <Input 
+                  ref="addGroupInput"
                   v-model="newGroupName" 
                   placeholder="输入分组名称..." 
-                  class="h-9"
+                         class="h-9"
                   @keyup.enter="confirmAddGroup"
-                  auto-focus
+                  autofocus
                 />
-                <Button size="sm" @click="confirmAddGroup">确定</Button>
-                <Button size="sm" variant="ghost" @click="isAddingGroup = false">取消</Button>
+                <Button size="sm" class="h-9 px-4 text-sm" @click="confirmAddGroup">保存</Button>
+                <Button size="sm" variant="ghost" class="h-9 px-4 text-sm" @click="isAddingGroup = false">取消</Button>
             </div>
          </div>
        </CardContent>
@@ -604,7 +768,7 @@ const cancelAddSub = () => {
             <div class="flex items-center justify-between">
               <div>
                 <CardTitle class="text-base">使用统计</CardTitle>
-                <CardDescription>按日/按月查看插件使用与新增书签次数</CardDescription>
+                <CardDescription>按日/按周/按月查看插件使用与新增书签次数</CardDescription>
               </div>
               <div class="flex gap-2">
                 <Button
@@ -614,6 +778,14 @@ const cancelAddSub = () => {
                   @click="usageMode = 'day'"
                 >
                   按日
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  :class="usageMode === 'week' ? 'bg-primary/10 text-primary' : 'text-muted-foreground'"
+                  @click="usageMode = 'week'"
+                >
+                  按周
                 </Button>
                 <Button
                   variant="ghost"
@@ -643,6 +815,28 @@ const cancelAddSub = () => {
               <div class="rounded-lg border border-border bg-muted/30 p-3">
                 <p class="text-xs text-muted-foreground">书签总数</p>
                 <p class="text-lg font-semibold">{{ store.bookmarks.length }}</p>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div class="rounded-lg border border-border bg-muted/20 p-3 flex items-center justify-between">
+                <div>
+                  <p class="text-xs text-muted-foreground">周均</p>
+                  <p class="text-[11px] text-muted-foreground">按 ISO 周聚合</p>
+                </div>
+                <div class="flex gap-3 text-sm font-semibold">
+                  <span class="px-2 py-1 rounded bg-primary/10 text-primary">启动 {{ usageAverage.week.open.toFixed(1) }}</span>
+                  <span class="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500">新增 {{ usageAverage.week.add.toFixed(1) }}</span>
+                </div>
+              </div>
+              <div class="rounded-lg border border-border bg-muted/20 p-3 flex items-center justify-between">
+                <div>
+                  <p class="text-xs text-muted-foreground">月均</p>
+                  <p class="text-[11px] text-muted-foreground">按自然月聚合</p>
+                </div>
+                <div class="flex gap-3 text-sm font-semibold">
+                  <span class="px-2 py-1 rounded bg-primary/10 text-primary">启动 {{ usageAverage.month.open.toFixed(1) }}</span>
+                  <span class="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500">新增 {{ usageAverage.month.add.toFixed(1) }}</span>
+                </div>
               </div>
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-60 overflow-y-auto custom-scroll">
@@ -695,8 +889,18 @@ const cancelAddSub = () => {
               
               <!-- Debug Tools -->
               <div class="border-t border-border pt-4 mt-4">
-                 <p class="text-xs text-muted-foreground mb-3">调试工具（开发用）</p>
-                 <div class="flex gap-3">
+                 <button
+                   type="button"
+                   class="w-full flex items-center justify-between text-xs text-muted-foreground mb-2 hover:text-foreground transition-colors"
+                   @click="debugOpen = !debugOpen"
+                 >
+                   <span>调试工具</span>
+                   <span
+                     class="i-mdi-chevron-down text-base transition-transform"
+                     :class="debugOpen ? 'rotate-180' : ''"
+                   />
+                 </button>
+                 <div v-if="debugOpen" class="flex gap-3">
                   <Button class="flex-1" variant="outline" size="sm" @click="copyAllData">
                     <span class="i-mdi-content-copy mr-2" />
                     复制全部数据

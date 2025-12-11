@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   modelValue: BookmarkLocation[]
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -41,9 +42,7 @@ const isSelected = (groupId: string, subGroupId: string) => {
 
 // 切换选中状态
 const toggleLocation = (groupId: string, subGroupId: string) => {
-  console.log('[CategorySelect] toggleLocation:', groupId, subGroupId)
-  console.log('[CategorySelect] before:', JSON.stringify(selectedLocations.value))
-  
+  if (props.readonly) return
   const idx = selectedLocations.value.findIndex(
     loc => loc.groupId === groupId && loc.subGroupId === subGroupId
   )
@@ -52,13 +51,12 @@ const toggleLocation = (groupId: string, subGroupId: string) => {
   } else {
     selectedLocations.value.push({ groupId, subGroupId })
   }
-  
-  console.log('[CategorySelect] after:', JSON.stringify(selectedLocations.value))
   emit('update:modelValue', [...selectedLocations.value])
 }
 
 // 移除单个已选位置
 const removeLocation = (loc: BookmarkLocation) => {
+  if (props.readonly) return
   selectedLocations.value = selectedLocations.value.filter(
     l => !(l.groupId === loc.groupId && l.subGroupId === loc.subGroupId)
   )
@@ -105,7 +103,7 @@ const getLocationLabel = (loc: BookmarkLocation) => {
         <div
           v-for="sub in currentSubGroups"
           :key="sub.id"
-          class="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-muted/50"
+          class="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-muted/50 text-left"
           @click="toggleLocation(expandedGroupId, sub.id)"
         >
           <span 
@@ -117,7 +115,7 @@ const getLocationLabel = (loc: BookmarkLocation) => {
           >
             <span v-if="isSelected(expandedGroupId, sub.id)" class="i-mdi-check text-xs" />
           </span>
-          <span class="text-sm">{{ sub.name }}</span>
+          <span class="text-sm text-left">{{ sub.name }}</span>
         </div>
         <div v-if="currentSubGroups.length === 0" class="flex items-center justify-center h-full text-muted-foreground text-sm">
           暂无子分组

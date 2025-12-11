@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { Bookmark } from '@/types/bookmark'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card'
@@ -19,12 +19,83 @@ const iconUrl = computed(() => iconToDisplayUrl(props.bookmark.icon))
 const iconBgStyle = computed(() => {
   const icon = props.bookmark.icon
   if (icon?.bgColor) return { backgroundColor: icon.bgColor }
-  return { backgroundColor: 'hsl(var(--muted) / 0.35)' }
+  return { backgroundColor: 'transparent' }
 })
 const letters = computed(() => {
   if (props.bookmark.icon?.type === 'text') return props.bookmark.icon.value.slice(0, 4)
   const title = props.bookmark.title.trim()
   return (title || '•').slice(0, 4).toUpperCase()
+})
+const isEmptyDesc = computed(() => !props.bookmark.desc || props.bookmark.desc.trim().length === 0)
+
+const descEl = ref<HTMLElement | null>(null)
+const isDescTruncated = ref(false)
+const toastCooling = ref(false)
+let fallbackToastEl: HTMLDivElement | null = null
+let fallbackTimer: number | null = null
+
+const clearFallbackToast = () => {
+  if (fallbackTimer) {
+    clearTimeout(fallbackTimer)
+    fallbackTimer = null
+  }
+  if (fallbackToastEl) {
+    fallbackToastEl.remove()
+    fallbackToastEl = null
+  }
+}
+
+const showFallbackToast = (message: string) => {
+  clearFallbackToast()
+  const el = document.createElement('div')
+  el.textContent = message
+  el.style.position = 'fixed'
+  el.style.bottom = '16px'
+  el.style.right = '16px'
+  el.style.maxWidth = '320px'
+  el.style.padding = '10px 12px'
+  el.style.borderRadius = '12px'
+  el.style.background = 'rgba(24,24,27,0.9)'
+  el.style.color = '#fff'
+  el.style.fontSize = '12px'
+  el.style.lineHeight = '1.4'
+  el.style.boxShadow = '0 10px 30px rgba(0,0,0,0.25)'
+  el.style.backdropFilter = 'blur(8px)'
+  el.style.zIndex = '9999'
+  document.body.appendChild(el)
+  fallbackToastEl = el
+  fallbackTimer = window.setTimeout(clearFallbackToast, 2200)
+}
+
+const showDescToast = () => {
+  if (!isDescTruncated.value || !props.bookmark.desc || toastCooling.value) return
+  toastCooling.value = true
+  const message = props.bookmark.desc
+  if (window.utools?.showNotification) {
+    window.utools.showNotification(message)
+  } else {
+    showFallbackToast(message)
+  }
+  window.setTimeout(() => {
+    toastCooling.value = false
+  }, 800)
+}
+
+const checkDescTruncate = () => {
+  const el = descEl.value
+  if (!el) return
+  isDescTruncated.value = el.scrollWidth - el.clientWidth > 1
+}
+
+onMounted(() => nextTick(checkDescTruncate))
+
+watch(
+  () => props.bookmark.desc,
+  () => nextTick(checkDescTruncate)
+)
+
+onBeforeUnmount(() => {
+  clearFallbackToast()
 })
 
 const openLink = () => {
@@ -54,7 +125,6 @@ const deletePopoverOpen = ref(false)
        <div class="shrink-0">
           <div 
             class="w-10 h-10 rounded-lg border border-border flex items-center justify-center overflow-hidden transition-colors"
-            :class="{ 'bg-muted/30': !iconUrl && (!bookmark.icon?.bgColor) }"
             :style="iconBgStyle"
           >
              <Image 
@@ -70,16 +140,33 @@ const deletePopoverOpen = ref(false)
           </div>
        </div>
 
-       <div class="flex-1 min-w-0 flex flex-col gap-0.5 justify-center">
-          <div class="flex items-center justify-between">
-             <h3 class="font-medium text-sm truncate pr-2 text-foreground break-all" :title="bookmark.title">
+      <div
+        class="flex-1 min-w-0 flex flex-col justify-center"
+        :class="isEmptyDesc ? 'items-start gap-0' : 'gap-0.5'"
+      >
+          <template v-if="isEmptyDesc">
+            <h3
+              class="font-semibold text-base leading-snug truncate text-foreground"
+              :title="bookmark.title"
+            >
+              {{ bookmark.title }}
+            </h3>
+          </template>
+          <template v-else>
+            <div class="flex items-center justify-between">
+              <h3 class="font-medium text-sm truncate pr-2 text-foreground break-all" :title="bookmark.title">
                 {{ bookmark.title }}
-             </h3>
-             <span v-if="bookmark.pinned" class="i-mdi-pin text-primary text-[10px] shrink-0" />
-          </div>
-          <p class="text-[10px] text-muted-foreground truncate min-h-[16px] leading-[1.2]">
-            {{ bookmark.desc || ' ' }}
-          </p>
+              </h3>
+              <span v-if="bookmark.pinned" class="i-mdi-pin text-primary text-[10px] shrink-0" />
+            </div>
+            <p
+              ref="descEl"
+              class="text-[10px] text-muted-foreground truncate min-h-[16px] leading-[1.2]"
+              @mouseenter="showDescToast"
+            >
+              {{ bookmark.desc || ' ' }}
+            </p>
+          </template>
        </div>
     </div>
     

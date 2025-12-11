@@ -178,23 +178,12 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
     // 新增书签，支持多分组位置
     addBookmark(payload: Omit<Bookmark, 'id'>, locations: BookmarkLocation[]) {
-      console.log('[Store] addBookmark called')
-      console.log('[Store] locations:', JSON.stringify(locations))
-      console.log('[Store] groups:', JSON.stringify(this.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => ({ id: c.id, name: c.name })) }))))
-      
       const bookmark: Bookmark = { ...payload, id: uid(), locations }
       this.bookmarks.push(bookmark)
-      console.log('[Store] bookmark created:', bookmark.id)
-      
       // 将书签 ID 添加到所有指定位置
       locations.forEach(loc => {
-        console.log('[Store] Processing location:', JSON.stringify(loc))
         const group = this.groups.find(g => g.id === loc.groupId)
-        console.log('[Store] Found group:', group?.name || 'NOT FOUND')
-        
         let sub = group?.children.find(c => c.id === loc.subGroupId)
-        console.log('[Store] Found sub:', sub?.name || 'NOT FOUND')
-        
         // 如果子分组不存在，创建默认子分组
         if (!sub && group) {
           const created = this.addSubGroup('未分组', group.id)
@@ -203,7 +192,6 @@ export const useBookmarkStore = defineStore('bookmark', {
         
         if (sub && !sub.bookmarkIds.includes(bookmark.id)) {
           sub.bookmarkIds.push(bookmark.id)
-          console.log('[Store] Added bookmark to sub:', sub.name, 'bookmarkIds:', sub.bookmarkIds)
         }
       })
       

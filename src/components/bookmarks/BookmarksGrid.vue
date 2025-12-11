@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, ref } from 'vue'
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkCard from '@/components/BookmarkCard.vue'
 import { Button } from '@/components/ui/button'
@@ -10,6 +11,8 @@ const props = defineProps<{
   selectedIndex: number
   isTrashActive: boolean
   setGridRef?: (el: HTMLElement | null) => void
+  columns?: number
+  hideAddCard?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -35,12 +38,17 @@ const onDrop = (e: DragEvent, targetId: string) => {
   }
   draggingId.value = null
 }
+const gridStyle = computed(() => {
+  const cols = props.columns && props.columns >= 2 && props.columns <= 5 ? props.columns : 4
+  return { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }
+})
 </script>
 
 <template>
   <section
     :ref="setGridRef"
-    class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 content-start"
+    class="flex-1 grid gap-4 content-start"
+    :style="gridStyle"
   >
     <div
       v-for="(bookmark, index) in bookmarks"
@@ -59,11 +67,11 @@ const onDrop = (e: DragEvent, targetId: string) => {
       />
     </div>
 
-    <Tooltip v-if="!isTrashActive">
+    <Tooltip v-if="!isTrashActive && !hideAddCard">
       <TooltipTrigger as-child>
         <Button
           variant="outline"
-          class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-3 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer h-full min-h-[64px] w-full"
+          class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-2.5 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer min-h-[60px] w-full"
           @click="emit('add')"
         >
           <div class="group-hover:scale-110 transition-transform">
