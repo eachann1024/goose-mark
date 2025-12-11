@@ -498,110 +498,141 @@ const cancelAddSub = () => {
     </Card>
 
     <!-- Layout Card -->
-    <Card>
-      <CardHeader>
-        <CardTitle>布局</CardTitle>
-        <CardDescription>设置主界面每行卡片数量（2-5）</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div class="flex items-center gap-3 max-w-xs">
-          <label class="text-sm text-muted-foreground shrink-0">每行数量</label>
-          <Input
-            type="number"
-            min="2"
-            max="5"
-            step="1"
-            class="h-9"
-            :value="settingsStore.gridColumns"
-            @input="handleGridColumnsChange(($event.target as HTMLInputElement).value)"
-          />
-          <div class="flex gap-2">
-            <Button
-              v-for="opt in gridColumnsOptions"
-              :key="opt"
-              size="sm"
-              :variant="settingsStore.gridColumns === opt ? 'default' : 'outline'"
-              class="h-8 px-3"
-              @click="settingsStore.setGridColumns(opt)"
-            >
-              {{ opt }}
-            </Button>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3 max-w-md mt-4">
-          <label class="text-sm text-muted-foreground shrink-0">主分类展示</label>
-          <div class="flex gap-2">
-            <Button
-              v-for="opt in groupLayoutOptions"
-              :key="opt.value"
-              size="sm"
-              :variant="settingsStore.groupTabsLayout === opt.value ? 'default' : 'outline'"
-              class="h-8 px-3"
-              @click="settingsStore.setGroupTabsLayout(opt.value)"
-            >
-              {{ opt.label }}
-            </Button>
-          </div>
-        </div>
-        <p class="text-xs text-muted-foreground mt-2">默认换行显示，分类过多时可切换为横向滚动。</p>
-      </CardContent>
-    </Card>
-
-    <Card>
-      <CardHeader>
-        <CardTitle>搜索体验</CardTitle>
-        <CardDescription>控制搜索界面的自动退出行为</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div class="flex flex-col gap-2 max-w-md">
-          <div class="flex items-center gap-3">
-            <label class="text-sm text-muted-foreground shrink-0">自动退出（分钟）</label>
+    <div class="grid md:grid-cols-2 gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>布局</CardTitle>
+          <CardDescription>设置主界面每行卡片数量（2-5）</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="flex items-center gap-3 max-w-xs">
+            <label class="text-sm text-muted-foreground shrink-0">每行数量</label>
             <Input
               type="number"
-              min="0"
+              min="2"
+              max="5"
               step="1"
-              inputmode="numeric"
-              class="h-9 w-20"
-              placeholder="5"
-              :value="settingsStore.searchAutoExitMinutes"
-              @change="settingsStore.setSearchAutoExitMinutes(Number(($event.target as HTMLInputElement).value))"
+              class="h-9"
+              :value="settingsStore.gridColumns"
+              @input="handleGridColumnsChange(($event.target as HTMLInputElement).value)"
             />
+            <div class="flex gap-2">
+              <Button
+                v-for="opt in gridColumnsOptions"
+                :key="opt"
+                size="sm"
+                :variant="settingsStore.gridColumns === opt ? 'default' : 'outline'"
+                class="h-8 px-3"
+                @click="settingsStore.setGridColumns(opt)"
+              >
+                {{ opt }}
+              </Button>
+            </div>
           </div>
-          <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
-        </div>
-        <!-- "显示 uTools 子输入框" 功能已隐藏，默认关闭 -->
-      </CardContent>
-    </Card>
 
-    <!-- AI Settings Card -->
-    <Card>
-       <CardHeader>
-         <CardTitle>AI 功能</CardTitle>
-         <CardDescription>配置 AI 智能辅助功能（需在 uTools 中开启 AI）</CardDescription>
-       </CardHeader>
-       <CardContent>
+          <div class="flex items-center gap-3 max-w-md mt-4">
+            <label class="text-sm text-muted-foreground shrink-0">主分类展示</label>
+            <div class="flex gap-2">
+              <Button
+                v-for="opt in groupLayoutOptions"
+                :key="opt.value"
+                size="sm"
+                :variant="settingsStore.groupTabsLayout === opt.value ? 'default' : 'outline'"
+                class="h-8 px-3"
+                @click="settingsStore.setGroupTabsLayout(opt.value)"
+              >
+                {{ opt.label }}
+              </Button>
+            </div>
+          </div>
+          <p class="text-xs text-muted-foreground mt-2">默认换行显示，分类过多时可切换为横向滚动。</p>
+        </CardContent>
+      </Card>
+
+      <!-- Window Behavior Card -->
+      <Card>
+        <CardHeader>
+          <CardTitle>窗口行为</CardTitle>
+          <CardDescription>设置窗口的交互方式</CardDescription>
+        </CardHeader>
+        <CardContent>
           <label class="flex items-center justify-between cursor-pointer">
             <div class="space-y-0.5">
-              <div class="text-sm font-medium">自动生成标题和描述</div>
-              <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
+              <div class="text-sm font-medium">独立窗口自动关闭</div>
+              <div class="text-xs text-muted-foreground">在独立窗口模式下，打开书签后自动关闭窗口</div>
             </div>
             <button 
               type="button"
               role="switch"
-              :aria-checked="settingsStore.autoGenerateAI"
+              :aria-checked="settingsStore.autoCloseWindow"
               class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              :class="settingsStore.autoGenerateAI ? 'bg-primary' : 'bg-input'"
-              @click="settingsStore.setAutoGenerateAI(!settingsStore.autoGenerateAI)"
+              :class="settingsStore.autoCloseWindow ? 'bg-primary' : 'bg-input'"
+              @click="settingsStore.setAutoCloseWindow(!settingsStore.autoCloseWindow)"
             >
               <span 
                 class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                :class="settingsStore.autoGenerateAI ? 'translate-x-5' : 'translate-x-0'"
+                :class="settingsStore.autoCloseWindow ? 'translate-x-5' : 'translate-x-0'"
               />
             </button>
           </label>
-       </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>搜索体验</CardTitle>
+          <CardDescription>控制搜索界面的自动退出行为</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="flex flex-col gap-2 max-w-md">
+            <div class="flex items-center gap-3">
+              <label class="text-sm text-muted-foreground shrink-0">自动退出（分钟）</label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                inputmode="numeric"
+                class="h-9 w-20"
+                placeholder="5"
+                :value="settingsStore.searchAutoExitMinutes"
+                @change="settingsStore.setSearchAutoExitMinutes(Number(($event.target as HTMLInputElement).value))"
+              />
+            </div>
+            <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
+          </div>
+          <!-- "显示 uTools 子输入框" 功能已隐藏，默认关闭 -->
+        </CardContent>
+      </Card>
+
+      <!-- AI Settings Card -->
+      <Card>
+         <CardHeader>
+           <CardTitle>AI 功能</CardTitle>
+           <CardDescription>配置 AI 智能辅助功能（需在 uTools 中开启 AI）</CardDescription>
+         </CardHeader>
+         <CardContent>
+            <label class="flex items-center justify-between cursor-pointer">
+              <div class="space-y-0.5">
+                <div class="text-sm font-medium">自动生成标题和描述</div>
+                <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
+              </div>
+              <button 
+                type="button"
+                role="switch"
+                :aria-checked="settingsStore.autoGenerateAI"
+                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                :class="settingsStore.autoGenerateAI ? 'bg-primary' : 'bg-input'"
+                @click="settingsStore.setAutoGenerateAI(!settingsStore.autoGenerateAI)"
+              >
+                <span 
+                  class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
+                  :class="settingsStore.autoGenerateAI ? 'translate-x-5' : 'translate-x-0'"
+                />
+              </button>
+            </label>
+         </CardContent>
+      </Card>
+    </div>
 
     <!-- Category Management Card -->
     <Card>

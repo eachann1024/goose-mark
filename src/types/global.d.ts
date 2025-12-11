@@ -12,6 +12,9 @@ interface UToolsApi {
   // uTools AI API - 需要用户在 uTools 中配置 AI 服务
   ai(option: UToolsAiOption, streamCallback?: (chunk: { text: string }) => void): Promise<string>
   isDarkColors?(): boolean
+  // 窗口类型: main=主窗口, detach=分离窗口, browser=createBrowserWindow 创建的窗口
+  getWindowType?(): 'main' | 'detach' | 'browser'
+  outPlugin(isKill?: boolean): boolean
 }
 
 declare global {
@@ -22,4 +25,3 @@ declare global {
 }
 
 export {}
-

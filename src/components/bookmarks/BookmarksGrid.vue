@@ -21,6 +21,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'remove', bookmark: Bookmark): void
   (e: 'edit', bookmark: Bookmark): void
+  (e: 'open', bookmark: Bookmark): void
   (e: 'contextmenu', event: MouseEvent, bookmark: Bookmark): void
   (e: 'add'): void
   (e: 'emptyTrash'): void
@@ -81,6 +82,7 @@ const gridStyle = computed(() => {
             :hint-key="hintKeyById?.[bookmark.id]"
             @remove="emit('remove', bookmark)"
             @edit="emit('edit', bookmark)"
+            @open="emit('open', bookmark)"
             @contextmenu="(e) => emit('contextmenu', e, bookmark)"
           />
         </div>
