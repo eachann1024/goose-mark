@@ -85,29 +85,25 @@ const gridStyle = computed(() => {
           />
         </div>
       </template>
+      <template #footer>
+        <div v-if="!isTrashActive && !hideAddCard">
+          <Tooltip>
+            <TooltipTrigger as-child>
+              <Button
+                variant="outline"
+                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-2.5 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer min-h-[60px] w-full"
+                @click="emit('add')"
+              >
+                <div class="group-hover:scale-110 transition-transform">
+                  <Plus class="w-7 h-7" />
+                </div>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent><p>添加书签</p></TooltipContent>
+          </Tooltip>
+        </div>
+      </template>
     </draggable>
-
-    <!-- Add Card & Empty Trash (outside draggable) -->
-    <div
-      v-if="!isTrashActive && !hideAddCard"
-      class="grid gap-4 content-start mt-4"
-      :style="gridStyle"
-    >
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Button
-            variant="outline"
-            class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-2.5 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer min-h-[60px] w-full"
-            @click="emit('add')"
-          >
-            <div class="group-hover:scale-110 transition-transform">
-              <Plus class="w-7 h-7" />
-            </div>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent><p>添加书签</p></TooltipContent>
-      </Tooltip>
-    </div>
 
     <div v-if="isTrashActive && bookmarks.length > 0" class="flex justify-center py-8">
       <Button variant="destructive" @click="emit('emptyTrash')">

@@ -50,6 +50,13 @@ const debugOpen = ref(false)
 const isDragging = ref(false)
 const editingLocked = computed(() => !!editingGroupId.value || !!editingSubId.value)
 
+const isMac = computed(() => {
+  if (typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent || ''
+  const platform = (navigator as unknown as { platform?: string }).platform || ''
+  return /mac/i.test(platform) || /macintosh/i.test(ua)
+})
+
 // 可拖拽的分组列表 (排除回收站)
 const draggableGroups = computed({
   get: () => store.groups.filter(g => g.id !== TRASH_GROUP_ID),
@@ -95,7 +102,7 @@ type MiniUTools = { showNotification?: (body: string) => void }
 const showSubInputToast = (enabled: boolean) => {
   const msg = enabled
     ? '已启用 uTools 子输入框：直接输入即可搜索，但焦点可能拦截方向键，需先切换焦点再导航。'
-    : '已关闭子输入框：需使用快捷键或点击搜索进入，但不会被输入框抢占焦点。'
+    : '已关闭子输入框：点击搜索按钮进入搜索界面，不会被输入框抢占焦点。'
   const ut = (window as unknown as { utools?: MiniUTools }).utools
   try {
     if (ut?.showNotification) ut.showNotification(msg)
@@ -563,7 +570,6 @@ const cancelAddSub = () => {
           </div>
           <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
         </div>
-
         <!-- "显示 uTools 子输入框" 功能已隐藏，默认关闭 -->
       </CardContent>
     </Card>
@@ -842,6 +848,12 @@ const cancelAddSub = () => {
      title="常见问题"
      description="当一个分组下只有 1 个子分组时，为了保持界面简洁，侧边栏将不会显示该子分组。"
    />
+
+   <FaqNotice
+      class="mb-2"
+      title="隐藏功能"
+      :description="`· 直接输入字符即可进入搜索，无需点击搜索按钮\n· 按 ESC 退出搜索界面\n· 按住 ${isMac ? 'Option' : 'Alt'} 显示书签序号，配合数字键快速打开\n· 使用 ↑ ↓ ← → 方向键导航，Enter 打开`"
+    />
            
     <!-- Tools Card -->
     <div class="grid md:grid-cols-2 gap-6">
