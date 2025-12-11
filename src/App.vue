@@ -41,22 +41,20 @@ const showCategorySelector = ref(false)
 const showIconSelector = ref(false)
 const previewIcon = ref<IconSource | null>(null)
 const formError = ref('')  // 验证错误提示
-const maxTitleLen = 50
+const isSaving = ref(false)
 const maxDescLen = 200
 let previewTimer: ReturnType<typeof setTimeout> | null = null
 let titleTimer: ReturnType<typeof setTimeout> | null = null
 const titleFetchFailed = ref(false)
 const iconLoading = ref(false)
 const iconFetchFailed = ref(false) // 图标获取失败状态
+const isEditing = computed(() => !!editingId.value)
 
 const previewIconStyle = computed(() => {
   if (previewIcon.value?.bgColor) {
     return { backgroundColor: previewIcon.value.bgColor }
   }
-  if (previewIcon.value?.type === 'text' && previewIcon.value.bgColor) {
-    return { backgroundColor: previewIcon.value.bgColor }
-  }
-  return { backgroundColor: 'hsl(var(--muted) / 0.35)' }
+  return { backgroundColor: 'transparent' }
 })
 
 const previewText = computed(() => {
@@ -65,7 +63,11 @@ const previewText = computed(() => {
 })
 
 const previewIconUrl = computed(() => iconToDisplayUrl(previewIcon.value ?? undefined))
-const titleCount = computed(() => Math.min(draft.title?.length ?? 0, maxTitleLen))
+const buildTextIcon = (): IconSource => {
+  const base = (draft.title || draft.url).trim()
+  const text = base ? base.slice(0, 4).toUpperCase() : '•'
+  return { type: 'text', value: text }
+}
 
 // 键盘导航状态
 const selectedIndex = ref(-1)
@@ -129,11 +131,6 @@ const checkUrl = useDebounceFn(async (url: string) => {
 watch(() => draft.url, (v) => {
   checkUrl(v)
 })
-watch(() => draft.title, (v) => {
-  if (v && v.length > maxTitleLen) {
-    draft.title = v.slice(0, maxTitleLen)
-  }
-})
 watch(() => draft.desc, (v) => {
   if (v && v.length > maxDescLen) {
     draft.desc = v.slice(0, maxDescLen)
@@ -183,6 +180,58 @@ const contextMenu = reactive({
   target: null as Bookmark | null
 })
 
+const copyNotice = reactive({
+  visible: false,
+  text: ''
+})
+
+let copyNoticeTimer: ReturnType<typeof setTimeout> | null = null
+
+type UBrowserApi = {
+  goto: (url: string) => {
+    wait: (ms: number) => {
+      evaluate: <T>(fn: () => T) => {
+        run: (opts: { width: number; height: number; show: boolean }) => Promise<T[]>
+      }
+    }
+  }
+}
+
+type UToolsExtendedApi = {
+  copyText?: (text: string) => void
+  showNotification?: (body: string) => void
+  ubrowser?: UBrowserApi
+  isDarkColors?: () => boolean
+  onPluginEnter?: (cb: () => void) => void
+  setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
+}
+
+const notifyCopySuccess = () => {
+  copyNotice.text = '已复制链接'
+  copyNotice.visible = true
+  if (copyNoticeTimer) clearTimeout(copyNoticeTimer)
+  copyNoticeTimer = setTimeout(() => {
+    copyNotice.visible = false
+  }, 1400)
+}
+
+const copyBookmarkUrl = async (bookmark: Bookmark) => {
+  try {
+    const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+    if (utoolsApi?.copyText) {
+      utoolsApi.copyText(bookmark.url)
+      notifyCopySuccess()
+      return
+    }
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(bookmark.url)
+      notifyCopySuccess()
+    }
+  } catch (error) {
+    console.warn('[Bookmark] 复制链接失败', error)
+  }
+}
+
 // Click outside logic for Category Selector
 const categorySelectContainer = ref(null)
 onClickOutside(categorySelectContainer, () => {
@@ -198,12 +247,79 @@ const searchValue = computed({
   set: v => store.setSearch(v as string)
 })
 
+const searchViewOpen = ref(false)
+let searchAutoExitTimer: ReturnType<typeof setTimeout> | null = null
+
+const searchResults = computed(() => {
+  const query = store.search.trim().toLowerCase()
+  if (!query) return [] as Bookmark[]
+
+  const pool = store.bookmarks.filter(item => {
+    const locs = store.getBookmarkLocations(item.id)
+    return !locs.some(loc => loc.groupId === TRASH_GROUP_ID)
+  })
+
+  return pool.filter(item => {
+    const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
+    return haystack.includes(query)
+  })
+})
+
+const activeBookmarks = computed(() => searchViewOpen.value ? searchResults.value : store.filteredBookmarks)
+
+const searchAutoExitText = computed(() => {
+  const minutes = settingsStore.searchAutoExitMinutes
+  return minutes > 0 ? `${minutes} 分钟无操作自动退出` : '自动退出已关闭'
+})
+
 // 计算当前网格列数（用于左右导航）
 const getGridColumns = (): number => {
   if (!bookmarkGridRef.value) return 5
   const style = getComputedStyle(bookmarkGridRef.value)
   const columns = style.getPropertyValue('grid-template-columns')
   return columns.split(' ').filter(Boolean).length || 1
+}
+
+const focusSearchInput = () => {
+  nextTick(() => {
+    const el = document.querySelector<HTMLInputElement>('[data-search-input="true"]')
+    if (el) {
+      el.focus()
+      el.select()
+    }
+  })
+}
+
+const clearSearchAutoExit = () => {
+  if (searchAutoExitTimer) {
+    clearTimeout(searchAutoExitTimer)
+    searchAutoExitTimer = null
+  }
+}
+
+const closeSearchView = () => {
+  searchViewOpen.value = false
+  clearSearchAutoExit()
+  store.setSearch('')
+  selectedIndex.value = -1
+}
+
+const scheduleSearchAutoExit = () => {
+  clearSearchAutoExit()
+  if (!searchViewOpen.value) return
+  const minutes = settingsStore.searchAutoExitMinutes
+  if (!minutes || minutes <= 0) return
+  searchAutoExitTimer = setTimeout(() => {
+    closeSearchView()
+  }, minutes * 60 * 1000)
+}
+
+const openSearchView = () => {
+  tab.value = 'bookmarks'
+  searchViewOpen.value = true
+  contextMenu.show = false
+  focusSearchInput()
+  scheduleSearchAutoExit()
 }
 
 // 键盘导航处理
@@ -214,7 +330,7 @@ const handleKeyNavigation = (e: KeyboardEvent) => {
   const active = document.activeElement as HTMLElement
   if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
   
-  const bookmarks = store.filteredBookmarks
+  const bookmarks = activeBookmarks.value
   if (bookmarks.length === 0) return
   
   const key = e.key
@@ -286,10 +402,23 @@ const handleKeyNavigation = (e: KeyboardEvent) => {
 
 // 监听键盘事件
 useEventListener(window, 'keydown', handleKeyNavigation)
+useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && searchViewOpen.value) {
+    e.preventDefault()
+    closeSearchView()
+  }
+})
 
 // 搜索变化时重置选中索引
-watch(() => store.search, () => {
-  selectedIndex.value = store.filteredBookmarks.length > 0 ? 0 : -1
+watch(() => store.search, (val) => {
+  const list = activeBookmarks.value
+  selectedIndex.value = list.length > 0 ? 0 : -1
+  if (val && !searchViewOpen.value) openSearchView()
+  if (searchViewOpen.value) scheduleSearchAutoExit()
+})
+
+watch(() => settingsStore.searchAutoExitMinutes, () => {
+  if (searchViewOpen.value) scheduleSearchAutoExit()
 })
 
 // 切换分组时重置选中索引
@@ -298,9 +427,10 @@ watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
 })
 
 const fetchPageTitle = async (url: string): Promise<string | null> => {
-  if (!window.utools?.ubrowser) return null
+  const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+  if (!utoolsApi?.ubrowser) return null
   try {
-    const result = await window.utools.ubrowser
+    const result = await utoolsApi.ubrowser
       .goto(url)
       .wait(2000)
       .evaluate(() => {
@@ -363,9 +493,9 @@ useEventListener(window, 'paste', (e: ClipboardEvent) => {
   }
   
   const items = e.clipboardData?.items
-  if (!items) return
+  if (!items || items.length === 0) return
 
-  for (const item of items) {
+  for (const item of Array.from(items)) {
     if (item.type.startsWith('image/')) {
        e.preventDefault() // Prevent default handling
        const file = item.getAsFile()
@@ -393,10 +523,11 @@ onMounted(() => {
   store.migrateFromLegacy()
   statsStore.recordUse('open')
   
-  if (window.utools) {
+  const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+  if (utoolsApi) {
     const syncTheme = () => {
       try {
-         const isdev = window.utools.isDarkColors?.()
+         const isdev = utoolsApi.isDarkColors?.()
          if (typeof isdev === 'boolean') {
            isDark.value = isdev
          }
@@ -405,9 +536,10 @@ onMounted(() => {
     
     syncTheme()
     
-    window.utools.onPluginEnter(() => {
+    utoolsApi.onPluginEnter?.(() => {
        syncTheme()
-       window.utools?.setSubInput(({ text }) => {
+       openSearchView()
+       utoolsApi.setSubInput?.(({ text }) => {
          store.setSearch(text)
        }, '搜索书签...', true)
     })
@@ -507,13 +639,22 @@ watch(showAdd, (v) => {
     previewIcon.value = null
     showCategorySelector.value = false
     iconLoading.value = false
+    editingId.value = ''
+    titleFetchFailed.value = false
+    iconFetchFailed.value = false
+    formError.value = ''
+    isSaving.value = false
+  }
+})
+
+watch(tab, (v) => {
+  if (v !== 'bookmarks') {
+    showAdd.value = false
+    editingId.value = ''
   }
 })
 
 const handleSave = async () => {
-  console.log('[Save] handleSave called')
-  console.log('[Save] draftLocations:', JSON.stringify(draftLocations.value))
-  
   // 重置错误
   formError.value = ''
   if (!draft.title.trim() || !draft.url.trim()) {
@@ -525,63 +666,48 @@ const handleSave = async () => {
     return
   }
 
-  let iconToSave = previewIcon.value ?? undefined
-  if (!iconToSave && draft.url) {
-    iconLoading.value = true
-    try {
-      const fetched = await ensureIconForBookmark({
-        id: 'temp',
-        title: draft.title || draft.url,
-        url: draft.url,
-        desc: draft.desc,
-        tags: []
-      }, true)
-      if (fetched && fetched.type !== 'text') {
-        iconToSave = fetched
-        previewIcon.value = fetched
-      }
-    } finally {
-      iconLoading.value = false
-    }
-  }
+  if (isSaving.value) return
+  isSaving.value = true
 
-  if (editingId.value) {
-    // 更新书签属性
-    store.updateBookmark(editingId.value, {
-      title: draft.title.trim(),
-      url: draft.url.trim(),
-      desc: draft.desc.trim(),
-      icon: iconToSave
-    })
-    // 更新分组位置
-    store.updateBookmarkLocations(editingId.value, draftLocations.value)
-  } else {
-    const created = store.addBookmark(
-      {
+  try {
+    const iconToSave = previewIcon.value ?? buildTextIcon()
+
+    if (editingId.value) {
+      // 更新书签属性（不修改分组位置）
+      store.updateBookmark(editingId.value, {
         title: draft.title.trim(),
         url: draft.url.trim(),
         desc: draft.desc.trim(),
-        tags: [],
-        pinned: false,
         icon: iconToSave
-      },
-      draftLocations.value
-    )
-    if (created && !iconToSave) await store.refreshSingleIcon(created)
-    statsStore.recordUse('add')
-    
-    // 新建书签后跳转到书签所在的第一个分组
-    const firstLoc = draftLocations.value[0]
-    console.log('[Save] Jumping to firstLoc:', JSON.stringify(firstLoc))
-    if (firstLoc) {
-      store.setSearch('')
-      store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
-      tab.value = 'bookmarks'
-      console.log('[Save] Jumped to group:', store.activeGroupId, 'sub:', store.activeSubGroupId)
+      })
+    } else {
+      const created = store.addBookmark(
+        {
+          title: draft.title.trim(),
+          url: draft.url.trim(),
+          desc: draft.desc.trim(),
+          tags: [],
+          pinned: false,
+          icon: iconToSave
+        },
+        draftLocations.value
+      )
+      if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created)
+      statsStore.recordUse('add')
+      
+      // 新建书签后跳转到书签所在的第一个分组
+      const firstLoc = draftLocations.value[0]
+      if (firstLoc) {
+        store.setSearch('')
+        store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
+        tab.value = 'bookmarks'
+      }
     }
+    
+    showAdd.value = false
+  } finally {
+    isSaving.value = false
   }
-  
-  showAdd.value = false
 }
 
 const handleRemove = (bookmark: Bookmark) => {
@@ -594,6 +720,7 @@ const handleContextMenu = (e: MouseEvent, bookmark: Bookmark) => {
   contextMenu.x = e.clientX
   contextMenu.y = e.clientY
   contextMenu.target = bookmark
+  void copyBookmarkUrl(bookmark)
 }
 
 const onContextMenuAction = (action: string) => {
@@ -629,6 +756,7 @@ const emptyTrash = () => {
 }
 
 const handleReorder = ({ fromId, toId }: { fromId: string; toId: string }) => {
+  if (searchViewOpen.value) return
   const groupId = store.activeGroupId
   const subId = store.activeSubGroupId
   if (!groupId || !subId || groupId === TRASH_GROUP_ID) return
@@ -657,15 +785,69 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
          :active-group-id="store.activeGroupId"
          :tab="tab"
          :is-u-tools="isUTools"
-         :search="searchValue"
          :is-trash-active="isTrashActive"
+         :group-layout="settingsStore.groupTabsLayout"
+         :searching="searchViewOpen"
          @update:tab="tab = $event"
          @select-group="(id) => { store.selectGroup(id); tab = 'bookmarks' }"
          @select-trash="store.selectGroup(TRASH_GROUP_ID); tab = 'bookmarks'"
-         @update:search="searchValue = $event"
          @toggle-dark="toggleDark()"
+         @open-search="openSearchView"
        />
     </header>
+
+    <Transition name="fade">
+      <section
+        v-if="searchViewOpen"
+        class="fixed inset-0 z-[2000] bg-background/95 backdrop-blur-md px-6 py-8 overflow-y-auto"
+      >
+        <div class="max-w-5xl mx-auto space-y-4">
+          <div class="flex items-center gap-3">
+            <Button variant="ghost" size="icon" class="h-11 w-11" @click="closeSearchView">
+              <span class="i-mdi-arrow-left text-xl" />
+            </Button>
+            <Input
+              v-model="searchValue"
+              data-search-input="true"
+              placeholder="输入关键字搜索书签..."
+              class="flex-1 h-12 text-base bg-muted/50 border-border focus-visible:ring-2 focus-visible:ring-primary/40"
+            />
+            <Button variant="secondary" class="h-11 px-4" @click="closeSearchView">
+              退出
+            </Button>
+          </div>
+          <div class="text-xs text-muted-foreground flex items-center gap-2 px-1">
+            <span class="i-mdi-information-outline" />
+            <span>按 ESC 退出；{{ searchAutoExitText }}</span>
+          </div>
+          <div
+            v-if="!store.search"
+            class="rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground"
+          >
+            输入关键字开始搜索
+          </div>
+          <div
+            v-else-if="searchResults.length === 0"
+            class="rounded-lg border border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground"
+          >
+            未找到匹配结果
+          </div>
+          <BookmarksGrid
+            v-else
+            :bookmarks="activeBookmarks"
+            :selected-index="selectedIndex"
+            :is-trash-active="false"
+            :columns="settingsStore.gridColumns"
+            :set-grid-ref="setBookmarkGridRef"
+            :hide-add-card="true"
+            @remove="handleRemove"
+            @edit="openEdit"
+            @contextmenu="handleContextMenu"
+            @reorder="handleReorder"
+          />
+        </div>
+      </section>
+    </Transition>
 
     <!-- Main Content with Sub-groups sidebar -->
     <main class="flex-1 min-h-0 flex px-6 pb-6 gap-4 overflow-y-auto no-scrollbar">
@@ -678,9 +860,10 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
       <BookmarksGrid
         v-if="tab === 'bookmarks'"
-        :bookmarks="store.filteredBookmarks"
+        :bookmarks="activeBookmarks"
         :selected-index="selectedIndex"
         :is-trash-active="isTrashActive"
+        :columns="settingsStore.gridColumns"
         :set-grid-ref="setBookmarkGridRef"
         @remove="handleRemove"
         @edit="openEdit"
@@ -703,6 +886,15 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
       @close="contextMenu.show = false"
       @action="onContextMenuAction"
     />
+
+    <Transition name="fade">
+      <div
+        v-if="copyNotice.visible"
+        class="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] bg-card/90 backdrop-blur px-4 py-2 rounded-lg border border-border shadow-lg text-sm text-foreground"
+      >
+        {{ copyNotice.text }}
+      </div>
+    </Transition>
 
     <Dialog v-model:open="showAdd">
       <DialogContent class="sm:max-w-[600px] p-0 gap-0 bg-card border-border overflow-visible">
@@ -756,20 +948,19 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
              <div class="flex gap-4 p-4 rounded-xl border border-border bg-muted/10">
                  <!-- Icon -->
                  <div class="shrink-0 flex flex-col items-center gap-1">
-                     <div 
-                        class="w-16 h-16 rounded-xl border border-border flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
-                        :class="{ 'bg-muted/30': !previewIconUrl && !(previewIcon?.type === 'text' && previewIcon.bgColor) }"
-                        :style="previewIconStyle"
-                        @click="showIconSelector = true"
-                     >
-                        <div v-if="iconLoading" class="w-8 h-8 border-2 border-primary/60 border-t-transparent rounded-full animate-spin" />
-                        <template v-else>
-                          <Image v-if="previewIconUrl" :src="previewIconUrl" class="w-4/5 h-4/5 object-contain" />
-                          <span v-else class="text-sm font-semibold px-1 text-center" :class="previewIcon?.type === 'text' && previewIcon.bgColor ? 'text-white' : 'text-muted-foreground'">
-                            {{ previewIcon?.type === 'text' ? previewIcon.value : previewText }}
-                          </span>
-                        </template>
-                     </div>
+                   <div 
+                      class="w-10 h-10 rounded-lg border border-border flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
+                      :style="previewIconStyle"
+                      @click="showIconSelector = true"
+                    >
+                       <div v-if="iconLoading" class="w-7 h-7 border-2 border-primary/60 border-t-transparent rounded-full animate-spin" />
+                       <template v-else>
+                         <Image v-if="previewIconUrl" :src="previewIconUrl" class="w-4/5 h-4/5 object-contain" />
+                         <span v-else class="text-xs font-bold px-1 text-center" :class="previewIcon?.type === 'text' && previewIcon.bgColor ? 'text-white' : 'text-muted-foreground'">
+                           {{ previewIcon?.type === 'text' ? previewIcon.value : previewText }}
+                         </span>
+                       </template>
+                    </div>
                      <p v-if="iconFetchFailed && !iconLoading && draft.url" class="text-[10px] text-muted-foreground text-center max-w-[80px] leading-tight">
                        可复制网页图标后粘贴
                      </p>
@@ -780,10 +971,8 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                   <Input 
                      v-model="draft.title" 
                      placeholder="网站标题" 
-                      :maxlength="maxTitleLen"
                       class="h-12 border-border rounded-md bg-background px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 shadow-none text-base font-semibold placeholder:text-muted-foreground/40"
                    />
-                     <span class="absolute right-0 top-2 text-xs text-muted-foreground">{{ titleCount }} / {{ maxTitleLen }}</span>
                      <p v-if="titleFetchFailed" class="text-xs text-muted-foreground mt-1">未能自动获取标题，请手动输入。</p>
                    </div>
                      <Textarea 
@@ -804,7 +993,8 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                 <div class="relative" ref="categorySelectContainer">
                    <div 
                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-muted/50"
-                     @click="showCategorySelector = !showCategorySelector"
+                    :class="isEditing ? 'opacity-70 cursor-not-allowed' : ''"
+                    @click="isEditing ? null : showCategorySelector = !showCategorySelector"
                    >
                      <div v-if="selectedLocationsLabel" class="flex items-center gap-2 truncate text-primary font-medium">
                         {{ selectedLocationsLabel }}
@@ -814,19 +1004,21 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                    </div>
 
                    <!-- Multi-Select Dropdown -->
-                   <div v-if="showCategorySelector" class="absolute top-full left-0 z-50 mt-1">
+                   <div v-if="showCategorySelector && !isEditing" class="absolute top-full left-0 z-50 mt-1">
                       <CategoryMultiSelect 
                         v-model="draftLocations"
+                        :readonly="isEditing"
                         @close="showCategorySelector = false"
                       />
                    </div>
                 </div>
+                <p v-if="isEditing" class="text-xs text-muted-foreground">编辑时分类位置不可修改</p>
              </div>
          </div>
 
          <DialogFooter class="px-6 py-4 bg-muted/20 border-t border-border sm:justify-center">
             <Button variant="outline" class="w-32" @click="showAdd = false">取消</Button>
-            <Button class="w-32" @click="handleSave">保存</Button>
+            <Button class="w-32" :disabled="isSaving" @click="handleSave">保存</Button>
          </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -868,5 +1060,15 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translate(-50%, -6px);
 }
 </style>

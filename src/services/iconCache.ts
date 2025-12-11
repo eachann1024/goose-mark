@@ -1,5 +1,19 @@
 import type { IconSource, Bookmark } from '@/types/bookmark'
 
+type UBrowserApi = {
+  goto: (url: string) => {
+    wait: (ms: number) => {
+      evaluate: <T>(fn: () => T) => {
+        run: (opts: { width: number; height: number; show: boolean }) => Promise<T[]>
+      }
+    }
+  }
+}
+
+type UToolsIconApi = {
+  ubrowser?: UBrowserApi
+}
+
 // 文本图标生成
 const textIconFromBookmark = (bookmark: Bookmark): IconSource => {
   const base = bookmark.title.trim() || bookmark.url.trim()
@@ -14,59 +28,11 @@ export const iconToDisplayUrl = (icon?: IconSource) => {
   return null
 }
 
-const sampleTopLeftColor = async (url: string): Promise<string | undefined> => {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    const cleanUp = () => {
-      img.onload = null
-      img.onerror = null
-    }
-    img.onload = () => {
-      try {
-        const canvas = document.createElement('canvas')
-        canvas.width = 1
-        canvas.height = 1
-        const ctx = canvas.getContext('2d')
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, 1, 1)
-          const data = ctx.getImageData(0, 0, 1, 1).data
-          resolve(`rgb(${data[0]}, ${data[1]}, ${data[2]})`)
-        } else {
-          resolve(undefined)
-        }
-      } catch {
-        resolve(undefined)
-      } finally {
-        cleanUp()
-      }
-    }
-    img.onerror = () => {
-      cleanUp()
-      resolve(undefined)
-    }
-    img.src = url
-    if (img.complete) {
-      img.onload?.(null as unknown as Event)
-    }
-  })
-}
-
-const attachBgColor = async (icon: IconSource): Promise<IconSource> => {
-  if (icon.type === 'remote') {
-    const color = await sampleTopLeftColor(icon.src)
-    return color ? { ...icon, bgColor: color } : icon
-  }
-  if (icon.type === 'file') {
-    const color = await sampleTopLeftColor(`file://${icon.path}`)
-    return color ? { ...icon, bgColor: color } : icon
-  }
-  return icon
-}
+// 默认不自动取色，背景留空，必要时由用户手动选择
 
 /**
- * 从 DuckDuckGo Icons 服务获取图标（主要方案）
- * 快速稳定，适合大多数网站
+ * 从 DuckDuckGo Icons 服务获取图标（回退方案）
+ * 快速稳定，适合作为兜底
  */
 const fetchIconFromDuckDuckGo = async (host: string): Promise<string | null> => {
   try {
@@ -83,14 +49,15 @@ const fetchIconFromDuckDuckGo = async (host: string): Promise<string | null> => 
 }
 
 /**
- * 从网页 HTML 获取图标链接（uTools ubrowser 备选方案）
+ * 从网页 HTML 获取图标链接（uTools ubrowser 优先方案）
  * 优先级：apple-touch-icon > SVG > icon/shortcut icon > og:image
  */
 const fetchIconFromPage = async (url: string): Promise<string | null> => {
-  if (!window.utools?.ubrowser) return null
+  const utoolsApi = window.utools as unknown as UToolsIconApi | undefined
+  if (!utoolsApi?.ubrowser) return null
   
   try {
-    const result = await window.utools.ubrowser
+    const result = await utoolsApi.ubrowser
       .goto(url)
       .wait(2000)
       .evaluate(() => {
@@ -139,8 +106,8 @@ const fetchIconFromPage = async (url: string): Promise<string | null> => {
 
 /**
  * 获取图标（多策略）
- * 1. DuckDuckGo Icons（快速）
- * 2. uTools ubrowser 解析 HTML（备选）
+ * 1. uTools ubrowser 解析 HTML（优先）
+ * 2. DuckDuckGo Icons（回退）
  */
 export const fetchAndCacheIcon = async (url: string, _force = false): Promise<IconSource | null> => {
   if (!url) return null
@@ -158,16 +125,16 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<Ic
     return null
   }
   
-  // 策略 1：DuckDuckGo Icons
-  const ddgIcon = await fetchIconFromDuckDuckGo(host)
-  if (ddgIcon) {
-    return attachBgColor({ type: 'remote', src: ddgIcon, fetchedAt: Date.now() })
-  }
-  
-  // 策略 2：uTools ubrowser 解析 HTML
+  // 策略 1：uTools ubrowser 解析 HTML
   const pageIcon = await fetchIconFromPage(targetUrl)
   if (pageIcon) {
-    return attachBgColor({ type: 'remote', src: pageIcon, fetchedAt: Date.now() })
+    return { type: 'remote', src: pageIcon, fetchedAt: Date.now() }
+  }
+  
+  // 策略 2：DuckDuckGo Icons 兜底
+  const ddgIcon = await fetchIconFromDuckDuckGo(host)
+  if (ddgIcon) {
+    return { type: 'remote', src: ddgIcon, fetchedAt: Date.now() }
   }
   
   return null

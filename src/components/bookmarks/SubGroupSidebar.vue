@@ -21,14 +21,26 @@ const emit = defineEmits<{
       v-for="sub in activeSubGroups"
       :key="sub.id"
       variant="ghost"
-      class="justify-start w-full px-3 py-2 rounded-md text-sm transition-all"
+      class="justify-start w-full px-3 py-2 rounded-md text-sm transition-all text-left"
       :class="{
         'text-primary font-medium border-l-2 border-primary bg-primary/5': activeSubGroupId === sub.id,
         'text-muted-foreground hover:text-foreground hover:bg-muted/50': activeSubGroupId !== sub.id
       }"
       @click="emit('select', sub.id)"
     >
-      {{ sub.name }}
+      <span class="sub-name" :title="sub.name">
+        {{ sub.name }}
+      </span>
     </Button>
   </aside>
 </template>
+
+<style scoped>
+.sub-name {
+  display: inline-block;
+  width: 8em; /* 固定可视宽度，保证溢出被裁剪在标签内 */
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+</style>

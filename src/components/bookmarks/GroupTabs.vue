@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
 const props = defineProps<{
@@ -9,29 +8,32 @@ const props = defineProps<{
   activeGroupId: string
   tab: 'bookmarks' | 'settings'
   isUTools: boolean
-  search: string
   isTrashActive: boolean
+  searching: boolean
+  groupLayout?: 'wrap' | 'scroll'
 }>()
 
 const emit = defineEmits<{
   (e: 'update:tab', value: 'bookmarks' | 'settings'): void
   (e: 'select-group', id: string): void
   (e: 'select-trash'): void
-  (e: 'update:search', value: string): void
   (e: 'toggle-dark'): void
+  (e: 'open-search'): void
 }>()
 
-const search = computed({
-  get: () => props.search,
-  set: (v: string) => emit('update:search', v)
-})
-
 const setTab = (value: 'bookmarks' | 'settings') => emit('update:tab', value)
+const formatName = (name: string) => (name.length > 8 ? `${name.slice(0, 8)}…` : name)
+const groupContainerClass = computed(() => {
+  if (props.groupLayout === 'scroll') {
+    return 'flex items-center gap-2 overflow-x-auto no-scrollbar mask-gradient-right whitespace-nowrap'
+  }
+  return 'flex items-center flex-wrap gap-2'
+})
 </script>
 
 <template>
   <div class="flex items-center justify-between">
-    <div class="flex items-center gap-2 overflow-x-auto no-scrollbar mask-gradient-right">
+    <div :class="groupContainerClass">
       <Button
         v-for="group in visibleGroups"
         :key="group.id"
@@ -39,19 +41,24 @@ const setTab = (value: 'bookmarks' | 'settings') => emit('update:tab', value)
         size="sm"
         class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-md"
         :data-active="activeGroupId === group.id ? 'true' : undefined"
+        :title="group.name"
         @click="emit('select-group', group.id)"
       >
-        {{ group.name }}
+        {{ formatName(group.name) }}
       </Button>
     </div>
 
     <div class="flex items-center gap-2 shrink-0 ml-4">
-      <Input
-        v-if="!isUTools"
-        class="w-64 h-9 bg-muted/50 border-transparent focus-visible:bg-background focus-visible:border-input transition-all"
-        v-model="search"
-        placeholder="搜索..."
-      />
+      <Button
+        variant="outline"
+        size="sm"
+        class="h-9 rounded-full px-3 flex items-center gap-1"
+        :class="{ 'border-primary text-primary bg-primary/10': searching }"
+        @click="emit('open-search')"
+      >
+        <span class="i-mdi-magnify text-lg" />
+        <span class="text-xs">搜索</span>
+      </Button>
 
       <div class="h-6 w-px bg-border mx-2"></div>
 
