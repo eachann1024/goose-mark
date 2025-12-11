@@ -159,7 +159,7 @@ watch(() => draft.desc, (v) => {
 const askAI = async () => {
   if (!draft.url || !isUrlAccessible.value) return
 
-  if (!window.utools?.askAI) {
+  if (!window.utools?.ai) {
     formError.value = '当前 uTools 版本不支持 AI，请更新后重试'
     return
   }
@@ -177,7 +177,7 @@ const askAI = async () => {
 
 请返回 JSON 格式：{"title": "...", "desc": "..." }`
 
-    const res = await window.utools.askAI(prompt)
+    const res = await window.utools.ai({ prompt })
     const payload = typeof res === 'string' ? res : JSON.stringify(res)
     const match = payload.match(/\{[\s\S]*\}/)
     const jsonStr = match ? match[0] : payload
@@ -186,7 +186,7 @@ const askAI = async () => {
     if (data.desc) draft.desc = data.desc
   } catch (e) {
     console.error('[AI] 调用失败:', e)
-    formError.value = 'AI 生成失败，请稍后重试'
+    formError.value = 'AI 生成失败，请确保 uTools 已配置 AI 服务'
   } finally {
     isGenerating.value = false
   }
@@ -548,12 +548,21 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
       clearCmdTimer()
       cmdHoldTimer = setTimeout(() => {
         showCmdHints.value = true
-      }, 200)
+      }, 100)
     }
     return
   }
-  if (showCmdHints.value && cmdPressed.value) {
-    const key = e.key
+  // 只要按住 Option/Alt 就响应数字键跳转，无需等待 hint 显示
+  if (cmdPressed.value) {
+    // Mac 上按 Option + 数字会产生特殊字符，所以用 e.code 判断
+    const codeToKey: Record<string, string> = {
+      'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4', 'Digit5': '5',
+      'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9', 'Digit0': '0',
+      'Numpad1': '1', 'Numpad2': '2', 'Numpad3': '3', 'Numpad4': '4', 'Numpad5': '5',
+      'Numpad6': '6', 'Numpad7': '7', 'Numpad8': '8', 'Numpad9': '9', 'Numpad0': '0'
+    }
+    const key = codeToKey[e.code]
+    if (!key) return
     const targetId = Object.entries(hintKeyById.value).find(([, k]) => k === key)?.[0]
     if (targetId) {
       const bookmark = activeBookmarks.value.find(b => b.id === targetId)
@@ -561,6 +570,7 @@ useEventListener(window, 'keydown', (e: KeyboardEvent) => {
         e.preventDefault()
         e.stopPropagation()
         openBookmarkLink(bookmark)
+        hideCmdHints()
       }
     }
   }
@@ -1026,12 +1036,8 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
               </div>
               <div class="flex items-center gap-2 justify-center">
                 <span class="i-mdi-information-outline" />
-                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入；若导航被焦点影响，可在设置中关闭后改用本界面输入或快捷键。</span>
-                <span v-else>当前使用本界面输入框，可直接输入，或用快捷键快速进入搜索。</span>
-              </div>
-              <div class="flex items-center gap-2 justify-center">
-                <span class="i-mdi-keyboard-outline" />
-                <span>快捷键：Cmd/Ctrl + L / I / K 聚焦搜索</span>
+                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入。</span>
+                <span v-else>当前使用本界面输入框，可直接输入。</span>
               </div>
             </div>
           </div>
@@ -1047,12 +1053,8 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
               </div>
               <div class="flex items-center gap-2 justify-center">
                 <span class="i-mdi-information-outline" />
-                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入；若导航被焦点影响，可在设置中关闭后改用本界面输入或快捷键。</span>
-                <span v-else>当前使用本界面输入框，可直接输入，或用快捷键快速进入搜索。</span>
-              </div>
-              <div class="flex items-center gap-2 justify-center">
-                <span class="i-mdi-keyboard-outline" />
-                <span>快捷键：Cmd/Ctrl + L / I / K 聚焦搜索</span>
+                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入。</span>
+                <span v-else>当前使用本界面输入框，可直接输入。</span>
               </div>
             </div>
           </div>

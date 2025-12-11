@@ -25,7 +25,7 @@ const iconClass = computed(() => props.icon ?? 'i-mdi-information-outline')
       <span :class="cn('shrink-0 text-lg text-primary', iconClass)" />
       <span>{{ title }}</span>
     </div>
-    <p class="leading-relaxed">{{ description }}</p>
+    <p class="leading-relaxed whitespace-pre-line">{{ description }}</p>
   </div>
 </template>
 

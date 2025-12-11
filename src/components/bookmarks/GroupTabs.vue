@@ -63,10 +63,7 @@ const groupContainerClass = computed(() => {
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p class="text-xs space-y-1">
-            <span class="block">直接输入字符即可搜索</span>
-            <span class="block text-muted-foreground">快捷键: ⌘/Ctrl + L / I / K</span>
-          </p>
+          <p class="text-xs">直接输入字符即可搜索</p>
         </TooltipContent>
       </Tooltip>
 
