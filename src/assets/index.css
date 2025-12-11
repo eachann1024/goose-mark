@@ -142,10 +142,18 @@
   body {
     @apply bg-background text-foreground transition-colors duration-300;
   }
+  /* 全局禁止文字选中，仅输入框可选中 */
+  *:not(input):not(textarea) {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  input, textarea {
+    user-select: text;
+    -webkit-user-select: text;
+  }
   /* Prevent dragging of images and links */
   img, a, [role="img"] {
     -webkit-user-drag: none;
     user-drag: none;
-    user-select: none;
   }
 }

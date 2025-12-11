@@ -41,6 +41,7 @@ let previewTimer: ReturnType<typeof setTimeout> | null = null
 let titleTimer: ReturnType<typeof setTimeout> | null = null
 const titleFetchFailed = ref(false)
 const iconLoading = ref(false)
+const iconFetchFailed = ref(false) // 图标获取失败状态
 
 const previewIconStyle = computed(() => {
   if (previewIcon.value?.type === 'text' && previewIcon.value.bgColor) {
@@ -417,6 +418,7 @@ watch(() => draft.url, async (val) => {
   if (previewTimer) clearTimeout(previewTimer)
   previewTimer = setTimeout(async () => {
     iconLoading.value = true
+    iconFetchFailed.value = false
     try {
       const icon = await ensureIconForBookmark({
         id: 'temp',
@@ -426,8 +428,11 @@ watch(() => draft.url, async (val) => {
         tags: []
       }, true)
       previewIcon.value = icon ?? null
+      // 如果返回的是文字图标（非图片），说明获取失败
+      iconFetchFailed.value = !icon || icon.type === 'text'
     } catch {
       previewIcon.value = null
+      iconFetchFailed.value = true
     } finally {
       iconLoading.value = false
     }
@@ -685,7 +690,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
              <!-- Info Card -->
              <div class="flex gap-4 p-4 rounded-xl border border-border bg-muted/10">
                  <!-- Icon -->
-                 <div class="shrink-0">
+                 <div class="shrink-0 flex flex-col items-center gap-1">
                      <div 
                         class="w-16 h-16 rounded-xl border border-border flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
                         :class="{ 'bg-muted/30': !previewIconUrl && !(previewIcon?.type === 'text' && previewIcon.bgColor) }"
@@ -700,6 +705,9 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                           </span>
                         </template>
                      </div>
+                     <p v-if="iconFetchFailed && !iconLoading && draft.url" class="text-[10px] text-muted-foreground text-center max-w-[80px] leading-tight">
+                       可复制网页图标后粘贴
+                     </p>
                  </div>
                  
                  <div class="flex-1 space-y-3">
