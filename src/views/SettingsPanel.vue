@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import { useThemeStore } from '@/stores/theme'
 import { probeUrl, type ProbeResult } from '@/services/siteProbe'
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+
 
 const store = useBookmarkStore()
+const themeStore = useThemeStore()
+
 
 const matching = ref(false)
 const probing = ref(false)
@@ -21,10 +26,131 @@ const newGroupName = ref('')
 const addingSubGroupId = ref('')
 const newSubName = ref('')
 const groupInput = ref<HTMLInputElement[] | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const importing = ref(false)
+const importMode = ref<'overwrite' | 'merge'>('merge')
+const showImportConfirm = ref(false)
+const pendingImportData = ref<{ groups: typeof store.groups; bookmarks: typeof store.bookmarks } | null>(null)
 
 const missingCount = computed(() =>
   store.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
 )
+
+// 导出数据
+const exportData = () => {
+  const data = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    groups: store.groups,
+    bookmarks: store.bookmarks
+  }
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `better-marks-backup-${new Date().toISOString().slice(0, 10)}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+// 触发文件选择
+const triggerImport = () => {
+  fileInputRef.value?.click()
+}
+
+// 处理文件选择
+const handleFileSelect = async (e: Event) => {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  
+  try {
+    const text = await file.text()
+    const data = JSON.parse(text)
+    
+    // 验证数据结构
+    if (!data.groups || !Array.isArray(data.groups) || !data.bookmarks || !Array.isArray(data.bookmarks)) {
+      alert('无效的备份文件格式')
+      return
+    }
+    
+    pendingImportData.value = { groups: data.groups, bookmarks: data.bookmarks }
+    showImportConfirm.value = true
+  } catch {
+    alert('文件解析失败，请确保是有效的 JSON 文件')
+  } finally {
+    input.value = ''
+  }
+}
+
+// 确认导入
+const confirmImport = () => {
+  if (!pendingImportData.value) return
+  importing.value = true
+  
+  try {
+    if (importMode.value === 'overwrite') {
+      // 覆盖模式：直接替换
+      store.$patch({
+        groups: pendingImportData.value.groups,
+        bookmarks: pendingImportData.value.bookmarks
+      })
+    } else {
+      // 合并模式：追加不重复的数据
+      const existingBookmarkIds = new Set(store.bookmarks.map(b => b.id))
+      const existingGroupIds = new Set(store.groups.map(g => g.id))
+      
+      // 合并书签
+      pendingImportData.value.bookmarks.forEach(b => {
+        if (!existingBookmarkIds.has(b.id)) {
+          store.bookmarks.push(b)
+        }
+      })
+      
+      // 合并分组
+      pendingImportData.value.groups.forEach(g => {
+        if (!existingGroupIds.has(g.id)) {
+          store.groups.push(g)
+        } else {
+          // 合并子分组
+          const existingGroup = store.groups.find(eg => eg.id === g.id)
+          if (existingGroup) {
+            const existingSubIds = new Set(existingGroup.children.map(c => c.id))
+            g.children.forEach(sub => {
+              if (!existingSubIds.has(sub.id)) {
+                existingGroup.children.push(sub)
+              } else {
+                // 合并书签 ID
+                const existingSub = existingGroup.children.find(es => es.id === sub.id)
+                if (existingSub) {
+                  const existingBids = new Set(existingSub.bookmarkIds)
+                  sub.bookmarkIds.forEach(bid => {
+                    if (!existingBids.has(bid)) {
+                      existingSub.bookmarkIds.push(bid)
+                    }
+                  })
+                }
+              }
+            })
+          }
+        }
+      })
+    }
+  } finally {
+    importing.value = false
+    showImportConfirm.value = false
+    pendingImportData.value = null
+  }
+}
+
+const cancelImport = () => {
+  showImportConfirm.value = false
+  pendingImportData.value = null
+}
 
 const matchMissing = async () => {
   if (matching.value) return
@@ -110,6 +236,53 @@ const cancelAddSub = () => {
 
 <template>
   <div class="grid gap-6">
+    <!-- Theme Selection Card -->
+    <Card>
+       <CardHeader>
+         <CardTitle>主题风格</CardTitle>
+         <CardDescription>选择应用的主题色系</CardDescription>
+       </CardHeader>
+       <CardContent>
+          <div class="flex gap-6">
+            <!-- Monochrome (Default) -->
+            <div 
+              class="flex flex-col items-center gap-2 cursor-pointer group"
+              @click="themeStore.setTheme('default')"
+            >
+               <div 
+                 class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all"
+                 :class="themeStore.currentTheme === 'default' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
+               >
+                  <div class="w-1/2 h-full bg-zinc-900"></div>
+                  <div class="w-1/2 h-full bg-white"></div>
+               </div>
+               <span 
+                 class="text-sm font-medium transition-colors"
+                 :class="themeStore.currentTheme === 'default' ? 'text-primary' : 'text-muted-foreground'"
+               >默认黑白</span>
+            </div>
+
+            <!-- Coffee -->
+            <div 
+              class="flex flex-col items-center gap-2 cursor-pointer group"
+              @click="themeStore.setTheme('coffee')"
+            >
+               <div 
+                 class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all"
+                 :class="themeStore.currentTheme === 'coffee' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
+               >
+                  <div class="w-1/2 h-full bg-[#392623]"></div>
+                  <div class="w-1/2 h-full bg-[#FEE9DF]"></div>
+               </div>
+               <span 
+                 class="text-sm font-medium transition-colors"
+                 :class="themeStore.currentTheme === 'coffee' ? 'text-primary' : 'text-muted-foreground'"
+               >醇香拿铁</span>
+            </div>
+          </div>
+       </CardContent>
+    </Card>
+
     <!-- Category Management Card -->
     <Card>
        <CardHeader>
@@ -311,9 +484,39 @@ const cancelAddSub = () => {
                <span v-if="probing" class="i-mdi-loading animate-spin mr-2" />
                {{ probing ? '检测中...' : '开始检测' }}
              </Button>
-          </CardContent>
-       </Card>
-    </div>
+           </CardContent>
+        </Card>
+        
+        <!-- Import/Export -->
+        <Card class="md:col-span-2">
+           <CardHeader class="pb-3">
+              <CardTitle class="text-base">数据管理</CardTitle>
+              <CardDescription>导入导出书签数据，便于备份与迁移</CardDescription>
+           </CardHeader>
+           <CardContent>
+              <div class="flex gap-3">
+                 <Button class="flex-1" variant="secondary" @click="exportData">
+                   <span class="i-mdi-export mr-2" />
+                   导出数据
+                 </Button>
+                 <Button class="flex-1" variant="outline" @click="triggerImport">
+                   <span class="i-mdi-import mr-2" />
+                   导入数据
+                 </Button>
+                 <input
+                   ref="fileInputRef"
+                   type="file"
+                   accept=".json"
+                   class="hidden"
+                   @change="handleFileSelect"
+                 />
+              </div>
+              <p class="text-xs text-muted-foreground mt-2">
+                导出的 JSON 文件包含所有分组和书签数据
+              </p>
+           </CardContent>
+        </Card>
+     </div>
 
     <!-- Probe Results -->
     <Card v-if="probeResult.length" class="animate-in fade-in slide-in-from-bottom-4">
@@ -339,6 +542,75 @@ const cancelAddSub = () => {
           </div>
        </CardContent>
     </Card>
+    
+    <!-- Import Confirmation Dialog -->
+    <Dialog :open="showImportConfirm" @update:open="v => !v && cancelImport()">
+       <DialogContent class="sm:max-w-md">
+          <DialogHeader>
+             <DialogTitle>确认导入</DialogTitle>
+             <DialogDescription>
+               将从备份文件中导入数据，请选择导入模式
+             </DialogDescription>
+          </DialogHeader>
+          
+          <div class="space-y-4 py-4">
+             <div v-if="pendingImportData" class="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
+                <div class="flex items-center justify-between">
+                   <span class="text-muted-foreground">分组数量</span>
+                   <span class="font-medium">{{ pendingImportData.groups.length }}</span>
+                </div>
+                <div class="flex items-center justify-between">
+                   <span class="text-muted-foreground">书签数量</span>
+                   <span class="font-medium">{{ pendingImportData.bookmarks.length }}</span>
+                </div>
+             </div>
+             
+             <div class="space-y-3">
+                <span class="text-sm font-medium">导入模式</span>
+                <div class="grid gap-2">
+                   <label 
+                     class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                     :class="importMode === 'merge' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
+                   >
+                     <input 
+                       v-model="importMode" 
+                       type="radio" 
+                       value="merge" 
+                       class="h-4 w-4 text-primary"
+                     />
+                     <div>
+                        <div class="font-medium text-sm">合并模式</div>
+                        <div class="text-xs text-muted-foreground">保留现有数据，仅添加新的书签和分组</div>
+                     </div>
+                   </label>
+                   <label 
+                     class="flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
+                     :class="importMode === 'overwrite' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
+                   >
+                     <input 
+                       v-model="importMode" 
+                       type="radio" 
+                       value="overwrite" 
+                       class="h-4 w-4 text-primary"
+                     />
+                     <div>
+                        <div class="font-medium text-sm">覆盖模式</div>
+                        <div class="text-xs text-muted-foreground text-amber-500">清空现有数据，完全使用备份内容替换</div>
+                     </div>
+                   </label>
+                </div>
+             </div>
+          </div>
+          
+          <DialogFooter class="gap-2 sm:gap-0">
+             <Button variant="ghost" @click="cancelImport">取消</Button>
+             <Button :disabled="importing" @click="confirmImport">
+               <span v-if="importing" class="i-mdi-loading animate-spin mr-2" />
+               确认导入
+             </Button>
+          </DialogFooter>
+       </DialogContent>
+    </Dialog>
   </div>
 </template>
 
