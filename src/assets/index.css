@@ -67,13 +67,73 @@
     --ring: 240 4.9% 83.9%;
   }
 
-  /* Support system preference via media query if no class is present? 
-     Tailwind 'class' mode disables media query support unless we handle it manually or simple @media (prefers-color-scheme: dark) { :root { ... } } 
-     But creating conflict with .dark class toggler. 
-     Usually best to use JS to detect and add class. 
-     For now, let's add a script in index.html or App.vue to sync.
-  */
+  /* Coffee Theme */
+  [data-theme='coffee'] {
+    /* Light Mode Coffee */
+    --background: 28 66% 96%; /* #FFF4E8 */
+    --foreground: 10 24% 18%; /* #392623 */
+    
+    --card: 20 80% 93%; /* #FEE9DF */
+    --card-foreground: 10 24% 18%;
+
+    --popover: 20 80% 93%;
+    --popover-foreground: 10 24% 18%;
+
+    --primary: 10 24% 18%;
+    --primary-foreground: 28 66% 96%;
+
+    --secondary: 24 30% 90%;
+    --secondary-foreground: 10 24% 18%;
+
+    --muted: 24 30% 90%;
+    --muted-foreground: 10 15% 40%;
+    
+    --accent: 20 40% 85%;
+    --accent-foreground: 10 24% 18%;
+    
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 10 15% 85%;
+    --input: 10 15% 85%;
+    --ring: 10 24% 18%;
+  }
+
+  [data-theme='coffee'].dark {
+    /* Dark Mode Coffee */
+    --background: 10 24% 13%; /* #2A1A17 */
+    --foreground: 28 66% 96%; /* #FFF4E8 */
+
+    --card: 10 24% 18%; /* #392623 */
+    --card-foreground: 28 66% 96%;
+
+    --popover: 10 24% 18%;
+    --popover-foreground: 28 66% 96%;
+
+    --primary: 28 66% 96%;
+    --primary-foreground: 10 24% 13%;
+
+    --secondary: 10 20% 25%;
+    --secondary-foreground: 28 66% 96%;
+
+    --muted: 10 20% 25%;
+    --muted-foreground: 28 30% 70%;
+
+    --accent: 10 20% 25%;
+    --accent-foreground: 28 66% 96%;
+
+    --border: 10 20% 25%;
+    --input: 10 20% 25%;
+    --ring: 28 66% 96%;
+  }
 }
+
+/* Support system preference via media query if no class is present? 
+   Tailwind 'class' mode disables media query support unless we handle it manually or simple @media (prefers-color-scheme: dark) { :root { ... } } 
+   But creating conflict with .dark class toggler. 
+   Usually best to use JS to detect and add class. 
+   For now, let's add a script in index.html or App.vue to sync.
+*/
 
 @layer base {
   * {

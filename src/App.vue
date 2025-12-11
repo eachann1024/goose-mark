@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onMounted } from 'vue'
-import { Plus } from 'lucide-vue-next'
+import { computed, reactive, ref, watch, onMounted, nextTick } from 'vue'
+
 import BookmarkCard from '@/components/BookmarkCard.vue'
 import SettingsPanel from '@/views/SettingsPanel.vue'
 import ContextMenu from '@/components/ContextMenu.vue'
@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog'
 import { Image } from '@/components/ui/image'
-import { Card } from '@/components/ui/card'
+
 import IconSelector from '@/components/IconSelector.vue'
 
 import { useDark, useToggle, onClickOutside, useDebounceFn, useEventListener } from '@vueuse/core'
@@ -30,6 +30,10 @@ const editingId = ref('')
 const showDeleteConfirm = ref(false)
 const confirmDeleteId = ref('')
 
+// 键盘导航状态
+const selectedIndex = ref(-1)
+const bookmarkGridRef = ref<HTMLElement | null>(null)
+
 
 
 const isDark = useDark({
@@ -40,6 +44,14 @@ const isDark = useDark({
 })
 const toggleDark = useToggle(isDark)
 const isUTools = ref(typeof window !== 'undefined' && !!window.utools)
+
+// Theme Logic
+import { useThemeStore } from '@/stores/theme'
+const themeStore = useThemeStore()
+
+watch(() => themeStore.currentTheme, (v) => {
+  document.documentElement.dataset.theme = v
+}, { immediate: true })
 
 // AI Logic
 const isUrlAccessible = ref(false)
@@ -62,13 +74,6 @@ const checkUrl = useDebounceFn(async (url: string) => {
   // Auto-prepend https if missing for check
   if (!/^https?:\/\//i.test(target)) {
      target = 'https://' + target
-  }
-  
-  // Dev mode (no uTools): Bypass probe to avoid CORS issues and always enable if it looks like a URL
-  if (!window.utools) {
-    isUrlAccessible.value = true
-    isCheckingUrl.value = false
-    return
   }
   
   // Optimistic update
@@ -135,6 +140,105 @@ onClickOutside(categorySelectContainer, () => {
 const searchValue = computed({
   get: () => store.search,
   set: v => store.setSearch(v as string)
+})
+
+// 计算当前网格列数（用于左右导航）
+const getGridColumns = (): number => {
+  if (!bookmarkGridRef.value) return 5
+  const style = getComputedStyle(bookmarkGridRef.value)
+  const columns = style.getPropertyValue('grid-template-columns')
+  return columns.split(' ').filter(Boolean).length || 1
+}
+
+// 键盘导航处理
+const handleKeyNavigation = (e: KeyboardEvent) => {
+  // 如果弹窗开启/正在输入，跳过
+  if (showAdd.value || showDeleteConfirm.value || showIconSelector.value || tab.value !== 'bookmarks') return
+  
+  const active = document.activeElement as HTMLElement
+  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
+  
+  const bookmarks = store.filteredBookmarks
+  if (bookmarks.length === 0) return
+  
+  const key = e.key
+  const cols = getGridColumns()
+  const total = bookmarks.length
+  
+  // 添加卡片占据最后一个位置（如果不在回收站）
+  const hasAddCard = !isTrashActive.value
+  const totalSlots = hasAddCard ? total + 1 : total
+  
+  let newIndex = selectedIndex.value
+  
+  switch (key) {
+    case 'ArrowRight':
+      e.preventDefault()
+      if (selectedIndex.value < 0) {
+        newIndex = 0
+      } else {
+        newIndex = Math.min(selectedIndex.value + 1, total - 1)
+      }
+      break
+    case 'ArrowLeft':
+      e.preventDefault()
+      if (selectedIndex.value < 0) {
+        newIndex = 0
+      } else {
+        newIndex = Math.max(selectedIndex.value - 1, 0)
+      }
+      break
+    case 'ArrowDown':
+      e.preventDefault()
+      if (selectedIndex.value < 0) {
+        newIndex = 0
+      } else {
+        // 移动到下一行同一列
+        const nextRowIndex = selectedIndex.value + cols
+        newIndex = Math.min(nextRowIndex, total - 1)
+      }
+      break
+    case 'ArrowUp':
+      e.preventDefault()
+      if (selectedIndex.value < 0) {
+        newIndex = 0
+      } else {
+        // 移动到上一行同一列
+        const prevRowIndex = selectedIndex.value - cols
+        newIndex = Math.max(prevRowIndex, 0)
+      }
+      break
+    case 'Enter':
+      e.preventDefault()
+      if (selectedIndex.value >= 0 && selectedIndex.value < total) {
+        const bookmark = bookmarks[selectedIndex.value]
+        if (bookmark) {
+          if (window.utools) {
+            window.utools.shellOpenExternal(bookmark.url)
+          } else {
+            window.open(bookmark.url, '_blank')
+          }
+        }
+      }
+      return
+    default:
+      return
+  }
+  
+  selectedIndex.value = newIndex
+}
+
+// 监听键盘事件
+useEventListener(window, 'keydown', handleKeyNavigation)
+
+// 搜索变化时重置选中索引
+watch(() => store.search, () => {
+  selectedIndex.value = store.filteredBookmarks.length > 0 ? 0 : -1
+})
+
+// 切换分组时重置选中索引
+watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
+  selectedIndex.value = -1
 })
 
 const draft = reactive({ title: '', url: '', desc: '' })
@@ -342,9 +446,8 @@ const handleSave = async () => {
 }
 
 const handleRemove = (bookmark: Bookmark) => {
-  // Show delete confirmation dialog
-  confirmDeleteId.value = bookmark.id
-  showDeleteConfirm.value = true
+  // BookmarkCard 已经有 Popover 二次确认，直接执行删除
+  store.removeBookmark(bookmark.id)
 }
 
 const handleContextMenu = (e: MouseEvent, bookmark: Bookmark) => {
@@ -368,8 +471,9 @@ const onContextMenuAction = (action: string) => {
       store.restoreBookmark(b.id)
   }
   if (action === 'remove') {
-    // Trigger delete confirmation via handleRemove
-    handleRemove(b)
+    // 右键菜单删除需要 Dialog 确认
+    confirmDeleteId.value = b.id
+    showDeleteConfirm.value = true
   }
 }
 const confirmDelete = () => {
@@ -491,11 +595,16 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
       </aside>
 
       <!-- Bookmarks Grid -->
-      <section v-if="tab === 'bookmarks'" class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 content-start">
+      <section 
+        v-if="tab === 'bookmarks'" 
+        ref="bookmarkGridRef"
+        class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 content-start"
+      >
         <BookmarkCard
-          v-for="bookmark in store.filteredBookmarks"
+          v-for="(bookmark, index) in store.filteredBookmarks"
           :key="bookmark.id"
           :bookmark="bookmark"
+          :selected="selectedIndex === index"
           @remove="handleRemove"
           @edit="openEdit"
           @contextmenu="handleContextMenu($event, bookmark)"

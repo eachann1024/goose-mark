@@ -114,15 +114,8 @@ const handlePaste = async (e: ClipboardEvent) => {
         reader.readAsDataURL(blob)
       }
       break
-    } else if (item.type === 'text/plain') {
-       // Also handle URL pasting?
-       item.getAsString((str) => {
-         if (str.startsWith('http')) {
-            localImageSrc.value = str
-            emitChange()
-         }
-       })
     }
+    // 已移除 text/plain URL 处理：历史遗留代码会将粘贴的 URL 错误设为图标源导致数据混乱
   }
 }
 

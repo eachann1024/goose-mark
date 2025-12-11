@@ -77,7 +77,7 @@ const deletePopoverOpen = ref(false)
     </div>
     
     <!-- Action Buttons -->
-    <div class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10">
+    <div class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
         <!-- Copy button removed as per requirement -->
         <!-- Edit Button -->
         <Tooltip>
@@ -92,10 +92,10 @@ const deletePopoverOpen = ref(false)
         <!-- Delete Button -->
         <Popover v-model:open="deletePopoverOpen">
           <PopoverTrigger asChild>
-             <div class="inline-block"> <!-- Wrap for Tooltip/Popover composition if needed, but direct Button works usually. Trigger asChild logic handles it. -->
+             <div class="inline-block" @click.stop> <!-- 阻止点击事件冒泡到卡片 -->
                <Tooltip>
                  <TooltipTrigger as-child>
-                    <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted hover:text-destructive">
+                    <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted hover:text-destructive" @click.stop>
                       <span class="i-mdi-delete-outline text-xs" />
                     </Button>
                  </TooltipTrigger>
