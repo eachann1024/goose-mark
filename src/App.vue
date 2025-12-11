@@ -8,6 +8,8 @@ import GroupTabs from '@/components/bookmarks/GroupTabs.vue'
 import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
 import BookmarksGrid from '@/components/bookmarks/BookmarksGrid.vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import { useStatsStore } from '@/stores/stats'
+import { useSettingsStore } from '@/stores/settings'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
 import { Button } from '@/components/ui/button'
@@ -24,6 +26,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 
 const store = useBookmarkStore()
+const statsStore = useStatsStore()
+const settingsStore = useSettingsStore()
 const tab = ref<'bookmarks' | 'settings'>('bookmarks')
 const showAdd = ref(false)
 const modalTitle = ref('新建书签')
@@ -37,6 +41,8 @@ const showCategorySelector = ref(false)
 const showIconSelector = ref(false)
 const previewIcon = ref<IconSource | null>(null)
 const formError = ref('')  // 验证错误提示
+const maxTitleLen = 50
+const maxDescLen = 200
 let previewTimer: ReturnType<typeof setTimeout> | null = null
 let titleTimer: ReturnType<typeof setTimeout> | null = null
 const titleFetchFailed = ref(false)
@@ -44,10 +50,13 @@ const iconLoading = ref(false)
 const iconFetchFailed = ref(false) // 图标获取失败状态
 
 const previewIconStyle = computed(() => {
+  if (previewIcon.value?.bgColor) {
+    return { backgroundColor: previewIcon.value.bgColor }
+  }
   if (previewIcon.value?.type === 'text' && previewIcon.value.bgColor) {
     return { backgroundColor: previewIcon.value.bgColor }
   }
-  return {}  // 无背景色时返回空，让 CSS 类处理
+  return { backgroundColor: 'hsl(var(--muted) / 0.35)' }
 })
 
 const previewText = computed(() => {
@@ -56,6 +65,7 @@ const previewText = computed(() => {
 })
 
 const previewIconUrl = computed(() => iconToDisplayUrl(previewIcon.value ?? undefined))
+const titleCount = computed(() => Math.min(draft.title?.length ?? 0, maxTitleLen))
 
 // 键盘导航状态
 const selectedIndex = ref(-1)
@@ -119,33 +129,48 @@ const checkUrl = useDebounceFn(async (url: string) => {
 watch(() => draft.url, (v) => {
   checkUrl(v)
 })
+watch(() => draft.title, (v) => {
+  if (v && v.length > maxTitleLen) {
+    draft.title = v.slice(0, maxTitleLen)
+  }
+})
+watch(() => draft.desc, (v) => {
+  if (v && v.length > maxDescLen) {
+    draft.desc = v.slice(0, maxDescLen)
+  }
+})
 
 const askAI = async () => {
   if (!draft.url || !isUrlAccessible.value) return
-  
+
+  if (!window.utools?.askAI) {
+    formError.value = '当前 uTools 版本不支持 AI，请更新后重试'
+    return
+  }
+
   isGenerating.value = true
+  formError.value = ''
   try {
-    const prompt = `Please generate a concise title and description for this URL: ${draft.url}. Return a JSON object with keys "title" and "desc".`
-    
-    if (window.utools?.askAI) {
-       const res = await window.utools.askAI(prompt)
-       try {
-          const match = res.match(/\{[\s\S]*\}/)
-          const jsonStr = match ? match[0] : res
-          const data = JSON.parse(jsonStr)
-          if (data.title) draft.title = data.title
-          if (data.desc) draft.desc = data.desc
-       } catch {
-          draft.desc = res
-       }
-    } else {
-       // Mock for dev
-       await new Promise(r => setTimeout(r, 1000))
-       draft.title = `AI Title for ${draft.url}`
-       draft.desc = `AI Description for ${draft.url}`
-    }
-  } catch(e) {
-    console.error(e)
+    const prompt = `你是一个书签管理助手。请根据以下网址生成书签信息。
+
+网址: ${draft.url}
+
+要求：
+1. title: 美化后的简洁名称（如 "NotebookLM" 而非 "NotebookLM - Google"），不超过 20 字
+2. desc: 一句话描述该网站的核心功能和使用场景（如 "AI 笔记助手，支持上传文档并智能问答"），不超过 50 字
+
+请返回 JSON 格式：{"title": "...", "desc": "..." }`
+
+    const res = await window.utools.askAI(prompt)
+    const payload = typeof res === 'string' ? res : JSON.stringify(res)
+    const match = payload.match(/\{[\s\S]*\}/)
+    const jsonStr = match ? match[0] : payload
+    const data = JSON.parse(jsonStr)
+    if (data.title) draft.title = data.title
+    if (data.desc) draft.desc = data.desc
+  } catch (e) {
+    console.error('[AI] 调用失败:', e)
+    formError.value = 'AI 生成失败，请稍后重试'
   } finally {
     isGenerating.value = false
   }
@@ -366,6 +391,7 @@ useEventListener(window, 'paste', (e: ClipboardEvent) => {
 onMounted(() => {
   // 执行数据迁移
   store.migrateFromLegacy()
+  statsStore.recordUse('open')
   
   if (window.utools) {
     const syncTheme = () => {
@@ -445,7 +471,14 @@ watch(() => draft.url, async (val) => {
     const shouldUpdate = !currentTitle || currentTitle === hostname
     if (!shouldUpdate) return
     titleFetchFailed.value = false
-    const pageTitle = await fetchPageTitle(val)
+    
+    // 确保 URL 有协议
+    let targetUrl = val
+    if (!/^https?:\/\//i.test(targetUrl)) {
+      targetUrl = 'https://' + targetUrl
+    }
+    
+    const pageTitle = await fetchPageTitle(targetUrl)
     if (pageTitle) {
       // 再次确认用户未手动修改
       const latest = draft.title.trim()
@@ -453,8 +486,18 @@ watch(() => draft.url, async (val) => {
         draft.title = pageTitle
       }
       titleFetchFailed.value = false
+      
+      // 如果开启了自动 AI 生成，在标题获取完成后自动调用
+      if (settingsStore.autoGenerateAI && !editingId.value) {
+        askAI()
+      }
     } else {
       titleFetchFailed.value = true
+      
+      // 即使标题获取失败，也尝试 AI 生成
+      if (settingsStore.autoGenerateAI && !editingId.value) {
+        askAI()
+      }
     }
   }, 600)
 })
@@ -468,6 +511,9 @@ watch(showAdd, (v) => {
 })
 
 const handleSave = async () => {
+  console.log('[Save] handleSave called')
+  console.log('[Save] draftLocations:', JSON.stringify(draftLocations.value))
+  
   // 重置错误
   formError.value = ''
   if (!draft.title.trim() || !draft.url.trim()) {
@@ -522,6 +568,17 @@ const handleSave = async () => {
       draftLocations.value
     )
     if (created && !iconToSave) await store.refreshSingleIcon(created)
+    statsStore.recordUse('add')
+    
+    // 新建书签后跳转到书签所在的第一个分组
+    const firstLoc = draftLocations.value[0]
+    console.log('[Save] Jumping to firstLoc:', JSON.stringify(firstLoc))
+    if (firstLoc) {
+      store.setSearch('')
+      store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
+      tab.value = 'bookmarks'
+      console.log('[Save] Jumped to group:', store.activeGroupId, 'sub:', store.activeSubGroupId)
+    }
   }
   
   showAdd.value = false
@@ -571,6 +628,13 @@ const emptyTrash = () => {
     }
 }
 
+const handleReorder = ({ fromId, toId }: { fromId: string; toId: string }) => {
+  const groupId = store.activeGroupId
+  const subId = store.activeSubGroupId
+  if (!groupId || !subId || groupId === TRASH_GROUP_ID) return
+  store.reorderInSub(groupId, subId, fromId, toId)
+}
+
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
 // 修改：只有一个子分组就隐藏
@@ -585,7 +649,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
 <template>
   <TooltipProvider :delay-duration="100">
-  <div class="min-h-screen flex flex-col bg-background text-foreground" @click="contextMenu.show = false">
+  <div class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="contextMenu.show = false">
     <!-- Top Navigation for Groups -->
     <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
        <GroupTabs
@@ -604,7 +668,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
     </header>
 
     <!-- Main Content with Sub-groups sidebar -->
-    <main class="flex-1 flex px-6 pb-6 gap-4">
+    <main class="flex-1 min-h-0 flex px-6 pb-6 gap-4 overflow-y-auto no-scrollbar">
       <SubGroupSidebar
         :show="tab === 'bookmarks' && shouldShowSubs"
         :active-sub-groups="activeSubGroups"
@@ -620,10 +684,11 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
         :set-grid-ref="setBookmarkGridRef"
         @remove="handleRemove"
         @edit="openEdit"
-        @contextmenu="handleContextMenu"
-        @add="openAdd"
-        @emptyTrash="emptyTrash"
-      />
+      @contextmenu="handleContextMenu"
+      @reorder="handleReorder"
+      @add="openAdd"
+      @emptyTrash="emptyTrash"
+    />
 
       <section v-else class="max-w-4xl mx-auto w-full">
         <SettingsPanel />
@@ -650,12 +715,12 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
          <div class="p-6 space-y-6 min-h-[420px]">
              <!-- URL Input -->
-             <div class="space-y-2">
+             <div class="space-y-3">
                  <div class="flex gap-2 items-center">
-                   <Input 
+                  <Input 
                      v-model="draft.url" 
                      placeholder="https://example.com" 
-                     class="h-12 bg-muted/30 font-mono text-base placeholder:text-muted-foreground/50 flex-1"
+                     class="h-12 bg-muted/30 font-mono text-base placeholder:text-muted-foreground/40 flex-1 px-4"
                      auto-focus
                    />
                      <Tooltip>
@@ -671,10 +736,10 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                            @click="(!draft.url || !isUrlAccessible || isGenerating) ? null : askAI()"
                          >
                             <span v-if="isGenerating" class="i-mdi-loading animate-spin text-xl" />
-                            <span v-else>🪄</span>
-                         </Button>
+                            <span v-else class="i-mdi-sparkles text-xl" />
+                          </Button>
                        </TooltipTrigger>
-                       <TooltipContent>
+                       <TooltipContent class="text-xs text-muted-foreground">
                          <p v-if="!draft.url">请输入网址以使用 AI</p>
                          <p v-else-if="isCheckingUrl">正在检测网址连通性...</p>
                          <p v-else-if="!isUrlAccessible">网址无法访问，AI 无法读取</p>
@@ -699,7 +764,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                      >
                         <div v-if="iconLoading" class="w-8 h-8 border-2 border-primary/60 border-t-transparent rounded-full animate-spin" />
                         <template v-else>
-                          <Image v-if="previewIconUrl" :src="previewIconUrl" class="w-full h-full object-contain" />
+                          <Image v-if="previewIconUrl" :src="previewIconUrl" class="w-4/5 h-4/5 object-contain" />
                           <span v-else class="text-sm font-semibold px-1 text-center" :class="previewIcon?.type === 'text' && previewIcon.bgColor ? 'text-white' : 'text-muted-foreground'">
                             {{ previewIcon?.type === 'text' ? previewIcon.value : previewText }}
                           </span>
@@ -712,24 +777,26 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                  
                  <div class="flex-1 space-y-3">
                      <div class="relative">
-                       <Input 
-                          v-model="draft.title" 
-                          placeholder="网站标题" 
-                          class="h-9 border-0 border-b border-border rounded-none px-0 bg-transparent focus-visible:ring-0 focus-visible:border-primary shadow-none font-bold text-lg placeholder:text-muted-foreground/50 placeholder:font-normal"
-                       />
-                       <span class="absolute right-0 top-2 text-xs text-muted-foreground">{{ draft.title?.length ?? 0 }} / 50</span>
-                       <p v-if="titleFetchFailed" class="text-xs text-muted-foreground mt-1">未能自动获取标题，请手动输入。</p>
-                     </div>
+                  <Input 
+                     v-model="draft.title" 
+                     placeholder="网站标题" 
+                      :maxlength="maxTitleLen"
+                      class="h-12 border-border rounded-md bg-background px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 shadow-none text-base font-semibold placeholder:text-muted-foreground/40"
+                   />
+                     <span class="absolute right-0 top-2 text-xs text-muted-foreground">{{ titleCount }} / {{ maxTitleLen }}</span>
+                     <p v-if="titleFetchFailed" class="text-xs text-muted-foreground mt-1">未能自动获取标题，请手动输入。</p>
+                   </div>
                      <Textarea 
                         v-model="draft.desc" 
                         placeholder="请输入网站简介" 
-                        class="min-h-[60px] resize-none bg-transparent border-0 px-0 focus-visible:ring-0 placeholder:text-muted-foreground/50 text-sm"
+                        :maxlength="maxDescLen"
+                        class="min-h-[80px] resize-none bg-background border border-border rounded-md px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 placeholder:text-muted-foreground/40 text-sm"
                      />
                  </div>
              </div>
 
              <!-- Category Multi-Select -->
-             <div class="space-y-2">
+             <div class="space-y-3">
                 <label class="text-sm font-medium text-muted-foreground flex items-center gap-1">
                    <span class="text-destructive">*</span> 所在分类
                 </label>

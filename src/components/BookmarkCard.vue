@@ -16,6 +16,11 @@ const emit = defineEmits<{
 }>()
 
 const iconUrl = computed(() => iconToDisplayUrl(props.bookmark.icon))
+const iconBgStyle = computed(() => {
+  const icon = props.bookmark.icon
+  if (icon?.bgColor) return { backgroundColor: icon.bgColor }
+  return { backgroundColor: 'hsl(var(--muted) / 0.35)' }
+})
 const letters = computed(() => {
   if (props.bookmark.icon?.type === 'text') return props.bookmark.icon.value.slice(0, 4)
   const title = props.bookmark.title.trim()
@@ -50,12 +55,12 @@ const deletePopoverOpen = ref(false)
           <div 
             class="w-10 h-10 rounded-lg border border-border flex items-center justify-center overflow-hidden transition-colors"
             :class="{ 'bg-muted/30': !iconUrl && (!bookmark.icon?.bgColor) }"
-            :style="bookmark.icon?.type === 'text' && bookmark.icon.bgColor ? { backgroundColor: bookmark.icon.bgColor } : {}"
+            :style="iconBgStyle"
           >
              <Image 
                v-if="iconUrl" 
                :src="iconUrl" 
-               class="w-full h-full object-cover" 
+               class="w-4/5 h-4/5 object-contain" 
              />
              <span 
                 v-else 
@@ -67,12 +72,14 @@ const deletePopoverOpen = ref(false)
 
        <div class="flex-1 min-w-0 flex flex-col gap-0.5 justify-center">
           <div class="flex items-center justify-between">
-             <h3 class="font-medium text-sm truncate pr-2 text-foreground" :title="bookmark.title">
+             <h3 class="font-medium text-sm truncate pr-2 text-foreground break-all" :title="bookmark.title">
                 {{ bookmark.title }}
              </h3>
              <span v-if="bookmark.pinned" class="i-mdi-pin text-primary text-[10px] shrink-0" />
           </div>
-          <p v-if="bookmark.desc" class="text-[10px] text-muted-foreground truncate">{{ bookmark.desc }}</p>
+          <p class="text-[10px] text-muted-foreground truncate min-h-[16px] leading-[1.2]">
+            {{ bookmark.desc || ' ' }}
+          </p>
        </div>
     </div>
     

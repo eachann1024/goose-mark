@@ -18,7 +18,23 @@ const emit = defineEmits<{
   (e: 'contextmenu', event: MouseEvent, bookmark: Bookmark): void
   (e: 'add'): void
   (e: 'emptyTrash'): void
+  (e: 'reorder', payload: { fromId: string; toId: string }): void
 }>()
+
+const draggingId = ref<string | null>(null)
+
+const onDragStart = (e: DragEvent, id: string) => {
+  draggingId.value = id
+  e.dataTransfer?.setData('text/plain', id)
+}
+
+const onDrop = (e: DragEvent, targetId: string) => {
+  const fromId = e.dataTransfer?.getData('text/plain') || draggingId.value
+  if (fromId && fromId !== targetId) {
+    emit('reorder', { fromId, toId: targetId })
+  }
+  draggingId.value = null
+}
 </script>
 
 <template>
@@ -26,26 +42,34 @@ const emit = defineEmits<{
     :ref="setGridRef"
     class="flex-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 content-start"
   >
-    <BookmarkCard
+    <div
       v-for="(bookmark, index) in bookmarks"
       :key="bookmark.id"
-      :bookmark="bookmark"
-      :selected="selectedIndex === index"
-      @remove="emit('remove', bookmark)"
-      @edit="emit('edit', bookmark)"
-      @contextmenu="(e) => emit('contextmenu', e, bookmark)"
-    />
+      draggable="true"
+      @dragstart.stop="onDragStart($event, bookmark.id)"
+      @dragover.prevent
+      @drop.prevent="onDrop($event, bookmark.id)"
+    >
+      <BookmarkCard
+        :bookmark="bookmark"
+        :selected="selectedIndex === index"
+        @remove="emit('remove', bookmark)"
+        @edit="emit('edit', bookmark)"
+        @contextmenu="(e) => emit('contextmenu', e, bookmark)"
+      />
+    </div>
 
     <Tooltip v-if="!isTrashActive">
       <TooltipTrigger as-child>
-        <button
-          class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border border-dashed border-border py-4 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer h-full min-h-[72px] w-full"
+        <Button
+          variant="outline"
+          class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-3 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer h-full min-h-[64px] w-full"
           @click="emit('add')"
         >
           <div class="group-hover:scale-110 transition-transform">
             <Plus class="w-7 h-7" />
           </div>
-        </button>
+        </Button>
       </TooltipTrigger>
       <TooltipContent><p>添加书签</p></TooltipContent>
     </Tooltip>

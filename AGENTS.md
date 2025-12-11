@@ -20,14 +20,19 @@
 - 常见问题/提示类信息统一使用 `src/components/FaqNotice.vue`，采用主题色（primary + muted-foreground），避免硬编码色值，确保暗黑/亮色一致。
 
 ## 书签功能约定
-- 支持一级/二级分类、搜索；添加书签默认存在一级分组，可按需创建二级。
-- 图标获取优先使用本机网络，成功后永久持久化到 userData/bookmarks-icons，24h 冷却；缺失图标支持批量补全；书签编辑时 URL 变更且无图标才重抓。
+- 支持一级/二级分类、搜索（模糊匹配标题、描述、URL、标签）
+- **图标获取策略**：
+  1. DuckDuckGo Icons（`https://icons.duckduckgo.com/ip3/{host}.ico`）优先
+  2. uTools ubrowser 解析网页 HTML 备选（获取 apple-touch-icon/icon/og:image）
+  3. 都失败则显示文字图标
 - 默认图标为文字首字母；回退必须可靠。
-- 设置页包含：缺失图标批量匹配、无效地址检测（本机 HEAD/GET，超时 3s）。
+- **AI 功能**：使用 `window.utools.askAI` 调用 uTools 内置 AI，无需 Mock。
+- 设置页包含：缺失图标批量匹配、无效地址检测（本机 HEAD/GET，超时 3s）、AI 自动生成开关。
 
-## 开发/运行
-- 不要重复执行 `pnpm dev`（默认已启动时）。
-- 调试 uTools：插件中心 -> 开发者工具 -> 选择本目录；控制台在右上角“查看控制台”。
+## 运行环境
+- **预设运行在 uTools 插件环境**，不考虑纯浏览器兼容。
+- 不要重复执行 `pnpm dev`（默认已启动）。
+- 调试 uTools：插件中心 -> 开发者工具 -> 选择本目录；控制台在右上角"查看控制台"。
 
 ## 角色参考
 - 前端：Evan You / Monterail / Bacancy

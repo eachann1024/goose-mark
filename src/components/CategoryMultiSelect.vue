@@ -41,6 +41,9 @@ const isSelected = (groupId: string, subGroupId: string) => {
 
 // 切换选中状态
 const toggleLocation = (groupId: string, subGroupId: string) => {
+  console.log('[CategorySelect] toggleLocation:', groupId, subGroupId)
+  console.log('[CategorySelect] before:', JSON.stringify(selectedLocations.value))
+  
   const idx = selectedLocations.value.findIndex(
     loc => loc.groupId === groupId && loc.subGroupId === subGroupId
   )
@@ -49,6 +52,8 @@ const toggleLocation = (groupId: string, subGroupId: string) => {
   } else {
     selectedLocations.value.push({ groupId, subGroupId })
   }
+  
+  console.log('[CategorySelect] after:', JSON.stringify(selectedLocations.value))
   emit('update:modelValue', [...selectedLocations.value])
 }
 
@@ -130,12 +135,14 @@ const getLocationLabel = (loc: BookmarkLocation) => {
             class="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs"
           >
             <span>{{ getLocationLabel(loc) }}</span>
-            <button
-              class="hover:text-destructive transition-colors"
+            <Button
+              variant="ghost"
+              size="icon"
+              class="h-6 w-6 text-muted-foreground hover:text-destructive"
               @click.stop="removeLocation(loc)"
             >
               <span class="i-mdi-close text-sm" />
-            </button>
+            </Button>
           </div>
         </template>
         <span v-else class="text-muted-foreground text-sm">请选择分类...</span>
