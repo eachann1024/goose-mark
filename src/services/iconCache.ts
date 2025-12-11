@@ -1,6 +1,6 @@
 import type { IconSource, Bookmark } from '@/types/bookmark'
 
-// 简化实现：关闭自动抓取，统一回退为文本图标
+// 文本图标生成
 const textIconFromBookmark = (bookmark: Bookmark): IconSource => {
   const base = bookmark.title.trim() || bookmark.url.trim()
   const text = base ? base.slice(0, 4).toUpperCase() : '•'
@@ -14,16 +14,138 @@ export const iconToDisplayUrl = (icon?: IconSource) => {
   return null
 }
 
-export const fetchAndCacheIcon = async (_url: string, _force = false): Promise<IconSource | null> => {
+/**
+ * 从 DuckDuckGo Icons 服务获取图标（主要方案）
+ * 快速稳定，适合大多数网站
+ */
+const fetchIconFromDuckDuckGo = async (host: string): Promise<string | null> => {
+  try {
+    const ddgUrl = `https://icons.duckduckgo.com/ip3/${host}.ico`
+    const response = await fetch(ddgUrl, { method: 'HEAD' })
+    if (response.ok) {
+      return ddgUrl
+    }
+    return null
+  } catch (e) {
+    console.warn('[IconCache] fetchIconFromDuckDuckGo failed:', e)
+    return null
+  }
+}
+
+/**
+ * 从网页 HTML 获取图标链接（uTools ubrowser 备选方案）
+ * 优先级：apple-touch-icon > SVG > icon/shortcut icon > og:image
+ */
+const fetchIconFromPage = async (url: string): Promise<string | null> => {
+  if (!window.utools?.ubrowser) return null
+  
+  try {
+    const result = await window.utools.ubrowser
+      .goto(url)
+      .wait(2000)
+      .evaluate(() => {
+        const icons: { href: string; priority: number; size: number }[] = []
+        
+        // 1. apple-touch-icon
+        document.querySelectorAll<HTMLLinkElement>('link[rel*="apple-touch-icon"]').forEach(link => {
+          if (link.href) {
+            const sizeMatch = link.sizes?.value?.match(/(\d+)/)
+            const size = sizeMatch ? parseInt(sizeMatch[1]) : 180
+            icons.push({ href: link.href, priority: 3, size })
+          }
+        })
+        
+        // 2. icon / shortcut icon
+        document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"]').forEach(link => {
+          if (link.href) {
+            const sizeMatch = link.sizes?.value?.match(/(\d+)/)
+            const size = sizeMatch ? parseInt(sizeMatch[1]) : 32
+            const isSvg = link.href.endsWith('.svg') || link.type === 'image/svg+xml'
+            icons.push({ href: link.href, priority: isSvg ? 2.5 : 2, size: isSvg ? 999 : size })
+          }
+        })
+        
+        // 3. og:image
+        const ogImage = document.querySelector<HTMLMetaElement>('meta[property="og:image"]')?.content
+        if (ogImage) {
+          icons.push({ href: ogImage, priority: 1, size: 512 })
+        }
+        
+        icons.sort((a, b) => {
+          if (a.priority !== b.priority) return b.priority - a.priority
+          return b.size - a.size
+        })
+        
+        return icons[0]?.href || null
+      })
+      .run({ width: 1024, height: 768, show: false })
+    
+    return result && result.length > 0 ? (result[0] as string | null) : null
+  } catch (e) {
+    console.warn('[IconCache] fetchIconFromPage failed:', e)
+    return null
+  }
+}
+
+/**
+ * 获取图标（多策略）
+ * 1. DuckDuckGo Icons（快速）
+ * 2. uTools ubrowser 解析 HTML（备选）
+ */
+export const fetchAndCacheIcon = async (url: string, _force = false): Promise<IconSource | null> => {
+  if (!url) return null
+  
+  // 确保 URL 有协议
+  let targetUrl = url
+  if (!/^https?:\/\//i.test(targetUrl)) {
+    targetUrl = 'https://' + targetUrl
+  }
+  
+  let host: string
+  try {
+    host = new URL(targetUrl).host
+  } catch {
+    return null
+  }
+  
+  // 策略 1：DuckDuckGo Icons
+  const ddgIcon = await fetchIconFromDuckDuckGo(host)
+  if (ddgIcon) {
+    return { type: 'remote', src: ddgIcon, fetchedAt: Date.now() }
+  }
+  
+  // 策略 2：uTools ubrowser 解析 HTML
+  const pageIcon = await fetchIconFromPage(targetUrl)
+  if (pageIcon) {
+    return { type: 'remote', src: pageIcon, fetchedAt: Date.now() }
+  }
+  
   return null
 }
 
-export const ensureIconForBookmark = async (bookmark: Bookmark, _force = false): Promise<IconSource | undefined> => {
-  if (bookmark.icon) return bookmark.icon
+export const ensureIconForBookmark = async (bookmark: Bookmark, force = false): Promise<IconSource | undefined> => {
+  if (bookmark.icon && bookmark.icon.type !== 'text' && !force) {
+    return bookmark.icon
+  }
+  
+  const fetched = await fetchAndCacheIcon(bookmark.url, force)
+  if (fetched) return fetched
+  
   return textIconFromBookmark(bookmark)
 }
 
-export const bulkMatchMissing = async (_bookmarks: Bookmark[]) => {
-  // 保持签名，返回空映射表示未分配非文本图标
-  return new Map<string, IconSource>()
+export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<string, IconSource>> => {
+  const result = new Map<string, IconSource>()
+  
+  for (const bookmark of bookmarks) {
+    if (!bookmark.icon || bookmark.icon.type === 'text') {
+      const icon = await fetchAndCacheIcon(bookmark.url)
+      if (icon) {
+        result.set(bookmark.id, icon)
+      }
+    }
+  }
+  
+  return result
 }
+
