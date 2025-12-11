@@ -13,6 +13,7 @@ const emit = defineEmits<{
   edit: [Bookmark]
   remove: [Bookmark]
   contextmenu: [MouseEvent]
+  open: [Bookmark]
 }>()
 
 const iconUrl = computed(() => iconToDisplayUrl(props.bookmark.icon))
@@ -141,11 +142,7 @@ onBeforeUnmount(() => {
 })
 
 const openLink = () => {
-  if (window.utools) {
-    window.utools.shellOpenExternal(props.bookmark.url)
-  } else {
-    window.open(props.bookmark.url, '_blank')
-  }
+  emit('open', props.bookmark)
 }
 
 const copyUrl = async () => {

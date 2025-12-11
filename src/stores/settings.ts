@@ -7,7 +7,8 @@ export const useSettingsStore = defineStore('settings', {
     gridColumns: 3,
     searchAutoExitMinutes: 5,
     groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
-    enableSubInput: false
+    enableSubInput: false,
+    autoCloseWindow: true // 独立窗口模式下，打开标签后自动关闭
   }),
   actions: {
     setAutoGenerateAI(value: boolean) {
@@ -26,6 +27,9 @@ export const useSettingsStore = defineStore('settings', {
     },
     setEnableSubInput(value: boolean) {
       this.enableSubInput = !!value
+    },
+    setAutoCloseWindow(value: boolean) {
+      this.autoCloseWindow = !!value
     }
   },
   persist: { storage: utoolsStorage }

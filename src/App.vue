@@ -341,10 +341,8 @@ const searchAutoExitText = computed(() => {
 
 // 计算当前网格列数（用于左右导航）
 const getGridColumns = (): number => {
-  if (!bookmarkGridRef.value) return 5
-  const style = getComputedStyle(bookmarkGridRef.value)
-  const columns = style.getPropertyValue('grid-template-columns')
-  return columns.split(' ').filter(Boolean).length || 1
+  const cols = settingsStore.gridColumns
+  return cols >= 2 && cols <= 5 ? cols : 4
 }
 
 const focusUToolsInput = () => {
@@ -429,6 +427,21 @@ const openSearchView = (options: OpenSearchOptions = {}) => {
 const openBookmarkLink = (bookmark: Bookmark) => {
   if (window.utools) {
     window.utools.shellOpenExternal(bookmark.url)
+    
+    // 独立窗口模式下自动关闭
+    if (settingsStore.autoCloseWindow) {
+      try {
+        // 文档: main=主窗口, detach=分离窗口, browser=createBrowserWindow
+        const type = window.utools.getWindowType?.()
+        const isDetached = type === 'detach' || type === 'browser'
+        
+        if (isDetached) {
+          window.utools.outPlugin()
+        }
+      } catch (e) {
+        console.warn('Failed to auto close window', e)
+      }
+    }
   } else {
     window.open(bookmark.url, '_blank')
   }
@@ -1070,6 +1083,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
             :hint-key-by-id="hintKeyById"
             @remove="handleRemove"
             @edit="openEdit"
+            @open="openBookmarkLink"
             @contextmenu="handleContextMenu"
             @reorder="handleReorder"
           />
@@ -1097,11 +1111,12 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
         :hint-key-by-id="hintKeyById"
         @remove="handleRemove"
         @edit="openEdit"
-      @contextmenu="handleContextMenu"
-      @reorder="handleReorder"
-      @add="openAdd"
-      @emptyTrash="emptyTrash"
-    />
+        @open="openBookmarkLink"
+        @contextmenu="handleContextMenu"
+        @reorder="handleReorder"
+        @add="openAdd"
+        @emptyTrash="emptyTrash"
+      />
 
       <section v-else class="max-w-4xl mx-auto w-full">
         <SettingsPanel />
