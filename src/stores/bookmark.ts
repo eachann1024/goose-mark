@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
+import PinyinMatch from 'pinyin-match'
 import type { Bookmark, Group, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { bulkMatchMissing, ensureIconForBookmark } from '@/services/iconCache'
+import { utoolsStorage } from '@/lib/utoolsStorage'
 
 const uid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`)
 
@@ -72,8 +74,11 @@ export const useBookmarkStore = defineStore('bookmark', {
       const pool = this.currentBookmarks
       if (!query) return pool
       return pool.filter(item => {
-        const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
-        return haystack.includes(query)
+        const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ')
+        // 普通匹配
+        if (haystack.toLowerCase().includes(query)) return true
+        // 拼音匹配
+        return !!PinyinMatch.match(haystack, query)
       })
     },
     // 根据 bookmarkId 获取其所有位置
@@ -354,7 +359,99 @@ export const useBookmarkStore = defineStore('bookmark', {
       const [moved] = list.splice(fromIdx, 1)
       list.splice(toIdx, 0, moved)
       sub.bookmarkIds = list
+    },
+    // 重新排序主分组
+    reorderGroups(newOrder: Group[]) {
+      // 保持 Trash 在最后
+      const trash = this.groups.find(g => g.id === TRASH_GROUP_ID)
+      const filtered = newOrder.filter(g => g.id !== TRASH_GROUP_ID)
+      this.groups = trash ? [...filtered, trash] : filtered
+    },
+    // 重新排序子分组
+    reorderSubGroups(groupId: string, newChildren: Group['children']) {
+      const group = this.groups.find(g => g.id === groupId)
+      if (group) group.children = newChildren
+    },
+    // 移动子分组到另一个主分组
+    moveSubToGroup(sourceGroupId: string, subId: string, targetGroupId: string) {
+      const sourceGroup = this.groups.find(g => g.id === sourceGroupId)
+      const targetGroup = this.groups.find(g => g.id === targetGroupId)
+      if (!sourceGroup || !targetGroup) return false
+      
+      const subIdx = sourceGroup.children.findIndex(c => c.id === subId)
+      if (subIdx === -1) return false
+      
+      const [sub] = sourceGroup.children.splice(subIdx, 1)
+      targetGroup.children.push(sub)
+      
+      // 更新书签的 locations
+      sub.bookmarkIds.forEach(bid => {
+        const bookmark = this.bookmarks.find(b => b.id === bid)
+        if (bookmark?.locations) {
+          bookmark.locations = bookmark.locations.map(loc => 
+            loc.groupId === sourceGroupId && loc.subGroupId === subId
+              ? { ...loc, groupId: targetGroupId }
+              : loc
+          )
+        }
+      })
+      
+      // 如果源分组没有子分组了，创建一个默认子分组
+      if (sourceGroup.children.length === 0) {
+        sourceGroup.children.push({ id: uid(), name: '未分组', bookmarkIds: [] })
+      }
+      
+      return true
+    },
+    // 将子分组升级为主分组
+    promoteSubToGroup(sourceGroupId: string, subId: string) {
+      const sourceGroup = this.groups.find(g => g.id === sourceGroupId)
+      if (!sourceGroup) return null
+      
+      const subIdx = sourceGroup.children.findIndex(c => c.id === subId)
+      if (subIdx === -1) return null
+      
+      const [sub] = sourceGroup.children.splice(subIdx, 1)
+      
+      // 创建新的主分组
+      const newGroup: Group = {
+        id: uid(),
+        name: sub.name,
+        children: [{ id: sub.id, name: '默认', bookmarkIds: sub.bookmarkIds }]
+      }
+      
+      // 插入到 Trash 之前
+      const trashIdx = this.groups.findIndex(g => g.id === TRASH_GROUP_ID)
+      if (trashIdx !== -1) {
+        this.groups.splice(trashIdx, 0, newGroup)
+      } else {
+        this.groups.push(newGroup)
+      }
+      
+      // 更新书签的 locations
+      sub.bookmarkIds.forEach(bid => {
+        const bookmark = this.bookmarks.find(b => b.id === bid)
+        if (bookmark?.locations) {
+          bookmark.locations = bookmark.locations.map(loc =>
+            loc.groupId === sourceGroupId && loc.subGroupId === subId
+              ? { groupId: newGroup.id, subGroupId: sub.id }
+              : loc
+          )
+        }
+      })
+      
+      // 如果源分组没有子分组了，创建一个默认子分组
+      if (sourceGroup.children.length === 0) {
+        sourceGroup.children.push({ id: uid(), name: '未分组', bookmarkIds: [] })
+      }
+      
+      this.activeGroupId = newGroup.id
+      this.activeSubGroupId = sub.id
+      
+      return newGroup
     }
   },
-  persist: true,
+  persist: {
+    storage: utoolsStorage,
+  },
 })
