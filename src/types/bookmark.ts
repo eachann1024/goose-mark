@@ -17,6 +17,7 @@ export interface Bookmark {
   icon?: IconSource
   pinned?: boolean
   locations?: BookmarkLocation[]  // 支持多分组，可选以保持向后兼容
+  allowUniversal?: boolean // 是否注册为 uTools 全局搜索（主输入框任意内容匹配）
 }
 
 export interface SubGroup {

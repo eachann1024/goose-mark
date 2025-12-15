@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string }>()
 const emit = defineEmits<{
-  edit: [Bookmark]
+  edit: [Bookmark, HTMLElement | undefined]
   remove: [Bookmark]
   contextmenu: [MouseEvent]
   open: [Bookmark]
@@ -155,7 +155,7 @@ const deletePopoverOpen = ref(false)
 <template>
   <Card 
     ref="cardEl"
-    class="relative group hover:shadow-lg transition-all dark:hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col justify-center"
+    class="relative group hover:shadow-lg transition-shadow dark:hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col justify-center"
     :class="{ 'border-primary ring-1 ring-primary': selected }"
     @click="openLink"
     @contextmenu.prevent="emit('contextmenu', $event)"
@@ -223,7 +223,7 @@ const deletePopoverOpen = ref(false)
         <!-- Edit Button -->
         <Tooltip>
           <TooltipTrigger as-child>
-            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted" @click.stop="emit('edit', bookmark)">
+            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted" @click.stop="emit('edit', bookmark, cardEl?.$el ?? cardEl ?? undefined)">
               <span class="i-mdi-pencil text-xs" />
             </Button>
           </TooltipTrigger>

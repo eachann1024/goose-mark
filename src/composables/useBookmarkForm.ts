@@ -1,0 +1,430 @@
+
+import { ref, reactive, computed, watch, nextTick } from 'vue'
+import { onClickOutside, useEventListener } from '@vueuse/core'
+import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import { useSettingsStore } from '@/stores/settings'
+import { useStatsStore } from '@/stores/stats'
+import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
+import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
+import { useAI } from './useAI'
+
+type UBrowserApi = {
+  goto: (url: string) => {
+    wait: (ms: number) => {
+      evaluate: <T>(fn: () => T) => {
+        run: (opts: { width: number; height: number; show: boolean }) => Promise<T[]>
+      }
+    }
+  }
+}
+
+type UToolsExtendedApi = {
+    ubrowser?: UBrowserApi
+}
+
+export function useBookmarkForm() {
+  const store = useBookmarkStore()
+  const statsStore = useStatsStore()
+  const settingsStore = useSettingsStore()
+  const { checkUrl, askAI: rawAskAI, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata } = useAI()
+
+  const showAdd = ref(false)
+  const modalTitle = ref('新建书签')
+  const editingId = ref('')
+  
+  const draft = reactive({ 
+    title: '', 
+    url: '', 
+    desc: '',
+    allowUniversal: false
+  })
+  
+  const draftLocations = ref<BookmarkLocation[]>([])
+  const previewIcon = ref<IconSource | null>(null)
+  
+  const showCategorySelector = ref(false)
+  const showIconSelector = ref(false)
+  const categorySelectContainer = ref(null)
+  
+  const formError = ref('')
+  const isSaving = ref(false)
+  
+  const iconLoading = ref(false)
+  const iconFetchFailed = ref(false)
+  const titleFetchFailed = ref(false)
+  
+  const dialogOrigin = ref<{ x: string; y: string } | null>(null)
+
+  let previewTimer: ReturnType<typeof setTimeout> | null = null
+  let titleTimer: ReturnType<typeof setTimeout> | null = null
+
+  // Computed
+  const isEditing = computed(() => !!editingId.value)
+  const maxDescLen = 200
+
+  const previewIconStyle = computed(() => {
+    if (previewIcon.value?.bgColor) {
+      return { backgroundColor: previewIcon.value.bgColor }
+    }
+    return { backgroundColor: 'transparent' }
+  })
+
+  const previewText = computed(() => {
+    const text = (draft.title || draft.url || '').trim()
+    return text ? text.slice(0, 4) : 'ICON'
+  })
+
+  const previewIconUrl = computed(() => iconToDisplayUrl(previewIcon.value ?? undefined))
+
+  const selectedLocationsLabel = computed(() => {
+    if (draftLocations.value.length === 0) return ''
+    return draftLocations.value.map(loc => {
+      const group = store.groups.find(g => g.id === loc.groupId)
+      const sub = group?.children.find(c => c.id === loc.subGroupId)
+      return group && sub ? `${group.name} / ${sub.name}` : ''
+    }).filter(Boolean).join(', ')
+  })
+  
+  const isDraftTemplate = computed(() => /{[^}]+}/.test(draft.url))
+  const getTemplateLabel = (url: string) => {
+      const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
+      return label || '搜索内容'
+  }
+  const draftTemplateLabel = computed(() => getTemplateLabel(draft.url))
+
+  // Helpers
+  const buildTextIcon = (): IconSource => {
+    const base = (draft.title || draft.url).trim()
+    const text = base ? base.slice(0, 4).toUpperCase() : '•'
+    return { type: 'text', value: text }
+  }
+
+  const setDialogOrigin = (eventOrEl?: MouseEvent | HTMLElement) => {
+    if (!eventOrEl) {
+      dialogOrigin.value = null
+      return
+    }
+    
+    let rect: DOMRect | undefined
+    if (eventOrEl instanceof MouseEvent) {
+      const target = eventOrEl.currentTarget as HTMLElement
+      rect = target?.getBoundingClientRect?.()
+    } else if (eventOrEl instanceof HTMLElement) {
+      rect = eventOrEl.getBoundingClientRect()
+    }
+    
+    if (rect) {
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      dialogOrigin.value = {
+        x: `${(centerX / window.innerWidth) * 100}%`,
+        y: `${(centerY / window.innerHeight) * 100}%`
+      }
+    } else {
+      dialogOrigin.value = null
+    }
+  }
+
+  const fetchPageTitle = async (url: string): Promise<string | null> => {
+    const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+    if (!utoolsApi?.ubrowser) return null
+    try {
+      const result = await utoolsApi.ubrowser
+        .goto(url)
+        .wait(2000)
+        .evaluate(() => {
+          const title = (document.title || document.querySelector('title')?.textContent || '').trim()
+          return title || null
+        })
+        .run({ width: 1024, height: 768, show: false })
+      return result && result.length > 0 ? (result[0] as string | null) : null
+    } catch (e) {
+      console.warn('[Bookmark] fetchPageTitle failed', e)
+      return null
+    }
+  }
+
+  const askAI = async () => {
+    if (!draft.url) return
+    const res = await generateMetadata(draft.url)
+    if (res) {
+        if (res.title) draft.title = res.title
+        if (res.desc) draft.desc = res.desc
+    } else {
+        formError.value = aiError.value 
+    }
+  }
+
+  // Actions
+  const openAdd = (eventOrEl?: MouseEvent | HTMLElement) => {
+    setDialogOrigin(eventOrEl)
+    editingId.value = ''
+    modalTitle.value = '新建书签'
+    draft.title = ''
+    draft.url = ''
+    draft.allowUniversal = false
+    draft.desc = ''
+    draftLocations.value = [{ groupId: store.activeGroupId, subGroupId: store.activeSubGroupId }]
+    previewIcon.value = null
+    formError.value = ''
+    showAdd.value = true
+  }
+
+  const openEdit = (bookmark: Bookmark, eventOrEl?: MouseEvent | HTMLElement) => {
+    setDialogOrigin(eventOrEl)
+    editingId.value = bookmark.id
+    modalTitle.value = '编辑书签'
+    draft.title = bookmark.title || ''
+    draft.url = bookmark.url
+    draft.allowUniversal = bookmark.allowUniversal ?? false
+    draft.desc = bookmark.desc || ''
+    previewIcon.value = bookmark.icon ?? null
+    formError.value = ''
+    
+    draftLocations.value = store.getBookmarkLocations(bookmark.id)
+    showAdd.value = true
+  }
+
+  const handleSave = async () => {
+    formError.value = ''
+    if (!draft.title.trim() || !draft.url.trim()) {
+      formError.value = '标题和链接为必填项'
+      return
+    }
+    if (draftLocations.value.length === 0) {
+      formError.value = '请至少选择一个分类'
+      return
+    }
+
+    if (isSaving.value) return
+    isSaving.value = true
+
+    try {
+      const iconToSave = previewIcon.value ?? buildTextIcon()
+
+      if (editingId.value) {
+        store.updateBookmark(editingId.value, {
+          title: draft.title.trim(),
+          url: draft.url.trim(),
+          desc: draft.desc.trim(),
+          allowUniversal: draft.allowUniversal,
+          icon: iconToSave
+        })
+        store.updateBookmarkLocations(editingId.value, draftLocations.value)
+      } else {
+        const created = store.addBookmark(
+          {
+            title: draft.title.trim(),
+            url: draft.url.trim(),
+            desc: draft.desc.trim(),
+            allowUniversal: draft.allowUniversal,
+            tags: [],
+            pinned: false,
+            icon: iconToSave
+          },
+          draftLocations.value
+        )
+        if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created)
+        statsStore.recordUse('add')
+        
+        const firstLoc = draftLocations.value[0]
+        if (firstLoc) {
+             store.setSearch('')
+             store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
+        }
+      }
+      showAdd.value = false
+    } finally {
+      isSaving.value = false
+    }
+  }
+
+  // Watchers & Listeners
+  onClickOutside(categorySelectContainer, () => {
+    showCategorySelector.value = false
+  })
+
+  // Smart Creation Logic
+  watch(() => draft.url, async (val) => {
+    checkUrl(val)
+    
+    if (editingId.value) return
+    
+    if (!val) {
+      if (previewTimer) clearTimeout(previewTimer)
+      if (titleTimer) clearTimeout(titleTimer)
+      previewIcon.value = null
+      titleFetchFailed.value = false
+      iconLoading.value = false
+      return
+    }
+  
+    const resolveHostname = () => {
+      try {
+        const cleanUrl = val.replace(/{[^}]+}/g, '')
+        const u = new URL(cleanUrl.includes('://') ? cleanUrl : 'https://' + cleanUrl)
+        return u.hostname
+      } catch {
+        return ''
+      }
+    }
+    
+    const hostname = resolveHostname()
+    if (!draft.title) {
+      if (hostname) draft.title = hostname
+    }
+  
+    if (previewTimer) clearTimeout(previewTimer)
+    previewTimer = setTimeout(async () => {
+      iconLoading.value = true
+      iconFetchFailed.value = false
+      try {
+        const icon = await ensureIconForBookmark({
+          id: 'temp',
+          title: draft.title || val,
+          url: val,
+          desc: draft.desc,
+          tags: []
+        }, true)
+        previewIcon.value = icon ?? null
+        iconFetchFailed.value = !icon || icon.type === 'text'
+      } catch {
+        previewIcon.value = null
+        iconFetchFailed.value = true
+      } finally {
+        iconLoading.value = false
+      }
+    }, 300)
+  
+    if (titleTimer) clearTimeout(titleTimer)
+    titleTimer = setTimeout(async () => {
+      const currentTitle = draft.title.trim()
+      const shouldUpdate = !currentTitle || currentTitle === hostname
+      if (!shouldUpdate) return
+      titleFetchFailed.value = false
+      
+      let targetUrl = val
+  
+      if (/{[^}]+}/.test(targetUrl)) {
+        try {
+          const temp = targetUrl.replace(/{[^}]+}/g, 'x')
+          const u = new URL(/^https?:\/\//i.test(temp) ? temp : 'https://' + temp)
+          targetUrl = u.origin
+        } catch {
+          targetUrl = targetUrl.replace(/{[^}]+}/g, '')
+        }
+      }
+  
+      if (!/^https?:\/\//i.test(targetUrl)) {
+        targetUrl = 'https://' + targetUrl
+      }
+      
+      const pageTitle = await fetchPageTitle(targetUrl)
+      if (pageTitle) {
+        const latest = draft.title.trim()
+        if (!latest || latest === hostname) {
+          draft.title = pageTitle
+        }
+        titleFetchFailed.value = false
+        
+        if (settingsStore.autoGenerateAI && !editingId.value) {
+          askAI()
+        }
+      } else {
+        titleFetchFailed.value = true
+        if (settingsStore.autoGenerateAI && !editingId.value) {
+          askAI()
+        }
+      }
+    }, 600)
+  })
+
+  // Watchers to reset state
+  watch(isDraftTemplate, (val) => {
+    if (!val) {
+      draft.allowUniversal = false
+    }
+  })
+
+  watch(showAdd, (v) => {
+    if (!v) {
+      previewIcon.value = null
+      showCategorySelector.value = false
+      iconLoading.value = false
+      editingId.value = ''
+      titleFetchFailed.value = false
+      iconFetchFailed.value = false
+      formError.value = ''
+      isSaving.value = false
+    }
+  })
+
+  // Paste Listener
+  useEventListener(window, 'paste', (e: ClipboardEvent) => {
+    if (!showAdd.value) return
+    
+    // Ignore if pasting into input/textarea
+    const active = document.activeElement as HTMLElement
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+      return
+    }
+    
+    const items = e.clipboardData?.items
+    if (!items || items.length === 0) return
+  
+    for (const item of Array.from(items)) {
+      if (item.type.startsWith('image/')) {
+         e.preventDefault() 
+         const file = item.getAsFile()
+         if (file) {
+           const reader = new FileReader()
+           reader.onload = (evt) => {
+              const result = evt.target?.result as string
+              if (result) {
+                previewIcon.value = {
+                  type: 'remote',
+                  src: result,
+                  fetchedAt: Date.now()
+                }
+              }
+           }
+           reader.readAsDataURL(file)
+         }
+         return
+      }
+    }
+  })
+
+  return {
+    showAdd,
+    modalTitle,
+    editingId,
+    draft,
+    draftLocations,
+    previewIcon,
+    showCategorySelector,
+    showIconSelector,
+    categorySelectContainer,
+    formError,
+    isSaving,
+    iconLoading,
+    iconFetchFailed,
+    titleFetchFailed,
+    dialogOrigin,
+    isEditing,
+    maxDescLen,
+    previewIconStyle,
+    previewText,
+    previewIconUrl,
+    selectedLocationsLabel,
+    isDraftTemplate,
+    draftTemplateLabel,
+    openAdd,
+    openEdit,
+    handleSave,
+    askAI,
+    isUrlAccessible,
+    isCheckingUrl,
+    isGenerating,
+  }
+}

@@ -112,8 +112,22 @@ const fetchIconFromPage = async (url: string): Promise<string | null> => {
 export const fetchAndCacheIcon = async (url: string, _force = false): Promise<IconSource | null> => {
   if (!url) return null
   
-  // 确保 URL 有协议
+  // 如果包含模板占位符 {xxx}，直接取 Origin，避免参数残留导致页面加载异常或搜索不到
   let targetUrl = url
+  const hasTemplate = /{[^}]+}/.test(url)
+
+  if (hasTemplate) {
+    try {
+      // 临时移除占位符以便解析
+      const temp = url.replace(/{[^}]+}/g, 'x')
+      const u = new URL(/^https?:\/\//i.test(temp) ? temp : 'https://' + temp)
+      targetUrl = u.origin
+    } catch {
+      targetUrl = url.replace(/{[^}]+}/g, '')
+    }
+  }
+
+  // 确保 URL 有协议
   if (!/^https?:\/\//i.test(targetUrl)) {
     targetUrl = 'https://' + targetUrl
   }

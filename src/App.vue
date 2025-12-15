@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch, onMounted, nextTick } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 
 import SettingsPanel from '@/views/SettingsPanel.vue'
 import ContextMenu from '@/components/ContextMenu.vue'
@@ -10,740 +10,255 @@ import BookmarksGrid from '@/components/bookmarks/BookmarksGrid.vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useStatsStore } from '@/stores/stats'
 import { useSettingsStore } from '@/stores/settings'
-import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
-import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogClose } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Image } from '@/components/ui/image'
-
 import IconSelector from '@/components/IconSelector.vue'
-
-import { useDark, useToggle, onClickOutside, useDebounceFn, useEventListener } from '@vueuse/core'
-import PinyinMatch from 'pinyin-match'
-import { probeUrl } from '@/services/siteProbe'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Checkbox } from '@/components/ui/checkbox'
 
+import { useAppState } from '@/composables/useAppState'
+import { useBookmarkOperations } from '@/composables/useBookmarkOperations'
+import { useBookmarkForm } from '@/composables/useBookmarkForm'
+import { useSearch } from '@/composables/useSearch'
+import { useKeyboard } from '@/composables/useKeyboard'
+import { useUTools } from '@/composables/useUTools'
+import { useContextMenu } from '@/composables/useContextMenu'
 
+// Stores
 const store = useBookmarkStore()
 const statsStore = useStatsStore()
 const settingsStore = useSettingsStore()
-const tab = ref<'bookmarks' | 'settings'>('bookmarks')
-const showAdd = ref(false)
-const modalTitle = ref('新建书签')
-const editingId = ref('')
-// Delete confirmation state
-const showDeleteConfirm = ref(false)
-const confirmDeleteId = ref('')
-const draft = reactive({ title: '', url: '', desc: '' })
-const draftLocations = ref<BookmarkLocation[]>([])
-const showCategorySelector = ref(false)
-const showIconSelector = ref(false)
-const previewIcon = ref<IconSource | null>(null)
-const formError = ref('')  // 验证错误提示
-const isSaving = ref(false)
-const maxDescLen = 200
-let previewTimer: ReturnType<typeof setTimeout> | null = null
-let titleTimer: ReturnType<typeof setTimeout> | null = null
-const titleFetchFailed = ref(false)
-const iconLoading = ref(false)
-const iconFetchFailed = ref(false) // 图标获取失败状态
-const isEditing = computed(() => !!editingId.value)
 
-const previewIconStyle = computed(() => {
-  if (previewIcon.value?.bgColor) {
-    return { backgroundColor: previewIcon.value.bgColor }
-  }
-  return { backgroundColor: 'transparent' }
-})
+// Composables
+const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
+const { 
+  openBookmarkLink, 
+  copyBookmarkUrl, 
+  handleRemove, 
+  requestDelete: openDeleteConfirm,
+  confirmDelete, 
+  emptyTrash, 
+  handleReorder,
+  showDeleteConfirm, 
+  confirmDeleteId, 
+  copyNotice,
+  getTemplateLabel
+} = useBookmarkOperations()
 
-const previewText = computed(() => {
-  const text = (draft.title || draft.url || '').trim()
-  return text ? text.slice(0, 4) : 'ICON'
-})
+const {
+  showAdd,
+  modalTitle,
+  editingId,
+  draft,
+  draftLocations,
+  previewIcon,
+  showCategorySelector,
+  showIconSelector,
+  categorySelectContainer,
+  formError,
+  isSaving,
+  iconLoading,
+  iconFetchFailed,
+  titleFetchFailed,
+  dialogOrigin,
+  isEditing,
+  maxDescLen,
+  previewIconStyle,
+  previewText,
+  previewIconUrl,
+  selectedLocationsLabel,
+  isDraftTemplate,
+  draftTemplateLabel,
+  openAdd,
+  openEdit,
+  handleSave,
+  askAI,
+  isUrlAccessible,
+  isCheckingUrl,
+  isGenerating
+} = useBookmarkForm()
 
-const previewIconUrl = computed(() => iconToDisplayUrl(previewIcon.value ?? undefined))
-const buildTextIcon = (): IconSource => {
-  const base = (draft.title || draft.url).trim()
-  const text = base ? base.slice(0, 4).toUpperCase() : '•'
-  return { type: 'text', value: text }
-}
+const {
+  contextMenu,
+  handleContextMenu: onContextMenu,
+  closeContextMenu: closeContext
+} = useContextMenu()
 
-// 键盘导航状态
+const {
+  syncFeatures,
+  getEnterText,
+  isDetachedWindowNow,
+  FEATURE_PREFIX,
+  setExpendHeight
+} = useUTools()
+
+// Shared State
 const selectedIndex = ref(-1)
-const bookmarkGridRef = ref<HTMLElement | null>(null)
-const scrollSelectedIntoView = () => {
-  nextTick(() => {
-    const gridEl = bookmarkGridRef.value
-    if (!gridEl) return
-    const cards = gridEl.querySelectorAll<HTMLElement>('[data-bookmark-index]')
-    const target = cards[selectedIndex.value]
-    target?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
-  })
-}
-watch(selectedIndex, (v) => {
-  if (v >= 0) scrollSelectedIntoView()
-})
 
-
-
-const isDark = useDark({
-  selector: 'html',
-  attribute: 'class',
-  valueDark: 'dark',
-  valueLight: '',
-})
-const toggleDark = useToggle(isDark)
-const isUTools = ref(typeof window !== 'undefined' && !!window.utools)
-const isMac = computed(() => {
-  if (typeof navigator === 'undefined') return false
-  const ua = navigator.userAgent || ''
-  const platform = (navigator as any).platform || ''
-  return /mac/i.test(platform) || /macintosh/i.test(ua)
-})
-
-// Theme Logic
-import { useThemeStore } from '@/stores/theme'
-const themeStore = useThemeStore()
-
-watch(() => themeStore.currentTheme, (v) => {
-  document.documentElement.dataset.theme = v
+// Window Height Watcher
+watch(() => settingsStore.windowHeight, (h) => {
+  setExpendHeight(h)
 }, { immediate: true })
 
-// AI Logic
-const isUrlAccessible = ref(false)
-const isCheckingUrl = ref(false)
-const isGenerating = ref(false)
+// Search
+const {
+  localSearchInputRef,
+  searchViewOpen,
+  searchValue,
+  debouncedSearch, // exposed if needed for debug
+  searchResults,
+  activeBookmarks,
+  searchAutoExitText,
+  openSearchView,
+  closeSearchView,
+  handleTypeToSearch,
+  handleSubInput,
+  focusUToolsInput
+} = useSearch(tab, selectedIndex, isUTools)
 
-const checkUrl = useDebounceFn(async (url: string) => {
-  if (!url) {
-    isUrlAccessible.value = false
-    return
-  }
-  // In Dev environment (no uTools), skip strict probe check to allow UI testing
-  if (!window.utools) {
-     isUrlAccessible.value = true
-     return
-  }
+// Keyboard
+const {
+  bookmarkGridRef,
+  setBookmarkGridRef,
+  cmdPressed,
+  showCmdHints,
+  hintKeyById,
+  hideCmdHints,
+  handleKeyNavigation,
+  handleLocalSearchKey
+} = useKeyboard(
+  selectedIndex, 
+  activeBookmarks, 
+  searchViewOpen, 
+  isMac, 
+  showAdd, 
+  showDeleteConfirm, 
+  showIconSelector, 
+  tab, 
+  openBookmarkLink
+)
 
-  isCheckingUrl.value = true
-  let target = url
-  // Auto-prepend https if missing for check
-  if (!/^https?:\/\//i.test(target)) {
-     target = 'https://' + target
-  }
-  
-  // Optimistic update
-  isUrlAccessible.value = true
-  
-  try {
-     const res = await probeUrl(target)
-     if (!res.ok) isUrlAccessible.value = false
-  } catch {
-     isUrlAccessible.value = false
-  } finally {
-     isCheckingUrl.value = false
-  }
-}, 500)
-
-watch(() => draft.url, (v) => {
-  checkUrl(v)
-})
-watch(() => draft.desc, (v) => {
-  if (v && v.length > maxDescLen) {
-    draft.desc = v.slice(0, maxDescLen)
-  }
-})
-
-const askAI = async () => {
-  if (!draft.url || !isUrlAccessible.value) return
-
-  if (!window.utools?.ai) {
-    formError.value = '当前 uTools 版本不支持 AI，请更新后重试'
-    return
-  }
-
-  isGenerating.value = true
-  formError.value = ''
-  try {
-    const prompt = `你是一个书签管理助手。请根据以下网址生成书签信息。
-
-网址: ${draft.url}
-
-要求：
-1. title: 美化后的简洁名称（如 "NotebookLM" 而非 "NotebookLM - Google"），不超过 20 字
-2. desc: 一句话描述该网站的核心功能和使用场景（如 "AI 笔记助手，支持上传文档并智能问答"），不超过 50 字
-
-请返回 JSON 格式：{"title": "...", "desc": "..." }`
-
-    const res = await window.utools.ai({ prompt })
-    const payload = typeof res === 'string' ? res : JSON.stringify(res)
-    const match = payload.match(/\{[\s\S]*\}/)
-    const jsonStr = match ? match[0] : payload
-    const data = JSON.parse(jsonStr)
-    if (data.title) draft.title = data.title
-    if (data.desc) draft.desc = data.desc
-  } catch (e) {
-    console.error('[AI] 调用失败:', e)
-    formError.value = 'AI 生成失败，请确保 uTools 已配置 AI 服务'
-  } finally {
-    isGenerating.value = false
-  }
-}
-
-const contextMenu = reactive({
-  show: false,
-  x: 0,
-  y: 0,
-  target: null as Bookmark | null
-})
-
-const copyNotice = reactive({
-  visible: false,
-  text: ''
-})
-
-let copyNoticeTimer: ReturnType<typeof setTimeout> | null = null
-
-type UBrowserApi = {
-  goto: (url: string) => {
-    wait: (ms: number) => {
-      evaluate: <T>(fn: () => T) => {
-        run: (opts: { width: number; height: number; show: boolean }) => Promise<T[]>
-      }
-    }
-  }
-}
-
-type UToolsExtendedApi = {
-  copyText?: (text: string) => void
-  showNotification?: (body: string) => void
-  ubrowser?: UBrowserApi
-  isDarkColors?: () => boolean
-  onPluginEnter?: (cb: () => void) => void
-  setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
-  subInputFocus?: () => void
-}
-
-const notifyCopySuccess = () => {
-  copyNotice.text = '已复制链接'
-  copyNotice.visible = true
-  if (copyNoticeTimer) clearTimeout(copyNoticeTimer)
-  copyNoticeTimer = setTimeout(() => {
-    copyNotice.visible = false
-  }, 1400)
-}
-
-const copyBookmarkUrl = async (bookmark: Bookmark) => {
-  try {
-    const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-    if (utoolsApi?.copyText) {
-      utoolsApi.copyText(bookmark.url)
-      notifyCopySuccess()
-      return
-    }
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(bookmark.url)
-      notifyCopySuccess()
-    }
-  } catch (error) {
-    console.warn('[Bookmark] 复制链接失败', error)
-  }
-}
-
-// Click outside logic for Category Selector
-const categorySelectContainer = ref(null)
-onClickOutside(categorySelectContainer, () => {
-  showCategorySelector.value = false
-})
-
-const setBookmarkGridRef = (el: HTMLElement | null) => {
-  bookmarkGridRef.value = el
-}
-
-const localSearchInputRef = ref<HTMLInputElement | { $el?: HTMLElement } | null>(null)
-const searchValue = computed({
-  get: () => store.search,
-  set: v => store.setSearch(v as string)
-})
-
-const handleSubInput = ({ text }: { text: string }) => {
-  store.setSearch(text)
-}
-
-const searchViewOpen = ref(false)
-let searchAutoExitTimer: ReturnType<typeof setTimeout> | null = null
-
-// CMD 快捷跳转提示
-const cmdPressed = ref(false)
-const showCmdHints = ref(false)
-let cmdHoldTimer: ReturnType<typeof setTimeout> | null = null
-const hintKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
-const hintKeyById = computed<Record<string, string>>(() => {
-  const map: Record<string, string> = {}
-  activeBookmarks.value.slice(0, hintKeys.length).forEach((b, idx) => {
-    map[b.id] = hintKeys[idx]
-  })
-  return map
-})
-const clearCmdTimer = () => {
-  if (cmdHoldTimer) {
-    clearTimeout(cmdHoldTimer)
-    cmdHoldTimer = null
-  }
-}
-let cmdHideTimer: ReturnType<typeof setTimeout> | null = null
-const scheduleHideCmdHints = () => {
-  if (cmdHideTimer) {
-    clearTimeout(cmdHideTimer)
-    cmdHideTimer = null
-  }
-  cmdHideTimer = setTimeout(() => {
-    cmdPressed.value = false
-    showCmdHints.value = false
-  }, 200)
-}
-const hideCmdHints = () => {
-  clearCmdTimer()
-  if (cmdHideTimer) {
-    clearTimeout(cmdHideTimer)
-    cmdHideTimer = null
-  }
-  cmdPressed.value = false
-  showCmdHints.value = false
-}
-
-const searchResults = computed(() => {
-  const query = store.search.trim().toLowerCase()
-  if (!query) return [] as Bookmark[]
-
-  const pool = store.bookmarks.filter(item => {
-    const locs = store.getBookmarkLocations(item.id)
-    return !locs.some(loc => loc.groupId === TRASH_GROUP_ID)
-  })
-
-  return pool.filter(item => {
-    const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ')
-    // 普通匹配
-    if (haystack.toLowerCase().includes(query)) return true
-    // 拼音匹配
-    return !!PinyinMatch.match(haystack, query)
-  })
-})
-
-const activeBookmarks = computed(() => searchViewOpen.value ? searchResults.value : store.filteredBookmarks)
-
-const searchAutoExitText = computed(() => {
-  const minutes = settingsStore.searchAutoExitMinutes
-  return minutes > 0 ? `${minutes} 分钟无操作自动退出` : '自动退出已关闭'
-})
-
-// 计算当前网格列数（用于左右导航）
-const getGridColumns = (): number => {
-  const cols = settingsStore.gridColumns
-  return cols >= 2 && cols <= 5 ? cols : 4
-}
-
-const focusUToolsInput = () => {
-  const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-  if (!utoolsApi) return
-  if (typeof utoolsApi.subInputFocus === 'function') {
-    utoolsApi.subInputFocus()
-  }
-}
-
-const getLocalSearchInputEl = () => {
-  const holder = localSearchInputRef.value
-  if (!holder) return null
-  if (holder instanceof HTMLElement) return holder as HTMLInputElement
-  const el = holder.$el
-  return el instanceof HTMLInputElement ? el : null
-}
-
-const focusLocalSearchInput = (selectText = false) => {
-  nextTick(() => {
-    requestAnimationFrame(() => {
-      const el = getLocalSearchInputEl()
-      if (!el) return
-      el.focus()
-      if (selectText) {
-        el.select?.()
-      } else {
-        const len = el.value?.length ?? 0
-        try {
-          el.setSelectionRange(len, len)
-        } catch {
-          // ignore
-        }
-      }
-    })
-  })
-}
-
-const clearSearchAutoExit = () => {
-  if (searchAutoExitTimer) {
-    clearTimeout(searchAutoExitTimer)
-    searchAutoExitTimer = null
-  }
-}
-
-const closeSearchView = () => {
-  searchViewOpen.value = false
-  clearSearchAutoExit()
-  store.setSearch('')
-  selectedIndex.value = -1
-  hideCmdHints()
-}
-
-const scheduleSearchAutoExit = () => {
-  clearSearchAutoExit()
-  if (!searchViewOpen.value) return
-  const minutes = settingsStore.searchAutoExitMinutes
-  if (!minutes || minutes <= 0) return
-  searchAutoExitTimer = setTimeout(() => {
-    closeSearchView()
-  }, minutes * 60 * 1000)
-}
-
-type OpenSearchOptions = { initialQuery?: string; selectText?: boolean }
-const openSearchView = (options: OpenSearchOptions = {}) => {
-  const { initialQuery, selectText = false } = options
-  tab.value = 'bookmarks'
-  searchViewOpen.value = true
-  contextMenu.show = false
-  selectedIndex.value = -1
-  if (typeof initialQuery === 'string') {
-    store.setSearch(initialQuery)
-  }
-  scheduleSearchAutoExit()
-  if (settingsStore.enableSubInput) {
-    focusUToolsInput()
-  } else {
-    focusLocalSearchInput(selectText)
-  }
-}
-
-const openBookmarkLink = (bookmark: Bookmark) => {
-  if (window.utools) {
-    window.utools.shellOpenExternal(bookmark.url)
-    
-    // 独立窗口模式下自动关闭
-    if (settingsStore.autoCloseWindow) {
-      try {
-        // 文档: main=主窗口, detach=分离窗口, browser=createBrowserWindow
-        const type = window.utools.getWindowType?.()
-        const isDetached = type === 'detach' || type === 'browser'
-        
-        if (isDetached) {
-          window.utools.outPlugin()
-        }
-      } catch (e) {
-        console.warn('Failed to auto close window', e)
-      }
-    }
-  } else {
-    window.open(bookmark.url, '_blank')
-  }
-}
-
-// 键盘导航处理
-const handleKeyNavigation = (e: KeyboardEvent) => {
-  // 如果弹窗开启/正在输入，跳过
-  if (showAdd.value || showDeleteConfirm.value || showIconSelector.value || tab.value !== 'bookmarks') return
-  
-  const active = document.activeElement as HTMLElement
-  if (!searchViewOpen.value && active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
-  
-  const key = e.key
-  const bookmarks = activeBookmarks.value
-  if (bookmarks.length === 0) return
-  
-  const cols = getGridColumns()
-  const total = bookmarks.length
-  
-  let newIndex = selectedIndex.value
-  
-  switch (key) {
-    case 'ArrowRight':
-      e.preventDefault()
-      newIndex = selectedIndex.value < 0 ? 0 : Math.min(selectedIndex.value + 1, total - 1)
-      break
-    case 'ArrowLeft':
-      e.preventDefault()
-      newIndex = selectedIndex.value < 0 ? 0 : Math.max(selectedIndex.value - 1, 0)
-      break
-    case 'ArrowDown':
-      e.preventDefault()
-      newIndex = selectedIndex.value < 0 ? 0 : Math.min(selectedIndex.value + cols, total - 1)
-      break
-    case 'ArrowUp':
-      e.preventDefault()
-      newIndex = selectedIndex.value < 0 ? 0 : Math.max(selectedIndex.value - cols, 0)
-      break
-    case 'Enter':
-      e.preventDefault()
-      if (selectedIndex.value >= 0 && selectedIndex.value < bookmarks.length) {
-        const bookmark = bookmarks[selectedIndex.value]
-        if (bookmark) openBookmarkLink(bookmark)
-      }
-      return
-    default:
-      return
-  }
-  
-  selectedIndex.value = newIndex
-  if (newIndex >= 0) scrollSelectedIntoView()
-}
-
-const handleLocalSearchKey = (e: KeyboardEvent) => {
-  if (settingsStore.enableSubInput) return
-  const key = e.key
-  if (key === 'ArrowDown' || key === 'ArrowUp') {
-    e.preventDefault()
-    e.stopPropagation()
-    handleKeyNavigation(e)
-  }
-}
-
-const isEditableElement = (el: HTMLElement | null) => {
-  if (!el) return false
-  const tag = el.tagName
-  return tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable
-}
-
-const handleTypeToSearch = (e: KeyboardEvent) => {
-  if (showAdd.value || showDeleteConfirm.value || showIconSelector.value) return
-  const active = document.activeElement as HTMLElement | null
-  if (isEditableElement(active)) return
-  if (e.metaKey || e.ctrlKey || e.altKey) return
-  const key = e.key
-  if (!key || key.length !== 1) return
-  if (key === ' ' || key < ' ') return
-  e.preventDefault()
-
-  if (!searchViewOpen.value) {
-    store.setSearch(key)
-    openSearchView()
-    return
-  }
-
-  // 搜索已打开但焦点不在输入框时，继续累加字符并聚焦
-  store.setSearch(store.search + key)
-  if (settingsStore.enableSubInput) {
-    focusUToolsInput()
-  } else {
-    focusLocalSearchInput()
-  }
-}
-
-// 监听键盘事件
-useEventListener(window, 'keydown', handleKeyNavigation)
-useEventListener(window, 'keydown', (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && searchViewOpen.value) {
-    e.preventDefault()
-    closeSearchView()
-  }
-})
-useEventListener(window, 'keydown', handleTypeToSearch)
-const isHintHoldKey = (key: string) => {
-  if (isMac.value) return key === 'Alt' || key === 'Control'
-  return key === 'Alt'
-}
-useEventListener(window, 'keydown', (e: KeyboardEvent) => {
-  if (isHintHoldKey(e.key)) {
-    if (!cmdPressed.value) {
-      cmdPressed.value = true
-      if (cmdHideTimer) {
-        clearTimeout(cmdHideTimer)
-        cmdHideTimer = null
-      }
-      clearCmdTimer()
-      cmdHoldTimer = setTimeout(() => {
-        showCmdHints.value = true
-      }, 100)
-    }
-    return
-  }
-  // 只要按住 Option/Alt 就响应数字键跳转，无需等待 hint 显示
-  if (cmdPressed.value) {
-    // Mac 上按 Option + 数字会产生特殊字符，所以用 e.code 判断
-    const codeToKey: Record<string, string> = {
-      'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4', 'Digit5': '5',
-      'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9', 'Digit0': '0',
-      'Numpad1': '1', 'Numpad2': '2', 'Numpad3': '3', 'Numpad4': '4', 'Numpad5': '5',
-      'Numpad6': '6', 'Numpad7': '7', 'Numpad8': '8', 'Numpad9': '9', 'Numpad0': '0'
-    }
-    const key = codeToKey[e.code]
-    if (!key) return
-    const targetId = Object.entries(hintKeyById.value).find(([, k]) => k === key)?.[0]
-    if (targetId) {
-      const bookmark = activeBookmarks.value.find(b => b.id === targetId)
-      if (bookmark) {
-        e.preventDefault()
-        e.stopPropagation()
-        openBookmarkLink(bookmark)
-        hideCmdHints()
-      }
-    }
-  }
-})
-useEventListener(window, 'keyup', (e: KeyboardEvent) => {
-  if (isHintHoldKey(e.key)) {
-    scheduleHideCmdHints()
-  }
-})
-
-// 搜索变化时重置选中索引
-watch(() => store.search, (val) => {
-  if (searchViewOpen.value) {
-    selectedIndex.value = -1
-  } else {
-    const list = activeBookmarks.value
-    selectedIndex.value = list.length > 0 ? 0 : -1
-  }
-  if (val && !searchViewOpen.value) openSearchView()
-  if (searchViewOpen.value) scheduleSearchAutoExit()
+// Coordination Watchers
+// Close context menu on click is handled by template click handler
+watch(() => store.search, () => {
   hideCmdHints()
 })
-
-watch(() => settingsStore.searchAutoExitMinutes, () => {
-  if (searchViewOpen.value) scheduleSearchAutoExit()
+watch(() => tab.value, () => {
+  hideCmdHints()
+  closeContext()
 })
-
-// 切换分组时重置选中索引
+// Reset selected index when group changes
 watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   selectedIndex.value = -1
   hideCmdHints()
+  closeContext() // Also close context menu
 })
 
-watch(() => tab.value, () => {
-  hideCmdHints()
-})
-
-const fetchPageTitle = async (url: string): Promise<string | null> => {
-  const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-  if (!utoolsApi?.ubrowser) return null
-  try {
-    const result = await utoolsApi.ubrowser
-      .goto(url)
-      .wait(2000)
-      .evaluate(() => {
-        const title = (document.title || document.querySelector('title')?.textContent || '').trim()
-        return title || null
-      })
-      .run({ width: 1024, height: 768, show: false })
-    return result && result.length > 0 ? (result[0] as string | null) : null
-  } catch (e) {
-    console.warn('[Bookmark] fetchPageTitle failed', e)
-    return null
+// Context Menu Action Handler
+const onContextMenuAction = (action: string) => {
+  const b = contextMenu.target
+  if (!b) return
+  if (action === 'open') {
+    openBookmarkLink(b)
+  }
+  if (action === 'restore') {
+      store.restoreBookmark(b.id)
+  }
+  if (action === 'remove') {
+    confirmDeleteId.value = b.id
+    showDeleteConfirm.value = true
+  }
+  if (action === 'copy') {
+      // Missing copy action in original? Original called copy immediately on open context menu.
+      // Re-implementing behavior from original:
+      // "void copyBookmarkUrl(bookmark)" was called in handleContextMenu.
+      // But ContextMenu component emits 'action' for other things.
+      // If user clicks "copy" in context menu?
+      // Original ContextMenu.vue likely has 'copy' item? 
+      // Original code:
+      // const handleContextMenu = (e, bookmark) => { ... void copyBookmarkUrl(bookmark) }
+      // So it copied on open.
+      // I should replicate this in my wrapper.
   }
 }
 
-// 选中的分类标签显示
-const selectedLocationsLabel = computed(() => {
-  if (draftLocations.value.length === 0) return ''
-  return draftLocations.value.map(loc => {
-    const group = store.groups.find(g => g.id === loc.groupId)
-    const sub = group?.children.find(c => c.id === loc.subGroupId)
-    return group && sub ? `${group.name} / ${sub.name}` : ''
-  }).filter(Boolean).join(', ')
-})
-
-const openAdd = () => {
-   editingId.value = ''
-   modalTitle.value = '新建书签'
-   draft.title = ''
-   draft.url = ''
-   draft.desc = ''
-   // 默认选择当前激活的分组
-   draftLocations.value = [{ groupId: store.activeGroupId, subGroupId: store.activeSubGroupId }]
-   previewIcon.value = null
-   formError.value = ''
-   showAdd.value = true
+// Wrapper for ContextMenu open to include auto-copy
+const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
+    onContextMenu(e, bookmark)
+    void copyBookmarkUrl(bookmark)
 }
 
-const openEdit = (bookmark: Bookmark) => {
-   editingId.value = bookmark.id
-   modalTitle.value = '编辑书签'
-   draft.title = bookmark.title || ''
-   draft.url = bookmark.url
-   draft.desc = bookmark.desc || ''
-   previewIcon.value = bookmark.icon ?? null
-   formError.value = ''
-   
-   // 获取书签的所有位置
-   draftLocations.value = store.getBookmarkLocations(bookmark.id)
-   showAdd.value = true
-}
+// Group Helpers
+const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
+const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
+const shouldShowSubs = computed(() => activeSubGroups.value.length > 1)
+const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GROUP_ID))
+const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
-// Global Paste Listener for Image Replacement
-useEventListener(window, 'paste', (e: ClipboardEvent) => {
-  if (!showAdd.value) return
-  
-  // Ignore if pasting into input/textarea
-  const active = document.activeElement as HTMLElement
-  if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
-    return
-  }
-  
-  const items = e.clipboardData?.items
-  if (!items || items.length === 0) return
-
-  for (const item of Array.from(items)) {
-    if (item.type.startsWith('image/')) {
-       e.preventDefault() // Prevent default handling
-       const file = item.getAsFile()
-       if (file) {
-         const reader = new FileReader()
-         reader.onload = (evt) => {
-            const result = evt.target?.result as string
-            if (result) {
-              previewIcon.value = {
-                type: 'remote',
-                src: result,
-                fetchedAt: Date.now()
-              }
-            }
-         }
-         reader.readAsDataURL(file)
-       }
-       return
-    }
-  }
-})
-
+// Lifecycle
 onMounted(() => {
-  // 执行数据迁移
   store.migrateFromLegacy()
   statsStore.recordUse('open')
-  
-  // 强制关闭 uTools 子输入框（功能已隐藏）
   settingsStore.setEnableSubInput(false)
   
-  const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+  const utoolsApi = window.utools as any
   if (utoolsApi) {
     const syncTheme = () => {
       try {
          const isdev = utoolsApi.isDarkColors?.()
          if (typeof isdev === 'boolean') {
-           isDark.value = isdev
+           useAppState().isDark.value = isdev // Accessing ref from composable
          }
       } catch (e) {}
     }
     
     syncTheme()
+    syncFeatures(store.bookmarks)
     if (settingsStore.enableSubInput) {
       utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
     }
     
-    utoolsApi.onPluginEnter?.(() => {
+    window.utools?.onPluginEnter?.((params) => {
        syncTheme()
-       // 每次打开插件时清空搜索状态
+       syncFeatures(store.bookmarks)
+
+       const code = params?.code
+       if (typeof code === 'string' && code.startsWith(FEATURE_PREFIX)) {
+         const id = code.slice(FEATURE_PREFIX.length)
+         const bookmark = store.bookmarks.find(b => b.id === id)
+         const query = getEnterText(params?.payload).trim()
+         if (!bookmark) {
+           window.utools?.outPlugin()
+           return
+         }
+         
+         const hasTemplate = /{[^}]+}/.test(bookmark.url)
+         if (hasTemplate && !query) {
+           window.utools?.showNotification?.(`请输入${getTemplateLabel(bookmark.url)}`)
+           window.utools?.outPlugin()
+           return
+         }
+         
+         let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
+         if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+         window.utools?.shellOpenExternal(url)
+         window.utools?.outPlugin()
+         return
+       }
+
        store.setSearch('')
-       searchViewOpen.value = false
-       selectedIndex.value = -1
+       // Reset various states handled by composables?
+       // searchViewOpen.value = false // Already default? 
+       // We might need to force reset if plugin was kept alive.
+       closeSearchView() 
        
+       // Force window height on enter
+       setExpendHeight(settingsStore.windowHeight)
+
        if (settingsStore.enableSubInput) {
          utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
          focusUToolsInput()
@@ -752,240 +267,15 @@ onMounted(() => {
   }
 })
 
-// Smart Creation: Auto-fill title from URL + Icon 预览
-watch(() => draft.url, async (val) => {
-  if (editingId.value) return
-  
-  if (!val) {
-    if (previewTimer) clearTimeout(previewTimer)
-    if (titleTimer) clearTimeout(titleTimer)
-    previewIcon.value = null
-    titleFetchFailed.value = false
-    iconLoading.value = false
-    return
-  }
-
-  const resolveHostname = () => {
-    try {
-      const u = new URL(val)
-      return u.hostname
-    } catch {
-      return ''
-    }
-  }
-  
-  const hostname = resolveHostname()
-  if (!draft.title) {
-    if (hostname) draft.title = hostname
-  }
-
-  if (previewTimer) clearTimeout(previewTimer)
-  previewTimer = setTimeout(async () => {
-    iconLoading.value = true
-    iconFetchFailed.value = false
-    try {
-      const icon = await ensureIconForBookmark({
-        id: 'temp',
-        title: draft.title || val,
-        url: val,
-        desc: draft.desc,
-        tags: []
-      }, true)
-      previewIcon.value = icon ?? null
-      // 如果返回的是文字图标（非图片），说明获取失败
-      iconFetchFailed.value = !icon || icon.type === 'text'
-    } catch {
-      previewIcon.value = null
-      iconFetchFailed.value = true
-    } finally {
-      iconLoading.value = false
-    }
-  }, 300)
-
-  if (titleTimer) clearTimeout(titleTimer)
-  titleTimer = setTimeout(async () => {
-    // 只有在标题为空或仍为默认域名时才自动覆盖
-    const currentTitle = draft.title.trim()
-    const shouldUpdate = !currentTitle || currentTitle === hostname
-    if (!shouldUpdate) return
-    titleFetchFailed.value = false
-    
-    // 确保 URL 有协议
-    let targetUrl = val
-    if (!/^https?:\/\//i.test(targetUrl)) {
-      targetUrl = 'https://' + targetUrl
-    }
-    
-    const pageTitle = await fetchPageTitle(targetUrl)
-    if (pageTitle) {
-      // 再次确认用户未手动修改
-      const latest = draft.title.trim()
-      if (!latest || latest === hostname) {
-        draft.title = pageTitle
-      }
-      titleFetchFailed.value = false
-      
-      // 如果开启了自动 AI 生成，在标题获取完成后自动调用
-      if (settingsStore.autoGenerateAI && !editingId.value) {
-        askAI()
-      }
-    } else {
-      titleFetchFailed.value = true
-      
-      // 即使标题获取失败，也尝试 AI 生成
-      if (settingsStore.autoGenerateAI && !editingId.value) {
-        askAI()
-      }
-    }
-  }, 600)
-})
-
-watch(showAdd, (v) => {
-  if (!v) {
-    previewIcon.value = null
-    showCategorySelector.value = false
-    iconLoading.value = false
-    editingId.value = ''
-    titleFetchFailed.value = false
-    iconFetchFailed.value = false
-    formError.value = ''
-    isSaving.value = false
-  }
-})
-
-watch(tab, (v) => {
-  if (v !== 'bookmarks') {
-    showAdd.value = false
-    editingId.value = ''
-  }
-})
-
-const handleSave = async () => {
-  // 重置错误
-  formError.value = ''
-  if (!draft.title.trim() || !draft.url.trim()) {
-    formError.value = '标题和链接为必填项'
-    return
-  }
-  if (draftLocations.value.length === 0) {
-    formError.value = '请至少选择一个分类'
-    return
-  }
-
-  if (isSaving.value) return
-  isSaving.value = true
-
-  try {
-    const iconToSave = previewIcon.value ?? buildTextIcon()
-
-    if (editingId.value) {
-      // 更新书签属性
-      store.updateBookmark(editingId.value, {
-        title: draft.title.trim(),
-        url: draft.url.trim(),
-        desc: draft.desc.trim(),
-        icon: iconToSave
-      })
-      // 更新分组位置
-      store.updateBookmarkLocations(editingId.value, draftLocations.value)
-    } else {
-      const created = store.addBookmark(
-        {
-          title: draft.title.trim(),
-          url: draft.url.trim(),
-          desc: draft.desc.trim(),
-          tags: [],
-          pinned: false,
-          icon: iconToSave
-        },
-        draftLocations.value
-      )
-      if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created)
-      statsStore.recordUse('add')
-      
-      // 新建书签后跳转到书签所在的第一个分组
-      const firstLoc = draftLocations.value[0]
-      if (firstLoc) {
-        store.setSearch('')
-        store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
-        tab.value = 'bookmarks'
-      }
-    }
-    
-    showAdd.value = false
-  } finally {
-    isSaving.value = false
-  }
-}
-
-const handleRemove = (bookmark: Bookmark) => {
-  // BookmarkCard 已经有 Popover 二次确认，直接执行删除
-  store.removeBookmark(bookmark.id)
-}
-
-const handleContextMenu = (e: MouseEvent, bookmark: Bookmark) => {
-  contextMenu.show = true
-  contextMenu.x = e.clientX
-  contextMenu.y = e.clientY
-  contextMenu.target = bookmark
-  void copyBookmarkUrl(bookmark)
-}
-
-const onContextMenuAction = (action: string) => {
-  const b = contextMenu.target
-  if (!b) return
-  if (action === 'open') {
-    if (window.utools) {
-      window.utools.shellOpenExternal(b.url)
-    } else {
-      window.open(b.url, '_blank')
-    }
-  }
-  if (action === 'restore') {
-      store.restoreBookmark(b.id)
-  }
-  if (action === 'remove') {
-    // 右键菜单删除需要 Dialog 确认
-    confirmDeleteId.value = b.id
-    showDeleteConfirm.value = true
-  }
-}
-const confirmDelete = () => {
-  if (confirmDeleteId.value) {
-    store.removeBookmark(confirmDeleteId.value)
-  }
-  showDeleteConfirm.value = false
-}
-
-const emptyTrash = () => {
-    if (confirm('确定要清空回收站吗？此操作不可恢复。')) {
-        store.emptyTrash()
-    }
-}
-
-const handleReorder = ({ fromId, toId }: { fromId: string; toId: string }) => {
-  if (searchViewOpen.value) return
-  const groupId = store.activeGroupId
-  const subId = store.activeSubGroupId
-  if (!groupId || !subId || groupId === TRASH_GROUP_ID) return
-  store.reorderInSub(groupId, subId, fromId, toId)
-}
-
-const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
-const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
-// 修改：只有一个子分组就隐藏
-const shouldShowSubs = computed(() => {
-  return activeSubGroups.value.length > 1
-})
-
-const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GROUP_ID))
-const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
+watch(() => store.bookmarks, () => {
+  syncFeatures(store.bookmarks)
+}, { deep: true })
 
 </script>
 
 <template>
   <TooltipProvider :delay-duration="100">
-  <div class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="contextMenu.show = false">
+  <div class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="closeContext">
     <!-- Top Navigation for Groups -->
     <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
        <GroupTabs
@@ -1082,9 +372,9 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
             :show-command-hints="showCmdHints"
             :hint-key-by-id="hintKeyById"
             @remove="handleRemove"
-            @edit="openEdit"
+            @edit="(b, el) => openEdit(b, el)"
             @open="openBookmarkLink"
-            @contextmenu="handleContextMenu"
+            @contextmenu="handleContextMenuWrapper"
             @reorder="handleReorder"
           />
         </div>
@@ -1110,11 +400,11 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
         :show-command-hints="showCmdHints"
         :hint-key-by-id="hintKeyById"
         @remove="handleRemove"
-        @edit="openEdit"
+        @edit="(b, el) => openEdit(b, el)"
         @open="openBookmarkLink"
-        @contextmenu="handleContextMenu"
+        @contextmenu="handleContextMenuWrapper"
         @reorder="handleReorder"
-        @add="openAdd"
+        @add="(el) => openAdd(el)"
         @emptyTrash="emptyTrash"
       />
 
@@ -1128,7 +418,7 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
       :x="contextMenu.x" 
       :y="contextMenu.y" 
       :isTrash="isTrashActive"
-      @close="contextMenu.show = false"
+      @close="closeContext"
       @action="onContextMenuAction"
     />
 
@@ -1142,7 +432,11 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
     </Transition>
 
     <Dialog v-model:open="showAdd">
-      <DialogContent class="sm:max-w-[600px] p-0 gap-0 bg-card border-border overflow-visible">
+      <DialogContent 
+        class="sm:max-w-[600px] max-h-[90vh] overflow-y-auto p-0 gap-0 bg-card border-border"
+        :origin-x="dialogOrigin?.x"
+        :origin-y="dialogOrigin?.y"
+      >
          <div class="px-6 py-4 border-b border-border flex items-center justify-between bg-muted/20">
             <DialogTitle class="text-lg font-medium flex items-center gap-2">
                <span class="i-mdi-card-text-outline text-primary text-xl" />
@@ -1150,13 +444,13 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
             </DialogTitle>
          </div>
 
-         <div class="p-6 space-y-6 min-h-[420px]">
+         <div class="p-6 space-y-6">
              <!-- URL Input -->
              <div class="space-y-3">
                  <div class="flex gap-2 items-center">
                   <Input 
                      v-model="draft.url" 
-                     placeholder="https://example.com" 
+                     placeholder="https://example.com 或含 {query} 的搜索模板" 
                      class="h-12 bg-muted/30 font-mono text-base placeholder:text-muted-foreground/40 flex-1 px-4"
                      auto-focus
                    />
@@ -1185,6 +479,42 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                      </Tooltip>
                  </div>
              </div>
+
+             <!-- 模板书签提示 -->
+             <Transition name="fade">
+               <div v-if="isDraftTemplate" class="flex items-start gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20">
+                 <span class="i-mdi-lightbulb-on-outline text-primary text-lg shrink-0 mt-0.5" />
+                 <div class="text-sm text-muted-foreground">
+                    <p class="font-medium text-foreground decoration-dashed decoration-primary underline underline-offset-2">🚀 快捷搜索书签</p>
+                   <p class="mt-1">
+                     保存后，在 uTools 主搜索输入「<span class="text-primary font-medium">{{ draft.title || '书签名' }}</span>」
+                     按 <kbd class="px-1.5 py-0.5 mx-0.5 rounded bg-muted border border-border text-xs font-mono">Tab</kbd> 
+                     输入「{{ draftTemplateLabel }}」即可快速打开
+                   </p>
+                 </div>
+               </div>
+             </Transition>
+
+             <!-- Universal Search Option -->
+             <div v-if="isDraftTemplate">
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <div class="flex items-center gap-2 w-max">
+                        <Checkbox 
+                          id="allowUniversal" 
+                          :checked="draft.allowUniversal"
+                          @update:checked="(v) => draft.allowUniversal = v"
+                        />
+                        <label for="allowUniversal" class="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 select-none cursor-pointer">
+                           开启万能匹配（匹配主输入框任意文本）
+                        </label>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent class="max-w-xs">
+                      <p>勾选后，主输入框输入"任意内容"均可匹配此书签（通常用于聚合搜索）</p>
+                    </TooltipContent>
+                  </Tooltip>
+            </div>
 
              <!-- 错误提示 -->
              <p v-if="formError" class="text-sm text-red-500">{{ formError }}</p>
@@ -1235,26 +565,25 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
                    <span class="text-destructive">*</span> 所在分类
                 </label>
                 
-                <div class="relative" ref="categorySelectContainer">
-                   <div 
-                     class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-muted/50"
-                    @click="showCategorySelector = !showCategorySelector"
-                   >
-                     <div v-if="selectedLocationsLabel" class="flex items-center gap-2 truncate text-primary font-medium">
-                        {{ selectedLocationsLabel }}
-                     </div>
-                     <span v-else class="text-muted-foreground">选择分类...</span>
-                     <span class="i-mdi-chevron-down opacity-50 shrink-0" />
-                   </div>
-
-                   <!-- Multi-Select Dropdown -->
-                   <div v-if="showCategorySelector" class="absolute top-full left-0 z-50 mt-1">
+                <Popover v-model:open="showCategorySelector">
+                  <PopoverTrigger as-child>
+                    <div 
+                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-muted/50"
+                    >
+                      <div v-if="selectedLocationsLabel" class="flex items-center gap-2 truncate text-primary font-medium">
+                         {{ selectedLocationsLabel }}
+                      </div>
+                      <span v-else class="text-muted-foreground">选择分类...</span>
+                      <span class="i-mdi-chevron-down opacity-50 shrink-0" />
+                    </div>
+                  </PopoverTrigger>
+                  <PopoverContent class="w-auto p-0 bg-transparent border-0 shadow-none z-[9999]" align="start">
                       <CategoryMultiSelect 
                         v-model="draftLocations"
                         @close="showCategorySelector = false"
                       />
-                   </div>
-                </div>
+                  </PopoverContent>
+                </Popover>
              </div>
          </div>
 

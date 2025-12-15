@@ -11,7 +11,10 @@
     {
       "code": "bookmarks",
       "explain": "打开极简书签",
-      "cmds": ["书签", "bookmark", "bookmarks"]
+      "cmds": ["书签", "bookmark", "bookmarks"],
+      "window": {
+        "height": 700
+      }
     }
   ]
 }

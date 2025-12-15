@@ -146,9 +146,9 @@ const getLocationLabel = (loc: BookmarkLocation) => {
         <span v-else class="text-muted-foreground text-sm">请选择分类...</span>
       </div>
       
-      <div class="flex justify-end gap-2 mt-3">
-        <Button variant="outline" size="sm" @click="emit('close')">取消</Button>
-        <Button size="sm" @click="emit('close')">确定</Button>
+      <div class="flex items-center justify-end gap-2 mt-3">
+        <Button variant="ghost" size="sm" class="w-16" @click="emit('close')">取消</Button>
+        <Button size="sm" class="w-16" @click="emit('close')">确定</Button>
       </div>
     </div>
   </div>
