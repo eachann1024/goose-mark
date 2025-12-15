@@ -18,6 +18,7 @@ declare module 'vue' {
     CardHeader: typeof import('./components/ui/card/CardHeader.vue')['default']
     CardTitle: typeof import('./components/ui/card/CardTitle.vue')['default']
     CategoryMultiSelect: typeof import('./components/CategoryMultiSelect.vue')['default']
+    Checkbox: typeof import('./components/ui/checkbox/Checkbox.vue')['default']
     ContextMenu: typeof import('./components/ContextMenu.vue')['default']
     Dialog: typeof import('./components/ui/dialog/Dialog.vue')['default']
     DialogClose: typeof import('./components/ui/dialog/DialogClose.vue')['default']

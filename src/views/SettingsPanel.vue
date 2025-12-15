@@ -48,6 +48,14 @@ const requiredClearText = '确认清空'
 const usageMode = ref<'day' | 'week' | 'month'>('day')
 const debugOpen = ref(false)
 const isDragging = ref(false)
+
+// 删除确认 Dialog 相关
+const showDeleteConfirm = ref(false)
+const deleteTarget = ref<{ type: 'group' | 'sub'; groupId: string; subId?: string; name: string } | null>(null)
+
+// 撤回 Toast 相关
+const undoToast = ref<{ visible: boolean; message: string; data: { type: 'group' | 'sub'; groupId: string; subId?: string; name: string; groups: typeof store.groups; bookmarks: typeof store.bookmarks } | null }>({ visible: false, message: '', data: null })
+let undoTimer: ReturnType<typeof setTimeout> | null = null
 const editingLocked = computed(() => !!editingGroupId.value || !!editingSubId.value)
 
 const isMac = computed(() => {
@@ -445,6 +453,71 @@ const cancelAddSub = () => {
   }, 100)
 }
 
+// 打开删除确认弹窗
+const openDeleteConfirm = (type: 'group' | 'sub', groupId: string, name: string, subId?: string) => {
+  deleteTarget.value = { type, groupId, subId, name }
+  showDeleteConfirm.value = true
+}
+
+// 执行删除并显示撤回 Toast
+const handleConfirmDelete = () => {
+  if (!deleteTarget.value) return
+  
+  // 保存当前数据用于撤回
+  const snapshot = {
+    type: deleteTarget.value.type,
+    groupId: deleteTarget.value.groupId,
+    subId: deleteTarget.value.subId,
+    name: deleteTarget.value.name,
+    groups: JSON.parse(JSON.stringify(store.groups)),
+    bookmarks: JSON.parse(JSON.stringify(store.bookmarks))
+  }
+  
+  // 执行删除
+  if (deleteTarget.value.type === 'group') {
+    store.removeGroup(deleteTarget.value.groupId)
+  } else if (deleteTarget.value.subId) {
+    store.removeSubGroup(deleteTarget.value.groupId, deleteTarget.value.subId)
+  }
+  
+  showDeleteConfirm.value = false
+  
+  // 显示撤回 Toast
+  if (undoTimer) clearTimeout(undoTimer)
+  undoToast.value = {
+    visible: true,
+    message: deleteTarget.value.type === 'group' 
+      ? `分组 "${snapshot.name}" 已删除` 
+      : `子分类 "${snapshot.name}" 已删除`,
+    data: snapshot
+  }
+  
+  undoTimer = setTimeout(() => {
+    undoToast.value.visible = false
+    undoToast.value.data = null
+  }, 5000)
+  
+  deleteTarget.value = null
+}
+
+// 撤回删除
+const handleUndo = () => {
+  if (!undoToast.value.data) return
+  
+  // 恢复数据
+  store.groups.splice(0, store.groups.length, ...undoToast.value.data.groups)
+  store.bookmarks.splice(0, store.bookmarks.length, ...undoToast.value.data.bookmarks)
+  
+  if (undoTimer) clearTimeout(undoTimer)
+  undoToast.value = { visible: false, message: '', data: null }
+}
+
+// 关闭 Toast
+const closeUndoToast = () => {
+  if (undoTimer) clearTimeout(undoTimer)
+  undoToast.value = { visible: false, message: '', data: null }
+}
+
 
 </script>
 
@@ -556,25 +629,43 @@ const cancelAddSub = () => {
           <CardDescription>设置窗口的交互方式</CardDescription>
         </CardHeader>
         <CardContent>
-          <label class="flex items-center justify-between cursor-pointer">
-            <div class="space-y-0.5">
-              <div class="text-sm font-medium">独立窗口自动关闭</div>
-              <div class="text-xs text-muted-foreground">在独立窗口模式下，打开书签后自动关闭窗口</div>
+          <div class="flex flex-col gap-4">
+            <div class="flex items-center gap-3 justify-between">
+              <label class="text-sm font-medium">窗口高度</label>
+              <div class="flex items-center gap-2 flex-1 max-w-[200px]">
+                <input
+                  type="range"
+                  min="600"
+                  max="1000"
+                  step="10"
+                  class="flex-1 h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                  :value="settingsStore.windowHeight"
+                  @input="settingsStore.setWindowHeight(Number(($event.target as HTMLInputElement).value))"
+                />
+                <span class="text-sm w-10 text-right">{{ settingsStore.windowHeight }}</span>
+              </div>
             </div>
-            <button 
-              type="button"
-              role="switch"
-              :aria-checked="settingsStore.autoCloseWindow"
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              :class="settingsStore.autoCloseWindow ? 'bg-primary' : 'bg-input'"
-              @click="settingsStore.setAutoCloseWindow(!settingsStore.autoCloseWindow)"
-            >
-              <span 
-                class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                :class="settingsStore.autoCloseWindow ? 'translate-x-5' : 'translate-x-0'"
-              />
-            </button>
-          </label>
+            
+            <label class="flex items-center justify-between cursor-pointer">
+              <div class="space-y-0.5">
+                <div class="text-sm font-medium">独立窗口自动关闭</div>
+                <div class="text-xs text-muted-foreground">在独立窗口模式下，打开书签后自动关闭窗口</div>
+              </div>
+              <button 
+                type="button"
+                role="switch"
+                :aria-checked="settingsStore.autoCloseWindow"
+                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                :class="settingsStore.autoCloseWindow ? 'bg-primary' : 'bg-input'"
+                @click="settingsStore.setAutoCloseWindow(!settingsStore.autoCloseWindow)"
+              >
+                <span 
+                  class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
+                  :class="settingsStore.autoCloseWindow ? 'translate-x-5' : 'translate-x-0'"
+                />
+              </button>
+            </label>
+          </div>
         </CardContent>
       </Card>
 
@@ -737,32 +828,16 @@ const cancelAddSub = () => {
                     >
                       <span class="i-mdi-plus text-base" />
                     </Button>
-                    <Popover>
-                      <PopoverTrigger as-child>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          class="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          title="删除分组"
-                          :disabled="editingLocked"
-                        >
-                          <span class="i-mdi-trash-can-outline text-base" />
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent class="w-64 p-3" align="end">
-                         <div class="space-y-2">
-                            <h4 class="font-medium leading-none text-sm">确认删除？</h4>
-                            <p class="text-xs text-muted-foreground">
-                              分组 "{{ group.name }}" 及其独有的书签将被永久删除。
-                            </p>
-                            <div class="flex justify-end gap-2 pt-1">
-                              <Button size="sm" variant="destructive" class="h-7 px-3 text-xs" @click="store.removeGroup(group.id)">
-                                确认删除
-                              </Button>
-                            </div>
-                         </div>
-                      </PopoverContent>
-                    </Popover>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      class="h-7 w-7 text-muted-foreground hover:text-destructive"
+                      title="删除分组"
+                      :disabled="editingLocked"
+                      @click="openDeleteConfirm('group', group.id, group.name)"
+                    >
+                      <span class="i-mdi-trash-can-outline text-base" />
+                    </Button>
                  </div>
                </div>
                
@@ -817,32 +892,16 @@ const cancelAddSub = () => {
                           >
                             <span class="i-mdi-pencil text-xs" />
                           </Button>
-                          <Popover>
-                             <PopoverTrigger as-child>
-                                <Button 
-                                   variant="ghost"
-                                   size="icon"
-                                   class="h-6 w-6 text-muted-foreground hover:text-destructive"
-                                   title="删除子分类"
-                                  :disabled="editingLocked"
-                                >
-                                   <span class="i-mdi-close text-xs" />
-                                </Button>
-                             </PopoverTrigger>
-                             <PopoverContent class="w-64 p-3" align="end">
-                                <div class="space-y-2">
-                                   <h4 class="font-medium leading-none text-sm">确认删除？</h4>
-                                   <p class="text-xs text-muted-foreground">
-                                     子分类 "{{ sub.name }}" 及其独有的书签将被永久删除。
-                                   </p>
-                                   <div class="flex justify-end gap-2 pt-1">
-                                     <Button size="sm" variant="destructive" class="h-7 px-3 text-xs" @click="store.removeSubGroup(group.id, sub.id)">
-                                       确认删除
-                                     </Button>
-                                   </div>
-                                </div>
-                             </PopoverContent>
-                          </Popover>
+                          <Button 
+                             variant="ghost"
+                             size="icon"
+                             class="h-6 w-6 text-muted-foreground hover:text-destructive"
+                             title="删除子分类"
+                            :disabled="editingLocked"
+                            @click="openDeleteConfirm('sub', group.id, sub.name, sub.id)"
+                          >
+                             <span class="i-mdi-close text-xs" />
+                          </Button>
                       </div>
                    </div>
                  </template>
@@ -882,8 +941,12 @@ const cancelAddSub = () => {
 
    <FaqNotice
       class="mb-2"
-      title="隐藏功能"
-      :description="`· 直接输入字符即可进入搜索，无需点击搜索按钮\n· 按 ESC 退出搜索界面\n· 按住 ${isMac ? 'Option' : 'Alt'} 显示书签序号，配合数字键快速打开\n· 使用 ↑ ↓ ← → 方向键导航，Enter 打开`"
+      title="使用技巧"
+      :description="`· 直接输入字符即可进入搜索，无需点击搜索按钮
+· 按 ESC 退出搜索界面
+· 按住 ${isMac ? 'Option' : 'Alt'} 显示书签序号，配合数字键快速打开
+· 使用 ↑ ↓ ← → 方向键导航，Enter 打开
+· 🚀 快捷搜索：URL 包含 {query} 等占位符的书签，可在 uTools 主搜索输入书签名，按 Tab 后输入关键词直接搜索`"
     />
            
     <!-- Tools Card -->
@@ -1188,6 +1251,54 @@ const cancelAddSub = () => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- Delete Confirmation Dialog -->
+    <Dialog :open="showDeleteConfirm" @update:open="v => { if (!v) showDeleteConfirm = false }">
+      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent>
+        <DialogHeader>
+          <DialogTitle>确认删除？</DialogTitle>
+          <DialogDescription>
+            {{ deleteTarget?.type === 'group' ? '分组' : '子分类' }} "{{ deleteTarget?.name }}" 及其独有的书签将被永久删除。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2 sm:gap-0">
+          <Button variant="ghost" @click="showDeleteConfirm = false">取消</Button>
+          <Button variant="destructive" @click="handleConfirmDelete">
+            确认删除
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Undo Toast -->
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0 translate-y-4"
+        enter-to-class="opacity-100 translate-y-0"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100 translate-y-0"
+        leave-to-class="opacity-0 translate-y-4"
+      >
+        <div
+          v-if="undoToast.visible"
+          class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm"
+        >
+          <span class="i-mdi-delete-outline text-lg text-destructive" />
+          <span class="text-sm text-foreground">{{ undoToast.message }}</span>
+          <Button size="sm" variant="outline" class="h-7 px-3 text-xs ml-2" @click="handleUndo">
+            撤回
+          </Button>
+          <button 
+            class="ml-1 p-1 rounded hover:bg-muted transition-colors" 
+            @click="closeUndoToast"
+            title="关闭"
+          >
+            <span class="i-mdi-close text-sm text-muted-foreground" />
+          </button>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 

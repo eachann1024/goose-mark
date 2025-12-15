@@ -70,14 +70,14 @@ export const useBookmarkStore = defineStore('bookmark', {
         .filter((b): b is Bookmark => !!b)
     },
     filteredBookmarks(): Bookmark[] {
-      const query = this.search.trim().toLowerCase()
+      const query = (typeof this.search === 'string' ? this.search : '').trim().toLowerCase()
       const pool = this.currentBookmarks
       if (!query) return pool
       return pool.filter(item => {
-        const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ')
-        // 普通匹配
-        if (haystack.toLowerCase().includes(query)) return true
-        // 拼音匹配
+        const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
+        // 普通匹配优先（性能更好）
+        if (haystack.includes(query)) return true
+        // 拼音匹配仅在普通匹配失败时触发
         return !!PinyinMatch.match(haystack, query)
       })
     },
@@ -170,7 +170,7 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (sub) sub.name = name
     },
     setSearch(value: string) {
-      this.search = value
+      this.search = typeof value === 'string' ? value : ''
     },
     selectGroup(groupId: string, subId?: string) {
       this.activeGroupId = groupId
@@ -204,20 +204,44 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
     // 更新书签分组位置
     updateBookmarkLocations(bookmarkId: string, newLocations: BookmarkLocation[]) {
-      // 先从所有位置移除
+      // 构建新位置的 key 集合便于快速查找
+      const newLocSet = new Set(newLocations.map(loc => `${loc.groupId}:${loc.subGroupId}`))
+      
+      // 记录书签在各个子分组中的原始位置索引
+      const originalIndexMap = new Map<string, number>()
       this.groups.forEach(g => {
         g.children.forEach(sub => {
-          sub.bookmarkIds = sub.bookmarkIds.filter(id => id !== bookmarkId)
+          const idx = sub.bookmarkIds.indexOf(bookmarkId)
+          if (idx !== -1) {
+            originalIndexMap.set(`${g.id}:${sub.id}`, idx)
+          }
         })
       })
       
-      // 添加到新位置
+      // 从不在新位置列表中的分组移除
+      this.groups.forEach(g => {
+        g.children.forEach(sub => {
+          const key = `${g.id}:${sub.id}`
+          if (!newLocSet.has(key)) {
+            sub.bookmarkIds = sub.bookmarkIds.filter(id => id !== bookmarkId)
+          }
+        })
+      })
+      
+      // 添加到新位置（如果原本就在该位置则保持原顺序）
       newLocations.forEach(loc => {
         const group = this.groups.find(g => g.id === loc.groupId)
         const sub = group?.children.find(c => c.id === loc.subGroupId)
-        if (sub && !sub.bookmarkIds.includes(bookmarkId)) {
+        if (!sub) return
+        
+        const key = `${loc.groupId}:${loc.subGroupId}`
+        const existingIdx = sub.bookmarkIds.indexOf(bookmarkId)
+        
+        if (existingIdx === -1) {
+          // 新位置，添加到末尾
           sub.bookmarkIds.push(bookmarkId)
         }
+        // 如果已存在则保持原位置不变
       })
       
       // 更新书签的 locations 字段

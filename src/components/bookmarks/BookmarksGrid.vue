@@ -20,10 +20,10 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'remove', bookmark: Bookmark): void
-  (e: 'edit', bookmark: Bookmark): void
+  (e: 'edit', bookmark: Bookmark, el?: HTMLElement): void
   (e: 'open', bookmark: Bookmark): void
   (e: 'contextmenu', event: MouseEvent, bookmark: Bookmark): void
-  (e: 'add'): void
+  (e: 'add', el?: HTMLElement): void
   (e: 'emptyTrash'): void
   (e: 'reorder', payload: { fromId: string; toId: string }): void
   (e: 'update:bookmarks', bookmarks: Bookmark[]): void
@@ -81,7 +81,7 @@ const gridStyle = computed(() => {
             :show-hint="showCommandHints"
             :hint-key="hintKeyById?.[bookmark.id]"
             @remove="emit('remove', bookmark)"
-            @edit="emit('edit', bookmark)"
+            @edit="(b, el) => emit('edit', b, el)"
             @open="emit('open', bookmark)"
             @contextmenu="(e) => emit('contextmenu', e, bookmark)"
           />
@@ -93,8 +93,8 @@ const gridStyle = computed(() => {
             <TooltipTrigger as-child>
               <Button
                 variant="outline"
-                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-2.5 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-all cursor-pointer min-h-[60px] w-full"
-                @click="emit('add')"
+                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-2.5 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-colors cursor-pointer min-h-[60px] w-full"
+                @click="(e: MouseEvent) => emit('add', e.currentTarget as HTMLElement)"
               >
                 <div class="group-hover:scale-110 transition-transform">
                   <Plus class="w-7 h-7" />

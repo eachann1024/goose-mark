@@ -8,7 +8,8 @@ export const useSettingsStore = defineStore('settings', {
     searchAutoExitMinutes: 5,
     groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
     enableSubInput: false,
-    autoCloseWindow: true // 独立窗口模式下，打开标签后自动关闭
+    autoCloseWindow: true, // 独立窗口模式下，打开标签后自动关闭
+    windowHeight: 700
   }),
   actions: {
     setAutoGenerateAI(value: boolean) {
@@ -30,6 +31,10 @@ export const useSettingsStore = defineStore('settings', {
     },
     setAutoCloseWindow(value: boolean) {
       this.autoCloseWindow = !!value
+    },
+    setWindowHeight(value: number) {
+      const num = Number.isFinite(value) ? value : 0
+      this.windowHeight = num < 100 ? 100 : Math.round(num)
     }
   },
   persist: { storage: utoolsStorage }
