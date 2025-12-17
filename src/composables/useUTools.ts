@@ -3,36 +3,67 @@ import type { Bookmark } from '@/types/bookmark'
 
 const FEATURE_PREFIX = 'bm_tpl:'
 
-// 图标 base64 缓存
-const iconBase64Cache = new Map<string, string>()
+// 获取图标保存目录
+const getIconDir = (): string | null => {
+  try {
+    const ut = window.utools as any
+    if (!ut?.getPath) return null
+    const userData = ut.getPath('userData')
+    if (!userData) return null
+    return `${userData}/bookmark-icons`
+  } catch {
+    return null
+  }
+}
 
-// 将远程图片 URL 转换为 base64
-const urlToBase64 = async (url: string): Promise<string | null> => {
+// 确保目录存在
+const ensureDir = (dir: string): boolean => {
+  try {
+    const fs = (window as any).require?.('fs')
+    if (!fs) return false
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true })
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
+// 下载图标并保存为本地文件
+const saveIconToLocal = async (url: string, bookmarkId: string): Promise<string | null> => {
   if (!url) return null
   
-  // 已经是 base64 格式
-  if (url.startsWith('data:')) return url
-  
-  // 检查缓存
-  if (iconBase64Cache.has(url)) {
-    return iconBase64Cache.get(url)!
-  }
+  const iconDir = getIconDir()
+  if (!iconDir) return null
+  if (!ensureDir(iconDir)) return null
   
   try {
+    const fs = (window as any).require?.('fs')
+    const path = (window as any).require?.('path')
+    if (!fs || !path) return null
+    
+    // 确定文件扩展名
+    let ext = '.png'
+    if (url.includes('.ico')) ext = '.ico'
+    else if (url.includes('.svg')) ext = '.svg'
+    else if (url.includes('.jpg') || url.includes('.jpeg')) ext = '.jpg'
+    
+    const iconPath = path.join(iconDir, `${bookmarkId}${ext}`)
+    
+    // 如果文件已存在，直接返回路径
+    if (fs.existsSync(iconPath)) {
+      return iconPath
+    }
+    
+    // 下载图标
     const response = await fetch(url)
     if (!response.ok) return null
     
-    const blob = await response.blob()
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onloadend = () => {
-        const base64 = reader.result as string
-        if (base64) iconBase64Cache.set(url, base64)
-        resolve(base64 || null)
-      }
-      reader.onerror = () => resolve(null)
-      reader.readAsDataURL(blob)
-    })
+    const buffer = await response.arrayBuffer()
+    fs.writeFileSync(iconPath, Buffer.from(buffer))
+    
+    return iconPath
   } catch {
     return null
   }
@@ -63,7 +94,7 @@ export function useUTools() {
     
     existingCodes.forEach(code => ut.removeFeature(code))
 
-    // 2. 筛选并去重（同步处理，避免并发竞争）
+    // 2. 筛选并去重
     const desired = bookmarks.filter(b => isTemplateBookmark(b) || isUniversalBookmark(b))
     const seenCmd = new Set<string>()
     const unique = desired.filter(b => {
@@ -73,7 +104,7 @@ export function useUTools() {
       return true
     })
 
-    // 3. 串行注册所有特性（确保图标正确设置）
+    // 3. 串行注册所有特性
     for (const b of unique) {
       const cmd = b.title.trim()
       const code = `${FEATURE_PREFIX}${b.id}`
@@ -98,14 +129,10 @@ export function useUTools() {
         cmds 
       }
       
-      // 转换图标为 base64
-      if (b.icon) {
-        if (b.icon.type === 'remote' && b.icon.src) {
-          const base64 = await urlToBase64(b.icon.src)
-          if (base64) feature.icon = base64
-        } else if (b.icon.type === 'file' && b.icon.path) {
-          feature.icon = b.icon.path
-        }
+      // 保存图标为本地文件
+      if (b.icon && b.icon.type === 'remote' && b.icon.src) {
+        const iconPath = await saveIconToLocal(b.icon.src, b.id)
+        if (iconPath) feature.icon = iconPath
       }
       
       ut.setFeature(feature)

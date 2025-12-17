@@ -203,9 +203,17 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 onMounted(() => {
   store.migrateFromLegacy()
   statsStore.recordUse('open')
-  settingsStore.setEnableSubInput(false)
   
-  const utoolsApi = window.utools as any
+  type UToolsApi = {
+    isDarkColors?: () => boolean
+    setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
+    removeSubInput?: () => void
+    onPluginEnter?: (cb: (params: { code?: unknown; payload?: unknown } | undefined) => void) => void
+  }
+  const utoolsApi = window.utools as unknown as UToolsApi | undefined
+  if (!utoolsApi) {
+    settingsStore.setEnableSubInput(false)
+  }
   if (utoolsApi) {
     const syncTheme = () => {
       try {
@@ -215,16 +223,25 @@ onMounted(() => {
          }
       } catch (e) {}
     }
+
+    const syncSubInput = () => {
+      const shouldUse = !isDetachedWindowNow()
+      settingsStore.setEnableSubInput(shouldUse)
+      if (shouldUse) {
+        utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
+      } else {
+        utoolsApi.removeSubInput?.()
+      }
+    }
     
     syncTheme()
     syncFeatures(store.bookmarks)
-    if (settingsStore.enableSubInput) {
-      utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
-    }
+    syncSubInput()
     
     window.utools?.onPluginEnter?.((params) => {
        syncTheme()
        syncFeatures(store.bookmarks)
+       syncSubInput()
 
        const code = params?.code
        if (typeof code === 'string' && code.startsWith(FEATURE_PREFIX)) {
@@ -260,7 +277,6 @@ onMounted(() => {
        setExpendHeight(settingsStore.windowHeight)
 
        if (settingsStore.enableSubInput) {
-         utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
          focusUToolsInput()
        }
     })
