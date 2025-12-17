@@ -186,7 +186,10 @@ export function useSearch(
     if (e.key === 'Escape' && searchViewOpen.value) {
       e.preventDefault()
       closeSearchView()
+      return
     }
+    // 直接输入字符触发搜索
+    handleTypeToSearch(e)
   })
 
   return {
