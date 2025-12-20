@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkCard from '@/components/BookmarkCard.vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import ResultToast from '@/components/ResultToast.vue'
+import { notify } from '@/lib/notify'
 import { Plus } from 'lucide-vue-next'
 import draggable from 'vuedraggable'
 
@@ -52,6 +55,40 @@ const gridStyle = computed(() => {
   const cols = props.columns && props.columns >= 2 && props.columns <= 5 ? props.columns : 4
   return { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }
 })
+
+const emptyTrashConfirmOpen = ref(false)
+const emptyToastOpen = ref(false)
+const emptyToastTitle = ref('')
+const emptyToastDesc = ref<string | undefined>(undefined)
+let emptyToastUrls = ''
+
+const copyText = async (text: string) => {
+  try {
+    if (!navigator.clipboard) {
+      notify('当前环境不支持剪贴板复制')
+      return
+    }
+    await navigator.clipboard.writeText(text)
+    notify('已复制到剪贴板')
+  } catch {
+    notify('复制失败，请检查权限后重试')
+  }
+}
+
+const requestEmptyTrash = () => {
+  emptyTrashConfirmOpen.value = true
+}
+
+const confirmEmptyTrash = () => {
+  emptyToastUrls = props.bookmarks.map(b => b.url).filter(Boolean).join('\n')
+  const count = props.bookmarks.length
+  emit('emptyTrash')
+  emptyTrashConfirmOpen.value = false
+
+  emptyToastTitle.value = '回收站已清空'
+  emptyToastDesc.value = count > 0 ? `已永久删除 ${count} 条书签` : undefined
+  emptyToastOpen.value = true
+}
 </script>
 
 <template>
@@ -108,11 +145,34 @@ const gridStyle = computed(() => {
     </draggable>
 
     <div v-if="isTrashActive && bookmarks.length > 0" class="flex justify-center py-8">
-      <Button variant="destructive" @click="emit('emptyTrash')">
+      <Button variant="destructive" @click="requestEmptyTrash">
         <span class="i-mdi-delete-empty mr-2" />
         清空回收站
       </Button>
     </div>
+
+    <Dialog :open="emptyTrashConfirmOpen" @update:open="v => (emptyTrashConfirmOpen.value = v)">
+      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent>
+        <DialogHeader>
+          <DialogTitle>清空回收站？</DialogTitle>
+          <DialogDescription>此操作不可恢复，将永久删除回收站内 {{ bookmarks.length }} 条书签。</DialogDescription>
+        </DialogHeader>
+        <DialogFooter class="gap-2 sm:gap-0">
+          <Button variant="ghost" @click="emptyTrashConfirmOpen.value = false">取消</Button>
+          <Button variant="destructive" @click="confirmEmptyTrash">确认清空</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <ResultToast
+      :open="emptyToastOpen"
+      variant="success"
+      :title="emptyToastTitle"
+      :description="emptyToastDesc"
+      :action-label="emptyToastUrls ? '复制URL列表' : undefined"
+      @close="emptyToastOpen = false"
+      @action="copyText(emptyToastUrls)"
+    />
   </section>
 </template>
 
@@ -145,4 +205,3 @@ const gridStyle = computed(() => {
   transition: transform 0.2s ease;
 }
 </style>
-

@@ -7,6 +7,7 @@ import { Image } from '@/components/ui/image'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { notify } from '@/lib/notify'
 
 const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string }>()
 const emit = defineEmits<{
@@ -146,8 +147,16 @@ const openLink = () => {
 }
 
 const copyUrl = async () => {
-  if (!navigator.clipboard) return
-  await navigator.clipboard.writeText(props.bookmark.url)
+  try {
+    if (!navigator.clipboard) {
+      notify('当前环境不支持剪贴板复制')
+      return
+    }
+    await navigator.clipboard.writeText(props.bookmark.url)
+    notify('已复制链接')
+  } catch {
+    notify('复制失败，请检查权限后重试')
+  }
 }
 const deletePopoverOpen = ref(false)
 </script>
