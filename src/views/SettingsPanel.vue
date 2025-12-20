@@ -11,8 +11,10 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import FaqNotice from '@/components/FaqNotice.vue'
+import ResultToast from '@/components/ResultToast.vue'
 import draggable from 'vuedraggable'
 import type { Group } from '@/types/bookmark'
+import { notify } from '@/lib/notify'
 
 
 const store = useBookmarkStore()
@@ -24,6 +26,36 @@ const statsStore = useStatsStore()
 const matching = ref(false)
 const probing = ref(false)
 const probeResult = ref<ProbeResult[]>([])
+const probeTotal = ref(0)
+const probeDone = ref(0)
+
+type ResultToastVariant = 'success' | 'info' | 'warning' | 'error'
+type ResultToastState = {
+  visible: boolean
+  variant: ResultToastVariant
+  title: string
+  description?: string
+  actionLabel?: string
+  onAction?: () => void
+}
+const resultToast = ref<ResultToastState>({
+  visible: false,
+  variant: 'info',
+  title: ''
+})
+let resultToastTimer: ReturnType<typeof setTimeout> | null = null
+const closeResultToast = () => {
+  if (resultToastTimer) clearTimeout(resultToastTimer)
+  resultToastTimer = null
+  resultToast.value.visible = false
+  resultToast.value.onAction = undefined
+}
+const showResultToast = (payload: Omit<ResultToastState, 'visible'>, timeoutMs = 4500) => {
+  if (resultToastTimer) clearTimeout(resultToastTimer)
+  resultToast.value = { ...payload, visible: true }
+  resultToastTimer = setTimeout(() => closeResultToast(), timeoutMs)
+}
+const handleResultToastAction = () => resultToast.value.onAction?.()
 
 const editingGroupId = ref('')
 const editingSubId = ref('')
@@ -106,18 +138,11 @@ const groupLayoutOptions: Array<{ value: 'wrap' | 'scroll'; label: string }> = [
   { value: 'scroll', label: '横向滚动' }
 ]
 
-type MiniUTools = { showNotification?: (body: string) => void }
 const showSubInputToast = (enabled: boolean) => {
   const msg = enabled
     ? '已启用 uTools 子输入框：直接输入即可搜索，但焦点可能拦截方向键，需先切换焦点再导航。'
     : '已关闭子输入框：点击搜索按钮进入搜索界面，不会被输入框抢占焦点。'
-  const ut = (window as unknown as { utools?: MiniUTools }).utools
-  try {
-    if (ut?.showNotification) ut.showNotification(msg)
-    else console.info(msg)
-  } catch {
-    console.info(msg)
-  }
+  notify(msg)
 }
 
 const handleGridColumnsChange = (val: string | number) => {
@@ -216,6 +241,7 @@ const exportData = () => {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+  showResultToast({ variant: 'success', title: '已导出备份文件', description: '文件已开始下载（JSON）' })
 }
 
 // 触发文件选择
@@ -235,14 +261,14 @@ const handleFileSelect = async (e: Event) => {
     
     // 验证数据结构
     if (!data.groups || !Array.isArray(data.groups) || !data.bookmarks || !Array.isArray(data.bookmarks)) {
-      alert('无效的备份文件格式')
+      showResultToast({ variant: 'error', title: '导入失败', description: '无效的备份文件格式' }, 6500)
       return
     }
     
     pendingImportData.value = { groups: data.groups, bookmarks: data.bookmarks }
     showImportConfirm.value = true
   } catch {
-    alert('文件解析失败，请确保是有效的 JSON 文件')
+    showResultToast({ variant: 'error', title: '导入失败', description: '文件解析失败，请确保是有效的 JSON' }, 6500)
   } finally {
     input.value = ''
   }
@@ -252,7 +278,12 @@ const handleFileSelect = async (e: Event) => {
 const confirmImport = () => {
   if (!pendingImportData.value) return
   importing.value = true
-  
+
+  const before = {
+    groups: store.groups.length,
+    bookmarks: store.bookmarks.length
+  }
+
   try {
     if (importMode.value === 'overwrite') {
       // 覆盖模式：直接替换
@@ -301,6 +332,25 @@ const confirmImport = () => {
         }
       })
     }
+    const after = {
+      groups: store.groups.length,
+      bookmarks: store.bookmarks.length
+    }
+    const addedGroups = Math.max(0, after.groups - before.groups)
+    const addedBookmarks = Math.max(0, after.bookmarks - before.bookmarks)
+    showResultToast(
+      {
+        variant: 'success',
+        title: '导入完成',
+        description: importMode.value === 'overwrite'
+          ? `已覆盖：分组 ${after.groups} / 书签 ${after.bookmarks}`
+          : `已合并：新增分组 ${addedGroups} / 新增书签 ${addedBookmarks}`
+      },
+      6500
+    )
+  } catch (e) {
+    console.error('[Settings] import failed:', e)
+    showResultToast({ variant: 'error', title: '导入失败', description: '导入过程中发生错误，请更换备份文件后重试' }, 6500)
   } finally {
     importing.value = false
     showImportConfirm.value = false
@@ -315,15 +365,14 @@ const cancelImport = () => {
 
 const copyAllData = async () => {
   const json = JSON.stringify(buildBackupPayload(), null, 2)
-  if (!navigator.clipboard) return alert('当前环境不支持剪贴板复制')
-  try {
-    await navigator.clipboard.writeText(json)
-  } catch {
-    alert('复制失败，请检查权限后重试')
-  }
+  await copyText(json)
 }
 
 const clearAllBookmarks = () => {
+  const snapshot = {
+    groups: JSON.parse(JSON.stringify(store.groups)) as typeof store.groups,
+    bookmarks: JSON.parse(JSON.stringify(store.bookmarks)) as typeof store.bookmarks
+  }
   store.$patch({
     groups: [
       {
@@ -356,25 +405,139 @@ const clearAllBookmarks = () => {
   })
   showClearConfirm.value = false
   clearConfirmText.value = ''
+  showResultToast(
+    {
+      variant: 'warning',
+      title: '已清空全部书签',
+      description: '可在短时间内撤回本次清空操作',
+      actionLabel: '撤回',
+      onAction: () => {
+        store.groups.splice(0, store.groups.length, ...snapshot.groups)
+        store.bookmarks.splice(0, store.bookmarks.length, ...snapshot.bookmarks)
+        closeResultToast()
+        notify('已撤回清空操作')
+      }
+    },
+    9000
+  )
 }
 
 const matchMissing = async () => {
   if (matching.value) return
+  const missing = store.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
+  if (missing === 0) {
+    showResultToast({ variant: 'info', title: '没有缺失图标', description: '当前书签图标已齐全' }, 4500)
+    return
+  }
   matching.value = true
-  await store.refreshMissingIcons()
-  matching.value = false
+  const started = performance.now()
+  try {
+    const res = await store.refreshMissingIcons()
+    const elapsed = Math.round(performance.now() - started)
+    const title = `图标匹配完成：补全 ${res.matched}/${res.total}`
+    const description = res.remaining > 0
+      ? `仍缺失 ${res.remaining} 条（耗时 ${elapsed}ms）`
+      : `全部补全（耗时 ${elapsed}ms）`
+    showResultToast(
+      {
+        variant: res.remaining > 0 ? 'warning' : 'success',
+        title,
+        description
+      },
+      6500
+    )
+  } catch (e) {
+    console.error('[Settings] refreshMissingIcons failed:', e)
+    showResultToast({ variant: 'error', title: '图标匹配失败', description: '请稍后重试或检查网络/权限' }, 6500)
+  } finally {
+    matching.value = false
+  }
+}
+
+const mapWithConcurrency = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) => {
+  if (items.length === 0) return [] as R[]
+  const results: R[] = new Array(items.length)
+  let nextIndex = 0
+
+  const runner = async () => {
+    while (nextIndex < items.length) {
+      const idx = nextIndex++
+      results[idx] = await fn(items[idx])
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => runner()))
+  return results
+}
+
+const copyText = async (text: string) => {
+  if (!navigator.clipboard) {
+    notify('当前环境不支持剪贴板复制')
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(text)
+    notify('已复制到剪贴板')
+  } catch {
+    notify('复制失败，请检查权限后重试')
+  }
+}
+
+const probeReasonText = (reason?: ProbeResult['reason']) => {
+  if (!reason) return ''
+  const map: Record<NonNullable<ProbeResult['reason']>, string> = {
+    invalid_url: '格式错误',
+    unsupported_protocol: '不支持',
+    template: '模板地址',
+    timeout: '超时',
+    error: '错误'
+  }
+  return map[reason]
 }
 
 const checkInvalid = async () => {
   if (probing.value) return
+  if (store.bookmarks.length === 0) {
+    showResultToast({ variant: 'info', title: '暂无可检测的书签', description: '先添加书签再进行无效地址分析' }, 4500)
+    return
+  }
   probing.value = true
   probeResult.value = []
+  probeTotal.value = store.bookmarks.length
+  probeDone.value = 0
   const all = store.bookmarks
-  for (const bookmark of all) {
-    const res = await probeUrl(bookmark.url, 3000)
-    probeResult.value.push(res)
+  const started = performance.now()
+  try {
+    const results = await mapWithConcurrency(all, 6, async (bookmark) => {
+      try {
+        const r = await probeUrl(bookmark.url, 3000)
+        probeResult.value.push(r)
+        probeDone.value += 1
+        return r
+      } catch {
+        const r = { url: bookmark.url, ok: false, elapsed: 0, reason: 'error' } satisfies ProbeResult
+        probeResult.value.push(r)
+        probeDone.value += 1
+        return r
+      }
+    })
+    const okCount = results.filter(r => r.ok).length
+    const fail = results.filter(r => !r.ok)
+    const elapsed = Math.round(performance.now() - started)
+    const failList = fail.map(r => r.url).join('\n')
+    showResultToast(
+      {
+        variant: fail.length ? 'warning' : 'success',
+        title: `无效地址分析完成：${okCount}/${results.length} OK`,
+        description: fail.length ? `失败 ${fail.length} 条（耗时 ${elapsed}ms）` : `全部通过（耗时 ${elapsed}ms）`,
+        actionLabel: fail.length ? '复制失败列表' : undefined,
+        onAction: fail.length ? () => copyText(failList) : undefined
+      },
+      6500
+    )
+  } finally {
+    probing.value = false
   }
-  probing.value = false
 }
 
 const startEditGroup = (id: string, name: string) => {
@@ -958,9 +1121,9 @@ const closeUndoToast = () => {
              <CardDescription>缺失图标: <span class="text-primary font-bold">{{ missingCount }}</span> 条</CardDescription>
           </CardHeader>
           <CardContent>
-             <Button class="w-full" variant="secondary" :disabled="matching" @click="matchMissing">
+             <Button class="w-full" variant="secondary" :disabled="matching || missingCount === 0" @click="matchMissing">
                <span v-if="matching" class="i-mdi-loading animate-spin mr-2" />
-               {{ matching ? '匹配中...' : '匹配缺失图标' }}
+               {{ matching ? '匹配中...' : (missingCount === 0 ? '无需匹配' : '匹配缺失图标') }}
              </Button>
           </CardContent>
        </Card>
@@ -974,7 +1137,7 @@ const closeUndoToast = () => {
           <CardContent>
              <Button class="w-full" variant="outline" :disabled="probing" @click="checkInvalid">
                <span v-if="probing" class="i-mdi-loading animate-spin mr-2" />
-               {{ probing ? '检测中...' : '开始检测' }}
+               {{ probing ? `检测中... ${probeDone}/${probeTotal}` : '开始检测' }}
              </Button>
            </CardContent>
         </Card>
@@ -1142,14 +1305,16 @@ const closeUndoToast = () => {
             <div v-for="item in probeResult" :key="item.url" class="rounded-md px-3 py-2 bg-muted/30 flex items-center justify-between border border-border/50">
                <span class="truncate text-sm text-foreground/80 flex-1 mr-4" :title="item.url">{{ item.url }}</span>
                <div class="flex items-center gap-3 shrink-0">
+                  <span v-if="item.status" class="text-[10px] text-muted-foreground font-mono">HTTP {{ item.status }}</span>
+                  <span v-if="item.method" class="text-[10px] text-muted-foreground font-mono">{{ item.method }}</span>
                   <span class="text-xs text-muted-foreground font-mono">{{ Math.round(item.elapsed) }}ms</span>
                   <span
                     :class="[
-                      item.ok ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-red-500/10 text-red-500 border-red-500/20',
+                      item.ok ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
                       'text-[10px] font-bold px-2 py-0.5 rounded border'
                     ]"
                   >
-                    {{ item.ok ? 'OK' : 'FAIL' }}
+                    {{ item.ok ? 'OK' : (probeReasonText(item.reason) || 'FAIL') }}
                   </span>
                </div>
             </div>
@@ -1299,6 +1464,16 @@ const closeUndoToast = () => {
         </div>
       </Transition>
     </Teleport>
+
+    <ResultToast
+      :open="resultToast.visible"
+      :variant="resultToast.variant"
+      :title="resultToast.title"
+      :description="resultToast.description"
+      :action-label="resultToast.actionLabel"
+      @close="closeResultToast"
+      @action="handleResultToastAction"
+    />
   </div>
 </template>
 

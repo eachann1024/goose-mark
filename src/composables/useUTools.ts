@@ -3,10 +3,42 @@ import type { Bookmark } from '@/types/bookmark'
 
 const FEATURE_PREFIX = 'bm_tpl:'
 
+type OverCmd = { type: 'over'; label: string; minLength?: number; icon?: string }
+type FeatureCmd = string | OverCmd
+type UToolsFeature = { code: string; explain: string; cmds: FeatureCmd[]; icon?: string }
+
+type NativeImage = { isEmpty(): boolean; toPNG(): Buffer }
+type ElectronModule = { nativeImage?: { createFromBuffer(buffer: Buffer): NativeImage } }
+
+const getNodeRequire = () => (window as unknown as { require?: NodeRequire }).require
+
+const toPngBuffer = (buffer: Buffer): Buffer | null => {
+  try {
+    const req = getNodeRequire()
+    const electron = req?.('electron') as unknown as ElectronModule | undefined
+    const nativeImage = electron?.nativeImage
+    if (!nativeImage) return null
+    const image = nativeImage.createFromBuffer(buffer)
+    if (image.isEmpty()) return null
+    return image.toPNG()
+  } catch {
+    return null
+  }
+}
+
+const getFileExt = (pathOrUrl: string) => {
+  const lower = pathOrUrl.toLowerCase()
+  if (lower.endsWith('.png')) return '.png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return '.jpg'
+  if (lower.endsWith('.ico')) return '.ico'
+  if (lower.endsWith('.svg')) return '.svg'
+  return ''
+}
+
 // 获取图标保存目录
 const getIconDir = (): string | null => {
   try {
-    const ut = window.utools as any
+    const ut = window.utools
     if (!ut?.getPath) return null
     const userData = ut.getPath('userData')
     if (!userData) return null
@@ -19,7 +51,7 @@ const getIconDir = (): string | null => {
 // 确保目录存在
 const ensureDir = (dir: string): boolean => {
   try {
-    const fs = (window as any).require?.('fs')
+    const fs = (window as unknown as { require?: NodeRequire }).require?.('fs')
     if (!fs) return false
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true })
@@ -39,31 +71,66 @@ const saveIconToLocal = async (url: string, bookmarkId: string): Promise<string 
   if (!ensureDir(iconDir)) return null
   
   try {
-    const fs = (window as any).require?.('fs')
-    const path = (window as any).require?.('path')
+    const req = (window as unknown as { require?: NodeRequire }).require
+    const fs = req?.('fs')
+    const path = req?.('path')
     if (!fs || !path) return null
     
-    // 确定文件扩展名
-    let ext = '.png'
-    if (url.includes('.ico')) ext = '.ico'
-    else if (url.includes('.svg')) ext = '.svg'
-    else if (url.includes('.jpg') || url.includes('.jpeg')) ext = '.jpg'
-    
-    const iconPath = path.join(iconDir, `${bookmarkId}${ext}`)
-    
-    // 如果文件已存在，直接返回路径
-    if (fs.existsSync(iconPath)) {
-      return iconPath
-    }
+    const pngPath = path.join(iconDir, `${bookmarkId}.png`)
+    if (fs.existsSync(pngPath)) return pngPath
     
     // 下载图标
     const response = await fetch(url)
     if (!response.ok) return null
     
-    const buffer = await response.arrayBuffer()
-    fs.writeFileSync(iconPath, Buffer.from(buffer))
-    
-    return iconPath
+    const arrayBuffer = await response.arrayBuffer()
+    const buffer = Buffer.from(arrayBuffer)
+
+    const pngBuffer = toPngBuffer(buffer)
+    if (pngBuffer) {
+      fs.writeFileSync(pngPath, pngBuffer)
+      return pngPath
+    }
+
+    const ext = getFileExt(url) || '.png'
+    const rawPath = path.join(iconDir, `${bookmarkId}${ext}`)
+    fs.writeFileSync(rawPath, buffer)
+    return rawPath
+  } catch {
+    return null
+  }
+}
+
+const saveFileIconToLocal = async (filePath: string, bookmarkId: string): Promise<string | null> => {
+  const iconDir = getIconDir()
+  if (!iconDir) return null
+  if (!ensureDir(iconDir)) return null
+
+  try {
+    const req = getNodeRequire()
+    const fs = req?.('fs')
+    const path = req?.('path')
+    if (!fs || !path) return null
+
+    const pngPath = path.join(iconDir, `${bookmarkId}.png`)
+    if (fs.existsSync(pngPath)) return pngPath
+
+    const buf: Buffer = fs.readFileSync(filePath)
+    if (filePath.toLowerCase().endsWith('.png')) {
+      fs.writeFileSync(pngPath, buf)
+      return pngPath
+    }
+
+    const pngBuffer = toPngBuffer(buf)
+    if (pngBuffer) {
+      fs.writeFileSync(pngPath, pngBuffer)
+      return pngPath
+    }
+
+    const ext = getFileExt(filePath) || '.png'
+    const rawPath = path.join(iconDir, `${bookmarkId}${ext}`)
+    fs.writeFileSync(rawPath, buf)
+    return rawPath
   } catch {
     return null
   }
@@ -111,28 +178,31 @@ export function useUTools() {
       const label = getTemplateLabel(b.url)
       const explain = `搜索：${b.title}${label ? `（${label}）` : ''}`
       
-      const cmds: any[] = []
+      const cmds: FeatureCmd[] = []
+      let overCmd: OverCmd | null = null
       
       if (b.allowUniversal === true) {
-        cmds.push({ 
-          type: 'over', 
-          label: cmd,
-          minLength: 1
-        })
+        overCmd = { type: 'over', label: cmd, minLength: 1 }
+        cmds.push(overCmd)
       } else {
         cmds.push(cmd)
       }
       
-      const feature: { code: string; explain: string; cmds: any[]; icon?: string } = { 
+      const feature: UToolsFeature = { 
         code, 
         explain, 
         cmds 
       }
       
-      // 保存图标为本地文件
-      if (b.icon && b.icon.type === 'remote' && b.icon.src) {
-        const iconPath = await saveIconToLocal(b.icon.src, b.id)
-        if (iconPath) feature.icon = iconPath
+      const iconPath = b.icon?.type === 'remote' && b.icon.src
+        ? await saveIconToLocal(b.icon.src, b.id)
+        : b.icon?.type === 'file' && b.icon.path
+          ? await saveFileIconToLocal(b.icon.path, b.id)
+          : null
+
+      if (iconPath) {
+        feature.icon = iconPath
+        if (overCmd) overCmd.icon = iconPath
       }
       
       ut.setFeature(feature)

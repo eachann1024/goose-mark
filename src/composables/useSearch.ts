@@ -7,11 +7,6 @@ import PinyinMatch from 'pinyin-match'
 import type { Bookmark } from '@/types/bookmark'
 import type { Ref } from 'vue'
 
-type UToolsExtendedApi = {
-  subInputFocus?: () => void
-  setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
-}
-
 export function useSearch(
     tab: Ref<'bookmarks' | 'settings'>, 
     selectedIndex: Ref<number>,
@@ -66,6 +61,9 @@ export function useSearch(
     searchViewOpen.value = false
     clearSearchAutoExit()
     store.setSearch('')
+    if (settingsStore.enableSubInput) {
+      window.utools?.setSubInputValue?.('')
+    }
     selectedIndex.value = -1
   }
 
@@ -108,11 +106,11 @@ export function useSearch(
   }
 
   const focusUToolsInput = () => {
-    const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-    if (!utoolsApi) return
-    if (typeof utoolsApi.subInputFocus === 'function') {
-      utoolsApi.subInputFocus()
-    }
+    window.utools?.subInputFocus?.()
+  }
+
+  const syncUToolsSubInputValue = (text: string) => {
+    window.utools?.setSubInputValue?.(text)
   }
 
   type OpenSearchOptions = { initialQuery?: string; selectText?: boolean }
@@ -128,6 +126,7 @@ export function useSearch(
     scheduleSearchAutoExit()
     if (settingsStore.enableSubInput) {
       focusUToolsInput()
+      syncUToolsSubInputValue(store.search)
     } else {
       focusLocalSearchInput(selectText)
     }
@@ -142,6 +141,7 @@ export function useSearch(
   const handleTypeToSearch = (e: KeyboardEvent) => {
     const active = document.activeElement as HTMLElement | null
     if (isEditableElement(active)) return
+    if (settingsStore.enableSubInput && searchViewOpen.value) return
     if (e.metaKey || e.ctrlKey || e.altKey) return
     const key = e.key
     if (!key || key.length !== 1) return
@@ -154,9 +154,11 @@ export function useSearch(
       return
     }
 
-    store.setSearch(store.search + key)
+    const nextValue = store.search + key
+    store.setSearch(nextValue)
     if (settingsStore.enableSubInput) {
       focusUToolsInput()
+      syncUToolsSubInputValue(nextValue)
     } else {
       focusLocalSearchInput()
     }

@@ -41,3 +41,9 @@
 ## 其他
 - 遵守 Anti-Slop 标准：零废话注释、避免过度防御、类型安全、一致风格。
 - 软/硬链接（含本文件）禁止改动链接关系。
+
+## 可复用约定（沉淀）
+- 操作完成需“最终结果反馈”时，优先用 `src/components/ResultToast.vue`（支持标题/描述/可选动作按钮），避免到处手写 Toast。
+- 轻量系统提示（不需要留在应用内）统一用 `src/lib/notify.ts` 的 `notify`（内部优先 `window.utools.showNotification`，无 uTools 降级 `console.info`）。
+- 链接可达性检测统一走 `src/services/siteProbe.ts` 的 `probeUrl`（内置 URL 规范化、模板地址跳过、HEAD→GET 回退、默认 3s 超时）。
+- 破坏性操作（清空/删除不可逆）优先用应用内 `Dialog` 二次确认，并在完成后给 `ResultToast` 最终反馈（必要时提供“复制列表”动作）。

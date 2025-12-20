@@ -2,6 +2,8 @@ export interface ProbeResult {
   url: string
   ok: boolean
   status?: number
+  method?: 'HEAD' | 'GET'
+  reason?: 'invalid_url' | 'unsupported_protocol' | 'template' | 'timeout' | 'error'
   elapsed: number
 }
 
@@ -18,7 +20,22 @@ const getNodeModule = (name: string) => {
   return null
 }
 
-const nodeFetchHead = (url: string, timeoutMs: number): Promise<any> => {
+const normalizeHttpUrl = (raw: string): { url: string; reason?: ProbeResult['reason'] } => {
+  const input = raw.trim()
+  if (!input) return { url: raw, reason: 'invalid_url' }
+  if (/{[^}]+}/.test(input)) return { url: raw, reason: 'template' }
+  if (/^javascript:/i.test(input) || /^file:/i.test(input)) return { url: raw, reason: 'unsupported_protocol' }
+  const withProto = /^https?:\/\//i.test(input) ? input : `https://${input}`
+  try {
+    const u = new URL(withProto)
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return { url: raw, reason: 'unsupported_protocol' }
+    return { url: u.toString() }
+  } catch {
+    return { url: raw, reason: 'invalid_url' }
+  }
+}
+
+const nodeRequest = (url: string, method: 'HEAD' | 'GET', timeoutMs: number): Promise<any> => {
   return new Promise((resolve) => {
      const https = getNodeModule('https')
      const http = getNodeModule('http')
@@ -26,7 +43,7 @@ const nodeFetchHead = (url: string, timeoutMs: number): Promise<any> => {
        // Browser fallback
        const controller = new AbortController()
        const timer = setTimeout(() => controller.abort(), timeoutMs)
-       fetch(url, { method: 'HEAD', signal: controller.signal })
+       fetch(url, { method, signal: controller.signal })
          .then(res => {
             clearTimeout(timer)
             resolve(res)
@@ -42,7 +59,7 @@ const nodeFetchHead = (url: string, timeoutMs: number): Promise<any> => {
        const u = new URL(url)
        const requestModule = u.protocol === 'http:' ? http : https
        const opts = {
-         method: 'HEAD',
+         method,
          headers: {
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
          },
@@ -50,6 +67,7 @@ const nodeFetchHead = (url: string, timeoutMs: number): Promise<any> => {
        }
        const req = requestModule.request(url, opts, (res: any) => {
           resolve({ ok: res.statusCode >= 200 && res.statusCode < 400, status: res.statusCode })
+          req.destroy()
        })
        req.on('error', () => resolve(null))
        req.on('timeout', () => {
@@ -64,9 +82,30 @@ const nodeFetchHead = (url: string, timeoutMs: number): Promise<any> => {
 }
 
 export const probeUrl = async (url: string, timeoutMs = 3000): Promise<ProbeResult> => {
+  const normalized = normalizeHttpUrl(url)
+  if (normalized.reason) {
+    return { url, ok: false, elapsed: 0, reason: normalized.reason }
+  }
+  const target = normalized.url
+
   const started = performance.now()
-  const res = await nodeFetchHead(url, timeoutMs)
+  const head = await nodeRequest(target, 'HEAD', timeoutMs)
+  if (head?.ok) {
+    return { url, ok: true, status: head.status, method: 'HEAD', elapsed: performance.now() - started }
+  }
+  const shouldTryGet = !head || head.status === 405
+  if (!shouldTryGet) {
+    return {
+      url,
+      ok: false,
+      status: head?.status,
+      method: 'HEAD',
+      elapsed: performance.now() - started
+    }
+  }
+
+  const get = await nodeRequest(target, 'GET', timeoutMs)
   const elapsed = performance.now() - started
-  if (!res) return { url, ok: false, elapsed }
-  return { url, ok: res.ok, status: res.status, elapsed }
+  if (!get) return { url, ok: false, elapsed, method: 'GET', reason: 'timeout' }
+  return { url, ok: get.ok, status: get.status, elapsed, method: 'GET' }
 }

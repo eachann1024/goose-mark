@@ -1,0 +1,79 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { Button } from '@/components/ui/button'
+
+type Variant = 'success' | 'info' | 'warning' | 'error'
+
+const props = defineProps<{
+  open: boolean
+  title: string
+  description?: string
+  variant?: Variant
+  icon?: string
+  actionLabel?: string
+}>()
+
+const emit = defineEmits<{
+  close: []
+  action: []
+}>()
+
+const iconClass = computed(() => {
+  if (props.icon) return props.icon
+  const v = props.variant ?? 'info'
+  if (v === 'success') return 'i-mdi-check-circle-outline text-primary'
+  if (v === 'warning') return 'i-mdi-alert-outline text-yellow-500'
+  if (v === 'error') return 'i-mdi-close-circle-outline text-destructive'
+  return 'i-mdi-information-outline text-muted-foreground'
+})
+
+const badgeClass = computed(() => {
+  const v = props.variant ?? 'info'
+  if (v === 'success') return 'bg-primary/10 text-primary border-primary/20'
+  if (v === 'warning') return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
+  if (v === 'error') return 'bg-destructive/10 text-destructive border-destructive/20'
+  return 'bg-muted/50 text-muted-foreground border-border'
+})
+</script>
+
+<template>
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition-all duration-250 ease-out"
+      enter-from-class="opacity-0 translate-y-4"
+      enter-to-class="opacity-100 translate-y-0"
+      leave-active-class="transition-all duration-180 ease-in"
+      leave-from-class="opacity-100 translate-y-0"
+      leave-to-class="opacity-0 translate-y-4"
+    >
+      <div
+        v-if="open"
+        class="fixed bottom-4 right-4 z-[9999] w-[360px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm p-4"
+      >
+        <div class="flex items-start gap-3">
+          <span :class="[iconClass, 'text-lg shrink-0 mt-0.5']" />
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2">
+              <p class="text-sm font-medium text-foreground truncate">{{ title }}</p>
+              <span :class="[badgeClass, 'text-[10px] font-bold px-2 py-0.5 rounded border shrink-0']">
+                {{ (variant ?? 'info').toUpperCase() }}
+              </span>
+            </div>
+            <p v-if="description" class="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">{{ description }}</p>
+          </div>
+          <button class="p-1 rounded hover:bg-muted transition-colors" title="关闭" @click="emit('close')">
+            <span class="i-mdi-close text-sm text-muted-foreground" />
+          </button>
+        </div>
+
+        <div v-if="actionLabel || $slots.action" class="mt-3 flex items-center justify-end gap-2">
+          <slot name="action" />
+          <Button v-if="actionLabel" size="sm" variant="outline" class="h-7 px-3 text-xs" @click="emit('action')">
+            {{ actionLabel }}
+          </Button>
+        </div>
+      </div>
+    </Transition>
+  </Teleport>
+</template>
+

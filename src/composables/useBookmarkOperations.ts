@@ -152,9 +152,7 @@ export function useBookmarkOperations() {
   }
 
   const emptyTrash = () => {
-    if (confirm('确定要清空回收站吗？此操作不可恢复。')) {
-      store.emptyTrash()
-    }
+    store.emptyTrash()
   }
 
   const handleReorder = ({ fromId, toId }: { fromId: string; toId: string }, isSearching: boolean) => {

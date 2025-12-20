@@ -6,6 +6,8 @@ interface UToolsAiOption {
 interface UToolsApi {
   getPath(name: string): string
   setSubInput(onChange: (params: { text: string }) => void, placeholder?: string, isFocus?: boolean): boolean
+  setSubInputValue?(text: string): boolean
+  subInputFocus?(): void
   removeSubInput(): boolean
   onPluginEnter(callback: (params: { code: string; type: string; payload: any }) => void): void
   shellOpenExternal(url: string): void

@@ -305,6 +305,11 @@ export const useBookmarkStore = defineStore('bookmark', {
       const missing = this.bookmarks.filter(b => !b.icon || b.icon.type === 'text')
       const result = await bulkMatchMissing(missing)
       result.forEach((icon, id) => this.assignIcon(id, icon))
+      return {
+        total: missing.length,
+        matched: result.size,
+        remaining: this.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
+      }
     },
     assignIcon(id: string, icon: IconSource) {
       const idx = this.bookmarks.findIndex(b => b.id === id)
