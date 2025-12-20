@@ -1,6 +1,12 @@
 interface UToolsAiOption {
-  prompt: string
   model?: string
+  messages: UToolsAiMessage[]
+}
+
+interface UToolsAiMessage {
+  role: 'system' | 'user' | 'assistant'
+  content?: string
+  reasoning_content?: string
 }
 
 interface UToolsApi {
@@ -15,11 +21,12 @@ interface UToolsApi {
   getFeatures?(): Array<{ code: string; explain?: string; cmds?: unknown[] }>
   removeFeature?(code: string): boolean
   // uTools AI API - 需要用户在 uTools 中配置 AI 服务
-  ai(option: UToolsAiOption, streamCallback?: (chunk: { text: string }) => void): Promise<string>
+  ai?(option: UToolsAiOption, streamCallback?: (chunk: { text?: string; content?: string }) => void): Promise<string | { text?: string; content?: string }>
   isDarkColors?(): boolean
   // 窗口类型: main=主窗口, detach=分离窗口, browser=createBrowserWindow 创建的窗口
   getWindowType?(): 'main' | 'detach' | 'browser'
   outPlugin(isKill?: boolean): boolean
+  createBrowserWindow?(url: string, options?: Record<string, unknown>): void
 }
 
 declare global {

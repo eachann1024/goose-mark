@@ -8,6 +8,7 @@ type UToolsExtendedApi = {
   copyText?: (text: string) => void
   showNotification?: (body: string) => void
   shellOpenExternal?: (url: string) => void
+  createBrowserWindow?: (url: string, options?: Record<string, unknown>) => void
   outPlugin?: () => void
   getWindowType?: () => string
 }
@@ -118,8 +119,26 @@ export function useBookmarkOperations() {
       url = 'https://' + url
     }
     
+    openUrl(url)
+  }
+
+  const openUrl = (url: string) => {
     if (window.utools) {
-      window.utools.shellOpenExternal(url)
+      const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+      const canUseInner = settingsStore.preferUtoolsBrowser && typeof utoolsApi?.createBrowserWindow === 'function'
+      let opened = false
+      if (canUseInner) {
+        try {
+          const path = window.location.pathname || ''
+          const base = path.includes('/dist/') ? 'dist/' : ''
+          const bridgeUrl = `${base}browser.html?target=${encodeURIComponent(url)}`
+          utoolsApi?.createBrowserWindow?.(bridgeUrl)
+          opened = true
+        } catch (e) {
+          console.warn('[Bookmark] 内置浏览器打开失败', e)
+        }
+      }
+      if (!opened) utoolsApi?.shellOpenExternal?.(url)
       if (settingsStore.autoCloseWindow) {
         try {
           if (isDetachedWindowNow()) {
@@ -129,9 +148,9 @@ export function useBookmarkOperations() {
           console.warn('Failed to auto close window', e)
         }
       }
-    } else {
-      window.open(url, '_blank')
+      return
     }
+    window.open(url, '_blank')
   }
 
   const handleRemove = (bookmark: Bookmark) => {
@@ -169,6 +188,7 @@ export function useBookmarkOperations() {
     copyNotice,
     openBookmarkLink,
     copyBookmarkUrl,
+    openUrl,
     handleRemove,
     requestDelete,
     confirmDelete,

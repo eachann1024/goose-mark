@@ -29,7 +29,16 @@ try {
       console.warn('⚠️ 未找到 logo.png');
   }
 
-  // 3. 处理并复制 plugin.json
+  // 3. 复制 browser.html
+  const browserSrc = path.join(rootDir, 'browser.html');
+  if (fs.existsSync(browserSrc)) {
+      fs.copyFileSync(browserSrc, path.join(distDir, 'browser.html'));
+      console.log('✅ browser.html 已复制');
+  } else {
+      console.warn('⚠️ 未找到 browser.html');
+  }
+
+  // 4. 处理并复制 plugin.json
   const pluginConfigPath = path.join(rootDir, 'plugin.json');
   if (fs.existsSync(pluginConfigPath)) {
       const pluginConfig = JSON.parse(fs.readFileSync(pluginConfigPath, 'utf-8'));
