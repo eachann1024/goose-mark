@@ -37,6 +37,7 @@ const settingsStore = useSettingsStore()
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
 const { 
   openBookmarkLink, 
+  openUrl,
   copyBookmarkUrl, 
   handleRemove, 
   requestDelete: openDeleteConfirm,
@@ -262,7 +263,7 @@ onMounted(() => {
          
          let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
          if (!/^https?:\/\//i.test(url)) url = 'https://' + url
-         window.utools?.shellOpenExternal(url)
+         openUrl(url)
          window.utools?.outPlugin()
          return
        }

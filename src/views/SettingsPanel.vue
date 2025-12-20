@@ -188,7 +188,7 @@ const aggregateUsage = (mode: 'day' | 'week' | 'month') => {
 const usageRows = computed(() => {
   const limit = usageMode.value === 'day' ? 14 : usageMode.value === 'week' ? 12 : 12
   return aggregateUsage(usageMode.value)
-    .sort((a, b) => b[0].localeCompare(a[0]))
+    .sort((a, b) => b.key.localeCompare(a.key))
     .slice(0, limit)
 })
 
@@ -825,6 +825,26 @@ const closeUndoToast = () => {
                 <span 
                   class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
                   :class="settingsStore.autoCloseWindow ? 'translate-x-5' : 'translate-x-0'"
+                />
+              </button>
+            </label>
+            
+            <label class="flex items-center justify-between cursor-pointer">
+              <div class="space-y-0.5">
+                <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
+                <div class="text-xs text-muted-foreground">不支持时将回退到系统默认浏览器</div>
+              </div>
+              <button 
+                type="button"
+                role="switch"
+                :aria-checked="settingsStore.preferUtoolsBrowser"
+                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                :class="settingsStore.preferUtoolsBrowser ? 'bg-primary' : 'bg-input'"
+                @click="settingsStore.setPreferUtoolsBrowser(!settingsStore.preferUtoolsBrowser)"
+              >
+                <span 
+                  class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
+                  :class="settingsStore.preferUtoolsBrowser ? 'translate-x-5' : 'translate-x-0'"
                 />
               </button>
             </label>

@@ -41,6 +41,7 @@
 ## 其他
 - 遵守 Anti-Slop 标准：零废话注释、避免过度防御、类型安全、一致风格。
 - 软/硬链接（含本文件）禁止改动链接关系。
+- 文档地址：https://www.u-tools.cn/docs/developer/api-reference/utools/ai.html
 
 ## 可复用约定（沉淀）
 - 操作完成需“最终结果反馈”时，优先用 `src/components/ResultToast.vue`（支持标题/描述/可选动作按钮），避免到处手写 Toast。

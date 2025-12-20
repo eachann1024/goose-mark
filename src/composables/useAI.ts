@@ -43,8 +43,9 @@ export function useAI() {
   const generateMetadata = async (url: string) => {
     if (!url || !isUrlAccessible.value) return null
   
-    if (!window.utools?.ai) {
-      aiError.value = '当前 uTools 版本不支持 AI，请更新后重试'
+    const aiCaller = window.utools?.ai
+    if (!aiCaller) {
+      aiError.value = '当前 uTools 未开启 AI 或版本不支持'
       return null
     }
   
@@ -60,8 +61,23 @@ export function useAI() {
   1. title: 极简且精准的名称（如 "GitHub"、"Bilibili"）。去除 "- 首页"、"Login" 等冗余后缀。优先中文（若常用）。不超过 15 字。
   2. desc: 用一句话概括核心功能与价值（如 "全球最大的代码托管与协作平台"）。语气专业、客观。不超过 40 字。`
   
-      const res = await window.utools.ai({ prompt })
-      const payload = typeof res === 'string' ? res : JSON.stringify(res)
+      const res = await aiCaller({
+        messages: [
+          {
+            role: 'system',
+            content: '你是一个专业的书签整理助手。请分析网址内容并返回 JSON。'
+          },
+          {
+            role: 'user',
+            content: prompt
+          }
+        ]
+      })
+      const payload = typeof res === 'string'
+        ? res
+        : typeof res?.content === 'string'
+          ? res.content
+          : JSON.stringify(res)
       const match = payload.match(/\{[\s\S]*\}/)
       const jsonStr = match ? match[0] : payload
       const data = JSON.parse(jsonStr)

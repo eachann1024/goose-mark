@@ -9,6 +9,7 @@ export const useSettingsStore = defineStore('settings', {
     groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
     enableSubInput: false,
     autoCloseWindow: true, // 独立窗口模式下，打开标签后自动关闭
+    preferUtoolsBrowser: false,
     windowHeight: 700
   }),
   actions: {
@@ -31,6 +32,9 @@ export const useSettingsStore = defineStore('settings', {
     },
     setAutoCloseWindow(value: boolean) {
       this.autoCloseWindow = !!value
+    },
+    setPreferUtoolsBrowser(value: boolean) {
+      this.preferUtoolsBrowser = !!value
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0
