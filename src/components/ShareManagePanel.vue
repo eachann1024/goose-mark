@@ -16,10 +16,11 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'shared', shareId: string): void
+  (e: 'update-from-share', shareId: string, data: any): void
 }>()
 
 const store = useBookmarkStore()
-const { createShare, cancelShare, copyShareLink, buildShareUrl, isSharing, shareError } = useShare()
+const { createShare, cancelShare, copyShareLink, buildShareUrl, isSharing, shareError, checkForUpdate, getShareData } = useShare()
 
 // 当前子分组信息
 const currentSubGroup = computed(() => {
@@ -29,13 +30,73 @@ const currentSubGroup = computed(() => {
 
 const existingShareId = computed(() => currentSubGroup.value?.shareId)
 const isAlreadyShared = computed(() => !!existingShareId.value)
+const isImported = computed(() => !!currentSubGroup.value?.sourceShareId)
+const sourceShareId = computed(() => currentSubGroup.value?.sourceShareId)
+const lastSyncedAt = computed(() => currentSubGroup.value?.lastSyncedAt)
 const shareUrl = computed(() => existingShareId.value ? buildShareUrl(existingShareId.value) : '')
 
 // UI 状态
 const hasCopied = ref(false)
 const isCanceling = ref(false)
+const isChecking = ref(false)
+const isUpdating = ref(false)
+const updateAvailable = ref(false)
 
-// 创建分享
+const checkUpdate = async () => {
+    if (!sourceShareId.value) return
+    isChecking.value = true
+    try {
+        updateAvailable.value = await checkForUpdate(sourceShareId.value, lastSyncedAt.value || 0, true)
+        if (!updateAvailable.value) {
+             showToast({ title: '当前已是最新版本', variant: 'success' })
+        }
+    } catch (e: any) {
+        showToast({ 
+            title: '检查更新失败', 
+            description: e instanceof Error ? e.message : '网络错误',
+            variant: 'error' 
+        })
+    } finally {
+        isChecking.value = false
+    }
+}
+
+const handleUpdate = async () => {
+    if (!sourceShareId.value) return
+    isUpdating.value = true
+    try {
+        const data = await getShareData(sourceShareId.value)
+        if (data) {
+             emit('update-from-share', sourceShareId.value, data.data) 
+             showToast({ title: '更新成功', variant: 'success' })
+             updateAvailable.value = false
+             emit('update:open', false)
+        } else {
+             showToast({ title: '获取更新失败', variant: 'error' })
+        }
+    } catch (e: any) {
+         showToast({ 
+            title: '更新失败', 
+            description: e instanceof Error ? e.message : '未知错误',
+            variant: 'error' 
+        })
+    } finally {
+        isUpdating.value = false
+    }
+}
+
+// 自动检测
+watch(() => props.open, (v) => {
+    if(v && isImported.value) {
+        checkUpdate()
+    }
+})
+
+import { useToast } from '@/composables/useToast'
+// ...
+const { showToast } = useToast()
+
+// ...
 const handleCreateShare = async () => {
   const url = await createShare('subGroup', props.groupId, props.subGroupId)
   if (url) {
@@ -43,6 +104,16 @@ const handleCreateShare = async () => {
     if (shareId) {
       emit('shared', shareId)
     }
+    showToast({
+      title: '分享链接已生成',
+      variant: 'success'
+    })
+  } else if (shareError.value) {
+    showToast({
+      title: '创建分享失败',
+      description: shareError.value,
+      variant: 'error'
+    })
   }
 }
 
@@ -53,6 +124,10 @@ const handleCopy = async () => {
     if (success) {
       hasCopied.value = true
       setTimeout(() => hasCopied.value = false, 2000)
+      showToast({
+        title: '已复制到剪贴板',
+        variant: 'success'
+      })
     }
   }
 }
@@ -131,6 +206,34 @@ watch(() => props.open, (open) => {
         </div>
 
         <!-- 已分享状态 -->
+        <div v-else-if="isImported" class="space-y-4">
+           <div class="p-4 rounded-lg bg-green-500/10 border border-green-500/20">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="i-mdi-cloud-download-outline text-green-600 font-bold" />
+              <span class="text-sm font-medium text-green-700">已导入的分享</span>
+            </div>
+             <div class="space-y-1 text-xs text-green-700/80 font-mono">
+                <p>来源 ID: {{ sourceShareId }}</p>
+                <p>上次同步: {{ new Date(lastSyncedAt || 0).toLocaleString() }}</p>
+             </div>
+          </div>
+
+          <div v-if="updateAvailable" class="p-3 rounded-md bg-blue-500/10 border border-blue-500/20 flex items-center justify-between">
+              <span class="text-sm text-blue-700">检测到新版本</span>
+              <Button size="sm" class="h-8" :disabled="isUpdating" @click="handleUpdate">
+                  <Loader2 v-if="isUpdating" class="w-3 h-3 mr-1 animate-spin" />
+                  立即更新
+              </Button>
+          </div>
+          <div v-else class="flex justify-between items-center px-1">
+             <span class="text-xs text-muted-foreground">当前已是最新版本</span>
+             <Button variant="ghost" size="sm" class="h-8 text-xs" :disabled="isChecking" @click="checkUpdate">
+                <Loader2 v-if="isChecking" class="w-3 h-3 mr-1 animate-spin" />
+                检查更新
+             </Button>
+          </div>
+        </div>
+
         <div v-else class="space-y-4">
           <div class="p-4 rounded-lg bg-primary/5 border border-primary/20">
             <div class="flex items-center gap-2 mb-3">

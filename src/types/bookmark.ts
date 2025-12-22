@@ -24,12 +24,16 @@ export interface SubGroup {
   id: string
   name: string
   bookmarkIds: string[]
-  shareId?: string  // 分享 ID，存在则表示已分享
+  shareId?: string        // 作为分享者：分享 ID
+  sourceShareId?: string  // 作为接收者：来源分享 ID
+  lastSyncedAt?: number   // 最后同步时间
 }
 
 export interface Group {
   id: string
   name: string
   children: SubGroup[]
-  shareId?: string  // 分享 ID，存在则表示已分享
+  shareId?: string        // 作为分享者：分享 ID
+  sourceShareId?: string  // 作为接收者：来源分享 ID
+  lastSyncedAt?: number   // 最后同步时间
 }

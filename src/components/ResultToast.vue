@@ -48,7 +48,7 @@ const badgeClass = computed(() => {
     >
       <div
         v-if="open"
-        class="fixed bottom-4 right-4 z-[9999] w-[360px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm p-4"
+        class="fixed top-20 right-4 z-[9999] w-[360px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm p-4"
       >
         <div class="flex items-start gap-3">
           <span :class="[iconClass, 'text-lg shrink-0 mt-0.5']" />

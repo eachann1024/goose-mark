@@ -8,6 +8,7 @@ interface SubGroup {
   id: string
   name: string
   shareId?: string
+  sourceShareId?: string
 }
 
 interface Group {
@@ -15,6 +16,7 @@ interface Group {
   name: string
   children: SubGroup[]
   shareId?: string
+  sourceShareId?: string
 }
 
 const props = defineProps<{
@@ -38,10 +40,18 @@ const emit = defineEmits<{
 const setTab = (value: 'bookmarks' | 'settings') => emit('update:tab', value)
 const formatName = (name: string) => (name.length > 8 ? `${name.slice(0, 8)}…` : name)
 
-// 判断分组是否完全分享（所有子分组都已分享）
-const isGroupFullyShared = (group: Group) => {
-  if (group.children.length === 0) return false
-  return group.children.every(sub => !!sub.shareId)
+// 判断分组是否完全分享
+const isGroupShared = (group: Group) => {
+  if (group.shareId) return true
+  if (group.children.length > 0 && group.children.every(sub => !!sub.shareId)) return true
+  return false
+}
+
+// 判断分组是否为导入
+const isGroupImported = (group: Group) => {
+  if (group.sourceShareId) return true
+  if (group.children.length > 0 && group.children.every(sub => !!sub.sourceShareId)) return true
+  return false
 }
 
 const groupContainerClass = computed(() => {
@@ -71,7 +81,8 @@ const handleGroupMouseEnter = (group: Group) => {
             size="sm"
             class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-md"
             :class="{
-              'ring-2 ring-dashed ring-primary/50 dark:ring-primary/40': isGroupFullyShared(group)
+              'ring-2 ring-dashed ring-blue-500/50 dark:ring-blue-400/50': isGroupShared(group) && !isGroupImported(group),
+              'ring-2 ring-dashed ring-green-500/50 dark:ring-green-400/50': isGroupImported(group)
             }"
             :data-active="activeGroupId === group.id ? 'true' : undefined"
             @click="emit('select-group', group.id)"
@@ -79,7 +90,8 @@ const handleGroupMouseEnter = (group: Group) => {
           >
             <span class="flex items-center gap-1">
               {{ formatName(group.name) }}
-              <span v-if="isGroupFullyShared(group)" class="i-mdi-link-variant text-xs opacity-60" />
+              <span v-if="isGroupShared(group) && !isGroupImported(group)" class="i-mdi-link-variant text-xs opacity-60 text-blue-500" />
+              <span v-if="isGroupImported(group)" class="i-mdi-cloud-download-outline text-xs opacity-60 text-green-500" />
             </span>
           </Button>
         </TooltipTrigger>

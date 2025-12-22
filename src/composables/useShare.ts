@@ -92,7 +92,15 @@ export function useShare() {
         body: JSON.stringify({ type, sourceId, data })
       })
       
-      if (!res.ok) throw new Error('创建分享失败')
+      if (!res.ok) {
+        if (res.status === 429) {
+          throw new Error('请求过于频繁，请稍后再试（5分钟内限 10 次）')
+        }
+        if (res.status === 413) {
+            throw new Error('分享内容过大（上限 5MB）')
+        }
+        throw new Error('创建分享失败')
+      }
       
       const { shareId } = await res.json()
       
@@ -259,6 +267,43 @@ export function useShare() {
     }
   }
 
+  // 检查分享更新
+  const checkForUpdate = async (shareId: string, lastSyncedAt: number, throwOnError = false): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/${shareId}`)
+      
+      if (!res.ok) {
+        if (throwOnError) {
+            if (res.status === 429) throw new Error('请求过于频繁，请稍后再试')
+            throw new Error(`请求失败: ${res.status}`)
+        }
+        return false
+      }
+      
+      const shareData: ShareResponse = await res.json()
+      if (!shareData.active) return false
+      
+      // 注意：server 端的 updatedAt 是分享记录的更新时间
+      return shareData.updatedAt > lastSyncedAt
+    } catch (e) {
+      if (throwOnError) throw e
+      return false
+    }
+  }
+
+  // 获取分享数据（不自动导入）
+  const getShareData = async (shareId: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/${shareId}`)
+      if (!res.ok) throw new Error('Failed to fetch')
+      const shareData = await res.json()
+      if (!shareData.active) throw new Error('Share inactive')
+      return shareData
+    } catch (e) {
+      return null
+    }
+  }
+
   return {
     isSharing,
     isLoadingShare,
@@ -270,6 +315,8 @@ export function useShare() {
     loadShare,
     loadShareData,
     copyShareLink,
-    buildShareUrl
+    buildShareUrl,
+    checkForUpdate,
+    getShareData
   }
 }
