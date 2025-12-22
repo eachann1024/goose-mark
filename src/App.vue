@@ -1,38 +1,17 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+
 
 import SettingsPanel from '@/views/SettingsPanel.vue'
-import ContextMenu from '@/components/ContextMenu.vue'
-import CategoryMultiSelect from '@/components/CategoryMultiSelect.vue'
-import GroupTabs from '@/components/bookmarks/GroupTabs.vue'
-import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
-import ShareManagePanel from '@/components/ShareManagePanel.vue'
-import BookmarksGrid from '@/components/bookmarks/BookmarksGrid.vue'
-import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import type { Bookmark } from '@/types/bookmark'
-import { useStatsStore } from '@/stores/stats'
-import { useSettingsStore } from '@/stores/settings'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Image } from '@/components/ui/image'
-import IconSelector from '@/components/IconSelector.vue'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Loader2 } from 'lucide-vue-next'
 
-import { useAppState } from '@/composables/useAppState'
-import { useBookmarkOperations } from '@/composables/useBookmarkOperations'
-import { useBookmarkForm } from '@/composables/useBookmarkForm'
-import { useSearch } from '@/composables/useSearch'
-import { useKeyboard } from '@/composables/useKeyboard'
-import { useUTools } from '@/composables/useUTools'
-import { useContextMenu } from '@/composables/useContextMenu'
-import { useShare } from '@/composables/useShare'
-import { useToast } from '@/composables/useToast'
-import ResultToast from '@/components/ResultToast.vue'
+
+
+
+
+
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
+import type { Bookmark } from '@/types/bookmark'
+
+
 
 // Stores
 const store = useBookmarkStore()
