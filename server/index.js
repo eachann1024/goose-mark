@@ -16,7 +16,13 @@ const potentialDistPaths = [
   path.join(process.cwd(), '..', 'dist')
 ]
 
-const DIST_DIR = potentialDistPaths.find(p => fs.existsSync(p)) || potentialDistPaths[0]
+const DIST_DIR = potentialDistPaths.find(p => fs.existsSync(p))
+
+if (DIST_DIR) {
+  console.log('>>> Found frontend dist at:', DIST_DIR)
+} else {
+  console.error('>>> CRITICAL: Frontend dist directory not found in any of these paths:', potentialDistPaths)
+}
 
 // Ensure data directory exists
 fs.ensureDirSync(DATA_DIR)
