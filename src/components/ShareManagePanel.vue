@@ -65,19 +65,23 @@ const handleUpdate = async () => {
     if (!sourceShareId.value) return
     isUpdating.value = true
     try {
-        const data = await getShareData(sourceShareId.value)
-        if (data) {
-             emit('update-from-share', sourceShareId.value, data.data) 
+        const result = await getShareData(sourceShareId.value)
+        if (result?.data) {
+             emit('update-from-share', sourceShareId.value, result.data.data) 
              showToast({ title: '更新成功', variant: 'success' })
              updateAvailable.value = false
              emit('update:open', false)
         } else {
-             showToast({ title: '获取更新失败', variant: 'error' })
+             showToast({ 
+               title: '获取更新失败', 
+               description: result?.error || '未知错误',
+               variant: 'error' 
+             })
         }
-    } catch (e: any) {
+    } catch (e: unknown) {
          showToast({ 
             title: '更新失败', 
-            description: e instanceof Error ? e.message : '未知错误',
+            description: e instanceof Error ? e.message : '网络错误',
             variant: 'error' 
         })
     } finally {
@@ -108,10 +112,10 @@ const handleCreateShare = async () => {
       title: '分享链接已生成',
       variant: 'success'
     })
-  } else if (shareError.value) {
+  } else {
     showToast({
       title: '创建分享失败',
-      description: shareError.value,
+      description: shareError.value || '未知错误',
       variant: 'error'
     })
   }
@@ -127,6 +131,12 @@ const handleCopy = async () => {
       showToast({
         title: '已复制到剪贴板',
         variant: 'success'
+      })
+    } else {
+      showToast({
+        title: '复制失败',
+        description: '无法访问剪贴板',
+        variant: 'error'
       })
     }
   }
@@ -144,9 +154,16 @@ const handleCancel = async () => {
   if (!existingShareId.value) return
   isCanceling.value = true
   try {
-    const success = await cancelShare(existingShareId.value, 'subGroup', props.groupId, props.subGroupId)
-    if (success) {
+    const result = await cancelShare(existingShareId.value, 'subGroup', props.groupId, props.subGroupId)
+    if (result.success) {
+      showToast({ title: '已取消分享', variant: 'success' })
       emit('update:open', false)
+    } else {
+      showToast({ 
+        title: '取消分享失败', 
+        description: result.error || '未知错误',
+        variant: 'error' 
+      })
     }
   } finally {
     isCanceling.value = false
