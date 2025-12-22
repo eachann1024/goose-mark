@@ -103,8 +103,34 @@ const {
 const {
   loadShareData,
   isLoadingShare,
-  shareError
+  shareError,
+  createShare,
+  copyShareLink
 } = useShare()
+
+// 分享当前子分组
+const handleShareSubGroup = async () => {
+  const groupId = store.activeGroupId
+  const subGroupId = store.activeSubGroupId
+  
+  // 检查是否已分享
+  const existingShareId = store.getShareId('subGroup', groupId, subGroupId)
+  if (existingShareId) {
+    // 已分享，复制链接
+    const success = await copyShareLink(existingShareId)
+    if (success) {
+      window.utools?.showNotification?.('分享链接已复制到剪贴板')
+    }
+    return
+  }
+  
+  // 创建新分享
+  const url = await createShare('subGroup', groupId, subGroupId)
+  if (url) {
+    await navigator.clipboard.writeText(url)
+    window.utools?.showNotification?.('分享链接已复制到剪贴板')
+  }
+}
 
 // Shared State
 const selectedIndex = ref(-1)
@@ -205,7 +231,7 @@ const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
 // Group Helpers
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
-const shouldShowSubs = computed(() => activeSubGroups.value.length > 1)
+const shouldShowSubs = computed(() => activeSubGroups.value.length >= 1)
 const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GROUP_ID))
 const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
@@ -427,7 +453,9 @@ watch(() => store.bookmarks, () => {
         :show="tab === 'bookmarks' && shouldShowSubs"
         :active-sub-groups="activeSubGroups"
         :active-sub-group-id="store.activeSubGroupId"
+        :active-group-id="store.activeGroupId"
         @select="store.selectSubGroup"
+        @share="handleShareSubGroup"
       />
 
       <BookmarksGrid

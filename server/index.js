@@ -56,33 +56,49 @@ fastify.get('/', async (request, reply) => {
 })
 
 // API Routes
+
+// 创建分享
 fastify.post('/api/share', async (request, reply) => {
   try {
-    const data = request.body
+    const { type, sourceId, data } = request.body
     
     // Basic validation
-    if (!data || typeof data !== 'object') {
-      return reply.code(400).send({ error: 'Invalid data' })
+    if (!type || !sourceId || !data) {
+      return reply.code(400).send({ error: 'Missing required fields: type, sourceId, data' })
+    }
+    if (!['subGroup', 'group'].includes(type)) {
+      return reply.code(400).send({ error: 'Invalid type, must be "subGroup" or "group"' })
     }
 
-    const id = nanoid(10)
-    const filePath = path.join(DATA_DIR, `${id}.json`)
+    const shareId = nanoid(10)
+    const now = Date.now()
+    const shareData = {
+      shareId,
+      type,
+      sourceId,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+      data
+    }
     
-    await fs.writeJson(filePath, data)
+    const filePath = path.join(DATA_DIR, `${shareId}.json`)
+    await fs.writeJson(filePath, shareData)
     
-    return { id }
+    return { shareId }
   } catch (err) {
     request.log.error(err)
     return reply.code(500).send({ error: 'Internal Server Error' })
   }
 })
 
+// 获取分享
 fastify.get('/api/share/:id', async (request, reply) => {
   try {
     const { id } = request.params
     // Prevent directory traversal
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
-        return reply.code(400).send({ error: 'Invalid ID' })
+      return reply.code(400).send({ error: 'Invalid ID' })
     }
 
     const filePath = path.join(DATA_DIR, `${id}.json`)
@@ -91,8 +107,79 @@ fastify.get('/api/share/:id', async (request, reply) => {
       return reply.code(404).send({ error: 'Not Found' })
     }
     
-    const data = await fs.readJson(filePath)
-    return data
+    const shareData = await fs.readJson(filePath)
+    
+    // 检查是否已取消分享
+    if (!shareData.active) {
+      return reply.code(410).send({ error: 'Share has been canceled', canceled: true })
+    }
+    
+    return shareData
+  } catch (err) {
+    request.log.error(err)
+    return reply.code(500).send({ error: 'Internal Server Error' })
+  }
+})
+
+// 更新分享数据
+fastify.put('/api/share/:id', async (request, reply) => {
+  try {
+    const { id } = request.params
+    const { data } = request.body
+    
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return reply.code(400).send({ error: 'Invalid ID' })
+    }
+    if (!data) {
+      return reply.code(400).send({ error: 'Missing data field' })
+    }
+
+    const filePath = path.join(DATA_DIR, `${id}.json`)
+    
+    if (!await fs.pathExists(filePath)) {
+      return reply.code(404).send({ error: 'Not Found' })
+    }
+    
+    const shareData = await fs.readJson(filePath)
+    
+    if (!shareData.active) {
+      return reply.code(410).send({ error: 'Share has been canceled' })
+    }
+    
+    shareData.data = data
+    shareData.updatedAt = Date.now()
+    
+    await fs.writeJson(filePath, shareData)
+    
+    return { success: true, updatedAt: shareData.updatedAt }
+  } catch (err) {
+    request.log.error(err)
+    return reply.code(500).send({ error: 'Internal Server Error' })
+  }
+})
+
+// 取消分享
+fastify.delete('/api/share/:id', async (request, reply) => {
+  try {
+    const { id } = request.params
+    
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return reply.code(400).send({ error: 'Invalid ID' })
+    }
+
+    const filePath = path.join(DATA_DIR, `${id}.json`)
+    
+    if (!await fs.pathExists(filePath)) {
+      return reply.code(404).send({ error: 'Not Found' })
+    }
+    
+    const shareData = await fs.readJson(filePath)
+    shareData.active = false
+    shareData.updatedAt = Date.now()
+    
+    await fs.writeJson(filePath, shareData)
+    
+    return { success: true }
   } catch (err) {
     request.log.error(err)
     return reply.code(500).send({ error: 'Internal Server Error' })

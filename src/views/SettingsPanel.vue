@@ -18,6 +18,7 @@ import type { Group } from '@/types/bookmark'
 import { notify } from '@/lib/notify'
 import { getDebugSnapshot } from '@/lib/debugReport'
 import { useShare } from '@/composables/useShare'
+import { useAI } from '@/composables/useAI'
 import { Loader2, Share2, Copy, Check } from 'lucide-vue-next'
 
 
@@ -25,6 +26,21 @@ const store = useBookmarkStore()
 const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 const statsStore = useStatsStore()
+
+const { checkAiAvailable } = useAI()
+
+// 切换"自动生成"开关时验证 AI 可用性
+const toggleAutoGenerateAI = () => {
+  const newValue = !settingsStore.autoGenerateAI
+  if (newValue) {
+    const { available, reason } = checkAiAvailable()
+    if (!available) {
+      notify(reason)
+      return
+    }
+  }
+  settingsStore.setAutoGenerateAI(newValue)
+}
 
 const { createShareLink, isSharing } = useShare()
 const shareUrl = ref('')
@@ -1026,13 +1042,13 @@ const closeUndoToast = () => {
                   <div class="text-sm font-medium">自动生成标题和描述</div>
                   <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
                 </div>
-                <button 
+                <button
                   type="button"
                   role="switch"
                   :aria-checked="settingsStore.autoGenerateAI"
                   class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                   :class="settingsStore.autoGenerateAI ? 'bg-primary' : 'bg-input'"
-                  @click="settingsStore.setAutoGenerateAI(!settingsStore.autoGenerateAI)"
+                  @click="toggleAutoGenerateAI"
                 >
                   <span 
                     class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
@@ -1229,7 +1245,6 @@ const closeUndoToast = () => {
                          <Input 
                            v-model="editName" 
                            class="flex-1 h-9 text-sm"
-                           :maxlength="8"
                            @keyup.enter="saveEdit"
                            autofocus
                          />
@@ -1276,7 +1291,6 @@ const closeUndoToast = () => {
                      ref="addSubInput"
                      v-model="newSubName" 
                      class="flex-1 h-9 text-sm"
-                     :maxlength="8"
                      placeholder="输入子分组名称..."
                      @keyup.enter="confirmAddSub"
                      @blur="cancelAddSub"

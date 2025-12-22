@@ -9,6 +9,7 @@ import { useUTools } from '@/composables/useUTools'
 import { initConsoleCapture } from '@/lib/debugReport'
 
 const app = createApp(App)
+
 const pinia = createPinia()
 pinia.use(piniaPluginPersistedstate)
 app.use(pinia)

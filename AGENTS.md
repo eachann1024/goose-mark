@@ -49,3 +49,36 @@
 - 轻量系统提示（不需要留在应用内）统一用 `src/lib/notify.ts` 的 `notify`（内部优先 `window.utools.showNotification`，无 uTools 降级 `console.info`）。
 - 链接可达性检测统一走 `src/services/siteProbe.ts` 的 `probeUrl`（内置 URL 规范化、模板地址跳过、HEAD→GET 回退、默认 3s 超时）。
 - 破坏性操作（清空/删除不可逆）优先用应用内 `Dialog` 二次确认，并在完成后给 `ResultToast` 最终反馈（必要时提供“复制列表”动作）。
+
+## 服务器部署配置
+
+### 腾讯云服务器
+- **服务器 IP**：`43.142.149.157`
+- **SSH 用户名**：`ubuntu`
+- **面板**：1Panel (Docker 容器化管理)
+
+### 自动化部署 (CI/CD)
+- **触发方式**：推送到 `master` 分支自动触发 GitHub Actions
+- **构建环境**：GitHub Actions (pnpm + Node 20)
+- **部署路径**：`/opt/1panel/apps/marks.com/index/server`
+- **容器名称**：`GooseMarks`
+- **后端端口**：`3001`（避免与其他服务冲突）
+
+### GitHub Secrets 配置
+| Secret 名称 | 说明 |
+| :--- | :--- |
+| `SERVER_IP` | 腾讯云服务器公网 IP |
+| `SERVER_USER` | SSH 登录用户名 |
+| `SERVER_SSH_KEY` | SSH 私钥（完整内容） |
+| `DEPLOY_PATH` | 1Panel 站点部署路径 |
+
+### 部署流程
+1. `git push origin master` 触发 Actions
+2. GitHub 构建前端 (pnpm build) 并安装后端依赖
+3. 通过 SCP 同步 `server/` 目录（含 `dist/`）到服务器
+4. 通过 SSH 执行 `docker restart GooseMarks`
+
+### 相关文件
+- `.github/workflows/deploy.yml`：自动化部署配置
+- `scripts/deploy.sh`：服务器端部署脚本
+- `server/index.js`：后端入口（Fastify + 静态文件）

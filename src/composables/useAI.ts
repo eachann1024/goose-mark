@@ -11,6 +11,17 @@ export function useAI() {
   const isGenerating = ref(false)
   const aiError = ref('')
 
+  /** 检查 AI 是否可用，返回 { available, reason } */
+  const checkAiAvailable = (): { available: boolean; reason: string } => {
+    if (!window.utools) {
+      return { available: false, reason: '当前不在 uTools 环境中运行' }
+    }
+    if (!window.utools.ai) {
+      return { available: false, reason: '请在 uTools 设置中开启 AI 功能' }
+    }
+    return { available: true, reason: '' }
+  }
+
   const checkUrl = useDebounceFn(async (url: string) => {
     if (!url) {
       isUrlAccessible.value = false
@@ -43,14 +54,15 @@ export function useAI() {
   }, 500)
 
   const generateMetadata = async (url: string) => {
-    if (!url || !isUrlAccessible.value) return null
-  
-    const aiCaller = window.utools?.ai
-    if (!aiCaller) {
-      aiError.value = '当前 uTools 未开启 AI 或版本不支持'
+    if (!url) return null
+
+    const { available, reason } = checkAiAvailable()
+    if (!available) {
+      aiError.value = reason
       return null
     }
-  
+
+    const aiCaller = window.utools!.ai!
     isGenerating.value = true
     aiError.value = ''
     try {
@@ -93,7 +105,14 @@ export function useAI() {
       }
     } catch (e) {
       console.error('[AI] 调用失败:', e)
-      aiError.value = 'AI 生成失败，请确保 uTools 已配置 AI 服务'
+      const errMsg = e instanceof Error ? e.message : String(e)
+      if (errMsg.includes('余额') || errMsg.includes('balance') || errMsg.includes('quota')) {
+        aiError.value = 'AI 余额不足，请在 uTools 中充值'
+      } else if (errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('连接')) {
+        aiError.value = 'AI 服务连接失败，请检查网络'
+      } else {
+        aiError.value = 'AI 生成失败，请稍后重试'
+      }
       return null
     } finally {
       isGenerating.value = false
@@ -106,6 +125,7 @@ export function useAI() {
     isGenerating,
     aiError,
     checkUrl,
+    checkAiAvailable,
     generateMetadata
   }
 }
