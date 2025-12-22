@@ -14,7 +14,11 @@ import FaqNotice from '@/components/FaqNotice.vue'
 import ResultToast from '@/components/ResultToast.vue'
 import draggable from 'vuedraggable'
 import type { Group } from '@/types/bookmark'
+
 import { notify } from '@/lib/notify'
+import { getDebugSnapshot } from '@/lib/debugReport'
+import { useShare } from '@/composables/useShare'
+import { Loader2, Share2, Copy, Check } from 'lucide-vue-next'
 
 
 const store = useBookmarkStore()
@@ -22,9 +26,28 @@ const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 const statsStore = useStatsStore()
 
+const { createShareLink, isSharing } = useShare()
+const shareUrl = ref('')
+const hasCopiedShare = ref(false)
+
+const handleShare = async () => {
+  const url = await createShareLink()
+  if (url) {
+    shareUrl.value = url
+  }
+}
+
+const copyShareUrl = async () => {
+    if (!shareUrl.value) return
+    await copyText(shareUrl.value)
+    hasCopiedShare.value = true
+    setTimeout(() => hasCopiedShare.value = false, 2000)
+}
+
 
 const matching = ref(false)
 const probing = ref(false)
+const reporting = ref(false)
 const probeResult = ref<ProbeResult[]>([])
 const probeTotal = ref(0)
 const probeDone = ref(0)
@@ -220,6 +243,80 @@ const usageTotals = computed(() => {
   })
   return { open, add }
 })
+
+const reportAiIssue = async () => {
+  const utoolsApi = window.utools
+  if (!utoolsApi?.ai) {
+    showResultToast({ variant: 'error', title: 'AI 不可用', description: '请确认 uTools 已开启 AI' }, 6000)
+    return
+  }
+  if (reporting.value) return
+  reporting.value = true
+  try {
+    const snapshot = getDebugSnapshot()
+    const behavior = snapshot.behavior
+      .map(item => `[${new Date(item.ts).toLocaleString()}] ${item.action}${item.detail ? ` - ${item.detail}` : ''}`)
+      .join('\n') || '无'
+    const consoleLogs = snapshot.console
+      .map(item => `[${new Date(item.ts).toLocaleString()}] ${item.level.toUpperCase()} ${item.message}`)
+      .join('\n') || '无'
+
+    const payload = [
+      '请将以下内容整理为插件评论区可提交的反馈：',
+      '1) 问题描述',
+      '2) 复现步骤',
+      '3) 期望结果 / 实际结果',
+      '4) 环境信息（含 uTools 版本）',
+      '5) 相关日志（精简）',
+      '',
+      `uTools 版本: ${utoolsApi?.getVersion?.() ?? '未知'}`,
+      `用户代理: ${navigator.userAgent}`,
+      '',
+      '行为日志:',
+      behavior,
+      '',
+      '控制台日志:',
+      consoleLogs
+    ].join('\n')
+
+    const model = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
+      ? settingsStore.customAiModel.trim()
+      : undefined
+
+    const res = await utoolsApi.ai({
+      model,
+      messages: [
+        { role: 'system', content: '你是一个插件问题反馈助手。请输出结构化中文反馈。' },
+        { role: 'user', content: payload }
+      ]
+    })
+
+    const summary = typeof res === 'string'
+      ? res
+      : typeof res?.content === 'string'
+        ? res.content
+        : typeof res?.text === 'string'
+          ? res.text
+          : JSON.stringify(res)
+
+    if (utoolsApi.copyText) {
+      utoolsApi.copyText(summary)
+    } else if (navigator.clipboard) {
+      await navigator.clipboard.writeText(summary)
+    }
+
+    showResultToast({
+      variant: 'success',
+      title: '已复制反馈内容',
+      description: '请到插件评论区粘贴反馈'
+    }, 6000)
+  } catch (e) {
+    console.error('[Feedback] AI 汇总失败', e)
+    showResultToast({ variant: 'error', title: '汇总失败', description: '请稍后重试' }, 6000)
+  } finally {
+    reporting.value = false
+  }
+}
 
 const buildBackupPayload = () => ({
   version: 1,
@@ -733,6 +830,44 @@ const closeUndoToast = () => {
        </CardContent>
     </Card>
 
+    <!-- Share Card -->
+    <Card>
+      <CardHeader>
+        <CardTitle>分享设置</CardTitle>
+        <CardDescription>生成一个只读的网页链接分享给他人</CardDescription>
+      </CardHeader>
+      <CardContent>
+          <div class="space-y-4">
+             <div class="flex items-center gap-4">
+                <Button :disabled="isSharing" @click="handleShare">
+                   <Loader2 v-if="isSharing" class="w-4 h-4 mr-2 animate-spin" />
+                   <Share2 v-else class="w-4 h-4 mr-2" />
+                   生成分享链接
+                </Button>
+                <span class="text-sm text-muted-foreground">将生成当前状态的快照链接</span>
+             </div>
+
+             <!-- Share Result Display -->
+             <div v-if="shareUrl" class="p-4 rounded-lg bg-muted/30 border border-border animate-in fade-in slide-in-from-top-2">
+                <div class="flex items-center gap-2 mb-2">
+                   <span class="i-mdi-check-circle text-green-500" />
+                   <span class="text-sm font-medium">分享链接已生成</span>
+                </div>
+                <div class="flex items-center gap-2">
+                   <Input readonly :model-value="shareUrl" class="font-mono text-sm h-9 bg-background flex-1" />
+                   <Button size="icon" variant="outline" class="h-9 w-9 shrink-0" @click="copyShareUrl">
+                      <Check v-if="hasCopiedShare" class="w-4 h-4 text-green-500" />
+                      <Copy v-else class="w-4 h-4" />
+                   </Button>
+                </div>
+                <p class="text-xs text-muted-foreground mt-2">
+                   此链接包含当前所有书签的快照，接收方只能查看无法编辑。
+                </p>
+             </div>
+          </div>
+      </CardContent>
+    </Card>
+
     <!-- Layout Card -->
     <div class="grid md:grid-cols-2 gap-6">
       <Card>
@@ -885,25 +1020,69 @@ const closeUndoToast = () => {
            <CardDescription>配置 AI 智能辅助功能（需在 uTools 中开启 AI）</CardDescription>
          </CardHeader>
          <CardContent>
-            <label class="flex items-center justify-between cursor-pointer">
-              <div class="space-y-0.5">
-                <div class="text-sm font-medium">自动生成标题和描述</div>
-                <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
-              </div>
-              <button 
-                type="button"
-                role="switch"
-                :aria-checked="settingsStore.autoGenerateAI"
-                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                :class="settingsStore.autoGenerateAI ? 'bg-primary' : 'bg-input'"
-                @click="settingsStore.setAutoGenerateAI(!settingsStore.autoGenerateAI)"
-              >
-                <span 
-                  class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                  :class="settingsStore.autoGenerateAI ? 'translate-x-5' : 'translate-x-0'"
+            <div class="flex flex-col gap-4">
+              <label class="flex items-center justify-between cursor-pointer">
+                <div class="space-y-0.5">
+                  <div class="text-sm font-medium">自动生成标题和描述</div>
+                  <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
+                </div>
+                <button 
+                  type="button"
+                  role="switch"
+                  :aria-checked="settingsStore.autoGenerateAI"
+                  class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  :class="settingsStore.autoGenerateAI ? 'bg-primary' : 'bg-input'"
+                  @click="settingsStore.setAutoGenerateAI(!settingsStore.autoGenerateAI)"
+                >
+                  <span 
+                    class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
+                    :class="settingsStore.autoGenerateAI ? 'translate-x-5' : 'translate-x-0'"
+                  />
+                </button>
+              </label>
+
+              <label class="flex items-center justify-between cursor-pointer">
+                <div class="space-y-0.5">
+                  <div class="text-sm font-medium">使用指定 AI 模型</div>
+                  <div class="text-xs text-muted-foreground">默认使用 deepseek-v3</div>
+                </div>
+                <button 
+                  type="button"
+                  role="switch"
+                  :aria-checked="settingsStore.useCustomAiModel"
+                  class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  :class="settingsStore.useCustomAiModel ? 'bg-primary' : 'bg-input'"
+                  @click="settingsStore.setUseCustomAiModel(!settingsStore.useCustomAiModel)"
+                >
+                  <span 
+                    class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
+                    :class="settingsStore.useCustomAiModel ? 'translate-x-5' : 'translate-x-0'"
+                  />
+                </button>
+              </label>
+
+              <div v-if="settingsStore.useCustomAiModel" class="flex items-center gap-3">
+                <label class="text-sm text-muted-foreground shrink-0">模型</label>
+                <Input
+                  class="h-9 flex-1"
+                  placeholder="例如 deepseek-v3 自定义模型名"
+                  :value="settingsStore.customAiModel"
+                  @input="settingsStore.setCustomAiModel(($event.target as HTMLInputElement).value)"
                 />
-              </button>
-            </label>
+              </div>
+
+              <div class="flex items-center gap-3">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  :disabled="reporting"
+                  @click="reportAiIssue"
+                >
+                  {{ reporting ? '生成中...' : 'AI 上报错误' }}
+                </Button>
+                <span class="text-xs text-muted-foreground">生成反馈并复制到剪贴板</span>
+              </div>
+            </div>
          </CardContent>
       </Card>
     </div>

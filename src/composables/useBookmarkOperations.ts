@@ -2,6 +2,7 @@
 import { reactive, ref, computed } from 'vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
+import { addBehaviorLog } from '@/lib/debugReport'
 import type { Bookmark } from '@/types/bookmark'
 
 type UToolsExtendedApi = {
@@ -16,6 +17,7 @@ type UToolsExtendedApi = {
 export function useBookmarkOperations() {
   const store = useBookmarkStore()
   const settingsStore = useSettingsStore()
+  const isDevRuntime = import.meta.env.DEV
 
   // Delete Confirmation State
   const showDeleteConfirm = ref(false)
@@ -75,6 +77,10 @@ export function useBookmarkOperations() {
   }
 
   const openBookmarkLink = (bookmark: Bookmark) => {
+    if (isDevRuntime) {
+      console.info('[Bookmark] open', bookmark)
+    }
+    addBehaviorLog('open', `${bookmark.title || ''} ${bookmark.url || ''}`.trim())
     const raw = typeof bookmark.url === 'string' ? bookmark.url : ''
     const hasTemplate = /{[^}]+}/.test(raw)
     const queryFromUi = (typeof store.search === 'string' ? store.search : '').trim()
@@ -174,8 +180,8 @@ export function useBookmarkOperations() {
     store.emptyTrash()
   }
 
-  const handleReorder = ({ fromId, toId }: { fromId: string; toId: string }, isSearching: boolean) => {
-    if (isSearching) return
+  const handleReorder = ({ fromId, toId }: { fromId: string; toId: string }) => {
+    if (store.search) return
     const groupId = store.activeGroupId
     const subId = store.activeSubGroupId
     if (!groupId || !subId || groupId === TRASH_GROUP_ID) return

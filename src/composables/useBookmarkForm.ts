@@ -7,6 +7,7 @@ import { useStatsStore } from '@/stores/stats'
 import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { useAI } from './useAI'
+import { addBehaviorLog } from '@/lib/debugReport'
 
 type UBrowserApi = {
   goto: (url: string) => {
@@ -146,6 +147,7 @@ export function useBookmarkForm() {
 
   const askAI = async () => {
     if (!draft.url) return
+    addBehaviorLog('ask-ai', draft.url)
     const res = await generateMetadata(draft.url)
     if (res) {
         if (res.title) draft.title = res.title
@@ -200,6 +202,7 @@ export function useBookmarkForm() {
     isSaving.value = true
 
     try {
+      addBehaviorLog(editingId.value ? 'edit-bookmark' : 'add-bookmark', `${draft.title} ${draft.url}`.trim())
       const iconToSave = previewIcon.value ?? buildTextIcon()
 
       if (editingId.value) {

@@ -6,6 +6,7 @@ import './assets/index.css'
 import 'uno.css'
 import { useSettingsStore } from '@/stores/settings'
 import { useUTools } from '@/composables/useUTools'
+import { initConsoleCapture } from '@/lib/debugReport'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -15,4 +16,5 @@ setActivePinia(pinia)
 const settingsStore = useSettingsStore()
 const { setExpendHeight } = useUTools()
 setExpendHeight(settingsStore.windowHeight)
+initConsoleCapture()
 app.mount('#app')

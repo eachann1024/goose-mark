@@ -10,6 +10,8 @@ export const useSettingsStore = defineStore('settings', {
     enableSubInput: false,
     autoCloseWindow: true, // 独立窗口模式下，打开标签后自动关闭
     preferUtoolsBrowser: false,
+    useCustomAiModel: false,
+    customAiModel: '',
     windowHeight: 700
   }),
   actions: {
@@ -35,6 +37,12 @@ export const useSettingsStore = defineStore('settings', {
     },
     setPreferUtoolsBrowser(value: boolean) {
       this.preferUtoolsBrowser = !!value
+    },
+    setUseCustomAiModel(value: boolean) {
+      this.useCustomAiModel = !!value
+    },
+    setCustomAiModel(value: string) {
+      this.customAiModel = String(value || '')
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0

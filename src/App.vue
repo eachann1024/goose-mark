@@ -8,6 +8,7 @@ import GroupTabs from '@/components/bookmarks/GroupTabs.vue'
 import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
 import BookmarksGrid from '@/components/bookmarks/BookmarksGrid.vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import type { Bookmark } from '@/types/bookmark'
 import { useStatsStore } from '@/stores/stats'
 import { useSettingsStore } from '@/stores/settings'
 import { Button } from '@/components/ui/button'
@@ -19,6 +20,7 @@ import IconSelector from '@/components/IconSelector.vue'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Loader2 } from 'lucide-vue-next'
 
 import { useAppState } from '@/composables/useAppState'
 import { useBookmarkOperations } from '@/composables/useBookmarkOperations'
@@ -27,6 +29,7 @@ import { useSearch } from '@/composables/useSearch'
 import { useKeyboard } from '@/composables/useKeyboard'
 import { useUTools } from '@/composables/useUTools'
 import { useContextMenu } from '@/composables/useContextMenu'
+import { useShare } from '@/composables/useShare'
 
 // Stores
 const store = useBookmarkStore()
@@ -96,6 +99,12 @@ const {
   FEATURE_PREFIX,
   setExpendHeight
 } = useUTools()
+
+const {
+  loadShareData,
+  isLoadingShare,
+  shareError
+} = useShare()
 
 // Shared State
 const selectedIndex = ref(-1)
@@ -201,8 +210,17 @@ const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GRO
 const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
 // Lifecycle
-onMounted(() => {
-  store.migrateFromLegacy()
+onMounted(async () => {
+    // Check for shareId in URL
+    const urlParams = new URLSearchParams(window.location.search)
+    const shareId = urlParams.get('shareId')
+    
+    if (shareId) {
+      await loadShareData(shareId)
+    } else {
+      store.migrateFromLegacy()
+    }
+  
   statsStore.recordUse('open')
   
   type UToolsApi = {
@@ -248,6 +266,9 @@ onMounted(() => {
        if (typeof code === 'string' && code.startsWith(FEATURE_PREFIX)) {
          const id = code.slice(FEATURE_PREFIX.length)
          const bookmark = store.bookmarks.find(b => b.id === id)
+         if (import.meta.env.DEV) {
+           console.info('[Bookmark] utools open', bookmark)
+         }
          const query = getEnterText(params?.payload).trim()
          if (!bookmark) {
            window.utools?.outPlugin()
@@ -264,7 +285,9 @@ onMounted(() => {
          let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
          if (!/^https?:\/\//i.test(url)) url = 'https://' + url
          openUrl(url)
-         window.utools?.outPlugin()
+         if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
+           window.utools?.outPlugin()
+         }
          return
        }
 
@@ -430,8 +453,9 @@ watch(() => store.bookmarks, () => {
       </section>
     </main>
     
+
     <ContextMenu 
-      v-if="contextMenu.show" 
+      v-if="contextMenu.show && !store.isReadOnly" 
       :x="contextMenu.x" 
       :y="contextMenu.y" 
       :isTrash="isTrashActive"
@@ -638,6 +662,12 @@ watch(() => store.bookmarks, () => {
       </DialogContent>
     </Dialog>
   </div>
+  
+  <div v-if="isLoadingShare" class="fixed inset-0 z-[99999] bg-background flex flex-col items-center justify-center gap-4">
+    <Loader2 class="w-10 h-10 animate-spin text-primary" />
+    <p class="text-muted-foreground font-medium">正在加载分享数据...</p>
+  </div>
+  
   </TooltipProvider>
 </template>
 
