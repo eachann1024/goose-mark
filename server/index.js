@@ -58,6 +58,12 @@ if (DIST_DIR) {
     prefix: '/',
     wildcard: false // 禁用通配符以防干扰 API
   })
+  
+  // 处理分享路径下的资源请求 (如 /s/xxx/assets/... -> /assets/...)
+  fastify.get('/s/:shareId/assets/*', async (req, reply) => {
+    const assetPath = req.params['*']
+    return reply.sendFile(`assets/${assetPath}`)
+  })
 }
 
 // API Routes
@@ -188,7 +194,14 @@ fastify.delete('/api/share/:id', async (request, reply) => {
   }
 })
 
-// Fallback for SPA routing
+// 分享页面路由 - 返回 index.html 让前端处理
+fastify.get('/s/:shareId', async (req, reply) => {
+  if (DIST_DIR && fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
+    return reply.sendFile('index.html')
+  }
+  return reply.code(404).send({ error: 'Not Found' })
+})
+
 // Fallback for SPA routing
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api')) {
