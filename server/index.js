@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
@@ -5,9 +6,9 @@ import { nanoid } from 'nanoid'
 import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { initDatabase, createShare, getShare, updateShare, cancelShare } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const DATA_DIR = path.join(__dirname, 'data')
 // 兼容本地和容器环境的路径查找
 const potentialDistPaths = [
   path.join(__dirname, '..', 'dist'), // 本地/默认
@@ -25,9 +26,6 @@ if (DIST_DIR) {
 } else {
   console.error('>>> CRITICAL: Frontend dist directory not found in any of these paths:', potentialDistPaths)
 }
-
-// Ensure data directory exists
-fs.ensureDirSync(DATA_DIR)
 
 const fastify = Fastify({
   logger: true
@@ -63,21 +61,9 @@ fastify.post('/api/share', async (request, reply) => {
     }
 
     const shareId = nanoid(10)
-    const now = Date.now()
-    const shareData = {
-      shareId,
-      type,
-      sourceId,
-      active: true,
-      createdAt: now,
-      updatedAt: now,
-      data
-    }
+    const result = await createShare(shareId, type, sourceId, data)
     
-    const filePath = path.join(DATA_DIR, `${shareId}.json`)
-    await fs.writeJson(filePath, shareData)
-    
-    return { shareId }
+    return { shareId: result.shareId }
   } catch (err) {
     request.log.error(err)
     return reply.code(500).send({ error: 'Internal Server Error' })
@@ -88,18 +74,16 @@ fastify.post('/api/share', async (request, reply) => {
 fastify.get('/api/share/:id', async (request, reply) => {
   try {
     const { id } = request.params
-    // Prevent directory traversal
+    // Prevent directory traversal/SQL injection (though param query is safe)
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
       return reply.code(400).send({ error: 'Invalid ID' })
     }
 
-    const filePath = path.join(DATA_DIR, `${id}.json`)
+    const shareData = await getShare(id)
     
-    if (!await fs.pathExists(filePath)) {
+    if (!shareData) {
       return reply.code(404).send({ error: 'Not Found' })
     }
-    
-    const shareData = await fs.readJson(filePath)
     
     // 检查是否已取消分享
     if (!shareData.active) {
@@ -126,24 +110,19 @@ fastify.put('/api/share/:id', async (request, reply) => {
       return reply.code(400).send({ error: 'Missing data field' })
     }
 
-    const filePath = path.join(DATA_DIR, `${id}.json`)
+    const existing = await getShare(id)
     
-    if (!await fs.pathExists(filePath)) {
+    if (!existing) {
       return reply.code(404).send({ error: 'Not Found' })
     }
     
-    const shareData = await fs.readJson(filePath)
-    
-    if (!shareData.active) {
+    if (!existing.active) {
       return reply.code(410).send({ error: 'Share has been canceled' })
     }
     
-    shareData.data = data
-    shareData.updatedAt = Date.now()
+    await updateShare(id, data)
     
-    await fs.writeJson(filePath, shareData)
-    
-    return { success: true, updatedAt: shareData.updatedAt }
+    return { success: true, updatedAt: Date.now() }
   } catch (err) {
     request.log.error(err)
     return reply.code(500).send({ error: 'Internal Server Error' })
@@ -159,17 +138,13 @@ fastify.delete('/api/share/:id', async (request, reply) => {
       return reply.code(400).send({ error: 'Invalid ID' })
     }
 
-    const filePath = path.join(DATA_DIR, `${id}.json`)
+    const existing = await getShare(id)
     
-    if (!await fs.pathExists(filePath)) {
+    if (!existing) {
       return reply.code(404).send({ error: 'Not Found' })
     }
     
-    const shareData = await fs.readJson(filePath)
-    shareData.active = false
-    shareData.updatedAt = Date.now()
-    
-    await fs.writeJson(filePath, shareData)
+    await cancelShare(id)
     
     return { success: true }
   } catch (err) {
@@ -178,6 +153,7 @@ fastify.delete('/api/share/:id', async (request, reply) => {
   }
 })
 
+// Fallback for SPA routing
 // Fallback for SPA routing
 fastify.setNotFoundHandler((req, reply) => {
   if (req.raw.url.startsWith('/api')) {
@@ -192,6 +168,9 @@ fastify.setNotFoundHandler((req, reply) => {
 // Start server
 const start = async () => {
   try {
+    // Initialize Database
+    await initDatabase()
+    
     const port = process.env.PORT || 3001
     await fastify.listen({ port, host: '0.0.0.0' })
     console.log(`Server listening on port ${port}`)

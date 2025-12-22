@@ -56,8 +56,19 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: DEPLOY_PATH=${{ secrets.DEPLOY_PATH }}/server
+          envs: DEPLOY_PATH=${{ secrets.DEPLOY_PATH }}/server,DB_PASSWORD=${{ secrets.DB_PASSWORD }}
           script: |
             # 路径对齐：脚本现在就在 server 目录下
             chmod +x ${{ secrets.DEPLOY_PATH }}/server/deploy.sh
+            
+            # 生成 .env 文件
+            cat <<EOF > ${{ secrets.DEPLOY_PATH }}/server/.env
+            DB_HOST=localhost
+            DB_PORT=5432
+            DB_NAME=GooseMarks
+            DB_USER=GooseMarks
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            PORT=3001
+            EOF
+            
             ${{ secrets.DEPLOY_PATH }}/server/deploy.sh
