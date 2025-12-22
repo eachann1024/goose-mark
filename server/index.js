@@ -47,14 +47,6 @@ if (DIST_DIR) {
   })
 }
 
-// Explicit route for index.html at root
-fastify.get('/', async (request, reply) => {
-  if (DIST_DIR && fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
-    return reply.sendFile('index.html')
-  }
-  return { status: 'ok', msg: 'Backend is running, but Frontend dist not found.', monitoredPaths: potentialDistPaths }
-})
-
 // API Routes
 
 // 创建分享
