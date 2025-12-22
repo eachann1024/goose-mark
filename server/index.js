@@ -39,15 +39,21 @@ await fastify.register(cors, {
 })
 
 // Serve static files from frontend dist
-// Note: We expect the frontend to be built into ../dist
-if (fs.existsSync(DIST_DIR)) {
+if (DIST_DIR) {
   await fastify.register(fastifyStatic, {
     root: DIST_DIR,
-    prefix: '/'
+    prefix: '/',
+    wildcard: false // 禁用通配符以防干扰 API
   })
-} else {
-  console.warn('Frontend dist directory not found. Static serving disabled.')
 }
+
+// Explicit route for index.html at root
+fastify.get('/', async (request, reply) => {
+  if (DIST_DIR && fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
+    return reply.sendFile('index.html')
+  }
+  return { status: 'ok', msg: 'Backend is running, but Frontend dist not found.', monitoredPaths: potentialDistPaths }
+})
 
 // API Routes
 fastify.post('/api/share', async (request, reply) => {
@@ -93,15 +99,16 @@ fastify.get('/api/share/:id', async (request, reply) => {
   }
 })
 
-// Fallback for SPA routing if serving static files
-if (fs.existsSync(DIST_DIR)) {
-  fastify.setNotFoundHandler((req, reply) => {
-    if (req.raw.url.startsWith('/api')) {
-       return reply.code(404).send({ error: 'API Not Found' })
-    }
+// Fallback for SPA routing
+fastify.setNotFoundHandler((req, reply) => {
+  if (req.raw.url.startsWith('/api')) {
+    return reply.code(404).send({ error: 'API Not Found' })
+  }
+  if (DIST_DIR && fs.existsSync(path.join(DIST_DIR, 'index.html'))) {
     return reply.sendFile('index.html')
-  })
-}
+  }
+  return reply.code(404).send({ error: 'Not Found' })
+})
 
 // Start server
 const start = async () => {
