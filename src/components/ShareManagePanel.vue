@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { useShare } from '@/composables/useShare'
 import { useBookmarkStore } from '@/stores/bookmark'
+import { useBookmarkOperations } from '@/composables/useBookmarkOperations'
 import { Copy, Check, ExternalLink, Trash2, Loader2 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -21,6 +22,7 @@ const emit = defineEmits<{
 
 const store = useBookmarkStore()
 const { createShare, cancelShare, copyShareLink, buildShareUrl, isSharing, shareError, checkForUpdate, getShareData } = useShare()
+const { openUrl } = useBookmarkOperations()
 
 // 当前子分组信息
 const currentSubGroup = computed(() => {
@@ -145,7 +147,7 @@ const handleCopy = async () => {
 // 打开链接
 const handleOpen = () => {
   if (shareUrl.value) {
-    window.open(shareUrl.value, '_blank')
+    openUrl(shareUrl.value)
   }
 }
 
