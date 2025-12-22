@@ -8,7 +8,15 @@ import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_DIR = path.join(__dirname, 'data')
-const DIST_DIR = path.join(__dirname, '..', 'dist')
+// 兼容本地和容器环境的路径查找
+const potentialDistPaths = [
+  path.join(__dirname, '..', 'dist'), // 本地/默认
+  path.join(__dirname, 'dist'),        // 容器内可能平级
+  path.join(process.cwd(), 'dist'),    // 运行目录下
+  path.join(process.cwd(), '..', 'dist')
+]
+
+const DIST_DIR = potentialDistPaths.find(p => fs.existsSync(p)) || potentialDistPaths[0]
 
 // Ensure data directory exists
 fs.ensureDirSync(DATA_DIR)
