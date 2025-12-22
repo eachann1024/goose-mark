@@ -1,7 +1,4 @@
 
-import { ref, computed, nextTick, watch } from 'vue'
-import { useEventListener } from '@vueuse/core'
-import { useSettingsStore } from '@/stores/settings'
 import type { Bookmark } from '@/types/bookmark'
 import type { Ref } from 'vue'
 

@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+
 import { utoolsStorage } from '@/lib/utoolsStorage'
 
 type UsageType = 'open' | 'add'

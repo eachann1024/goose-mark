@@ -1,8 +1,5 @@
 
-import { ref, computed, nextTick, toRef, watch } from 'vue'
-import { refDebounced, useEventListener } from '@vueuse/core'
-import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useSettingsStore } from '@/stores/settings'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark } from '@/types/bookmark'
 import type { Ref } from 'vue'
