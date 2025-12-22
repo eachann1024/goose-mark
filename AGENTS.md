@@ -64,6 +64,11 @@
 - **容器名称**：`GooseMarks`
 - **后端端口**：`3001`（避免与其他服务冲突）
 
+### PostgreSQL 数据库
+- **数据库名称**：`GooseMarks`
+- **用户名**：`GooseMarks`
+- **密码**：存储在 GitHub Secrets `DB_PASSWORD` 中
+
 ### GitHub Secrets 配置
 | Secret 名称 | 说明 |
 | :--- | :--- |
