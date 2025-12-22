@@ -45,10 +45,10 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          # 只同步 server 和 scripts，因为 dist 已经进去了
+          # 包含 server 下的所有内容 (含进入其中的 dist)
           source: "server/**,scripts/deploy.sh"
-          target: ${{ secrets.DEPLOY_PATH }}
-          strip_components: 0
+          target: ${{ secrets.DEPLOY_PATH }}/server
+          strip_components: 1
 
       - name: Execute Remote SSH Commands
         uses: appleboy/ssh-action@v1.0.3
