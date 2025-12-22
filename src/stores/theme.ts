@@ -1,6 +1,4 @@
-import { defineStore } from 'pinia'
-import { utoolsStorage } from '@/lib/utoolsStorage'
-import { ref } from 'vue'
+
 
 export type ThemeType = 'default' | 'coffee'
 

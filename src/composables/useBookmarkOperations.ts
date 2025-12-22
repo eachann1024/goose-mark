@@ -1,7 +1,5 @@
 
-import { reactive, ref, computed } from 'vue'
-import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useSettingsStore } from '@/stores/settings'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import { addBehaviorLog } from '@/lib/debugReport'
 import type { Bookmark } from '@/types/bookmark'
 

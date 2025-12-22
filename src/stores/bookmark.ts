@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, Group, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { bulkMatchMissing, ensureIconForBookmark } from '@/services/iconCache'
