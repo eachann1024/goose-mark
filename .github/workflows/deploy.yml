@@ -56,7 +56,8 @@ jobs:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          envs: DEPLOY_PATH=${{ secrets.DEPLOY_PATH }}
+          envs: DEPLOY_PATH=${{ secrets.DEPLOY_PATH }}/server
           script: |
-            chmod +x ${{ secrets.DEPLOY_PATH }}/scripts/deploy.sh
-            ${{ secrets.DEPLOY_PATH }}/scripts/deploy.sh
+            # 路径对齐：脚本现在就在 server 目录下
+            chmod +x ${{ secrets.DEPLOY_PATH }}/server/deploy.sh
+            ${{ secrets.DEPLOY_PATH }}/server/deploy.sh
