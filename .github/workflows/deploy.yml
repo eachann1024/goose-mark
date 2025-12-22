@@ -15,7 +15,7 @@ jobs:
       - name: Install pnpm
         uses: pnpm/action-setup@v3
         with:
-          version: 8
+          version: 9
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -63,7 +63,7 @@ jobs:
             
             # 生成 .env 文件
             cat <<EOF > ${{ secrets.DEPLOY_PATH }}/server/.env
-            DB_HOST=localhost
+            DB_HOST=172.17.0.1
             DB_PORT=5432
             DB_NAME=GooseMarks
             DB_USER=GooseMarks
