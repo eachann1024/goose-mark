@@ -3,8 +3,21 @@ import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 
+interface SubGroup {
+  id: string
+  name: string
+  shareId?: string
+}
+
+interface Group {
+  id: string
+  name: string
+  children: SubGroup[]
+  shareId?: string
+}
+
 const props = defineProps<{
-  visibleGroups: Array<{ id: string; name: string }>
+  visibleGroups: Group[]
   activeGroupId: string
   tab: 'bookmarks' | 'settings'
   isUTools: boolean
@@ -23,6 +36,13 @@ const emit = defineEmits<{
 
 const setTab = (value: 'bookmarks' | 'settings') => emit('update:tab', value)
 const formatName = (name: string) => (name.length > 8 ? `${name.slice(0, 8)}…` : name)
+
+// 判断分组是否完全分享（所有子分组都已分享）
+const isGroupFullyShared = (group: Group) => {
+  if (group.children.length === 0) return false
+  return group.children.every(sub => !!sub.shareId)
+}
+
 const groupContainerClass = computed(() => {
   if (props.groupLayout === 'scroll') {
     return 'flex items-center gap-2 overflow-x-auto no-scrollbar mask-gradient-right whitespace-nowrap'
@@ -40,11 +60,16 @@ const groupContainerClass = computed(() => {
         variant="ghost"
         size="sm"
         class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-md"
+        :class="{
+          'ring-2 ring-dashed ring-primary/50 dark:ring-primary/40': isGroupFullyShared(group)
+        }"
         :data-active="activeGroupId === group.id ? 'true' : undefined"
-        :title="group.name"
         @click="emit('select-group', group.id)"
       >
-        {{ formatName(group.name) }}
+        <span class="flex items-center gap-1">
+          {{ formatName(group.name) }}
+          <span v-if="isGroupFullyShared(group)" class="i-mdi-link-variant text-xs opacity-60" />
+        </span>
       </Button>
     </div>
 

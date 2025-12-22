@@ -23,11 +23,13 @@ export interface Bookmark {
 export interface SubGroup {
   id: string
   name: string
-  bookmarkIds: string[]  // 改为 ID 引用，书签数据提升到顶层
+  bookmarkIds: string[]
+  shareId?: string  // 分享 ID，存在则表示已分享
 }
 
 export interface Group {
   id: string
   name: string
   children: SubGroup[]
+  shareId?: string  // 分享 ID，存在则表示已分享
 }

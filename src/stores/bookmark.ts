@@ -488,6 +488,36 @@ export const useBookmarkStore = defineStore('bookmark', {
       // Reset active selections to first valid if possible
       this.activeGroupId = this.groups[0]?.id ?? ''
       this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
+    },
+    // 设置分享 ID
+    setShareId(type: 'subGroup' | 'group', groupId: string, subGroupId: string | undefined, shareId: string) {
+      if (type === 'group') {
+        const group = this.groups.find(g => g.id === groupId)
+        if (group) group.shareId = shareId
+      } else if (subGroupId) {
+        const group = this.groups.find(g => g.id === groupId)
+        const sub = group?.children.find(c => c.id === subGroupId)
+        if (sub) sub.shareId = shareId
+      }
+    },
+    // 清除分享 ID
+    clearShareId(type: 'subGroup' | 'group', groupId: string, subGroupId?: string) {
+      if (type === 'group') {
+        const group = this.groups.find(g => g.id === groupId)
+        if (group) delete group.shareId
+      } else if (subGroupId) {
+        const group = this.groups.find(g => g.id === groupId)
+        const sub = group?.children.find(c => c.id === subGroupId)
+        if (sub) delete sub.shareId
+      }
+    },
+    // 获取分组/子分组的分享 ID
+    getShareId(type: 'subGroup' | 'group', groupId: string, subGroupId?: string): string | undefined {
+      if (type === 'group') {
+        return this.groups.find(g => g.id === groupId)?.shareId
+      }
+      const group = this.groups.find(g => g.id === groupId)
+      return group?.children.find(c => c.id === subGroupId)?.shareId
     }
   },
   persist: {

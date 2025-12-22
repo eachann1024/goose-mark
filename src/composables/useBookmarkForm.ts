@@ -8,6 +8,7 @@ import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { useAI } from './useAI'
 import { addBehaviorLog } from '@/lib/debugReport'
+import { notify } from '@/lib/notify'
 
 type UBrowserApi = {
   goto: (url: string) => {
@@ -27,7 +28,7 @@ export function useBookmarkForm() {
   const store = useBookmarkStore()
   const statsStore = useStatsStore()
   const settingsStore = useSettingsStore()
-  const { checkUrl, askAI: rawAskAI, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata } = useAI()
+  const { checkUrl, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata, checkAiAvailable } = useAI()
 
   const showAdd = ref(false)
   const modalTitle = ref('新建书签')
@@ -145,15 +146,25 @@ export function useBookmarkForm() {
     }
   }
 
-  const askAI = async () => {
+  const askAI = async (showNotify = false) => {
     if (!draft.url) return
+
+    // 先检查 AI 可用性
+    const { available, reason } = checkAiAvailable()
+    if (!available) {
+      if (showNotify) notify(reason)
+      formError.value = reason
+      return
+    }
+
     addBehaviorLog('ask-ai', draft.url)
     const res = await generateMetadata(draft.url)
     if (res) {
         if (res.title) draft.title = res.title
         if (res.desc) draft.desc = res.desc
-    } else {
-        formError.value = aiError.value 
+    } else if (aiError.value) {
+        if (showNotify) notify(aiError.value)
+        formError.value = aiError.value
     }
   }
 
@@ -329,14 +340,14 @@ export function useBookmarkForm() {
           draft.title = pageTitle
         }
         titleFetchFailed.value = false
-        
+
         if (settingsStore.autoGenerateAI && !editingId.value) {
-          askAI()
+          askAI(true)
         }
       } else {
         titleFetchFailed.value = true
         if (settingsStore.autoGenerateAI && !editingId.value) {
-          askAI()
+          askAI(true)
         }
       }
     }, 600)
