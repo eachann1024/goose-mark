@@ -19,6 +19,7 @@ const props = defineProps<{
   hideAddCard?: boolean
   showCommandHints?: boolean
   hintKeyById?: Record<string, string>
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -40,7 +41,7 @@ const localBookmarks = computed({
 
 // vuedraggable change 事件处理
 const handleDragChange = (evt: { moved?: { oldIndex: number; newIndex: number } }) => {
-  if (!evt.moved) return
+  if (!evt.moved || props.readonly) return
   const { oldIndex, newIndex } = evt.moved
   if (oldIndex === newIndex) return
   
@@ -105,6 +106,7 @@ const confirmEmptyTrash = () => {
       drag-class="bookmark-drag-active"
       class="grid gap-4 content-start"
       :style="gridStyle"
+      :disabled="readonly"
       @change="handleDragChange"
     >
       <template #item="{ element: bookmark, index }">
@@ -125,7 +127,7 @@ const confirmEmptyTrash = () => {
         </div>
       </template>
       <template #footer>
-        <div v-if="!isTrashActive && !hideAddCard">
+        <div v-if="!isTrashActive && !hideAddCard && !readonly">
           <Tooltip>
             <TooltipTrigger as-child>
               <Button
@@ -151,14 +153,14 @@ const confirmEmptyTrash = () => {
       </Button>
     </div>
 
-    <Dialog :open="emptyTrashConfirmOpen" @update:open="v => (emptyTrashConfirmOpen.value = v)">
+    <Dialog :open="emptyTrashConfirmOpen" @update:open="v => (emptyTrashConfirmOpen = v)">
       <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent>
         <DialogHeader>
           <DialogTitle>清空回收站？</DialogTitle>
           <DialogDescription>此操作不可恢复，将永久删除回收站内 {{ bookmarks.length }} 条书签。</DialogDescription>
         </DialogHeader>
         <DialogFooter class="gap-2 sm:gap-0">
-          <Button variant="ghost" @click="emptyTrashConfirmOpen.value = false">取消</Button>
+          <Button variant="ghost" @click="emptyTrashConfirmOpen = false">取消</Button>
           <Button variant="destructive" @click="confirmEmptyTrash">确认清空</Button>
         </DialogFooter>
       </DialogContent>

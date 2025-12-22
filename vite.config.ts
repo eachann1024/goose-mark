@@ -6,7 +6,7 @@ import AutoImport from 'unplugin-auto-import/vite'
 import path from 'node:path'
 
 export default defineConfig({
-  base: '/',
+  base: './',
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src')

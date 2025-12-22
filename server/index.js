@@ -2,6 +2,7 @@ import 'dotenv/config'
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import fastifyStatic from '@fastify/static'
+import fastifyRateLimit from '@fastify/rate-limit'
 import { nanoid } from 'nanoid'
 import fs from 'fs-extra'
 import path from 'path'
@@ -28,12 +29,26 @@ if (DIST_DIR) {
 }
 
 const fastify = Fastify({
-  logger: true
+  logger: true,
+  bodyLimit: 5 * 1024 * 1024 // 5MB limit for JSON body
 })
 
 // Enable CORS
 await fastify.register(cors, {
   origin: true
+})
+
+// Rate Limiting
+await fastify.register(fastifyRateLimit, {
+  global: true,
+  max: 300,            // Global limit: 300 requests
+  timeWindow: '1 minute', // per 1 minute
+  errorResponseBuilder: (request, context) => {
+    return { 
+      error: 'Too Many Requests', 
+      message: `You have exceeded the rate limit. Please try again in ${context.after}.` 
+    }
+  }
 })
 
 // Serve static files from frontend dist
@@ -47,8 +62,15 @@ if (DIST_DIR) {
 
 // API Routes
 
-// 创建分享
-fastify.post('/api/share', async (request, reply) => {
+// 创建分享 (Strict rate limit: 10 per 5 minutes)
+fastify.post('/api/share', {
+  config: {
+    rateLimit: {
+      max: 10,
+      timeWindow: '5 minutes'
+    }
+  }
+}, async (request, reply) => {
   try {
     const { type, sourceId, data } = request.body
     
@@ -56,8 +78,21 @@ fastify.post('/api/share', async (request, reply) => {
     if (!type || !sourceId || !data) {
       return reply.code(400).send({ error: 'Missing required fields: type, sourceId, data' })
     }
-    if (!['subGroup', 'group'].includes(type)) {
-      return reply.code(400).send({ error: 'Invalid type, must be "subGroup" or "group"' })
+    if (!['subGroup', 'group', 'snapshot'].includes(type) && type !== 'snapshot') {
+      // NOTE: allowing 'snapshot' type which is used in frontend but wasn't validated here before? 
+      // The frontend sends type='subGroup' | 'group' | 'snapshot'. Previous code only checked subGroup/group.
+      // Wait, let's double check if I should allow 'snapshot'. The implementation plan says "snapshot" is used.
+      // ShareManagePanel uses 'subGroup'. SettingsPanel uses 'snapshot' (sourceId='full').
+      // So I must allow 'snapshot'.
+      
+      // Let's stick to original list if possible so I don't break logic, but I see I need to support 'snapshot'.
+      // Previous code: if (!['subGroup', 'group'].includes(type))
+      // UseShare.ts uses 'snapshot'.
+      // So I will expand this validation.
+    }
+    
+    if (!['subGroup', 'group', 'snapshot'].includes(type)) {
+       return reply.code(400).send({ error: 'Invalid type' })
     }
 
     const shareId = nanoid(10)

@@ -31,11 +31,14 @@ import { useKeyboard } from '@/composables/useKeyboard'
 import { useUTools } from '@/composables/useUTools'
 import { useContextMenu } from '@/composables/useContextMenu'
 import { useShare } from '@/composables/useShare'
+import { useToast } from '@/composables/useToast'
+import ResultToast from '@/components/ResultToast.vue'
 
 // Stores
 const store = useBookmarkStore()
 const statsStore = useStatsStore()
 const settingsStore = useSettingsStore()
+const { toastState, closeToast } = useToast()
 
 // Composables
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
@@ -451,7 +454,7 @@ watch(() => store.bookmarks, () => {
       </section>
     </Transition>
 
-    <!-- Main Content with Sub-groups sidebar -->
+      <!-- Main Content with Sub-groups sidebar -->
     <main class="flex-1 min-h-0 flex px-6 pb-6 gap-4 overflow-y-auto no-scrollbar">
       <SubGroupSidebar
         :show="tab === 'bookmarks' && shouldShowSubs"
@@ -462,6 +465,7 @@ watch(() => store.bookmarks, () => {
         @share="handleShareSubGroup"
         @open-share-url="handleOpenShareUrl"
         @copy-share-link="handleCopyShareLink"
+        @delete-sub-group="(id) => store.deleteSubGroup(store.activeGroupId, id)"
       />
 
       <BookmarksGrid
@@ -473,8 +477,9 @@ watch(() => store.bookmarks, () => {
         :set-grid-ref="setBookmarkGridRef"
         :show-command-hints="showCmdHints"
         :hint-key-by-id="hintKeyById"
-        @remove="handleRemove"
-        @edit="(b, el) => openEdit(b, el)"
+        :readonly="!!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
+        @remove="(b) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && handleRemove(b)"
+        @edit="(b, el) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && openEdit(b, el)"
         @open="openBookmarkLink"
         @contextmenu="handleContextMenuWrapper"
         @reorder="handleReorder"
@@ -702,6 +707,7 @@ watch(() => store.bookmarks, () => {
       :group-id="store.activeGroupId"
       :sub-group-id="store.activeSubGroupId"
       @shared="handleShared"
+      @update-from-share="(id: string, data: any) => store.updateFromShare(id, data)"
     />
   </div>
   
@@ -710,6 +716,15 @@ watch(() => store.bookmarks, () => {
     <p class="text-muted-foreground font-medium">正在加载分享数据...</p>
   </div>
   
+    <ResultToast
+      :open="toastState.visible"
+      :title="toastState.title"
+      :description="toastState.description"
+      :variant="toastState.variant"
+      :action-label="toastState.actionLabel"
+      @close="closeToast"
+      @action="toastState.onAction?.()"
+    />
   </TooltipProvider>
 </template>
 
