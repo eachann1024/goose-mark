@@ -34,14 +34,19 @@ jobs:
           cd server
           pnpm install --production
 
+      - name: Prepare Backend Dist
+        run: |
+          # 将构建好的前端移动到 server 目录下，方便容器访问
+          mv dist server/
+
       - name: Copy Files via SCP
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_IP }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          # 包含 node_modules，这样服务器就不需要再安装依赖了
-          source: "dist/*,server/*,scripts/deploy.sh"
+          # 只同步 server 和 scripts，因为 dist 已经进去了
+          source: "server/**,scripts/deploy.sh"
           target: ${{ secrets.DEPLOY_PATH }}
           strip_components: 0
 
