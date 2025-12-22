@@ -17,10 +17,9 @@ import type { Group } from '@/types/bookmark'
 
 import { notify } from '@/lib/notify'
 import { getDebugSnapshot } from '@/lib/debugReport'
-import { useShare } from '@/composables/useShare'
 import { useAI } from '@/composables/useAI'
 import { useAppState } from '@/composables/useAppState'
-import { Loader2, Share2, Copy, Check } from 'lucide-vue-next'
+import { Loader2 } from 'lucide-vue-next'
 
 
 const store = useBookmarkStore()
@@ -44,23 +43,6 @@ const toggleAutoGenerateAI = () => {
   settingsStore.setAutoGenerateAI(newValue)
 }
 
-const { createShareLink, isSharing } = useShare()
-const shareUrl = ref('')
-const hasCopiedShare = ref(false)
-
-const handleShare = async () => {
-  const url = await createShareLink()
-  if (url) {
-    shareUrl.value = url
-  }
-}
-
-const copyShareUrl = async () => {
-    if (!shareUrl.value) return
-    await copyText(shareUrl.value)
-    hasCopiedShare.value = true
-    setTimeout(() => hasCopiedShare.value = false, 2000)
-}
 
 
 const matching = ref(false)
@@ -848,66 +830,7 @@ const closeUndoToast = () => {
        </CardContent>
     </Card>
 
-    <!-- Share Card -->
-    <Card>
-      <CardHeader>
-        <CardTitle>分享设置</CardTitle>
-        <CardDescription>生成一个只读的网页链接分享给他人</CardDescription>
-      </CardHeader>
-      <CardContent>
-          <div class="space-y-4">
-             <!-- 启用分享开关 -->
-             <label class="flex items-center justify-between cursor-pointer">
-               <div class="space-y-0.5">
-                 <div class="text-sm font-medium">启用在线分享</div>
-                 <div class="text-xs text-muted-foreground">开启后可在子分组侧边栏使用分享功能</div>
-               </div>
-               <button 
-                 type="button"
-                 role="switch"
-                 :aria-checked="settingsStore.enableShare"
-                 class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                 :class="settingsStore.enableShare ? 'bg-primary' : 'bg-input'"
-                 @click="settingsStore.setEnableShare(!settingsStore.enableShare)"
-               >
-                 <span 
-                   class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                   :class="settingsStore.enableShare ? 'translate-x-5' : 'translate-x-0'"
-                 />
-               </button>
-             </label>
-
-             <template v-if="settingsStore.enableShare">
-                <div class="flex items-center gap-4">
-                   <Button :disabled="isSharing" @click="handleShare">
-                      <Loader2 v-if="isSharing" class="w-4 h-4 mr-2 animate-spin" />
-                      <Share2 v-else class="w-4 h-4 mr-2" />
-                      生成分享链接
-                   </Button>
-                   <span class="text-sm text-muted-foreground">将生成当前状态的快照链接</span>
-                </div>
-
-                <!-- Share Result Display -->
-                <div v-if="shareUrl" class="p-4 rounded-lg bg-muted/30 border border-border animate-in fade-in slide-in-from-top-2">
-                   <div class="flex items-center gap-2 mb-2">
-                      <span class="i-mdi-check-circle text-green-500" />
-                      <span class="text-sm font-medium">分享链接已生成</span>
-                   </div>
-                   <div class="flex items-center gap-2">
-                      <Input readonly :model-value="shareUrl" class="font-mono text-sm h-9 bg-background flex-1" />
-                      <Button size="icon" variant="outline" class="h-9 w-9 shrink-0" @click="copyShareUrl">
-                         <Check v-if="hasCopiedShare" class="w-4 h-4 text-green-500" />
-                         <Copy v-else class="w-4 h-4" />
-                      </Button>
-                   </div>
-                   <p class="text-xs text-muted-foreground mt-2">
-                      此链接包含当前所有书签的快照，接收方只能查看无法编辑。
-                   </p>
-                </div>
-             </template>
-          </div>
-      </CardContent>
-    </Card>
+    <!-- Share Card (已隐藏，功能由导入导出替代) -->
 
     <!-- Layout Card -->
     <div class="grid md:grid-cols-2 gap-6">
