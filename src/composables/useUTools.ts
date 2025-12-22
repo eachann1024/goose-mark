@@ -35,102 +35,68 @@ const getFileExt = (pathOrUrl: string) => {
   return ''
 }
 
-// 获取图标保存目录
-const getIconDir = (): string | null => {
-  try {
-    const ut = window.utools
-    if (!ut?.getPath) return null
-    const userData = ut.getPath('userData')
-    if (!userData) return null
-    return `${userData}/bookmark-icons`
-  } catch {
-    return null
-  }
+const getMimeFromPath = (pathOrUrl: string) => {
+  const lower = pathOrUrl.toLowerCase()
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
+  if (lower.endsWith('.ico')) return 'image/x-icon'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  return 'image/png'
 }
 
-// 确保目录存在
-const ensureDir = (dir: string): boolean => {
-  try {
-    const fs = (window as unknown as { require?: NodeRequire }).require?.('fs')
-    if (!fs) return false
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true })
-    }
-    return true
-  } catch {
-    return false
-  }
+const bufferToDataUrl = (buffer: Buffer, mime: string) => {
+  return `data:${mime};base64,${buffer.toString('base64')}`
 }
 
-// 下载图标并保存为本地文件
-const saveIconToLocal = async (url: string, bookmarkId: string): Promise<string | null> => {
-  if (!url) return null
-  
-  const iconDir = getIconDir()
-  if (!iconDir) return null
-  if (!ensureDir(iconDir)) return null
-  
+const toDataUrlFromRemote = async (url: string): Promise<string | null> => {
   try {
-    const req = (window as unknown as { require?: NodeRequire }).require
-    const fs = req?.('fs')
-    const path = req?.('path')
-    if (!fs || !path) return null
-    
-    const pngPath = path.join(iconDir, `${bookmarkId}.png`)
-    if (fs.existsSync(pngPath)) return pngPath
-    
-    // 下载图标
     const response = await fetch(url)
     if (!response.ok) return null
-    
     const arrayBuffer = await response.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
-
-    const pngBuffer = toPngBuffer(buffer)
-    if (pngBuffer) {
-      fs.writeFileSync(pngPath, pngBuffer)
-      return pngPath
-    }
-
-    const ext = getFileExt(url) || '.png'
-    const rawPath = path.join(iconDir, `${bookmarkId}${ext}`)
-    fs.writeFileSync(rawPath, buffer)
-    return rawPath
+    const contentType = response.headers.get('content-type')
+    const mime = contentType && contentType.includes('/') ? contentType : getMimeFromPath(url)
+    return bufferToDataUrl(buffer, mime)
   } catch {
     return null
   }
 }
 
-const saveFileIconToLocal = async (filePath: string, bookmarkId: string): Promise<string | null> => {
-  const iconDir = getIconDir()
-  if (!iconDir) return null
-  if (!ensureDir(iconDir)) return null
-
+const toDataUrlFromFile = async (filePath: string): Promise<string | null> => {
   try {
     const req = getNodeRequire()
     const fs = req?.('fs')
-    const path = req?.('path')
-    if (!fs || !path) return null
-
-    const pngPath = path.join(iconDir, `${bookmarkId}.png`)
-    if (fs.existsSync(pngPath)) return pngPath
-
+    if (!fs) return null
     const buf: Buffer = fs.readFileSync(filePath)
-    if (filePath.toLowerCase().endsWith('.png')) {
-      fs.writeFileSync(pngPath, buf)
-      return pngPath
-    }
+    const mime = getMimeFromPath(filePath)
+    return bufferToDataUrl(buf, mime)
+  } catch {
+    return null
+  }
+}
 
-    const pngBuffer = toPngBuffer(buf)
-    if (pngBuffer) {
-      fs.writeFileSync(pngPath, pngBuffer)
-      return pngPath
-    }
+const toDataUrlFromText = (text: string): string | null => {
+  try {
+    const canvas = document.createElement('canvas')
+    const size = 128
+    canvas.width = size
+    canvas.height = size
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
 
-    const ext = getFileExt(filePath) || '.png'
-    const rawPath = path.join(iconDir, `${bookmarkId}${ext}`)
-    fs.writeFileSync(rawPath, buf)
-    return rawPath
+    const palette = ['#0f172a', '#1f2937', '#111827', '#0b3d2e', '#3b2f2f']
+    const colorIndex = Math.abs([...text].reduce((sum, ch) => sum + ch.charCodeAt(0), 0)) % palette.length
+    ctx.fillStyle = palette[colorIndex]
+    ctx.fillRect(0, 0, size, size)
+
+    ctx.fillStyle = '#ffffff'
+    ctx.font = 'bold 56px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const display = text.trim() ? text.trim().slice(0, 2).toUpperCase() : '•'
+    ctx.fillText(display, size / 2, size / 2)
+
+    return canvas.toDataURL('image/png')
   } catch {
     return null
   }
@@ -159,7 +125,7 @@ export function useUTools() {
       .map(f => f.code)
       .filter(c => typeof c === 'string' && c.startsWith(FEATURE_PREFIX))
     
-    existingCodes.forEach(code => ut.removeFeature(code))
+    existingCodes.forEach(code => ut.removeFeature!(code))
 
     // 2. 筛选并去重
     const desired = bookmarks.filter(b => isTemplateBookmark(b) || isUniversalBookmark(b))
@@ -194,15 +160,23 @@ export function useUTools() {
         cmds 
       }
       
-      const iconPath = b.icon?.type === 'remote' && b.icon.src
-        ? await saveIconToLocal(b.icon.src, b.id)
+      // 优先使用书签设置的图标，否则 fallback 到文字图标
+      let iconDataUrl = b.icon?.type === 'remote' && b.icon.src
+        ? await toDataUrlFromRemote(b.icon.src)
         : b.icon?.type === 'file' && b.icon.path
-          ? await saveFileIconToLocal(b.icon.path, b.id)
-          : null
+          ? await toDataUrlFromFile(b.icon.path)
+          : b.icon?.type === 'text'
+            ? toDataUrlFromText(b.icon.value || b.title || b.url)
+            : null
+      
+      // fallback: 没有图标时生成文字图标
+      if (!iconDataUrl) {
+        iconDataUrl = toDataUrlFromText(b.title || b.url)
+      }
 
-      if (iconPath) {
-        feature.icon = iconPath
-        if (overCmd) overCmd.icon = iconPath
+      if (iconDataUrl) {
+        feature.icon = iconDataUrl
+        if (overCmd) overCmd.icon = iconDataUrl
       }
       
       ut.setFeature(feature)

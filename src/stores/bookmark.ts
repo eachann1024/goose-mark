@@ -51,7 +51,8 @@ export const useBookmarkStore = defineStore('bookmark', {
     bookmarks: [] as Bookmark[],  // 提升到顶层的书签集合
     search: '',
     activeGroupId: seedGroups[0]?.id ?? '',
-    activeSubGroupId: seedGroups[0]?.children?.[0]?.id ?? ''
+    activeSubGroupId: seedGroups[0]?.children?.[0]?.id ?? '',
+    isReadOnly: false
   }),
   getters: {
     currentGroup(state) {
@@ -478,6 +479,15 @@ export const useBookmarkStore = defineStore('bookmark', {
       this.activeSubGroupId = sub.id
       
       return newGroup
+    },
+    loadFromSnapshot(data: { groups: Group[]; bookmarks: Bookmark[] }) {
+      this.groups = data.groups
+      this.bookmarks = data.bookmarks
+      this.isReadOnly = true
+      
+      // Reset active selections to first valid if possible
+      this.activeGroupId = this.groups[0]?.id ?? ''
+      this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
     }
   },
   persist: {

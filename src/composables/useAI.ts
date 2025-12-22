@@ -2,8 +2,10 @@
 import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { probeUrl } from '@/services/siteProbe'
+import { useSettingsStore } from '@/stores/settings'
 
 export function useAI() {
+  const settingsStore = useSettingsStore()
   const isUrlAccessible = ref(false)
   const isCheckingUrl = ref(false)
   const isGenerating = ref(false)
@@ -61,7 +63,11 @@ export function useAI() {
   1. title: 极简且精准的名称（如 "GitHub"、"Bilibili"）。去除 "- 首页"、"Login" 等冗余后缀。优先中文（若常用）。不超过 15 字。
   2. desc: 用一句话概括核心功能与价值（如 "全球最大的代码托管与协作平台"）。语气专业、客观。不超过 40 字。`
   
+      const model = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
+        ? settingsStore.customAiModel.trim()
+        : undefined
       const res = await aiCaller({
+        model,
         messages: [
           {
             role: 'system',

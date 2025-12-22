@@ -27,6 +27,10 @@ interface UToolsApi {
   getWindowType?(): 'main' | 'detach' | 'browser'
   outPlugin(isKill?: boolean): boolean
   createBrowserWindow?(url: string, options?: Record<string, unknown>): void
+  getVersion?(): string
+  copyText?(text: string): void
+  setExpendHeight?(height: number): void
+  showNotification?(text: string): void
 }
 
 declare global {
