@@ -218,11 +218,53 @@ export function useShare() {
     return false
   }
 
+  // 创建全库快照分享链接（供设置面板使用）
+  const createShareLink = async (): Promise<string | null> => {
+    isSharing.value = true
+    shareError.value = null
+    try {
+      // 收集所有非回收站分组的数据
+      const TRASH_GROUP_ID = 'g-trash'
+      const allGroups = store.groups.filter(g => g.id !== TRASH_GROUP_ID)
+      const allBookmarkIds = new Set<string>()
+      allGroups.forEach(g => {
+        g.children.forEach(sub => {
+          sub.bookmarkIds.forEach(id => allBookmarkIds.add(id))
+        })
+      })
+      const allBookmarks = Array.from(allBookmarkIds)
+        .map(id => store.bookmarks.find(b => b.id === id))
+        .filter((b): b is Bookmark => !!b)
+
+      const data: ShareData = {
+        subGroups: allGroups.flatMap(g => g.children),
+        bookmarks: allBookmarks
+      }
+
+      const res = await fetch(API_BASE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'snapshot', sourceId: 'full', data })
+      })
+
+      if (!res.ok) throw new Error('创建分享失败')
+
+      const { shareId } = await res.json()
+      return buildShareUrl(shareId)
+    } catch (e: unknown) {
+      shareError.value = e instanceof Error ? e.message : '创建分享失败'
+      return null
+    } finally {
+      isSharing.value = false
+    }
+  }
+
   return {
     isSharing,
     isLoadingShare,
     shareError,
     createShare,
+    createShareLink,
     updateShare,
     cancelShare,
     loadShare,

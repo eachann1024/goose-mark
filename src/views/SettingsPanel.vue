@@ -19,6 +19,7 @@ import { notify } from '@/lib/notify'
 import { getDebugSnapshot } from '@/lib/debugReport'
 import { useShare } from '@/composables/useShare'
 import { useAI } from '@/composables/useAI'
+import { useAppState } from '@/composables/useAppState'
 import { Loader2, Share2, Copy, Check } from 'lucide-vue-next'
 
 
@@ -27,6 +28,7 @@ const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 const statsStore = useStatsStore()
 
+const { isUTools } = useAppState()
 const { checkAiAvailable } = useAI()
 
 // 切换"自动生成"开关时验证 AI 可用性
@@ -854,32 +856,55 @@ const closeUndoToast = () => {
       </CardHeader>
       <CardContent>
           <div class="space-y-4">
-             <div class="flex items-center gap-4">
-                <Button :disabled="isSharing" @click="handleShare">
-                   <Loader2 v-if="isSharing" class="w-4 h-4 mr-2 animate-spin" />
-                   <Share2 v-else class="w-4 h-4 mr-2" />
-                   生成分享链接
-                </Button>
-                <span class="text-sm text-muted-foreground">将生成当前状态的快照链接</span>
-             </div>
+             <!-- 启用分享开关 -->
+             <label class="flex items-center justify-between cursor-pointer">
+               <div class="space-y-0.5">
+                 <div class="text-sm font-medium">启用在线分享</div>
+                 <div class="text-xs text-muted-foreground">开启后可在子分组侧边栏使用分享功能</div>
+               </div>
+               <button 
+                 type="button"
+                 role="switch"
+                 :aria-checked="settingsStore.enableShare"
+                 class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                 :class="settingsStore.enableShare ? 'bg-primary' : 'bg-input'"
+                 @click="settingsStore.setEnableShare(!settingsStore.enableShare)"
+               >
+                 <span 
+                   class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
+                   :class="settingsStore.enableShare ? 'translate-x-5' : 'translate-x-0'"
+                 />
+               </button>
+             </label>
 
-             <!-- Share Result Display -->
-             <div v-if="shareUrl" class="p-4 rounded-lg bg-muted/30 border border-border animate-in fade-in slide-in-from-top-2">
-                <div class="flex items-center gap-2 mb-2">
-                   <span class="i-mdi-check-circle text-green-500" />
-                   <span class="text-sm font-medium">分享链接已生成</span>
-                </div>
-                <div class="flex items-center gap-2">
-                   <Input readonly :model-value="shareUrl" class="font-mono text-sm h-9 bg-background flex-1" />
-                   <Button size="icon" variant="outline" class="h-9 w-9 shrink-0" @click="copyShareUrl">
-                      <Check v-if="hasCopiedShare" class="w-4 h-4 text-green-500" />
-                      <Copy v-else class="w-4 h-4" />
+             <template v-if="settingsStore.enableShare">
+                <div class="flex items-center gap-4">
+                   <Button :disabled="isSharing" @click="handleShare">
+                      <Loader2 v-if="isSharing" class="w-4 h-4 mr-2 animate-spin" />
+                      <Share2 v-else class="w-4 h-4 mr-2" />
+                      生成分享链接
                    </Button>
+                   <span class="text-sm text-muted-foreground">将生成当前状态的快照链接</span>
                 </div>
-                <p class="text-xs text-muted-foreground mt-2">
-                   此链接包含当前所有书签的快照，接收方只能查看无法编辑。
-                </p>
-             </div>
+
+                <!-- Share Result Display -->
+                <div v-if="shareUrl" class="p-4 rounded-lg bg-muted/30 border border-border animate-in fade-in slide-in-from-top-2">
+                   <div class="flex items-center gap-2 mb-2">
+                      <span class="i-mdi-check-circle text-green-500" />
+                      <span class="text-sm font-medium">分享链接已生成</span>
+                   </div>
+                   <div class="flex items-center gap-2">
+                      <Input readonly :model-value="shareUrl" class="font-mono text-sm h-9 bg-background flex-1" />
+                      <Button size="icon" variant="outline" class="h-9 w-9 shrink-0" @click="copyShareUrl">
+                         <Check v-if="hasCopiedShare" class="w-4 h-4 text-green-500" />
+                         <Copy v-else class="w-4 h-4" />
+                      </Button>
+                   </div>
+                   <p class="text-xs text-muted-foreground mt-2">
+                      此链接包含当前所有书签的快照，接收方只能查看无法编辑。
+                   </p>
+                </div>
+             </template>
           </div>
       </CardContent>
     </Card>
@@ -936,8 +961,8 @@ const closeUndoToast = () => {
         </CardContent>
       </Card>
 
-      <!-- Window Behavior Card -->
-      <Card>
+      <!-- Window Behavior Card (uTools only) -->
+      <Card v-if="isUTools">
         <CardHeader>
           <CardTitle>窗口行为</CardTitle>
           <CardDescription>设置窗口的交互方式</CardDescription>
@@ -1029,8 +1054,8 @@ const closeUndoToast = () => {
         </CardContent>
       </Card>
 
-      <!-- AI Settings Card -->
-      <Card>
+      <!-- AI Settings Card (uTools only) -->
+      <Card v-if="isUTools">
          <CardHeader>
            <CardTitle>AI 功能</CardTitle>
            <CardDescription>配置 AI 智能辅助功能（需在 uTools 中开启 AI）</CardDescription>
