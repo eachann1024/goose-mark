@@ -38,6 +38,7 @@ declare module 'vue' {
     PopoverContent: typeof import('./components/ui/popover/PopoverContent.vue')['default']
     PopoverTrigger: typeof import('./components/ui/popover/PopoverTrigger.vue')['default']
     ResultToast: typeof import('./components/ResultToast.vue')['default']
+    ShareManagePanel: typeof import('./components/ShareManagePanel.vue')['default']
     SubGroupSidebar: typeof import('./components/bookmarks/SubGroupSidebar.vue')['default']
     Textarea: typeof import('./components/ui/textarea/Textarea.vue')['default']
     Tooltip: typeof import('./components/ui/tooltip/Tooltip.vue')['default']

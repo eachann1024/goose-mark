@@ -242,9 +242,20 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
 // Lifecycle
 onMounted(async () => {
-    // Check for shareId in URL
-    const urlParams = new URLSearchParams(window.location.search)
-    const shareId = urlParams.get('shareId')
+    // Check for shareId in URL - support both /s/xxx path and ?shareId=xxx query
+    let shareId: string | null = null
+    
+    // 1. 检查路径格式 /s/xxx
+    const pathMatch = window.location.pathname.match(/^\/s\/([a-zA-Z0-9_-]+)$/)
+    if (pathMatch) {
+      shareId = pathMatch[1]
+    }
+    
+    // 2. 检查查询参数格式 ?shareId=xxx
+    if (!shareId) {
+      const urlParams = new URLSearchParams(window.location.search)
+      shareId = urlParams.get('shareId')
+    }
     
     if (shareId) {
       await loadShareData(shareId)
@@ -407,7 +418,6 @@ watch(() => store.bookmarks, () => {
                 <span class="i-mdi-information-outline" />
                 <span>按 ESC 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
               </div>
-            </div>
           </div>
           <div
             v-else-if="searchResults.length === 0"
