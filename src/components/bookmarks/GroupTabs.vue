@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { useTextOverflow } from '@/composables/useTextOverflow'
 
 interface SubGroup {
   id: string
@@ -49,28 +50,43 @@ const groupContainerClass = computed(() => {
   }
   return 'flex items-center flex-wrap gap-2'
 })
+
+// 溢出检测：名称超过 8 个字符会被截断
+const { overflowMap } = useTextOverflow()
+
+// 鼠标进入时检查是否需要显示 tooltip（名称被截断时）
+const handleGroupMouseEnter = (group: Group) => {
+  // 名称超过 8 个字符会被 formatName 截断
+  overflowMap.value[group.id] = group.name.length > 8
+}
 </script>
 
 <template>
   <div class="flex items-center justify-between">
     <div :class="groupContainerClass">
-      <Button
-        v-for="group in visibleGroups"
-        :key="group.id"
-        variant="ghost"
-        size="sm"
-        class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-md"
-        :class="{
-          'ring-2 ring-dashed ring-primary/50 dark:ring-primary/40': isGroupFullyShared(group)
-        }"
-        :data-active="activeGroupId === group.id ? 'true' : undefined"
-        @click="emit('select-group', group.id)"
-      >
-        <span class="flex items-center gap-1">
-          {{ formatName(group.name) }}
-          <span v-if="isGroupFullyShared(group)" class="i-mdi-link-variant text-xs opacity-60" />
-        </span>
-      </Button>
+      <Tooltip v-for="group in visibleGroups" :key="group.id" :disabled="!overflowMap[group.id]">
+        <TooltipTrigger as-child>
+          <Button
+            variant="ghost"
+            size="sm"
+            class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-md"
+            :class="{
+              'ring-2 ring-dashed ring-primary/50 dark:ring-primary/40': isGroupFullyShared(group)
+            }"
+            :data-active="activeGroupId === group.id ? 'true' : undefined"
+            @click="emit('select-group', group.id)"
+            @mouseenter="handleGroupMouseEnter(group)"
+          >
+            <span class="flex items-center gap-1">
+              {{ formatName(group.name) }}
+              <span v-if="isGroupFullyShared(group)" class="i-mdi-link-variant text-xs opacity-60" />
+            </span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>{{ group.name }}</p>
+        </TooltipContent>
+      </Tooltip>
     </div>
 
     <div class="flex items-center gap-2 shrink-0 ml-4">
