@@ -110,7 +110,8 @@ const {
   shareError,
   createShare,
   copyShareLink,
-  buildShareUrl
+  buildShareUrl,
+  validateAndCleanGroupShares
 } = useShare()
 
 // 打开分享链接
@@ -124,6 +125,8 @@ const handleCopyShareLink = async (shareId: string) => {
   const success = await copyShareLink(shareId)
   if (success) {
     window.utools?.showNotification?.('分享链接已复制到剪贴板')
+  } else {
+    window.utools?.showNotification?.('复制失败，无法访问剪贴板')
   }
 }
 
@@ -200,6 +203,14 @@ watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   selectedIndex.value = -1
   hideCmdHints()
   closeContext() // Also close context menu
+})
+
+// 切换主分组时，验证并清理失效的分享状态
+watch(() => store.activeGroupId, (groupId) => {
+  if (groupId && groupId !== TRASH_GROUP_ID) {
+    // 异步验证，不阻塞 UI
+    validateAndCleanGroupShares(groupId)
+  }
 })
 
 // Context Menu Action Handler

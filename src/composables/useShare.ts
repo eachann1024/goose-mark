@@ -4,6 +4,9 @@ import type { Group, SubGroup, Bookmark } from '@/types/bookmark'
 
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/share'
 
+// 模块级缓存：已验证失效的 shareId，避免重复请求
+const invalidatedShareIds = new Set<string>()
+
 export interface ShareData {
   group?: Pick<Group, 'id' | 'name'>
   subGroups: SubGroup[]
@@ -138,7 +141,7 @@ export function useShare() {
   }
 
   // 取消分享
-  const cancelShare = async (shareId: string, type: 'subGroup' | 'group', groupId: string, subGroupId?: string): Promise<boolean> => {
+  const cancelShare = async (shareId: string, type: 'subGroup' | 'group', groupId: string, subGroupId?: string): Promise<{ success: boolean; error?: string }> => {
     try {
       const res = await fetch(`${API_BASE_URL}/${shareId}`, {
         method: 'DELETE'
@@ -146,12 +149,92 @@ export function useShare() {
       
       if (res.ok) {
         store.clearShareId(type, groupId, subGroupId)
-        return true
+        invalidatedShareIds.add(shareId) // 加入失效缓存
+        return { success: true }
       }
-      return false
-    } catch {
-      return false
+      
+      // 404 表示服务端已无此分享记录，视为已取消，清理本地状态
+      if (res.status === 404) {
+        store.clearShareId(type, groupId, subGroupId)
+        invalidatedShareIds.add(shareId) // 加入失效缓存
+        return { success: true }
+      }
+      
+      // 其他错误
+      const data = await res.json().catch(() => ({}))
+      return { success: false, error: data.error || `请求失败: ${res.status}` }
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e.message : '网络错误' }
     }
+  }
+  
+  // 验证分享状态（用于切换分组时检查）
+  const validateShareStatus = async (shareId: string): Promise<'active' | 'canceled' | 'not_found' | 'error'> => {
+    // 如果已在失效缓存中，直接返回
+    if (invalidatedShareIds.has(shareId)) {
+      return 'not_found'
+    }
+    
+    try {
+      const res = await fetch(`${API_BASE_URL}/${shareId}`)
+      
+      if (res.ok) {
+        const data = await res.json()
+        return data.active ? 'active' : 'canceled'
+      }
+      
+      if (res.status === 404) {
+        invalidatedShareIds.add(shareId)
+        return 'not_found'
+      }
+      if (res.status === 410) {
+        invalidatedShareIds.add(shareId)
+        return 'canceled'
+      }
+      
+      return 'error'
+    } catch {
+      return 'error'
+    }
+  }
+  
+  // 验证分组的分享状态并清理失效的（切换分组时调用）
+  const validateAndCleanGroupShares = async (groupId: string): Promise<void> => {
+    const group = store.groups.find(g => g.id === groupId)
+    if (!group) return
+    
+    // 收集需要验证的 shareIds
+    const toValidate: { shareId: string; type: 'group' | 'subGroup'; subGroupId?: string }[] = []
+    
+    // 检查主分组 shareId
+    if (group.shareId && !invalidatedShareIds.has(group.shareId)) {
+      toValidate.push({ shareId: group.shareId, type: 'group' })
+    }
+    
+    // 检查子分组 shareIds
+    group.children.forEach(sub => {
+      if (sub.shareId && !invalidatedShareIds.has(sub.shareId)) {
+        toValidate.push({ shareId: sub.shareId, type: 'subGroup', subGroupId: sub.id })
+      }
+    })
+    
+    if (toValidate.length === 0) return
+    
+    // 并行验证所有 shareIds
+    const results = await Promise.all(
+      toValidate.map(async item => {
+        const status = await validateShareStatus(item.shareId)
+        return { ...item, status }
+      })
+    )
+    
+    // 清理失效的 shareIds
+    results.forEach(({ shareId, type, subGroupId, status }) => {
+      if (status === 'not_found' || status === 'canceled') {
+        store.clearShareId(type, groupId, subGroupId)
+        invalidatedShareIds.add(shareId)
+      }
+    })
   }
 
   // 加载分享数据（访问分享链接时）
@@ -292,15 +375,27 @@ export function useShare() {
   }
 
   // 获取分享数据（不自动导入）
-  const getShareData = async (shareId: string) => {
+  const getShareData = async (shareId: string): Promise<{ data: ShareResponse; error?: never } | { data?: never; error: string } | null> => {
     try {
       const res = await fetch(`${API_BASE_URL}/${shareId}`)
-      if (!res.ok) throw new Error('Failed to fetch')
+      
+      if (res.status === 404) {
+        return { error: '分享不存在' }
+      }
+      if (res.status === 410) {
+        return { error: '分享已被取消' }
+      }
+      if (!res.ok) {
+        return { error: `请求失败: ${res.status}` }
+      }
+      
       const shareData = await res.json()
-      if (!shareData.active) throw new Error('Share inactive')
-      return shareData
+      if (!shareData.active) {
+        return { error: '分享已失效' }
+      }
+      return { data: shareData }
     } catch (e) {
-      return null
+      return { error: e instanceof Error ? e.message : '网络错误' }
     }
   }
 
@@ -317,6 +412,8 @@ export function useShare() {
     copyShareLink,
     buildShareUrl,
     checkForUpdate,
-    getShareData
+    getShareData,
+    validateShareStatus,
+    validateAndCleanGroupShares
   }
 }
