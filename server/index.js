@@ -59,8 +59,8 @@ if (DIST_DIR) {
     wildcard: false // 禁用通配符以防干扰 API
   })
   
-  // 处理分享路径下的资源请求 (如 /s/xxx/assets/... -> /assets/...)
-  fastify.get('/s/:shareId/assets/*', async (req, reply) => {
+  // 处理分享路径下的资源请求 (如 /s/assets/... -> /assets/...)
+  fastify.get('/s/assets/*', async (req, reply) => {
     const assetPath = req.params['*']
     return reply.sendFile(`assets/${assetPath}`)
   })
