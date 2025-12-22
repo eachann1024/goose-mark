@@ -13,7 +13,9 @@ const potentialDistPaths = [
   path.join(__dirname, '..', 'dist'), // 本地/默认
   path.join(__dirname, 'dist'),        // 容器内可能平级
   path.join(process.cwd(), 'dist'),    // 运行目录下
-  path.join(process.cwd(), '..', 'dist')
+  path.join(process.cwd(), '..', 'dist'),
+  '/app/dist',                         // Docker 常见挂载点
+  '/app/server/dist'
 ]
 
 const DIST_DIR = potentialDistPaths.find(p => fs.existsSync(p))
