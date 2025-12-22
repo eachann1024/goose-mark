@@ -2,7 +2,9 @@
 import { ref, computed } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useTextOverflow } from '@/composables/useTextOverflow'
+import { useSettingsStore } from '@/stores/settings'
 
 const props = defineProps<{
   show: boolean
@@ -14,22 +16,42 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'share'): void
+  (e: 'openShareUrl', shareId: string): void
+  (e: 'copyShareLink', shareId: string): void
 }>()
+
+const settingsStore = useSettingsStore()
 
 // 当前子分组是否已分享
 const currentSubGroup = computed(() => 
   props.activeSubGroups.find(s => s.id === props.activeSubGroupId)
 )
 const isShared = computed(() => !!currentSubGroup.value?.shareId)
+const currentShareId = computed(() => currentSubGroup.value?.shareId)
 
 // 分享状态
 const isSharing = ref(false)
+const showShareMenu = ref(false)
 
 // 溢出检测
 const { overflowMap, updateOverflow } = useTextOverflow()
 
 const handleShare = () => {
   emit('share')
+}
+
+const handleOpenShareUrl = () => {
+  if (currentShareId.value) {
+    emit('openShareUrl', currentShareId.value)
+    showShareMenu.value = false
+  }
+}
+
+const handleCopyShareLink = () => {
+  if (currentShareId.value) {
+    emit('copyShareLink', currentShareId.value)
+    showShareMenu.value = false
+  }
 }
 
 // 鼠标进入时检查溢出
@@ -68,24 +90,70 @@ const handleMouseEnter = (e: MouseEvent, key: string) => {
       </TooltipContent>
     </Tooltip>
 
-    <!-- 分享按钮 -->
-    <div class="mt-auto pt-3">
-      <Tooltip>
+    <!-- 分享按钮（仅在启用分享功能时显示） -->
+    <div v-if="settingsStore.enableShare" class="mt-auto pt-3">
+      <!-- 已分享状态：Popover 菜单 -->
+      <Popover v-if="isShared" v-model:open="showShareMenu">
+        <PopoverTrigger as-child>
+          <Button
+            variant="outline"
+            size="sm"
+            class="w-full h-8 text-xs gap-1.5 border-dashed border-primary/50 text-primary"
+            :disabled="isSharing"
+          >
+            <span class="i-mdi-link-variant text-sm" />
+            <span>已分享</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent class="w-40 p-1" align="start" :side-offset="4">
+          <div class="flex flex-col">
+            <Button
+              variant="ghost"
+              size="sm"
+              class="justify-start h-8 text-xs gap-2"
+              @click="handleOpenShareUrl"
+            >
+              <span class="i-mdi-open-in-new text-sm" />
+              打开网址
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="justify-start h-8 text-xs gap-2"
+              @click="handleCopyShareLink"
+            >
+              <span class="i-mdi-content-copy text-sm" />
+              复制链接
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              class="justify-start h-8 text-xs gap-2"
+              @click="handleShare"
+            >
+              <span class="i-mdi-cog text-sm" />
+              管理分享
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      <!-- 未分享状态：普通按钮 -->
+      <Tooltip v-else>
         <TooltipTrigger as-child>
           <Button
             variant="outline"
             size="sm"
-            class="w-full h-8 text-xs gap-1.5"
-            :class="isShared ? 'border-dashed border-primary/50 text-primary' : 'text-muted-foreground'"
+            class="w-full h-8 text-xs gap-1.5 text-muted-foreground"
             :disabled="isSharing"
             @click="handleShare"
           >
-            <span :class="isShared ? 'i-mdi-link-variant' : 'i-mdi-share-variant'" class="text-sm" />
-            <span>{{ isShared ? '已分享' : '在线分享' }}</span>
+            <span class="i-mdi-share-variant text-sm" />
+            <span>在线分享</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>
-          <p>{{ isShared ? '点击管理分享' : '生成在线分享链接' }}</p>
+          <p>生成在线分享链接</p>
         </TooltipContent>
       </Tooltip>
     </div>
@@ -101,3 +169,4 @@ const handleMouseEnter = (e: MouseEvent, key: string) => {
   text-overflow: ellipsis;
 }
 </style>
+

@@ -6,6 +6,7 @@ import ContextMenu from '@/components/ContextMenu.vue'
 import CategoryMultiSelect from '@/components/CategoryMultiSelect.vue'
 import GroupTabs from '@/components/bookmarks/GroupTabs.vue'
 import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
+import ShareManagePanel from '@/components/ShareManagePanel.vue'
 import BookmarksGrid from '@/components/bookmarks/BookmarksGrid.vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import type { Bookmark } from '@/types/bookmark'
@@ -105,31 +106,35 @@ const {
   isLoadingShare,
   shareError,
   createShare,
-  copyShareLink
+  copyShareLink,
+  buildShareUrl
 } = useShare()
 
-// 分享当前子分组
-const handleShareSubGroup = async () => {
-  const groupId = store.activeGroupId
-  const subGroupId = store.activeSubGroupId
-  
-  // 检查是否已分享
-  const existingShareId = store.getShareId('subGroup', groupId, subGroupId)
-  if (existingShareId) {
-    // 已分享，复制链接
-    const success = await copyShareLink(existingShareId)
-    if (success) {
-      window.utools?.showNotification?.('分享链接已复制到剪贴板')
-    }
-    return
-  }
-  
-  // 创建新分享
-  const url = await createShare('subGroup', groupId, subGroupId)
-  if (url) {
-    await navigator.clipboard.writeText(url)
+// 打开分享链接
+const handleOpenShareUrl = (shareId: string) => {
+  const url = buildShareUrl(shareId)
+  window.open(url, '_blank')
+}
+
+// 复制分享链接
+const handleCopyShareLink = async (shareId: string) => {
+  const success = await copyShareLink(shareId)
+  if (success) {
     window.utools?.showNotification?.('分享链接已复制到剪贴板')
   }
+}
+
+// 分享管理面板状态
+const showSharePanel = ref(false)
+
+// 打开分享管理面板
+const handleShareSubGroup = () => {
+  showSharePanel.value = true
+}
+
+// 分享成功回调
+const handleShared = (shareId: string) => {
+  window.utools?.showNotification?.('分享链接已生成')
 }
 
 // Shared State
@@ -398,15 +403,9 @@ watch(() => store.bookmarks, () => {
             class="rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground"
           >
             <div>输入关键字开始搜索</div>
-            <div class="space-y-1 text-[13px] text-muted-foreground flex flex-col gap-1 px-1 mt-3">
               <div class="flex items-center gap-2 justify-center">
                 <span class="i-mdi-information-outline" />
                 <span>按 ESC 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
-              </div>
-              <div class="flex items-center gap-2 justify-center">
-                <span class="i-mdi-information-outline" />
-                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入。</span>
-                <span v-else>当前使用本界面输入框，可直接输入。</span>
               </div>
             </div>
           </div>
@@ -419,11 +418,6 @@ watch(() => store.bookmarks, () => {
               <div class="flex items-center gap-2 justify-center">
                 <span class="i-mdi-information-outline" />
                 <span>按 ESC 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
-              </div>
-              <div class="flex items-center gap-2 justify-center">
-                <span class="i-mdi-information-outline" />
-                <span v-if="settingsStore.enableSubInput">当前使用 uTools 子输入框，可直接输入。</span>
-                <span v-else>当前使用本界面输入框，可直接输入。</span>
               </div>
             </div>
           </div>
@@ -456,6 +450,8 @@ watch(() => store.bookmarks, () => {
         :active-group-id="store.activeGroupId"
         @select="store.selectSubGroup"
         @share="handleShareSubGroup"
+        @open-share-url="handleOpenShareUrl"
+        @copy-share-link="handleCopyShareLink"
       />
 
       <BookmarksGrid
@@ -549,9 +545,9 @@ watch(() => store.bookmarks, () => {
                  </div>
              </div>
 
-             <!-- 模板书签提示 -->
+             <!-- 模板书签提示 (uTools only) -->
              <Transition name="fade">
-               <div v-if="isDraftTemplate" class="flex items-start gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20">
+               <div v-if="isDraftTemplate && isUTools" class="flex items-start gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20">
                  <span class="i-mdi-lightbulb-on-outline text-primary text-lg shrink-0 mt-0.5" />
                  <div class="text-sm text-muted-foreground">
                     <p class="font-medium text-foreground decoration-dashed decoration-primary underline underline-offset-2">🚀 快捷搜索书签</p>
@@ -564,8 +560,8 @@ watch(() => store.bookmarks, () => {
                </div>
              </Transition>
 
-             <!-- Universal Search Option -->
-             <div v-if="isDraftTemplate">
+             <!-- Universal Search Option (uTools only) -->
+             <div v-if="isDraftTemplate && isUTools">
                   <Tooltip>
                     <TooltipTrigger as-child>
                       <div class="flex items-center gap-2 w-max">
@@ -689,6 +685,14 @@ watch(() => store.bookmarks, () => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <!-- 分享管理面板 -->
+    <ShareManagePanel
+      v-model:open="showSharePanel"
+      :group-id="store.activeGroupId"
+      :sub-group-id="store.activeSubGroupId"
+      @shared="handleShared"
+    />
   </div>
   
   <div v-if="isLoadingShare" class="fixed inset-0 z-[99999] bg-background flex flex-col items-center justify-center gap-4">

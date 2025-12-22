@@ -518,6 +518,73 @@ export const useBookmarkStore = defineStore('bookmark', {
       }
       const group = this.groups.find(g => g.id === groupId)
       return group?.children.find(c => c.id === subGroupId)?.shareId
+    },
+    // 从分享数据导入为新分组
+    importFromShare(data: { groups: Group[]; bookmarks: Bookmark[] }, shareName?: string): Group | null {
+      if (!data.groups.length) return null
+      
+      // 生成新的 ID 避免冲突
+      const idMap = new Map<string, string>()  // 旧 ID -> 新 ID
+      
+      // 为所有书签生成新 ID
+      data.bookmarks.forEach(b => {
+        idMap.set(b.id, uid())
+      })
+      
+      // 复制书签并更新 ID
+      const newBookmarks = data.bookmarks.map(b => {
+        const newId = idMap.get(b.id)!
+        return {
+          ...b,
+          id: newId,
+          locations: b.locations?.map(loc => ({
+            ...loc,
+            // locations 稍后会更新
+          })) || []
+        }
+      })
+      
+      // 创建新分组
+      const sourceGroup = data.groups[0]
+      const newGroupId = uid()
+      const newSubGroups = sourceGroup.children.map(sub => {
+        const newSubId = uid()
+        return {
+          id: newSubId,
+          name: sub.name,
+          bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId) || oldId)
+        }
+      })
+      
+      const newGroup: Group = {
+        id: newGroupId,
+        name: shareName || sourceGroup.name || '来自分享',
+        children: newSubGroups
+      }
+      
+      // 更新书签的 locations 到新 ID
+      newBookmarks.forEach(b => {
+        b.locations = newSubGroups
+          .filter(sub => sub.bookmarkIds.includes(b.id))
+          .map(sub => ({ groupId: newGroupId, subGroupId: sub.id }))
+      })
+      
+      // 插入到 Trash 之前
+      const trashIdx = this.groups.findIndex(g => g.id === TRASH_GROUP_ID)
+      if (trashIdx !== -1) {
+        this.groups.splice(trashIdx, 0, newGroup)
+      } else {
+        this.groups.push(newGroup)
+      }
+      
+      // 添加书签
+      this.bookmarks.push(...newBookmarks)
+      
+      // 切换到新分组
+      this.activeGroupId = newGroup.id
+      this.activeSubGroupId = newGroup.children[0]?.id || ''
+      
+      return newGroup
     }
   },
   persist: {
