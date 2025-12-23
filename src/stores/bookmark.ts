@@ -771,13 +771,11 @@ export const useBookmarkStore = defineStore('bookmark', {
       // 检查是否存在同名父分组
       const existingGroup = this.findGroupByName(targetGroupName)
       
-      if (import.meta.env.DEV) {
-        console.log('[importFromShareSmart]', {
-          targetGroupName,
-          existingGroup: existingGroup ? { id: existingGroup.id, name: existingGroup.name } : null,
-          allGroups: this.groups.map(g => ({ id: g.id, name: g.name }))
-        })
-      }
+      console.log('[importFromShareSmart]', {
+        targetGroupName,
+        existingGroup: existingGroup ? { id: existingGroup.id, name: existingGroup.name, children: existingGroup.children.map(c => c.name) } : null,
+        allGroups: this.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => c.name) }))
+      })
       
       if (existingGroup) {
         // 存在同名分组，将子分组合并到该分组下
@@ -822,6 +820,14 @@ export const useBookmarkStore = defineStore('bookmark', {
         existingGroup.children.push(...newSubGroups)
         this.bookmarks.push(...newBookmarks)
         
+        console.log('[importFromShareSmart] 合并完成', {
+          groupName: existingGroup.name,
+          addedSubGroups: newSubGroups.map(s => s.name),
+          addedBookmarks: newBookmarks.length,
+          totalSubGroups: existingGroup.children.map(c => c.name),
+          totalBookmarks: this.bookmarks.length
+        })
+        
         // 切换到合并后的第一个子分组
         this.activeGroupId = existingGroup.id
         this.activeSubGroupId = newSubGroups[0]?.id || existingGroup.children[0]?.id || ''
@@ -829,8 +835,18 @@ export const useBookmarkStore = defineStore('bookmark', {
         return { group: existingGroup, subGroupId: this.activeSubGroupId, merged: true }
       } else {
         // 不存在同名分组，创建新分组
+        console.log('[importFromShareSmart] 未找到同名分组，创建新分组', {
+          targetGroupName,
+          newSubGroups: sourceGroup.children.map(c => c.name),
+          newBookmarks: data.bookmarks.length
+        })
         const newGroup = this.importFromShare(data, shareId, shareName)
         if (newGroup) {
+          console.log('[importFromShareSmart] 新分组创建完成', {
+            groupId: newGroup.id,
+            groupName: newGroup.name,
+            subGroups: newGroup.children.map(c => c.name)
+          })
           return { group: newGroup, subGroupId: newGroup.children[0]?.id || '', merged: false }
         }
         return null

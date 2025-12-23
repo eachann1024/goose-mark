@@ -346,30 +346,25 @@ export function useShare() {
     // 始终使用智能合并模式（检测同名分组并合并子分组）
     // 这样可以确保多次打开分享链接时，同名分组会自动合并
     if (!store.isReadOnly) {
-      if (import.meta.env.DEV) {
-        console.log('[loadShareData] 使用智能合并模式', {
-          shareId,
-          shareName,
-          existingGroups: store.groups.map(g => ({ id: g.id, name: g.name }))
-        })
-      }
+      console.log('[loadShareData] 使用智能合并模式', {
+        shareId,
+        shareName,
+        existingGroups: store.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => c.name) }))
+      })
       const result = store.importFromShareSmart(dataToApply, shareId, shareName)
       if (result) {
-        if (import.meta.env.DEV) {
-          console.log('[loadShareData] 智能合并结果', {
-            groupId: result.group.id,
-            groupName: result.group.name,
-            subGroupId: result.subGroupId,
-            merged: result.merged
-          })
-        }
+        console.log('[loadShareData] 智能合并结果', {
+          groupId: result.group.id,
+          groupName: result.group.name,
+          subGroupId: result.subGroupId,
+          merged: result.merged,
+          allSubGroups: result.group.children.map(c => c.name)
+        })
         store.activeGroupId = result.group.id
         store.activeSubGroupId = result.subGroupId
       } else {
         // 如果智能导入失败（理论上不应该），回退到快照模式
-        if (import.meta.env.DEV) {
-          console.warn('[loadShareData] 智能合并失败，回退到快照模式')
-        }
+        console.warn('[loadShareData] 智能合并失败，回退到快照模式')
         store.loadFromSnapshot(dataToApply)
       }
     } else {
