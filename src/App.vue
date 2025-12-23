@@ -251,15 +251,9 @@ const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
 const shouldShowSubs = computed(() => {
-  const result = activeSubGroups.value.length > 1 && visibleGroups.value.length > 1
-  const logData = {
-    activeSubGroupsCount: activeSubGroups.value.length,
-    activeSubGroups: activeSubGroups.value.map(s => s.name),
-    visibleGroupsCount: visibleGroups.value.length,
-    visibleGroups: visibleGroups.value.map(g => g.name),
-    shouldShow: result
-  }
-  console.log('[App] shouldShowSubs 计算', JSON.stringify(logData, null, 2))
+  // 只要当前分组有多个子分组就显示侧边栏，不需要检查 visibleGroups
+  // 因为分享链接场景下可能只有分享的分组，没有默认分组
+  const result = activeSubGroups.value.length > 1
   return result
 })
 const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GROUP_ID))
