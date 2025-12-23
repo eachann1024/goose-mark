@@ -55,6 +55,15 @@ export const utoolsStorage = {
     
     pendingWrites.set(key, { value, timer })
   },
+  // 立即保存，不使用防抖（用于关键操作，如分享导入）
+  flushItem(key: string): void {
+    const pending = pendingWrites.get(key)
+    if (pending) {
+      clearTimeout(pending.timer)
+      pendingWrites.delete(key)
+      flushWrite(key, pending.value)
+    }
+  },
   removeItem(key: string): void {
     // 清除待写入
     const existing = pendingWrites.get(key)
