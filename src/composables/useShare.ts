@@ -343,20 +343,38 @@ export function useShare() {
     }
     
     // duplicate 或无冲突的情况
-    // 检查是否已有分享内容（非空 groups 且不是种子数据）
-    const hasExistingData = store.groups.length > 2 || 
-      (store.groups.length === 2 && store.groups[0].children.some(c => c.bookmarkIds.length > 0))
-    
-    if (hasExistingData && !store.isReadOnly) {
-      // 已有内容，采用智能合并模式（检测同名分组并合并子分组）
+    // 始终使用智能合并模式（检测同名分组并合并子分组）
+    // 这样可以确保多次打开分享链接时，同名分组会自动合并
+    if (!store.isReadOnly) {
+      if (import.meta.env.DEV) {
+        console.log('[loadShareData] 使用智能合并模式', {
+          shareId,
+          shareName,
+          existingGroups: store.groups.map(g => ({ id: g.id, name: g.name }))
+        })
+      }
       const result = store.importFromShareSmart(dataToApply, shareId, shareName)
       if (result) {
+        if (import.meta.env.DEV) {
+          console.log('[loadShareData] 智能合并结果', {
+            groupId: result.group.id,
+            groupName: result.group.name,
+            subGroupId: result.subGroupId,
+            merged: result.merged
+          })
+        }
         store.activeGroupId = result.group.id
         store.activeSubGroupId = result.subGroupId
+      } else {
+        // 如果智能导入失败（理论上不应该），回退到快照模式
+        if (import.meta.env.DEV) {
+          console.warn('[loadShareData] 智能合并失败，回退到快照模式')
+        }
+        store.loadFromSnapshot(dataToApply)
       }
     } else {
-      // 首次加载，采用覆盖模式
-      store.loadFromSnapshot(dataToApply)
+      // 只读模式，使用快照模式
+      store.loadFromSnapshot(dataToApply, true)
     }
     return { success: true }
   }

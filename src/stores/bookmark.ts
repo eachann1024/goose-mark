@@ -771,6 +771,14 @@ export const useBookmarkStore = defineStore('bookmark', {
       // 检查是否存在同名父分组
       const existingGroup = this.findGroupByName(targetGroupName)
       
+      if (import.meta.env.DEV) {
+        console.log('[importFromShareSmart]', {
+          targetGroupName,
+          existingGroup: existingGroup ? { id: existingGroup.id, name: existingGroup.name } : null,
+          allGroups: this.groups.map(g => ({ id: g.id, name: g.name }))
+        })
+      }
+      
       if (existingGroup) {
         // 存在同名分组，将子分组合并到该分组下
         const now = Date.now()
