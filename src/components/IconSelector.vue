@@ -287,8 +287,8 @@ watch(
            <button 
              v-for="c in colors" 
              :key="c"
-             class="w-8 h-8 rounded-lg border-2 hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary"
-             :class="localColor === c ? 'border-white shadow-md' : 'border-transparent'"
+             class="w-8 h-8 rounded-lg ring-1 ring-border/50 hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-primary"
+             :class="localColor === c ? 'ring-2 ring-primary shadow-md' : ''"
              :style="{ backgroundColor: c }"
              @click="selectColor(c)"
            />
