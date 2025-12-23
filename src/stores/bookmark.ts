@@ -649,6 +649,10 @@ export const useBookmarkStore = defineStore('bookmark', {
     findGroupBySourceShareId(shareId: string): Group | null {
       return this.groups.find(g => g.sourceShareId === shareId) || null
     },
+    // 根据名称查找分组（不包括回收站）
+    findGroupByName(name: string): Group | null {
+      return this.groups.find(g => g.name === name && g.id !== TRASH_GROUP_ID) || null
+    },
     // 设置分享 ID
     setShareId(type: 'subGroup' | 'group', groupId: string, subGroupId: string | undefined, shareId: string) {
       if (type === 'group') {
@@ -751,6 +755,78 @@ export const useBookmarkStore = defineStore('bookmark', {
       this.activeSubGroupId = newGroup.children[0]?.id || ''
       
       return newGroup
+    },
+    // 智能导入分享：检测同名父分组并合并子分组
+    // 返回 { group, subGroupId, merged } 用于跳转和提示
+    importFromShareSmart(
+      data: { groups: Group[]; bookmarks: Bookmark[] },
+      shareId: string,
+      shareName?: string
+    ): { group: Group; subGroupId: string; merged: boolean } | null {
+      if (!data.groups.length) return null
+      
+      const sourceGroup = data.groups[0]
+      const targetGroupName = shareName || sourceGroup.name || '来自分享'
+      
+      // 检查是否存在同名父分组
+      const existingGroup = this.findGroupByName(targetGroupName)
+      
+      if (existingGroup) {
+        // 存在同名分组，将子分组合并到该分组下
+        const now = Date.now()
+        const idMap = new Map<string, string>()
+        
+        // 为书签生成新 ID
+        data.bookmarks.forEach(b => idMap.set(b.id, uid()))
+        
+        // 复制书签
+        const newBookmarks: Bookmark[] = data.bookmarks.map(b => ({
+          ...b,
+          id: idMap.get(b.id)!,
+          locations: []
+        }))
+        
+        // 将源分组的子分组添加到目标分组，检查子分组名冲突
+        const newSubGroups = sourceGroup.children.map(sub => {
+          let subName = sub.name
+          let suffix = 1
+          while (existingGroup.children.some(c => c.name === subName)) {
+            subName = `${sub.name} (${suffix++})`
+          }
+          const newSubId = uid()
+          return {
+            id: newSubId,
+            name: subName,
+            bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId) || oldId),
+            sourceShareId: shareId,
+            lastSyncedAt: now
+          }
+        })
+        
+        // 更新书签 locations
+        newBookmarks.forEach(b => {
+          b.locations = newSubGroups
+            .filter(sub => sub.bookmarkIds.includes(b.id))
+            .map(sub => ({ groupId: existingGroup.id, subGroupId: sub.id }))
+        })
+        
+        // 添加子分组和书签
+        existingGroup.children.push(...newSubGroups)
+        this.bookmarks.push(...newBookmarks)
+        
+        // 切换到合并后的第一个子分组
+        this.activeGroupId = existingGroup.id
+        this.activeSubGroupId = newSubGroups[0]?.id || existingGroup.children[0]?.id || ''
+        
+        return { group: existingGroup, subGroupId: this.activeSubGroupId, merged: true }
+      } else {
+        // 不存在同名分组，创建新分组
+        const newGroup = this.importFromShare(data, shareId, shareName)
+        if (newGroup) {
+          return { group: newGroup, subGroupId: newGroup.children[0]?.id || '', merged: false }
+        }
+        return null
+      }
     },
     // 更新已导入的分享分组
     updateFromShare(groupId: string, data: { groups: Group[]; bookmarks: Bookmark[] }) {

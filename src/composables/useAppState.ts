@@ -3,8 +3,10 @@ import { ref, computed, watch } from 'vue'
 import { useDark, useToggle } from '@vueuse/core'
 import { useThemeStore } from '@/stores/theme'
 
+// 模块级共享状态
+const tab = ref<'bookmarks' | 'settings'>('bookmarks')
+
 export function useAppState() {
-  const tab = ref<'bookmarks' | 'settings'>('bookmarks')
 
   const isDark = useDark({
     selector: 'html',

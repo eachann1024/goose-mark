@@ -8,6 +8,7 @@ import { Loader2 } from 'lucide-vue-next'
 import { useBookmarkStore, parseShareIdFromUrl, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useShare, type ShareData } from '@/composables/useShare'
 import { useToast } from '@/composables/useToast'
+import { useAppState } from '@/composables/useAppState'
 
 const props = defineProps<{
   open: boolean
@@ -20,6 +21,7 @@ const emit = defineEmits<{
 const store = useBookmarkStore()
 const { getShareData } = useShare()
 const { showToast } = useToast()
+const { tab } = useAppState()
 
 // 状态
 const shareInput = ref('')
@@ -126,18 +128,24 @@ const handleImport = () => {
   
   const dataToImport = { groups, bookmarks: shareData.value.bookmarks }
   
+  let importSuccess = false
+  
   if (importMode.value === 'keep') {
-    // 保持原结构
-    const newGroup = store.importFromShare(dataToImport, shareId.value, sharePreview.value?.name)
-    if (newGroup) {
+    // 智能导入：自动检测同名分组并合并
+    const result = store.importFromShareSmart(dataToImport, shareId.value, sharePreview.value?.name)
+    if (result) {
+      const subGroupNames = shareData.value.subGroups.map(s => s.name).join('、')
       showToast({
         title: '导入成功',
-        description: `已创建分组「${newGroup.name}」`,
+        description: result.merged 
+          ? `已将「${subGroupNames}」合并到「${result.group.name}」`
+          : `已创建分组「${result.group.name}」`,
         variant: 'success'
       })
+      importSuccess = true
     }
   } else {
-    // 合并到现有分组
+    // 合并到指定分组
     const success = store.importToExistingGroup(dataToImport, targetGroupId.value, shareId.value)
     if (success) {
       const targetGroup = store.groups.find(g => g.id === targetGroupId.value)
@@ -146,10 +154,16 @@ const handleImport = () => {
         description: `已添加到「${targetGroup?.name || '目标分组'}」`,
         variant: 'success'
       })
+      importSuccess = true
     }
   }
   
   emit('update:open', false)
+  
+  // 导入成功后切换到书签视图
+  if (importSuccess) {
+    tab.value = 'bookmarks'
+  }
 }
 
 const handleClose = () => {
@@ -221,8 +235,8 @@ const selectGroup = (groupId: string) => {
                   class="flex-1"
                   @click="importMode = 'keep'"
                 >
-                  <span class="i-mdi-folder-plus mr-1" />
-                  保持原结构
+                  <span class="i-mdi-folder-sync mr-1" />
+                  智能合并
                 </Button>
                 <Button 
                   :variant="importMode === 'merge' ? 'default' : 'outline'" 
@@ -231,9 +245,12 @@ const selectGroup = (groupId: string) => {
                   @click="importMode = 'merge'"
                 >
                   <span class="i-mdi-folder-arrow-right mr-1" />
-                  导入到现有
+                  导入到指定
                 </Button>
               </div>
+              <p v-if="importMode === 'keep'" class="text-xs text-muted-foreground">
+                同名主分组会自动合并，子分组追加到该分组下
+              </p>
 
               <!-- 目标分组选择 -->
               <Transition name="fade">
