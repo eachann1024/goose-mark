@@ -112,6 +112,14 @@ const handleCopyShareLink = async (shareId: string) => {
 // 分享管理面板状态
 const showSharePanel = ref(false)
 
+// 分享冲突对话框状态
+const showShareConflict = ref(false)
+const shareConflictInfo = ref<{
+  shareId: string
+  shareName: string
+  existingGroupName: string
+} | null>(null)
+
 // 打开分享管理面板
 const handleShareSubGroup = () => {
   showSharePanel.value = true
@@ -120,6 +128,20 @@ const handleShareSubGroup = () => {
 // 分享成功回调
 const handleShared = (shareId: string) => {
   window.utools?.showNotification?.('分享链接已生成')
+}
+
+// 处理分享冲突动作
+const handleShareConflictAction = async (action: 'update' | 'keep' | 'duplicate') => {
+  if (!shareConflictInfo.value) return
+  
+  const result = await loadShareData(shareConflictInfo.value.shareId, action)
+  if ('success' in result && result.success) {
+    const msg = action === 'update' ? '已更新本地分组' 
+      : action === 'keep' ? '已保留本地版本' 
+      : '已创建新副本'
+    window.utools?.showNotification?.(msg)
+  }
+  shareConflictInfo.value = null
 }
 
 // Shared State
@@ -251,7 +273,18 @@ onMounted(async () => {
     }
     
     if (shareId) {
-      await loadShareData(shareId)
+      const result = await loadShareData(shareId)
+      // 检查是否冲突
+      if ('conflict' in result && result.conflict) {
+        shareConflictInfo.value = {
+          shareId: result.shareId,
+          shareName: result.shareName,
+          existingGroupName: result.existingGroupName
+        }
+        showShareConflict.value = true
+      } else if ('error' in result) {
+        // 错误已通过 shareError 处理
+      }
     } else {
       store.migrateFromLegacy()
     }
@@ -698,6 +731,14 @@ watch(() => store.bookmarks, () => {
       :sub-group-id="store.activeSubGroupId"
       @shared="handleShared"
       @update-from-share="(id: string, data: any) => store.updateFromShare(id, data)"
+    />
+
+    <!-- 分享冲突对话框 -->
+    <ShareConflictDialog
+      v-model:open="showShareConflict"
+      :share-name="shareConflictInfo?.shareName || ''"
+      :existing-group-name="shareConflictInfo?.existingGroupName || ''"
+      @action="handleShareConflictAction"
     />
   </div>
   

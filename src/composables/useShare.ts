@@ -276,37 +276,89 @@ export function useShare() {
     }
   }
 
+  // 加载结果类型
+  type LoadShareResult = 
+    | { success: true }
+    | { success: false; error: string }
+    | { conflict: true; shareId: string; shareName: string; existingGroupId: string; existingGroupName: string; data: ShareData }
+
   // 加载分享数据并应用到 store（用于访问分享链接）
-  const loadShareData = async (shareId: string): Promise<boolean> => {
+  const loadShareData = async (shareId: string, conflictAction?: 'update' | 'keep' | 'duplicate'): Promise<LoadShareResult> => {
     const result = await loadShare(shareId)
-    if (!result) return false
+    if (!result) return { success: false, error: shareError.value || '加载失败' }
     
     if (result.canceled) {
       shareError.value = '此分享已被取消'
-      return false
+      return { success: false, error: '此分享已被取消' }
     }
     
-    if (result.data) {
-      // 构建 groups 结构
-      const groups = result.data.group 
-        ? [{ 
-            id: result.data.group.id, 
-            name: result.data.group.name, 
-            children: result.data.subGroups 
-          }]
-        : [{ 
-            id: 'shared', 
-            name: '分享内容', 
-            children: result.data.subGroups 
-          }]
-      
-      store.loadFromSnapshot({
-        groups,
-        bookmarks: result.data.bookmarks
-      })
-      return true
+    if (!result.data) {
+      return { success: false, error: '分享内容为空' }
     }
-    return false
+
+    const shareName = result.data.group?.name || '分享内容'
+    
+    // 检查是否已导入过此分享
+    const existingGroup = store.findGroupBySourceShareId(shareId)
+    
+    if (existingGroup && !conflictAction) {
+      // 存在冲突，返回冲突信息让调用方处理
+      return {
+        conflict: true,
+        shareId,
+        shareName,
+        existingGroupId: existingGroup.id,
+        existingGroupName: existingGroup.name,
+        data: result.data
+      }
+    }
+    
+    // 构建 groups 结构
+    const groups = result.data.group 
+      ? [{ 
+          id: result.data.group.id, 
+          name: result.data.group.name, 
+          children: result.data.subGroups 
+        }]
+      : [{ 
+          id: 'shared', 
+          name: '分享内容', 
+          children: result.data.subGroups 
+        }]
+    
+    const dataToApply = { groups, bookmarks: result.data.bookmarks }
+    
+    // 处理冲突动作
+    if (conflictAction === 'keep') {
+      // 保留本地版本，不做任何操作
+      return { success: true }
+    }
+    
+    if (conflictAction === 'update' && existingGroup) {
+      // 更新本地分组
+      store.updateFromShare(existingGroup.id, dataToApply)
+      store.activeGroupId = existingGroup.id
+      store.activeSubGroupId = existingGroup.children[0]?.id || ''
+      return { success: true }
+    }
+    
+    // duplicate 或无冲突的情况
+    // 检查是否已有分享内容（非空 groups 且不是种子数据）
+    const hasExistingData = store.groups.length > 2 || 
+      (store.groups.length === 2 && store.groups[0].children.some(c => c.bookmarkIds.length > 0))
+    
+    if (hasExistingData && !store.isReadOnly) {
+      // 已有内容，采用合并模式
+      const newGroup = store.mergeFromShare(dataToApply, shareId)
+      if (newGroup) {
+        store.activeGroupId = newGroup.id
+        store.activeSubGroupId = newGroup.children[0]?.id || ''
+      }
+    } else {
+      // 首次加载，采用覆盖模式
+      store.loadFromSnapshot(dataToApply)
+    }
+    return { success: true }
   }
 
   // 创建全库快照分享链接（供设置面板使用）

@@ -6,6 +6,18 @@ import { utoolsStorage } from '@/lib/utoolsStorage'
 
 const uid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`)
 
+// 从分享链接/分享码中解析 shareId
+export const parseShareIdFromUrl = (input: string): string | null => {
+  if (!input) return null
+  const trimmed = input.trim()
+  // 完整 URL: http(s)://xxx/s/shareId
+  const urlMatch = trimmed.match(/\/s\/([a-zA-Z0-9_-]+)$/)
+  if (urlMatch) return urlMatch[1]
+  // 纯 shareId (10位字母数字)
+  if (/^[a-zA-Z0-9_-]{6,15}$/.test(trimmed)) return trimmed
+  return null
+}
+
 export const TRASH_GROUP_ID = 'g-trash'
 
 // 旧版数据结构（用于迁移）
@@ -500,14 +512,142 @@ export const useBookmarkStore = defineStore('bookmark', {
       
       return newGroup
     },
-    loadFromSnapshot(data: { groups: Group[]; bookmarks: Bookmark[] }) {
+    // 加载分享快照（Web 端首次打开分享链接时）
+    loadFromSnapshot(data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly = false) {
       this.groups = data.groups
       this.bookmarks = data.bookmarks
-      this.isReadOnly = true
+      this.isReadOnly = readOnly
       
       // Reset active selections to first valid if possible
       this.activeGroupId = this.groups[0]?.id ?? ''
       this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
+    },
+    // 合并分享数据到现有分组（Web 端打开多个分享链接时）
+    mergeFromShare(data: { groups: Group[]; bookmarks: Bookmark[] }, shareId: string): Group | null {
+      if (!data.groups.length) return null
+      
+      const now = Date.now()
+      const idMap = new Map<string, string>()
+      
+      // 为书签生成新 ID
+      data.bookmarks.forEach(b => idMap.set(b.id, uid()))
+      
+      // 复制书签
+      const newBookmarks: Bookmark[] = data.bookmarks.map(b => ({
+        ...b,
+        id: idMap.get(b.id)!,
+        locations: [] as BookmarkLocation[]
+      }))
+      
+      // 创建新分组
+      const sourceGroup = data.groups[0]
+      const newGroupId = uid()
+      const newSubGroups = sourceGroup.children.map(sub => {
+        const newSubId = uid()
+        return {
+          id: newSubId,
+          name: sub.name,
+          bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId) || oldId),
+          sourceShareId: shareId,
+          lastSyncedAt: now
+        }
+      })
+      
+      const newGroup: Group = {
+        id: newGroupId,
+        name: sourceGroup.name || '来自分享',
+        children: newSubGroups,
+        sourceShareId: shareId,
+        lastSyncedAt: now
+      }
+      
+      // 更新书签 locations
+      newBookmarks.forEach(b => {
+        b.locations = newSubGroups
+          .filter(sub => sub.bookmarkIds.includes(b.id))
+          .map(sub => ({ groupId: newGroupId, subGroupId: sub.id }))
+      })
+      
+      // 检查分组名冲突，自动添加后缀
+      let finalName = newGroup.name
+      let suffix = 1
+      while (this.groups.some(g => g.name === finalName && g.id !== TRASH_GROUP_ID)) {
+        finalName = `${sourceGroup.name || '来自分享'} (${suffix++})`
+      }
+      newGroup.name = finalName
+      
+      // 插入到 Trash 之前
+      const trashIdx = this.groups.findIndex(g => g.id === TRASH_GROUP_ID)
+      if (trashIdx !== -1) {
+        this.groups.splice(trashIdx, 0, newGroup)
+      } else {
+        this.groups.push(newGroup)
+      }
+      
+      this.bookmarks.push(...newBookmarks)
+      this.isReadOnly = false
+      
+      return newGroup
+    },
+    // 导入分享到现有分组（uTools 智能导入）
+    importToExistingGroup(data: { groups: Group[]; bookmarks: Bookmark[] }, targetGroupId: string, shareId: string): boolean {
+      if (!data.groups.length) return false
+      
+      const targetGroup = this.groups.find(g => g.id === targetGroupId)
+      if (!targetGroup) return false
+      
+      const now = Date.now()
+      const idMap = new Map<string, string>()
+      
+      // 为书签生成新 ID
+      data.bookmarks.forEach(b => idMap.set(b.id, uid()))
+      
+      // 复制书签
+      const newBookmarks: Bookmark[] = data.bookmarks.map(b => ({
+        ...b,
+        id: idMap.get(b.id)!,
+        locations: []
+      }))
+      
+      // 将源分组的子分组添加到目标分组
+      const sourceGroup = data.groups[0]
+      const newSubGroups = sourceGroup.children.map(sub => {
+        // 检查子分组名冲突
+        let subName = sub.name
+        let suffix = 1
+        while (targetGroup.children.some(c => c.name === subName)) {
+          subName = `${sub.name} (${suffix++})`
+        }
+        const newSubId = uid()
+        return {
+          id: newSubId,
+          name: subName,
+          bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId) || oldId),
+          sourceShareId: shareId,
+          lastSyncedAt: now
+        }
+      })
+      
+      // 更新书签 locations
+      newBookmarks.forEach(b => {
+        b.locations = newSubGroups
+          .filter(sub => sub.bookmarkIds.includes(b.id))
+          .map(sub => ({ groupId: targetGroupId, subGroupId: sub.id }))
+      })
+      
+      // 添加子分组和书签
+      targetGroup.children.push(...newSubGroups)
+      this.bookmarks.push(...newBookmarks)
+      
+      // 切换到导入的第一个子分组
+      this.activeGroupId = targetGroupId
+      this.activeSubGroupId = newSubGroups[0]?.id || targetGroup.children[0]?.id || ''
+      
+      return true
+    },
+    // 根据 sourceShareId 查找已导入的分组
+    findGroupBySourceShareId(shareId: string): Group | null {
+      return this.groups.find(g => g.sourceShareId === shareId) || null
     },
     // 设置分享 ID
     setShareId(type: 'subGroup' | 'group', groupId: string, subGroupId: string | undefined, shareId: string) {
