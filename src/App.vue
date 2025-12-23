@@ -104,12 +104,7 @@ const handleOpenShareUrl = (shareId: string) => {
 
 // 复制分享链接
 const handleCopyShareLink = async (shareId: string) => {
-  const success = await copyShareLink(shareId)
-  if (success) {
-    window.utools?.showNotification?.('分享链接已复制到剪贴板')
-  } else {
-    window.utools?.showNotification?.('复制失败，无法访问剪贴板')
-  }
+  await copyShareLink(shareId)
 }
 
 // 子分组分享按钮状态
@@ -137,22 +132,14 @@ const handleShareSubGroup = () => {
   showSharePanel.value = true
 }
 
-// 分享成功回调
-const handleShared = (shareId: string) => {
-  window.utools?.showNotification?.('分享链接已生成')
-}
+// 分享成功回调（通过 Toast 反馈，无需额外处理）
+const handleShared = (_shareId: string) => {}
 
 // 处理分享冲突动作
 const handleShareConflictAction = async (action: 'update' | 'keep' | 'duplicate') => {
   if (!shareConflictInfo.value) return
   
-  const result = await loadShareData(shareConflictInfo.value.shareId, action)
-  if ('success' in result && result.success) {
-    const msg = action === 'update' ? '已更新本地分组' 
-      : action === 'keep' ? '已保留本地版本' 
-      : '已创建新副本'
-    window.utools?.showNotification?.(msg)
-  }
+  await loadShareData(shareConflictInfo.value.shareId, action)
   shareConflictInfo.value = null
 }
 
@@ -357,7 +344,7 @@ onMounted(async () => {
          
          const hasTemplate = /{[^}]+}/.test(bookmark.url)
          if (hasTemplate && !query) {
-           window.utools?.showNotification?.(`请输入${getTemplateLabel(bookmark.url)}`)
+           console.info(`[Bookmark] 模板书签需要输入${getTemplateLabel(bookmark.url)}`)
            window.utools?.outPlugin()
            return
          }
