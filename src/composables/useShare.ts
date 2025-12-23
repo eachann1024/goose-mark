@@ -285,12 +285,13 @@ export function useShare() {
   // 加载分享数据并应用到 store（用于访问分享链接）
   const loadShareData = async (shareId: string, conflictAction?: 'update' | 'keep' | 'duplicate'): Promise<LoadShareResult> => {
     // 记录 store 的初始状态
-    console.log('[loadShareData] Store 初始状态', {
+    const initState = {
       shareId,
       groupsCount: store.groups.length,
       groups: store.groups.map(g => ({ id: g.id, name: g.name, childrenCount: g.children.length, children: g.children.map(c => c.name) })),
       bookmarksCount: store.bookmarks.length
-    })
+    }
+    console.log('[loadShareData] Store 初始状态', JSON.stringify(initState, null, 2))
     
     const result = await loadShare(shareId)
     if (!result) return { success: false, error: shareError.value || '加载失败' }
@@ -354,20 +355,22 @@ export function useShare() {
     // 始终使用智能合并模式（检测同名分组并合并子分组）
     // 这样可以确保多次打开分享链接时，同名分组会自动合并
     if (!store.isReadOnly) {
-      console.log('[loadShareData] 使用智能合并模式', {
+      const mergeData = {
         shareId,
         shareName,
         existingGroups: store.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => c.name) }))
-      })
+      }
+      console.log('[loadShareData] 使用智能合并模式', JSON.stringify(mergeData, null, 2))
       const result = store.importFromShareSmart(dataToApply, shareId, shareName)
       if (result) {
-        console.log('[loadShareData] 智能合并结果', {
+        const resultData = {
           groupId: result.group.id,
           groupName: result.group.name,
           subGroupId: result.subGroupId,
           merged: result.merged,
           allSubGroups: result.group.children.map(c => c.name)
-        })
+        }
+        console.log('[loadShareData] 智能合并结果', JSON.stringify(resultData, null, 2))
         store.activeGroupId = result.group.id
         store.activeSubGroupId = result.subGroupId
         
