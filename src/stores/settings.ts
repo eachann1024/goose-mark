@@ -12,8 +12,7 @@ export const useSettingsStore = defineStore('settings', {
     preferUtoolsBrowser: false,
     useCustomAiModel: false,
     customAiModel: '',
-    windowHeight: 700,
-    enableShare: false // 是否启用在线分享功能
+    windowHeight: 700
   }),
   actions: {
     setAutoGenerateAI(value: boolean) {
@@ -48,9 +47,6 @@ export const useSettingsStore = defineStore('settings', {
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0
       this.windowHeight = num < 100 ? 100 : Math.round(num)
-    },
-    setEnableShare(value: boolean) {
-      this.enableShare = !!value
     }
   },
   persist: { storage: utoolsStorage }

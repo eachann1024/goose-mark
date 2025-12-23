@@ -20,7 +20,7 @@ const emit = defineEmits<{
 }>()
 
 const store = useBookmarkStore()
-const { createShare, cancelShare, copyShareLink, buildShareUrl, isSharing, shareError, checkForUpdate, getShareData } = useShare()
+const { createShare, updateShare, cancelShare, copyShareLink, buildShareUrl, isSharing, shareError, checkForUpdate, getShareData } = useShare()
 
 // 当前子分组信息
 const currentSubGroup = computed(() => {
@@ -40,6 +40,7 @@ const hasCopied = ref(false)
 const isCanceling = ref(false)
 const isChecking = ref(false)
 const isUpdating = ref(false)
+const isUpdatingShare = ref(false)
 const updateAvailable = ref(false)
 
 const checkUpdate = async () => {
@@ -170,6 +171,36 @@ const handleCancel = async () => {
   }
 }
 
+// 更新分享到服务器（分享者使用：将本地最新的书签同步到服务器）
+const handleUpdateShare = async () => {
+  if (!existingShareId.value) return
+  isUpdatingShare.value = true
+  try {
+    const success = await updateShare(existingShareId.value, 'subGroup', props.groupId, props.subGroupId)
+    if (success) {
+      showToast({
+        title: '分享已更新',
+        description: '最新书签已同步到服务器',
+        variant: 'success'
+      })
+    } else {
+      showToast({
+        title: '更新失败',
+        description: '请检查网络连接后重试',
+        variant: 'error'
+      })
+    }
+  } catch (e) {
+    showToast({
+      title: '更新失败',
+      description: e instanceof Error ? e.message : '网络错误',
+      variant: 'error'
+    })
+  } finally {
+    isUpdatingShare.value = false
+  }
+}
+
 // 关闭弹窗
 const handleClose = () => {
   emit('update:open', false)
@@ -291,6 +322,27 @@ watch(() => props.open, (open) => {
               <Copy class="w-3.5 h-3.5" />
               复制链接
             </Button>
+          </div>
+
+          <!-- 更新分享按钮 -->
+          <div class="p-3 rounded-xl bg-muted/40 border border-border/60">
+            <div class="flex items-start gap-3">
+              <div class="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                <span class="i-mdi-information-outline text-primary text-sm" />
+              </div>
+              <div class="flex-1 space-y-2">
+                <p class="text-sm text-muted-foreground">新增或修改书签后，点击下方按钮同步到服务器</p>
+                <Button
+                  class="w-full h-9 gap-2 text-sm"
+                  :disabled="isUpdatingShare"
+                  @click="handleUpdateShare"
+                >
+                  <Loader2 v-if="isUpdatingShare" class="w-4 h-4 animate-spin" />
+                  <span v-else class="i-mdi-cloud-upload-outline text-lg" />
+                  {{ isUpdatingShare ? '正在更新...' : '更新分享' }}
+                </Button>
+              </div>
+            </div>
           </div>
 
           <div class="pt-3 border-t border-border/50">
