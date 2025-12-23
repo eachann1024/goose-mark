@@ -21,7 +21,7 @@ import type { Bookmark } from '@/types/bookmark'
 const store = useBookmarkStore()
 const statsStore = useStatsStore()
 const settingsStore = useSettingsStore()
-const { toastState, closeToast } = useToast()
+const { toastState, closeToast, showToast } = useToast()
 
 // Composables
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
@@ -100,7 +100,9 @@ const {
   createShare,
   copyShareLink,
   buildShareUrl,
-  validateAndCleanGroupShares
+  validateAndCleanGroupShares,
+  checkForUpdate,
+  getShareData
 } = useShare()
 
 // 打开分享链接
@@ -137,6 +139,51 @@ const shareConflictInfo = ref<{
 // 打开分享管理面板
 const handleShareSubGroup = () => {
   showSharePanel.value = true
+}
+
+// 检查更新（用于导入的分享）
+const handleCheckUpdate = async () => {
+  const subGroup = currentSubGroup.value
+  if (!subGroup?.sourceShareId) return
+  
+  const sourceShareId = subGroup.sourceShareId
+  const lastSyncedAt = subGroup.lastSyncedAt || 0
+  
+  try {
+    // 检查是否有更新
+    const hasUpdate = await checkForUpdate(sourceShareId, lastSyncedAt, true)
+    
+    if (!hasUpdate) {
+      showToast({ 
+        title: '当前已是最新版本', 
+        variant: 'success' 
+      })
+      return
+    }
+    
+    // 有更新，获取最新数据并更新
+    const result = await getShareData(sourceShareId)
+    if (result?.data) {
+      // 更新本地数据
+      store.updateFromShare(store.activeGroupId, result.data.data)
+      showToast({ 
+        title: '更新成功', 
+        variant: 'success' 
+      })
+    } else {
+      showToast({ 
+        title: '获取更新失败', 
+        description: result?.error || '未知错误',
+        variant: 'error' 
+      })
+    }
+  } catch (e: unknown) {
+    showToast({ 
+      title: '检查更新失败', 
+      description: e instanceof Error ? e.message : '网络错误',
+      variant: 'error' 
+    })
+  }
 }
 
 // 分享成功回调（通过 Toast 反馈，无需额外处理）
@@ -577,7 +624,7 @@ watch(() => store.bookmarks, () => {
                   variant="ghost"
                   size="sm"
                   class="justify-start h-8 text-xs gap-2 text-green-600"
-                  @click="handleShareSubGroup(); showSubShareMenu = false"
+                  @click="handleCheckUpdate(); showSubShareMenu = false"
                 >
                   <span class="i-mdi-cloud-sync text-sm" />
                   检查更新

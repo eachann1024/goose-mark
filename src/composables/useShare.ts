@@ -279,7 +279,7 @@ export function useShare() {
 
   // 加载结果类型
   type LoadShareResult = 
-    | { success: true }
+    | { success: true; existing?: true }
     | { success: false; error: string }
     | { conflict: true; shareId: string; shareName: string; existingGroupId: string; existingGroupName: string; data: ShareData }
 
@@ -308,13 +308,27 @@ export function useShare() {
 
     const shareName = result.data.group?.name || '分享内容'
     
-    // 检查是否已导入过此分享
-    const existingGroup = store.findGroupBySourceShareId(shareId)
+    // 检查是否已导入过此分享（检查主分组和所有子分组的 sourceShareId）
+    let existingGroup = store.findGroupBySourceShareId(shareId)
+    let existingSubGroup: { groupId: string; subGroupId: string } | null = null
+    
+    // 如果主分组没有匹配，检查所有子分组
+    if (!existingGroup) {
+      for (const group of store.groups) {
+        const matchedSub = group.children.find(sub => sub.sourceShareId === shareId)
+        if (matchedSub) {
+          existingGroup = group
+          existingSubGroup = { groupId: group.id, subGroupId: matchedSub.id }
+          break
+        }
+      }
+    }
 
     if (existingGroup && !conflictAction) {
       // 直接跳转到已存在的分组，不再创建新分组或合并
       store.activeGroupId = existingGroup.id
-      store.activeSubGroupId = existingGroup.children[0]?.id || ''
+      // 如果找到了匹配的子分组，跳转到该子分组；否则跳转到第一个子分组
+      store.activeSubGroupId = existingSubGroup?.subGroupId || existingGroup.children[0]?.id || ''
       return { success: true, existing: true } as const
     }
     
