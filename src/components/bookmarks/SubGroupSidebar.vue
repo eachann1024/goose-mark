@@ -114,6 +114,8 @@ const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, last
       // 自动更新
       await autoUpdateSubGroup(subGroupId, sourceShareId, groupId)
     }
+  } catch {
+    // 背景检查失败不应中断或抛出未处理错误
   } finally {
     checkingMap.value[subGroupId] = false
   }
@@ -131,6 +133,20 @@ const checkAllUpdates = () => {
 watch(() => props.activeGroupId, () => {
   updatesMap.value = {}
   checkAllUpdates()
+})
+
+// 监听子分组切换，自动检查并更新
+watch(() => props.activeSubGroupId, async (newSubGroupId, oldSubGroupId) => {
+  if (newSubGroupId === oldSubGroupId) return
+
+  const sub = props.activeSubGroups.find(s => s.id === newSubGroupId)
+  if (!sub?.sourceShareId) return
+
+  // 如果 lastSyncedAt 不存在或为 0，说明是首次导入，跳过
+  if (!sub.lastSyncedAt || sub.lastSyncedAt === 0) return
+
+  // 自动检查并更新
+  await checkSingleUpdate(newSubGroupId, sub.sourceShareId, sub.lastSyncedAt, props.activeGroupId)
 })
 
 onMounted(() => {
@@ -197,4 +213,3 @@ const handleMouseEnter = (e: MouseEvent, key: string) => {
   text-overflow: ellipsis;
 }
 </style>
-
