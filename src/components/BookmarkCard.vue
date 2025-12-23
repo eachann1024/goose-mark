@@ -47,7 +47,12 @@ const showFallbackToast = (message: string, anchor?: HTMLElement) => {
   el.style.position = 'fixed'
   const getCssVar = (name: string, fallback: string) => {
     const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
-    return val || fallback
+    if (!val) return fallback
+    // CSS 变量可能是 HSL 格式（如 "210 40% 98%"），需要包装成 hsl()
+    if (/^\d+\.?\d*\s+\d+\.?\d*%\s+\d+\.?\d*%$/.test(val)) {
+      return `hsl(${val})`
+    }
+    return val
   }
   const bg = getCssVar('--card', 'rgba(24,24,27,0.92)')
   const border = getCssVar('--border', 'rgba(255,255,255,0.08)')
