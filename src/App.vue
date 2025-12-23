@@ -250,7 +250,17 @@ const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
 // Group Helpers
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
-const shouldShowSubs = computed(() => activeSubGroups.value.length > 1 && visibleGroups.value.length > 1)
+const shouldShowSubs = computed(() => {
+  const result = activeSubGroups.value.length > 1 && visibleGroups.value.length > 1
+  console.log('[App] shouldShowSubs 计算', {
+    activeSubGroupsCount: activeSubGroups.value.length,
+    activeSubGroups: activeSubGroups.value.map(s => s.name),
+    visibleGroupsCount: visibleGroups.value.length,
+    visibleGroups: visibleGroups.value.map(g => g.name),
+    shouldShow: result
+  })
+  return result
+})
 const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GROUP_ID))
 const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
