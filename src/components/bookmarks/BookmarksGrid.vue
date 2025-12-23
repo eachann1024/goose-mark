@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkCard from '@/components/BookmarkCard.vue'
 import { Button } from '@/components/ui/button'
@@ -61,6 +61,7 @@ const emptyTrashConfirmOpen = ref(false)
 const emptyToastOpen = ref(false)
 const emptyToastTitle = ref('')
 const emptyToastDesc = ref<string | undefined>(undefined)
+const confirmEmptyTrashButtonRef = ref<HTMLElement | null>(null)
 let emptyToastUrls = ''
 
 const copyText = async (text: string) => {
@@ -79,6 +80,24 @@ const copyText = async (text: string) => {
 const requestEmptyTrash = () => {
   emptyTrashConfirmOpen.value = true
 }
+
+// 当清空回收站确认对话框打开时，聚焦到确认清空按钮
+watch(emptyTrashConfirmOpen, (isOpen) => {
+  if (isOpen) {
+    nextTick(() => {
+      // 查找确认清空按钮并聚焦
+      const button = confirmEmptyTrashButtonRef.value as HTMLElement | null
+      if (button) {
+        button.focus()
+      } else {
+        // 备用方案：通过查询选择器查找
+        const dialog = document.querySelector('[role="dialog"]')
+        const confirmBtn = dialog?.querySelector('button[class*="destructive"]') as HTMLElement
+        confirmBtn?.focus()
+      }
+    })
+  }
+})
 
 const confirmEmptyTrash = () => {
   emptyToastUrls = props.bookmarks.map(b => b.url).filter(Boolean).join('\n')
@@ -154,14 +173,14 @@ const confirmEmptyTrash = () => {
     </div>
 
     <Dialog :open="emptyTrashConfirmOpen" @update:open="v => (emptyTrashConfirmOpen = v)">
-      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent @keydown.enter.prevent="confirmEmptyTrash">
+      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent>
         <DialogHeader>
           <DialogTitle>清空回收站？</DialogTitle>
           <DialogDescription>此操作不可恢复，将永久删除回收站内 {{ bookmarks.length }} 条书签。</DialogDescription>
         </DialogHeader>
-        <DialogFooter class="gap-2 sm:gap-0">
+        <DialogFooter class="gap-3">
           <Button variant="ghost" @click="emptyTrashConfirmOpen = false">取消</Button>
-          <Button variant="destructive" @click="confirmEmptyTrash">确认清空</Button>
+          <Button ref="confirmEmptyTrashButtonRef" variant="destructive" @click="confirmEmptyTrash">确认清空</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
