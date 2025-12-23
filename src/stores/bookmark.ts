@@ -863,6 +863,12 @@ export const useBookmarkStore = defineStore('bookmark', {
       const sourceGroup = data.groups[0]
       if (!sourceGroup) return false
       
+      // 验证子分组数据有效性
+      if (!sourceGroup.children || sourceGroup.children.length === 0) {
+        console.warn('[updateFromShare] 源数据子分组为空，跳过更新')
+        return false
+      }
+      
       // 1. 更新子分组结构：保留本地 ID，同步名称和顺序
       // 策略：尽量复用现有子分组 ID，以保持用户习惯（虽然不仅读，但为了 UI 稳定）。
       // 实际上对于只读分组，我们可以直接全量替换子分组和书签内容，但要小心本地状态（如展开状态）。

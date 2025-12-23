@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTextOverflow } from '@/composables/useTextOverflow'
 import { useShare } from '@/composables/useShare'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { useToast } from '@/composables/useToast'
+import { utoolsStorage } from '@/lib/utoolsStorage'
 
 const props = defineProps<{
   show: boolean
@@ -34,13 +35,53 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
   try {
     const result = await getShareData(sourceShareId)
     if (result?.data) {
-      store.updateFromShare(groupId, result.data.data)
-      showToast({ 
-        title: '已自动同步更新', 
-        variant: 'success' 
-      })
-      // 清除更新标记
-      updatesMap.value[subGroupId] = false
+      // 将 ShareData 转换为 updateFromShare 需要的格式
+      const shareData = result.data.data
+      
+      // 验证数据有效性
+      if (!shareData.subGroups || shareData.subGroups.length === 0) {
+        showToast({ 
+          title: '自动更新失败', 
+          description: '分享数据为空',
+          variant: 'error' 
+        })
+        return
+      }
+      
+      const groups = shareData.group 
+        ? [{ 
+            id: shareData.group.id, 
+            name: shareData.group.name, 
+            children: shareData.subGroups 
+          }]
+        : [{ 
+            id: 'shared', 
+            name: '分享内容', 
+            children: shareData.subGroups 
+          }]
+      
+      const dataToUpdate = { groups, bookmarks: shareData.bookmarks || [] }
+      const success = store.updateFromShare(groupId, dataToUpdate)
+      
+      if (success) {
+        // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
+        await nextTick()
+        // 立即刷新存储，确保在 uTools 环境下数据被保存
+        utoolsStorage.flushItem('bookmark')
+        
+        showToast({ 
+          title: '已自动同步更新', 
+          variant: 'success' 
+        })
+        // 清除更新标记
+        updatesMap.value[subGroupId] = false
+      } else {
+        showToast({ 
+          title: '自动更新失败', 
+          description: '更新数据失败',
+          variant: 'error' 
+        })
+      }
     } else {
       showToast({ 
         title: '自动更新失败', 
@@ -59,8 +100,12 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
   }
 }
 
-const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, lastSyncedAt = 0, groupId: string) => {
+const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, lastSyncedAt: number | undefined, groupId: string) => {
   if (checkingMap.value[subGroupId]) return
+  
+  // 如果 lastSyncedAt 不存在或为 0，说明是首次导入，不进行自动更新检查
+  if (!lastSyncedAt || lastSyncedAt === 0) return
+  
   checkingMap.value[subGroupId] = true
   try {
     const has = await checkForUpdate(sourceShareId, lastSyncedAt)
@@ -76,8 +121,8 @@ const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, last
 
 const checkAllUpdates = () => {
     props.activeSubGroups.forEach(sub => {
-        if (sub.sourceShareId) {
-            checkSingleUpdate(sub.id, sub.sourceShareId, sub.lastSyncedAt || 0, props.activeGroupId)
+        if (sub.sourceShareId && sub.lastSyncedAt) {
+            checkSingleUpdate(sub.id, sub.sourceShareId, sub.lastSyncedAt, props.activeGroupId)
         }
     })
 }
