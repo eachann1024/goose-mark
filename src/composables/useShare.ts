@@ -123,31 +123,16 @@ export function useShare() {
   // 更新分享数据（内容变更时调用）
   const updateShare = async (shareId: string, type: 'subGroup' | 'group', groupId: string, subGroupId?: string): Promise<boolean> => {
     try {
-      // 先查询服务器获取实际分享类型，确保使用正确的类型更新
-      const shareInfo = await getShareData(shareId)
-      let actualType = type
-      let actualSubGroupId = subGroupId
-      
-      if (shareInfo?.data) {
-        // 使用服务器返回的实际类型
-        actualType = shareInfo.data.type
-        
-        // 如果是子分组分享但没有传入 subGroupId，从 sourceId 获取
-        if (actualType === 'subGroup' && !actualSubGroupId) {
-          actualSubGroupId = shareInfo.data.sourceId
-        }
-      } else {
-        // 查询失败时回退到使用传入的 type 参数（向后兼容）
-        console.warn(`[updateShare] 无法获取分享信息，使用传入的类型: ${shareId}`, shareInfo?.error)
-      }
-      
-      // 根据实际类型收集数据
-      const data = actualType === 'subGroup'
-        ? collectSubGroupData(groupId, actualSubGroupId!)
+      // 根据调用时传入的类型收集数据，确保数据范围正确
+      // 注意：这里使用传入的 type 而不是服务器返回的 type，因为：
+      // 1. 如果服务器上的 type 是 'subGroup' 但我们调用时传的是 'group'，说明要更新整个主分组
+      // 2. 如果服务器上的 type 是 'group' 但我们调用时传的是 'subGroup'，说明只需更新单个子分组
+      const data = type === 'subGroup'
+        ? collectSubGroupData(groupId, subGroupId!)
         : collectGroupData(groupId)
       
       if (!data) {
-        console.warn(`[updateShare] 无法收集数据: shareId=${shareId}, type=${actualType}, groupId=${groupId}, subGroupId=${actualSubGroupId}`)
+        console.warn(`[updateShare] 无法收集数据: shareId=${shareId}, type=${type}, groupId=${groupId}, subGroupId=${subGroupId}`)
         return false
       }
 
