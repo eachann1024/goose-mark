@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTextOverflow } from '@/composables/useTextOverflow'
 import { useShare } from '@/composables/useShare'
+import { useBookmarkStore } from '@/stores/bookmark'
+import { useToast } from '@/composables/useToast'
 
 const props = defineProps<{
   show: boolean
@@ -16,19 +18,56 @@ const emit = defineEmits<{
   (e: 'select', id: string): void
 }>()
 
-const { checkForUpdate } = useShare()
+const { checkForUpdate, getShareData } = useShare()
+const store = useBookmarkStore()
+const { showToast } = useToast()
 
 // 更新检测状态
 const updatesMap = ref<Record<string, boolean>>({})
 const checkingMap = ref<Record<string, boolean>>({})
+const updatingMap = ref<Record<string, boolean>>({})
 
-const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, lastSyncedAt = 0) => {
+// 自动更新单个子分组
+const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, groupId: string) => {
+  if (updatingMap.value[subGroupId]) return
+  updatingMap.value[subGroupId] = true
+  try {
+    const result = await getShareData(sourceShareId)
+    if (result?.data) {
+      store.updateFromShare(groupId, result.data.data)
+      showToast({ 
+        title: '已自动同步更新', 
+        variant: 'success' 
+      })
+      // 清除更新标记
+      updatesMap.value[subGroupId] = false
+    } else {
+      showToast({ 
+        title: '自动更新失败', 
+        description: result?.error || '未知错误',
+        variant: 'error' 
+      })
+    }
+  } catch (e: unknown) {
+    showToast({ 
+      title: '自动更新失败', 
+      description: e instanceof Error ? e.message : '网络错误',
+      variant: 'error' 
+    })
+  } finally {
+    updatingMap.value[subGroupId] = false
+  }
+}
+
+const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, lastSyncedAt = 0, groupId: string) => {
   if (checkingMap.value[subGroupId]) return
   checkingMap.value[subGroupId] = true
   try {
     const has = await checkForUpdate(sourceShareId, lastSyncedAt)
     if (has) {
-       updatesMap.value[subGroupId] = true
+      updatesMap.value[subGroupId] = true
+      // 自动更新
+      await autoUpdateSubGroup(subGroupId, sourceShareId, groupId)
     }
   } finally {
     checkingMap.value[subGroupId] = false
@@ -38,7 +77,7 @@ const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, last
 const checkAllUpdates = () => {
     props.activeSubGroups.forEach(sub => {
         if (sub.sourceShareId) {
-            checkSingleUpdate(sub.id, sub.sourceShareId, sub.lastSyncedAt)
+            checkSingleUpdate(sub.id, sub.sourceShareId, sub.lastSyncedAt || 0, props.activeGroupId)
         }
     })
 }

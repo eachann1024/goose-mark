@@ -84,4 +84,19 @@ export async function cancelShare(shareId) {
   return result.rowCount > 0
 }
 
+// 轻量级检查分享更新（只返回 updatedAt 和 active）
+export async function checkShareUpdate(shareId) {
+  const result = await pool.query(
+    `SELECT active, updated_at FROM shares WHERE id = $1`,
+    [shareId]
+  )
+  if (result.rows.length === 0) return null
+  
+  const row = result.rows[0]
+  return {
+    active: row.active,
+    updatedAt: parseInt(row.updated_at)
+  }
+}
+
 export { pool }

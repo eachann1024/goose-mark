@@ -138,6 +138,7 @@ const confirmEmptyTrash = () => {
             :selected="selectedIndex === index"
             :show-hint="showCommandHints"
             :hint-key="hintKeyById?.[bookmark.id]"
+            :readonly="readonly"
             @remove="emit('remove', bookmark)"
             @edit="(b, el) => emit('edit', b, el)"
             @open="emit('open', bookmark)"
