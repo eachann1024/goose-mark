@@ -35,7 +35,7 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
   try {
     const result = await getShareData(sourceShareId)
     if (result?.data) {
-      // 将 ShareData 转换为 updateFromShare 需要的格式
+      // 将 ShareData 转换为 updateSubGroupFromShare 需要的格式
       const shareData = result.data.data
       
       // 验证数据有效性
@@ -61,7 +61,8 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
           }]
       
       const dataToUpdate = { groups, bookmarks: shareData.bookmarks || [] }
-      const success = store.updateFromShare(groupId, dataToUpdate)
+      // 使用新方法：只更新单个子分组，保留其他子分组
+      const success = store.updateSubGroupFromShare(groupId, subGroupId, sourceShareId, dataToUpdate)
       
       if (success) {
         // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
