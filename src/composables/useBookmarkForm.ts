@@ -57,6 +57,13 @@ export function useBookmarkForm() {
   
   const dialogOrigin = ref<{ x: string; y: string } | null>(null)
 
+  // 撤回功能：保存 AI 调用前的原始值
+  const originalBeforeAI = ref<{
+    title: string
+    desc: string
+    icon: IconSource | null
+  } | null>(null)
+
   let previewTimer: ReturnType<typeof setTimeout> | null = null
   let titleTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -157,6 +164,15 @@ export function useBookmarkForm() {
       return
     }
 
+    // 保存 AI 调用前的原始值（仅在首次调用时保存）
+    if (!originalBeforeAI.value) {
+      originalBeforeAI.value = {
+        title: draft.title,
+        desc: draft.desc,
+        icon: previewIcon.value ? { ...previewIcon.value } : null
+      }
+    }
+
     addBehaviorLog('ask-ai', draft.url)
     const res = await generateMetadata(draft.url)
     if (res) {
@@ -167,6 +183,35 @@ export function useBookmarkForm() {
         formError.value = aiError.value
     }
   }
+
+  const undoAI = () => {
+    if (!originalBeforeAI.value) return
+    draft.title = originalBeforeAI.value.title
+    draft.desc = originalBeforeAI.value.desc
+    previewIcon.value = originalBeforeAI.value.icon
+    originalBeforeAI.value = null
+  }
+
+  const undoTitle = () => {
+    if (!originalBeforeAI.value) return
+    draft.title = originalBeforeAI.value.title
+  }
+
+  const undoDesc = () => {
+    if (!originalBeforeAI.value) return
+    draft.desc = originalBeforeAI.value.desc
+  }
+
+  const undoIcon = () => {
+    if (!originalBeforeAI.value?.icon) {
+      previewIcon.value = null
+    } else {
+      previewIcon.value = { ...originalBeforeAI.value.icon }
+    }
+  }
+
+  const hasAIGenerated = computed(() => !!originalBeforeAI.value)
+  const hasIconToUndo = computed(() => originalBeforeAI.value?.icon !== null && originalBeforeAI.value?.icon !== undefined)
 
   // Actions
   const openAdd = (eventOrEl?: MouseEvent | HTMLElement) => {
@@ -370,6 +415,7 @@ export function useBookmarkForm() {
       iconFetchFailed.value = false
       formError.value = ''
       isSaving.value = false
+      originalBeforeAI.value = null
     }
   })
 
@@ -437,6 +483,12 @@ export function useBookmarkForm() {
     openEdit,
     handleSave,
     askAI,
+    undoAI,
+    undoTitle,
+    undoDesc,
+    undoIcon,
+    hasAIGenerated,
+    hasIconToUndo,
     isUrlAccessible,
     isCheckingUrl,
     isGenerating,

@@ -68,6 +68,12 @@ const {
   openEdit,
   handleSave,
   askAI,
+  undoAI,
+  undoTitle,
+  undoDesc,
+  undoIcon,
+  hasAIGenerated,
+  hasIconToUndo,
   isUrlAccessible,
   isCheckingUrl,
   isGenerating
@@ -648,6 +654,21 @@ watch(() => store.bookmarks, () => {
                      class="h-12 bg-muted/30 font-mono text-base placeholder:text-muted-foreground/60 flex-1 px-4"
                      auto-focus
                    />
+                     <Tooltip v-if="hasAIGenerated">
+                       <TooltipTrigger as-child>
+                         <Button
+                           variant="outline"
+                           size="icon"
+                           class="h-12 w-12 shrink-0 transition-all text-base text-muted-foreground hover:text-foreground"
+                           @click="undoAI()"
+                         >
+                            <span class="i-mdi-undo text-lg" />
+                          </Button>
+                       </TooltipTrigger>
+                       <TooltipContent>
+                         <p>撤回 AI 识别</p>
+                       </TooltipContent>
+                     </Tooltip>
                      <Tooltip>
                        <TooltipTrigger as-child>
                          <Button
@@ -665,7 +686,7 @@ watch(() => store.bookmarks, () => {
                             <span v-else class="i-mdi-sparkles text-xl" />
                           </Button>
                        </TooltipTrigger>
-                       <TooltipContent class="text-xs text-muted-foreground">
+                       <TooltipContent>
                          <p v-if="!isUTools">AI 功能仅在 uTools 环境中可用</p>
                          <p v-else-if="!draft.url">请输入网址以使用 AI</p>
                          <p v-else-if="isCheckingUrl">正在检测网址连通性...</p>
@@ -732,26 +753,74 @@ watch(() => store.bookmarks, () => {
                          </span>
                        </template>
                     </div>
+                     <Tooltip v-if="hasIconToUndo">
+                       <TooltipTrigger as-child>
+                         <Button
+                           variant="ghost"
+                           size="sm"
+                           class="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
+                           @click="undoIcon()"
+                         >
+                            <span class="i-mdi-undo text-xs mr-1" />
+                            撤回图标
+                          </Button>
+                       </TooltipTrigger>
+                       <TooltipContent>
+                         <p>撤回图标</p>
+                       </TooltipContent>
+                     </Tooltip>
                      <p v-if="iconFetchFailed && !iconLoading && draft.url" class="text-[10px] text-muted-foreground text-center max-w-[80px] leading-tight">
                        可复制网页图标后粘贴
                      </p>
                  </div>
                  
                  <div class="flex-1 space-y-3">
-                     <div class="relative">
+                     <div class="relative flex items-center gap-2">
                   <Input 
                      v-model="draft.title" 
                      placeholder="网站标题" 
-                      class="h-12 border-border rounded-md bg-background px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 shadow-none text-base font-semibold placeholder:text-muted-foreground/60"
+                      class="h-12 border-border rounded-md bg-background px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 shadow-none text-base font-semibold placeholder:text-muted-foreground/60 flex-1"
                    />
+                   <Tooltip v-if="hasAIGenerated">
+                     <TooltipTrigger as-child>
+                       <Button
+                         variant="ghost"
+                         size="icon"
+                         class="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                         @click="undoTitle()"
+                       >
+                          <span class="i-mdi-undo text-base" />
+                        </Button>
+                     </TooltipTrigger>
+                     <TooltipContent>
+                       <p>撤回标题</p>
+                     </TooltipContent>
+                   </Tooltip>
                      <p v-if="titleFetchFailed" class="text-xs text-muted-foreground mt-1">未能自动获取标题，请手动输入。</p>
                    </div>
+                     <div class="relative">
                      <Textarea 
                         v-model="draft.desc" 
                         placeholder="请输入网站简介" 
                         :maxlength="maxDescLen"
-                        class="min-h-[80px] resize-none bg-background border border-border rounded-md px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 placeholder:text-muted-foreground/60 text-sm"
+                        class="min-h-[80px] resize-none bg-background border border-border rounded-md px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 placeholder:text-muted-foreground/60 text-sm pr-10"
                      />
+                     <Tooltip v-if="hasAIGenerated">
+                       <TooltipTrigger as-child>
+                         <Button
+                           variant="ghost"
+                           size="icon"
+                           class="absolute top-2 right-2 h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                           @click="undoDesc()"
+                         >
+                            <span class="i-mdi-undo text-sm" />
+                          </Button>
+                       </TooltipTrigger>
+                       <TooltipContent>
+                         <p>撤回描述</p>
+                       </TooltipContent>
+                     </Tooltip>
+                     </div>
                  </div>
              </div>
 
