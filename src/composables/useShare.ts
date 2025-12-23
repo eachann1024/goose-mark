@@ -348,11 +348,11 @@ export function useShare() {
       (store.groups.length === 2 && store.groups[0].children.some(c => c.bookmarkIds.length > 0))
     
     if (hasExistingData && !store.isReadOnly) {
-      // 已有内容，采用合并模式
-      const newGroup = store.mergeFromShare(dataToApply, shareId)
-      if (newGroup) {
-        store.activeGroupId = newGroup.id
-        store.activeSubGroupId = newGroup.children[0]?.id || ''
+      // 已有内容，采用智能合并模式（检测同名分组并合并子分组）
+      const result = store.importFromShareSmart(dataToApply, shareId, shareName)
+      if (result) {
+        store.activeGroupId = result.group.id
+        store.activeSubGroupId = result.subGroupId
       }
     } else {
       // 首次加载，采用覆盖模式
