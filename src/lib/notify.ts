@@ -1,12 +1,8 @@
-type MiniUTools = { showNotification?: (body: string) => void }
-
+/**
+ * 轻量级消息提示（仅 console，不再调用系统通知）
+ * Toast 反馈请使用 useToast 或 ResultToast 组件
+ */
 export const notify = (msg: string) => {
-  const ut = (window as unknown as { utools?: MiniUTools }).utools
-  try {
-    if (ut?.showNotification) ut.showNotification(msg)
-    else console.info(msg)
-  } catch {
-    console.info(msg)
-  }
+  console.info('[notify]', msg)
 }
 

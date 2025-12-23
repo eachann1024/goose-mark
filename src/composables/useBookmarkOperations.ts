@@ -5,7 +5,6 @@ import type { Bookmark } from '@/types/bookmark'
 
 type UToolsExtendedApi = {
   copyText?: (text: string) => void
-  showNotification?: (body: string) => void
   shellOpenExternal?: (url: string) => void
   createBrowserWindow?: (url: string, options?: Record<string, unknown>) => void
   outPlugin?: () => void
@@ -113,7 +112,7 @@ export function useBookmarkOperations() {
         } catch (e) {
           // Fallback if URL parsing fails
           const label = getTemplateLabel(raw)
-          window.utools?.showNotification?.(`请输入${label}`)
+          console.info(`[Bookmark] 模板书签需要输入${label}`)
           return
         }
       }

@@ -26,14 +26,6 @@ const iconClass = computed(() => {
   if (v === 'error') return 'i-mdi-close-circle-outline text-destructive'
   return 'i-mdi-information-outline text-muted-foreground'
 })
-
-const badgeClass = computed(() => {
-  const v = props.variant ?? 'info'
-  if (v === 'success') return 'bg-primary/10 text-primary border-primary/20'
-  if (v === 'warning') return 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20'
-  if (v === 'error') return 'bg-destructive/10 text-destructive border-destructive/20'
-  return 'bg-muted/50 text-muted-foreground border-border'
-})
 </script>
 
 <template>
@@ -53,12 +45,7 @@ const badgeClass = computed(() => {
         <div class="flex items-start gap-3">
           <span :class="[iconClass, 'text-lg shrink-0 mt-0.5']" />
           <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="text-sm font-medium text-foreground truncate">{{ title }}</p>
-              <span :class="[badgeClass, 'text-[10px] font-bold px-2 py-0.5 rounded border shrink-0']">
-                {{ (variant ?? 'info').toUpperCase() }}
-              </span>
-            </div>
+            <p class="text-sm font-medium text-foreground">{{ title }}</p>
             <p v-if="description" class="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">{{ description }}</p>
           </div>
           <button class="p-1 rounded hover:bg-muted transition-colors" title="关闭" @click="emit('close')">

@@ -158,7 +158,7 @@ const handleCancel = async () => {
   try {
     const result = await cancelShare(existingShareId.value, 'subGroup', props.groupId, props.subGroupId)
     if (result.success) {
-      showToast({ title: '已取消分享', variant: 'success' })
+      showToast({ title: '已取消分享' })
       emit('update:open', false)
     } else {
       showToast({ 
