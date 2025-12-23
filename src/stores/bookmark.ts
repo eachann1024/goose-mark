@@ -854,7 +854,67 @@ export const useBookmarkStore = defineStore('bookmark', {
         return null
       }
     },
-    // 更新已导入的分享分组
+    // 更新单个子分组的分享数据（只更新指定的子分组，保留其他子分组）
+    updateSubGroupFromShare(
+      groupId: string, 
+      subGroupId: string,
+      sourceShareId: string,
+      data: { groups: Group[]; bookmarks: Bookmark[] }
+    ): boolean {
+      const group = this.groups.find(g => g.id === groupId)
+      if (!group) return false
+      
+      const subGroupIndex = group.children.findIndex(c => c.id === subGroupId)
+      if (subGroupIndex === -1) return false
+      
+      const subGroup = group.children[subGroupIndex]
+      // 验证该子分组确实是从分享导入的
+      if (subGroup.sourceShareId !== sourceShareId) return false
+      
+      const now = Date.now()
+      const sourceGroup = data.groups[0]
+      if (!sourceGroup || !sourceGroup.children || sourceGroup.children.length === 0) {
+        console.warn('[updateSubGroupFromShare] 源数据无效，跳过更新')
+        return false
+      }
+      
+      // 1. 清除该子分组下的旧书签
+      const oldBookmarkIds = new Set(subGroup.bookmarkIds)
+      // 从 bookmarks 中移除只属于该子分组的书签
+      this.bookmarks = this.bookmarks.filter(b => {
+        if (!oldBookmarkIds.has(b.id)) return true
+        // 如果书签还属于其他子分组，保留它
+        return b.locations?.some(loc => 
+          !(loc.groupId === groupId && loc.subGroupId === subGroupId)
+        )
+      })
+      
+      // 2. 准备新书签数据
+      const idMap = new Map<string, string>()
+      data.bookmarks.forEach(b => idMap.set(b.id, uid()))
+      
+      const newBookmarks: Bookmark[] = data.bookmarks.map(b => ({
+        ...b,
+        id: idMap.get(b.id)!,
+        locations: [{ groupId, subGroupId }]
+      }))
+      
+      // 3. 更新子分组（找到源数据中对应的子分组）
+      // 源数据可能有多个子分组，我们只取第一个（假设分享的是单个子分组）
+      const srcSub = sourceGroup.children[0]
+      if (!srcSub) return false
+      
+      // 更新子分组信息
+      subGroup.name = srcSub.name
+      subGroup.bookmarkIds = srcSub.bookmarkIds.map(oldId => idMap.get(oldId)!)
+      subGroup.lastSyncedAt = now
+      
+      // 4. 添加新书签
+      this.bookmarks.push(...newBookmarks)
+      
+      return true
+    },
+    // 更新已导入的分享分组（整个分组都是从分享导入的情况）
     updateFromShare(groupId: string, data: { groups: Group[]; bookmarks: Bookmark[] }) {
       const group = this.groups.find(g => g.id === groupId)
       if (!group || !group.sourceShareId) return false

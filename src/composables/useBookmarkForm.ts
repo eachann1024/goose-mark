@@ -427,12 +427,30 @@ export function useBookmarkForm() {
         }
         titleFetchFailed.value = false
 
-        if (settingsStore.autoGenerateAI && !editingId.value) {
+        // 仅在新建书签（非编辑模式）且设置开启时自动调用 AI
+        const shouldAutoAI = settingsStore.autoGenerateAI && !editingId.value
+        if (import.meta.env.DEV) {
+          console.log('[BookmarkForm] Auto AI check:', { 
+            autoGenerateAI: settingsStore.autoGenerateAI, 
+            isEditing: !!editingId.value,
+            shouldAutoAI 
+          })
+        }
+        if (shouldAutoAI) {
           askAI(true)
         }
       } else {
         titleFetchFailed.value = true
-        if (settingsStore.autoGenerateAI && !editingId.value) {
+        // 仅在新建书签（非编辑模式）且设置开启时自动调用 AI
+        const shouldAutoAI = settingsStore.autoGenerateAI && !editingId.value
+        if (import.meta.env.DEV) {
+          console.log('[BookmarkForm] Auto AI check (title failed):', { 
+            autoGenerateAI: settingsStore.autoGenerateAI, 
+            isEditing: !!editingId.value,
+            shouldAutoAI 
+          })
+        }
+        if (shouldAutoAI) {
           askAI(true)
         }
       }
