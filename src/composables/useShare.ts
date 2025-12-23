@@ -284,6 +284,14 @@ export function useShare() {
 
   // 加载分享数据并应用到 store（用于访问分享链接）
   const loadShareData = async (shareId: string, conflictAction?: 'update' | 'keep' | 'duplicate'): Promise<LoadShareResult> => {
+    // 记录 store 的初始状态
+    console.log('[loadShareData] Store 初始状态', {
+      shareId,
+      groupsCount: store.groups.length,
+      groups: store.groups.map(g => ({ id: g.id, name: g.name, childrenCount: g.children.length, children: g.children.map(c => c.name) })),
+      bookmarksCount: store.bookmarks.length
+    })
+    
     const result = await loadShare(shareId)
     if (!result) return { success: false, error: shareError.value || '加载失败' }
     
@@ -362,6 +370,14 @@ export function useShare() {
         })
         store.activeGroupId = result.group.id
         store.activeSubGroupId = result.subGroupId
+        
+        // 立即刷新 localStorage，确保数据被保存（避免防抖延迟导致数据丢失）
+        // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
+        await new Promise(resolve => setTimeout(resolve, 0))
+        // 立即刷新待写入的数据
+        const { utoolsStorage } = await import('@/lib/utoolsStorage')
+        utoolsStorage.flushItem('bookmark')
+        console.log('[loadShareData] 数据已立即保存到 localStorage')
       } else {
         // 如果智能导入失败（理论上不应该），回退到快照模式
         console.warn('[loadShareData] 智能合并失败，回退到快照模式')
