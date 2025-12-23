@@ -7,6 +7,7 @@ import { useStatsStore } from '@/stores/stats'
 import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { useAI } from './useAI'
+import { useShare } from './useShare'
 import { addBehaviorLog } from '@/lib/debugReport'
 import { notify } from '@/lib/notify'
 
@@ -29,6 +30,7 @@ export function useBookmarkForm() {
   const statsStore = useStatsStore()
   const settingsStore = useSettingsStore()
   const { checkUrl, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata, checkAiAvailable } = useAI()
+  const { updateShare } = useShare()
 
   const showAdd = ref(false)
   const modalTitle = ref('新建书签')
@@ -293,6 +295,28 @@ export function useBookmarkForm() {
              store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
         }
       }
+      
+      // 自动更新分享：检查书签所在的分组/子分组是否有 shareId，如果有则自动更新分享
+      for (const loc of draftLocations.value) {
+        const group = store.groups.find(g => g.id === loc.groupId)
+        if (!group) continue
+        
+        // 检查子分组是否有 shareId
+        const subGroup = group.children.find(c => c.id === loc.subGroupId)
+        if (subGroup?.shareId) {
+          // 静默更新分享，不显示 toast（因为是自动的）
+          void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
+          break // 只更新第一个匹配的分享
+        }
+        
+        // 检查主分组是否有 shareId
+        if (group.shareId) {
+          // 静默更新分享，不显示 toast（因为是自动的）
+          void updateShare(group.shareId, 'group', loc.groupId)
+          break // 只更新第一个匹配的分享
+        }
+      }
+      
       showAdd.value = false
     } finally {
       isSaving.value = false
