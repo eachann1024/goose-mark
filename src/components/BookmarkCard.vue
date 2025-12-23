@@ -247,7 +247,7 @@ const deletePopoverOpen = ref(false)
                </Tooltip>
              </div>
           </PopoverTrigger>
-          <PopoverContent class="w-48 p-2 bg-card border-border rounded-md shadow-md">
+          <PopoverContent class="w-48 p-2 bg-card border-border rounded-md shadow-md" @keydown.enter.prevent="emit('remove', bookmark); deletePopoverOpen = false">
     <p class="text-sm mb-2">确认删除？</p>
     <div class="flex justify-end gap-2">
       <Button variant="outline" size="sm" @click.stop="deletePopoverOpen = false">取消</Button>
