@@ -32,6 +32,30 @@ export function useBookmarkForm() {
   const { checkUrl, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata, checkAiAvailable } = useAI()
   const { updateShare } = useShare()
 
+  // 通用的自动更新分享函数
+  const autoUpdateShareForLocations = (locations: BookmarkLocation[]) => {
+    // 优先使用主分组分享（包含所有子分组），避免子分组更新覆盖主分组数据
+    for (const loc of locations) {
+      const group = store.groups.find(g => g.id === loc.groupId)
+      if (!group) continue
+      
+      // 优先检查主分组是否有 shareId（主分组分享包含所有子分组，更安全）
+      if (group.shareId) {
+        // 静默更新分享，不显示 toast（因为是自动的）
+        void updateShare(group.shareId, 'group', loc.groupId)
+        break // 只更新第一个匹配的分享
+      }
+      
+      // 如果主分组没有 shareId，再检查子分组是否有 shareId
+      const subGroup = group.children.find(c => c.id === loc.subGroupId)
+      if (subGroup?.shareId) {
+        // 静默更新分享，不显示 toast（因为是自动的）
+        void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
+        break // 只更新第一个匹配的分享
+      }
+    }
+  }
+
   const showAdd = ref(false)
   const modalTitle = ref('新建书签')
   const editingId = ref('')
@@ -265,6 +289,8 @@ export function useBookmarkForm() {
       const iconToSave = previewIcon.value ?? buildTextIcon()
 
       if (editingId.value) {
+        // 修改书签：获取旧位置和新位置，合并后检查分享
+        const oldLocations = store.getBookmarkLocations(editingId.value)
         store.updateBookmark(editingId.value, {
           title: draft.title.trim(),
           url: draft.url.trim(),
@@ -273,6 +299,14 @@ export function useBookmarkForm() {
           icon: iconToSave
         })
         store.updateBookmarkLocations(editingId.value, draftLocations.value)
+        
+        // 合并旧位置和新位置，确保所有相关分享都被更新
+        const allLocations = [...oldLocations, ...draftLocations.value]
+        // 去重
+        const uniqueLocations = Array.from(
+          new Map(allLocations.map(loc => [`${loc.groupId}:${loc.subGroupId}`, loc])).values()
+        )
+        autoUpdateShareForLocations(uniqueLocations)
       } else {
         const created = store.addBookmark(
           {
@@ -294,28 +328,9 @@ export function useBookmarkForm() {
              store.setSearch('')
              store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
         }
-      }
-      
-      // 自动更新分享：检查书签所在的分组/子分组是否有 shareId，如果有则自动更新分享
-      // 优先使用主分组分享（包含所有子分组），避免子分组更新覆盖主分组数据
-      for (const loc of draftLocations.value) {
-        const group = store.groups.find(g => g.id === loc.groupId)
-        if (!group) continue
         
-        // 优先检查主分组是否有 shareId（主分组分享包含所有子分组，更安全）
-        if (group.shareId) {
-          // 静默更新分享，不显示 toast（因为是自动的）
-          void updateShare(group.shareId, 'group', loc.groupId)
-          break // 只更新第一个匹配的分享
-        }
-        
-        // 如果主分组没有 shareId，再检查子分组是否有 shareId
-        const subGroup = group.children.find(c => c.id === loc.subGroupId)
-        if (subGroup?.shareId) {
-          // 静默更新分享，不显示 toast（因为是自动的）
-          void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
-          break // 只更新第一个匹配的分享
-        }
+        // 新增书签：检查新位置
+        autoUpdateShareForLocations(draftLocations.value)
       }
       
       showAdd.value = false

@@ -2,6 +2,7 @@
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import { addBehaviorLog } from '@/lib/debugReport'
 import type { Bookmark } from '@/types/bookmark'
+import { useShare } from './useShare'
 
 type UToolsExtendedApi = {
   copyText?: (text: string) => void
@@ -14,7 +15,32 @@ type UToolsExtendedApi = {
 export function useBookmarkOperations() {
   const store = useBookmarkStore()
   const settingsStore = useSettingsStore()
+  const { updateShare } = useShare()
   const isDevRuntime = import.meta.env.DEV
+
+  // 通用的自动更新分享函数
+  const autoUpdateShareForLocations = (locations: Array<{ groupId: string; subGroupId: string }>) => {
+    // 优先使用主分组分享（包含所有子分组），避免子分组更新覆盖主分组数据
+    for (const loc of locations) {
+      const group = store.groups.find(g => g.id === loc.groupId)
+      if (!group) continue
+      
+      // 优先检查主分组是否有 shareId（主分组分享包含所有子分组，更安全）
+      if (group.shareId) {
+        // 静默更新分享，不显示 toast（因为是自动的）
+        void updateShare(group.shareId, 'group', loc.groupId)
+        break // 只更新第一个匹配的分享
+      }
+      
+      // 如果主分组没有 shareId，再检查子分组是否有 shareId
+      const subGroup = group.children.find(c => c.id === loc.subGroupId)
+      if (subGroup?.shareId) {
+        // 静默更新分享，不显示 toast（因为是自动的）
+        void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
+        break // 只更新第一个匹配的分享
+      }
+    }
+  }
 
   // Delete Confirmation State
   const showDeleteConfirm = ref(false)
@@ -157,7 +183,14 @@ export function useBookmarkOperations() {
   }
 
   const handleRemove = (bookmark: Bookmark) => {
+    // 获取书签的位置信息（删除前）
+    const locations = store.getBookmarkLocations(bookmark.id)
     store.removeBookmark(bookmark.id)
+    // 删除书签后，自动更新相关分享（排除回收站）
+    const nonTrashLocations = locations.filter(loc => loc.groupId !== TRASH_GROUP_ID)
+    if (nonTrashLocations.length > 0) {
+      autoUpdateShareForLocations(nonTrashLocations)
+    }
   }
 
   // For context menu or other places that need confirmation
@@ -168,7 +201,14 @@ export function useBookmarkOperations() {
 
   const confirmDelete = () => {
     if (confirmDeleteId.value) {
+      // 获取书签的位置信息（删除前）
+      const locations = store.getBookmarkLocations(confirmDeleteId.value)
       store.removeBookmark(confirmDeleteId.value)
+      // 删除书签后，自动更新相关分享（排除回收站）
+      const nonTrashLocations = locations.filter(loc => loc.groupId !== TRASH_GROUP_ID)
+      if (nonTrashLocations.length > 0) {
+        autoUpdateShareForLocations(nonTrashLocations)
+      }
     }
     showDeleteConfirm.value = false
   }
@@ -183,6 +223,8 @@ export function useBookmarkOperations() {
     const subId = store.activeSubGroupId
     if (!groupId || !subId || groupId === TRASH_GROUP_ID) return
     store.reorderInSub(groupId, subId, fromId, toId)
+    // 排序后也需要更新分享（因为顺序也是分享数据的一部分）
+    autoUpdateShareForLocations([{ groupId, subGroupId: subId }])
   }
 
   return {
