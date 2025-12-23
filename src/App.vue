@@ -2,6 +2,9 @@
 
 
 import SettingsPanel from '@/views/SettingsPanel.vue'
+import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
+import { Button } from '@/components/ui/button'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 
 
@@ -108,6 +111,15 @@ const handleCopyShareLink = async (shareId: string) => {
     window.utools?.showNotification?.('复制失败，无法访问剪贴板')
   }
 }
+
+// 子分组分享按钮状态
+const showSubShareMenu = ref(false)
+const currentSubGroup = computed(() => 
+  activeSubGroups.value.find(s => s.id === store.activeSubGroupId)
+)
+const isSubShared = computed(() => !!currentSubGroup.value?.shareId)
+const isSubImported = computed(() => !!currentSubGroup.value?.sourceShareId)
+const currentSubShareId = computed(() => currentSubGroup.value?.shareId)
 
 // 分享管理面板状态
 const showSharePanel = ref(false)
@@ -251,7 +263,7 @@ const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
 // Group Helpers
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
-const shouldShowSubs = computed(() => activeSubGroups.value.length >= 1)
+const shouldShowSubs = computed(() => activeSubGroups.value.length > 1 && visibleGroups.value.length > 1)
 const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GROUP_ID))
 const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 
@@ -485,11 +497,9 @@ watch(() => store.bookmarks, () => {
         :active-sub-group-id="store.activeSubGroupId"
         :active-group-id="store.activeGroupId"
         @select="store.selectSubGroup"
-        @share="handleShareSubGroup"
-        @open-share-url="handleOpenShareUrl"
-        @copy-share-link="handleCopyShareLink"
-        @delete-sub-group="(id) => store.deleteSubGroup(store.activeGroupId, id)"
       />
+
+
 
       <BookmarksGrid
         v-if="tab === 'bookmarks'"
@@ -515,6 +525,96 @@ watch(() => store.bookmarks, () => {
       </section>
     </main>
     
+    <!-- 独立分享按钮（不随侧边栏显示隐藏） -->
+    <div v-if="tab === 'bookmarks' && activeSubGroups.length > 0 && settingsStore.enableShare" class="fixed bottom-6 left-6 z-40">
+      <Popover v-if="isSubShared || isSubImported" v-model:open="showSubShareMenu">
+        <PopoverTrigger as-child>
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-8 px-3 rounded-full relative gap-1.5 shadow-lg backdrop-blur-sm bg-card/90"
+            :class="{
+                'border-dashed border-blue-500/50 text-blue-600': isSubShared,
+                'border-dashed border-green-500/50 text-green-600': isSubImported
+            }"
+          >
+            <span :class="isSubImported ? 'i-mdi-cog' : 'i-mdi-share-variant'" class="text-sm" />
+            <span class="text-xs">{{ isSubImported ? '管理' : '分享' }}</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent class="w-40 p-1" align="start" :side-offset="4">
+          <div class="flex flex-col">
+            <template v-if="isSubShared">
+                <Button
+                variant="ghost"
+                size="sm"
+                class="justify-start h-8 text-xs gap-2"
+                @click="handleOpenShareUrl(currentSubShareId!); showSubShareMenu = false"
+                >
+                <span class="i-mdi-open-in-new text-sm" />
+                打开网址
+                </Button>
+                <Button
+                variant="ghost"
+                size="sm"
+                class="justify-start h-8 text-xs gap-2"
+                @click="handleCopyShareLink(currentSubShareId!); showSubShareMenu = false"
+                >
+                <span class="i-mdi-content-copy text-sm" />
+                复制链接
+                </Button>
+                <Button
+                variant="ghost"
+                size="sm"
+                class="justify-start h-8 text-xs gap-2"
+                @click="handleShareSubGroup(); showSubShareMenu = false"
+                >
+                <span class="i-mdi-cog text-sm" />
+                管理分享
+                </Button>
+            </template>
+            <template v-else-if="isSubImported">
+                 <Button
+                  variant="ghost"
+                  size="sm"
+                  class="justify-start h-8 text-xs gap-2 text-green-600"
+                  @click="handleShareSubGroup(); showSubShareMenu = false"
+                >
+                  <span class="i-mdi-cloud-sync text-sm" />
+                  检查更新
+                </Button>
+                 <Button
+                  variant="ghost"
+                  size="sm"
+                  class="justify-start h-8 text-xs gap-2 text-destructive"
+                  @click="store.deleteSubGroup(store.activeGroupId, store.activeSubGroupId); showSubShareMenu = false"
+                >
+                  <span class="i-mdi-delete-outline text-sm" />
+                  删除
+                </Button>
+            </template>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <!-- 未分享状态：普通按钮 -->
+      <Tooltip v-else>
+        <TooltipTrigger as-child>
+          <Button
+            variant="outline"
+            size="sm"
+            class="h-8 px-3 rounded-full text-muted-foreground gap-1.5 shadow-lg backdrop-blur-sm bg-card/90"
+            @click="handleShareSubGroup"
+          >
+            <span class="i-mdi-share-variant text-sm" />
+            <span class="text-xs">分享</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>生成在线分享链接</p>
+        </TooltipContent>
+      </Tooltip>
+    </div>
+
 
     <ContextMenu 
       v-if="contextMenu.show && !store.isReadOnly" 
