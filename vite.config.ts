@@ -23,5 +23,17 @@ export default defineConfig({
     Components({
       dts: 'src/components.d.ts'
     })
-  ]
+  ],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'vendor-vue': ['vue', 'pinia'],
+          'vendor-ui': ['reka-ui', '@vueuse/core'],
+          'vendor-icons': ['lucide-vue-next']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 600
+  }
 })

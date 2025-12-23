@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { useBookmarkStore } from '@/stores/bookmark'
+import { utoolsStorage } from '@/lib/utoolsStorage'
 import type { Group, SubGroup, Bookmark } from '@/types/bookmark'
 
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/share'
@@ -378,7 +379,6 @@ export function useShare() {
         // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
         await new Promise(resolve => setTimeout(resolve, 0))
         // 立即刷新待写入的数据
-        const { utoolsStorage } = await import('@/lib/utoolsStorage')
         utoolsStorage.flushItem('bookmark')
         console.log('[loadShareData] 数据已立即保存到 localStorage')
       } else {
