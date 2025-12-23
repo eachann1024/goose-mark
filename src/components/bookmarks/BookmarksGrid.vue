@@ -154,7 +154,7 @@ const confirmEmptyTrash = () => {
     </div>
 
     <Dialog :open="emptyTrashConfirmOpen" @update:open="v => (emptyTrashConfirmOpen = v)">
-      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent>
+      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent @keydown.enter.prevent="confirmEmptyTrash">
         <DialogHeader>
           <DialogTitle>清空回收站？</DialogTitle>
           <DialogDescription>此操作不可恢复，将永久删除回收站内 {{ bookmarks.length }} 条书签。</DialogDescription>

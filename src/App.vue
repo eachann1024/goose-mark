@@ -710,7 +710,7 @@ watch(() => store.bookmarks, () => {
     </Dialog>
     <!-- Delete Confirmation Dialog -->
     <Dialog v-model:open="showDeleteConfirm">
-      <DialogContent class="sm:max-w-[400px] p-4 bg-card border-border">
+      <DialogContent class="sm:max-w-[400px] p-4 bg-card border-border" @keydown.enter.prevent="confirmDelete">
         <DialogHeader>
           <DialogTitle class="text-lg">确认删除</DialogTitle>
         </DialogHeader>

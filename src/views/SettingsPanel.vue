@@ -1590,7 +1590,7 @@ const closeUndoToast = () => {
 
     <!-- Delete Confirmation Dialog -->
     <Dialog :open="showDeleteConfirm" @update:open="v => { if (!v) showDeleteConfirm = false }">
-      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent>
+      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent @keydown.enter.prevent="handleConfirmDelete">
         <DialogHeader>
           <DialogTitle>确认删除？</DialogTitle>
           <DialogDescription>
