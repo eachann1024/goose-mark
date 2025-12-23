@@ -771,11 +771,12 @@ export const useBookmarkStore = defineStore('bookmark', {
       // 检查是否存在同名父分组
       const existingGroup = this.findGroupByName(targetGroupName)
       
-      console.log('[importFromShareSmart]', {
+      const checkData = {
         targetGroupName,
         existingGroup: existingGroup ? { id: existingGroup.id, name: existingGroup.name, children: existingGroup.children.map(c => c.name) } : null,
         allGroups: this.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => c.name) }))
-      })
+      }
+      console.log('[importFromShareSmart]', JSON.stringify(checkData, null, 2))
       
       if (existingGroup) {
         // 存在同名分组，将子分组合并到该分组下
@@ -820,13 +821,14 @@ export const useBookmarkStore = defineStore('bookmark', {
         existingGroup.children.push(...newSubGroups)
         this.bookmarks.push(...newBookmarks)
         
-        console.log('[importFromShareSmart] 合并完成', {
+        const mergeCompleteData = {
           groupName: existingGroup.name,
           addedSubGroups: newSubGroups.map(s => s.name),
           addedBookmarks: newBookmarks.length,
           totalSubGroups: existingGroup.children.map(c => c.name),
           totalBookmarks: this.bookmarks.length
-        })
+        }
+        console.log('[importFromShareSmart] 合并完成', JSON.stringify(mergeCompleteData, null, 2))
         
         // 切换到合并后的第一个子分组
         this.activeGroupId = existingGroup.id
