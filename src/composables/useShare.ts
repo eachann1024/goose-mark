@@ -310,17 +310,12 @@ export function useShare() {
     
     // 检查是否已导入过此分享
     const existingGroup = store.findGroupBySourceShareId(shareId)
-    
+
     if (existingGroup && !conflictAction) {
-      // 存在冲突，返回冲突信息让调用方处理
-      return {
-        conflict: true,
-        shareId,
-        shareName,
-        existingGroupId: existingGroup.id,
-        existingGroupName: existingGroup.name,
-        data: result.data
-      }
+      // 直接跳转到已存在的分组，不再创建新分组或合并
+      store.activeGroupId = existingGroup.id
+      store.activeSubGroupId = existingGroup.children[0]?.id || ''
+      return { success: true, existing: true } as const
     }
     
     // 构建 groups 结构
