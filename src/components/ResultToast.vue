@@ -48,9 +48,9 @@ const iconClass = computed(() => {
             <p class="text-sm font-medium text-foreground">{{ title }}</p>
             <p v-if="description" class="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">{{ description }}</p>
           </div>
-          <button class="p-1 rounded hover:bg-muted transition-colors" title="关闭" @click="emit('close')">
+          <Button variant="ghost" size="icon" class="h-7 w-7" title="关闭" @click="emit('close')">
             <span class="i-mdi-close text-sm text-muted-foreground" />
-          </button>
+          </Button>
         </div>
 
         <div v-if="actionLabel || $slots.action" class="mt-3 flex items-center justify-end gap-2">

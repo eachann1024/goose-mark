@@ -10,6 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Switch } from '@/components/ui/switch'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import FaqNotice from '@/components/FaqNotice.vue'
 import ResultToast from '@/components/ResultToast.vue'
 import draggable from 'vuedraggable'
@@ -32,8 +34,7 @@ const { isUTools } = useAppState()
 const { checkAiAvailable } = useAI()
 
 // 切换"自动生成"开关时验证 AI 可用性
-const toggleAutoGenerateAI = () => {
-  const newValue = !settingsStore.autoGenerateAI
+const toggleAutoGenerateAI = (newValue: boolean) => {
   if (newValue) {
     const { available, reason } = checkAiAvailable()
     if (!available) {
@@ -897,14 +898,13 @@ const closeUndoToast = () => {
             <div class="flex items-center gap-3 justify-between">
               <label class="text-sm font-medium">窗口高度</label>
               <div class="flex items-center gap-2 flex-1 max-w-[200px]">
-                <input
-                  type="range"
-                  min="600"
-                  max="1000"
-                  step="10"
-                  class="flex-1 h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
-                  :value="settingsStore.windowHeight"
-                  @input="settingsStore.setWindowHeight(Number(($event.target as HTMLInputElement).value))"
+                <Slider
+                  :model-value="[settingsStore.windowHeight]"
+                  :min="600"
+                  :max="1000"
+                  :step="10"
+                  class="flex-1"
+                  @update:model-value="(val: number[]) => settingsStore.setWindowHeight(val[0])"
                 />
                 <span class="text-sm w-10 text-right">{{ settingsStore.windowHeight }}</span>
               </div>
@@ -915,19 +915,10 @@ const closeUndoToast = () => {
                 <div class="text-sm font-medium">独立窗口自动关闭</div>
                 <div class="text-xs text-muted-foreground">在独立窗口模式下，打开书签后自动关闭窗口</div>
               </div>
-              <button 
-                type="button"
-                role="switch"
-                :aria-checked="settingsStore.autoCloseWindow"
-                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                :class="settingsStore.autoCloseWindow ? 'bg-primary' : 'bg-input'"
-                @click="settingsStore.setAutoCloseWindow(!settingsStore.autoCloseWindow)"
-              >
-                <span 
-                  class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                  :class="settingsStore.autoCloseWindow ? 'translate-x-5' : 'translate-x-0'"
-                />
-              </button>
+              <Switch 
+                :checked="settingsStore.autoCloseWindow"
+                @update:checked="settingsStore.setAutoCloseWindow"
+              />
             </label>
             
             <label class="flex items-center justify-between cursor-pointer">
@@ -935,19 +926,10 @@ const closeUndoToast = () => {
                 <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
                 <div class="text-xs text-muted-foreground">不支持时将回退到系统默认浏览器</div>
               </div>
-              <button 
-                type="button"
-                role="switch"
-                :aria-checked="settingsStore.preferUtoolsBrowser"
-                class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                :class="settingsStore.preferUtoolsBrowser ? 'bg-primary' : 'bg-input'"
-                @click="settingsStore.setPreferUtoolsBrowser(!settingsStore.preferUtoolsBrowser)"
-              >
-                <span 
-                  class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                  :class="settingsStore.preferUtoolsBrowser ? 'translate-x-5' : 'translate-x-0'"
-                />
-              </button>
+              <Switch 
+                :checked="settingsStore.preferUtoolsBrowser"
+                @update:checked="settingsStore.setPreferUtoolsBrowser"
+              />
             </label>
           </div>
         </CardContent>
@@ -992,19 +974,10 @@ const closeUndoToast = () => {
                   <div class="text-sm font-medium">自动生成标题和描述</div>
                   <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
                 </div>
-                <button
-                  type="button"
-                  role="switch"
-                  :aria-checked="settingsStore.autoGenerateAI"
-                  class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  :class="settingsStore.autoGenerateAI ? 'bg-primary' : 'bg-input'"
-                  @click="toggleAutoGenerateAI"
-                >
-                  <span 
-                    class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                    :class="settingsStore.autoGenerateAI ? 'translate-x-5' : 'translate-x-0'"
-                  />
-                </button>
+                <Switch 
+                  :checked="settingsStore.autoGenerateAI"
+                  @update:checked="toggleAutoGenerateAI"
+                />
               </label>
 
               <label class="flex items-center justify-between cursor-pointer">
@@ -1012,19 +985,10 @@ const closeUndoToast = () => {
                   <div class="text-sm font-medium">使用指定 AI 模型</div>
                   <div class="text-xs text-muted-foreground">默认使用 deepseek-v3</div>
                 </div>
-                <button 
-                  type="button"
-                  role="switch"
-                  :aria-checked="settingsStore.useCustomAiModel"
-                  class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                  :class="settingsStore.useCustomAiModel ? 'bg-primary' : 'bg-input'"
-                  @click="settingsStore.setUseCustomAiModel(!settingsStore.useCustomAiModel)"
-                >
-                  <span 
-                    class="pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                    :class="settingsStore.useCustomAiModel ? 'translate-x-5' : 'translate-x-0'"
-                  />
-                </button>
+                <Switch 
+                  :checked="settingsStore.useCustomAiModel"
+                  @update:checked="settingsStore.setUseCustomAiModel"
+                />
               </label>
 
               <div v-if="settingsStore.useCustomAiModel" class="flex items-center gap-3">
@@ -1440,9 +1404,9 @@ const closeUndoToast = () => {
               
               <!-- Debug Tools -->
               <div class="border-t border-border pt-4 mt-4">
-                 <button
-                   type="button"
-                   class="w-full flex items-center justify-between text-xs text-muted-foreground mb-2 hover:text-foreground transition-colors"
+                 <Button
+                   variant="ghost"
+                   class="w-full h-auto py-0 px-0 flex items-center justify-between text-xs text-muted-foreground mb-2 hover:text-foreground hover:bg-transparent"
                    @click="debugOpen = !debugOpen"
                  >
                    <span>调试工具</span>
@@ -1450,7 +1414,7 @@ const closeUndoToast = () => {
                      class="i-mdi-chevron-down text-base transition-transform"
                      :class="debugOpen ? 'rotate-180' : ''"
                    />
-                 </button>
+                 </Button>
                  <div v-if="debugOpen" class="flex gap-3">
                   <Button class="flex-1" variant="outline" size="sm" @click="copyAllData">
                     <span class="i-mdi-content-copy mr-2" />
@@ -1517,32 +1481,28 @@ const closeUndoToast = () => {
              
              <div class="space-y-3">
                 <span class="text-sm font-medium">导入模式</span>
-                <div class="grid gap-3">
-                   <button 
-                     type="button"
-                     class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left"
+                <RadioGroup v-model="importMode" class="grid gap-3">
+                   <label
+                     class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left cursor-pointer"
                      :class="importMode === 'merge' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
-                     @click="importMode = 'merge'"
                    >
-                     <span class="i-mdi-checkbox-blank-circle-outline text-primary" :class="importMode === 'merge' ? 'i-mdi-radiobox-marked' : ''" />
+                     <RadioGroupItem value="merge" />
                      <div class="space-y-1">
                         <div class="font-medium text-sm">合并模式</div>
                         <div class="text-xs text-muted-foreground">保留现有数据，仅添加新的书签和分组</div>
                      </div>
-                   </button>
-                   <button 
-                     type="button"
-                     class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left"
+                   </label>
+                   <label
+                     class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left cursor-pointer"
                      :class="importMode === 'overwrite' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
-                     @click="importMode = 'overwrite'"
                    >
-                     <span class="i-mdi-checkbox-blank-circle-outline text-primary" :class="importMode === 'overwrite' ? 'i-mdi-radiobox-marked' : ''" />
+                     <RadioGroupItem value="overwrite" />
                      <div class="space-y-1">
                         <div class="font-medium text-sm">覆盖模式</div>
                         <div class="text-xs text-muted-foreground text-amber-500">清空现有数据，完全使用备份内容替换</div>
                      </div>
-                   </button>
-                </div>
+                   </label>
+                </RadioGroup>
              </div>
           </div>
           
@@ -1625,13 +1585,15 @@ const closeUndoToast = () => {
           <Button size="sm" variant="outline" class="h-7 px-3 text-xs ml-2" @click="handleUndo">
             撤回
           </Button>
-          <button 
-            class="ml-1 p-1 rounded hover:bg-muted transition-colors" 
+          <Button 
+            variant="ghost"
+            size="icon"
+            class="ml-1 h-7 w-7" 
             @click="closeUndoToast"
             title="关闭"
           >
             <span class="i-mdi-close text-sm text-muted-foreground" />
-          </button>
+          </Button>
         </div>
       </Transition>
     </Teleport>
