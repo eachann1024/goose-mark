@@ -20,6 +20,7 @@ import { getDebugSnapshot } from '@/lib/debugReport'
 import { useAI } from '@/composables/useAI'
 import { useAppState } from '@/composables/useAppState'
 import { Loader2 } from 'lucide-vue-next'
+import ShareImportDialog from '@/components/ShareImportDialog.vue'
 
 
 const store = useBookmarkStore()
@@ -103,6 +104,7 @@ const requiredClearText = '确认清空'
 const usageMode = ref<'day' | 'week' | 'month'>('day')
 const debugOpen = ref(false)
 const isDragging = ref(false)
+const showShareImportDialog = ref(false)
 
 // 删除确认 Dialog 相关
 const showDeleteConfirm = ref(false)
@@ -1424,6 +1426,14 @@ const closeUndoToast = () => {
                    @change="handleFileSelect"
                  />
               </div>
+              
+              <!-- 导入分享按钮 (仅 uTools 环境显示) -->
+              <div v-if="isUTools" class="flex gap-3">
+                 <Button class="flex-1" variant="outline" @click="showShareImportDialog = true">
+                   <span class="i-mdi-share-variant mr-2" />
+                   导入分享
+                 </Button>
+              </div>
               <p class="text-xs text-muted-foreground">
                 导出的 JSON 文件包含所有分组和书签数据
               </p>
@@ -1635,6 +1645,9 @@ const closeUndoToast = () => {
       @close="closeResultToast"
       @action="handleResultToastAction"
     />
+
+    <!-- 分享导入对话框 -->
+    <ShareImportDialog v-model:open="showShareImportDialog" />
   </div>
 </template>
 
