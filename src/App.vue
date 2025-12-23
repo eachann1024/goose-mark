@@ -525,7 +525,7 @@ watch(() => store.bookmarks, () => {
     </main>
     
     <!-- 独立分享按钮（不随侧边栏显示隐藏） -->
-    <div v-if="tab === 'bookmarks' && activeSubGroups.length > 0 && settingsStore.enableShare" class="fixed bottom-6 left-6 z-40">
+    <div v-if="tab === 'bookmarks' && activeSubGroups.length > 0" class="fixed bottom-6 left-6 z-40">
       <Popover v-if="isSubShared || isSubImported" v-model:open="showSubShareMenu">
         <PopoverTrigger as-child>
           <Button

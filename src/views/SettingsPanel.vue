@@ -39,6 +39,8 @@ const toggleAutoGenerateAI = (newValue: boolean) => {
     const { available, reason } = checkAiAvailable()
     if (!available) {
       notify(reason)
+      // AI 不可用时，确保设置为 false，防止状态不一致
+      settingsStore.setAutoGenerateAI(false)
       return
     }
   }

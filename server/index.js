@@ -8,6 +8,7 @@ import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { initDatabase, createShare, getShare, updateShare, cancelShare, checkShareUpdate } from './db.js'
+import { fetchSiteIcon } from './iconService.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // 兼容本地和容器环境的路径查找
@@ -199,20 +200,59 @@ fastify.put('/api/share/:id', async (request, reply) => {
 fastify.delete('/api/share/:id', async (request, reply) => {
   try {
     const { id } = request.params
-    
+
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
       return reply.code(400).send({ error: 'Invalid ID' })
     }
 
     const existing = await getShare(id)
-    
+
     if (!existing) {
       return reply.code(404).send({ error: 'Not Found' })
     }
-    
+
     await cancelShare(id)
-    
+
     return { success: true }
+  } catch (err) {
+    request.log.error(err)
+    return reply.code(500).send({ error: 'Internal Server Error' })
+  }
+})
+
+// 图标代理接口
+fastify.get('/api/icon', {
+  config: {
+    rateLimit: {
+      max: 100,
+      timeWindow: '1 minute'
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const { url } = request.query
+
+    if (!url) {
+      return reply.code(400).send({ error: 'invalid_url' })
+    }
+
+    // URL 格式验证
+    try {
+      const validatedUrl = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`)
+      if (validatedUrl.protocol !== 'http:' && validatedUrl.protocol !== 'https:') {
+        return reply.code(400).send({ error: 'invalid_url' })
+      }
+    } catch {
+      return reply.code(400).send({ error: 'invalid_url' })
+    }
+
+    const result = await fetchSiteIcon(url)
+
+    if (!result) {
+      return reply.code(404).send({ error: 'icon_not_found' })
+    }
+
+    return result
   } catch (err) {
     request.log.error(err)
     return reply.code(500).send({ error: 'Internal Server Error' })

@@ -137,6 +137,7 @@ export function useBookmarkForm() {
   const fetchPageTitle = async (url: string): Promise<string | null> => {
     const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
     if (!utoolsApi?.ubrowser) return null
+
     try {
       const result = await utoolsApi.ubrowser
         .goto(url)
@@ -148,7 +149,7 @@ export function useBookmarkForm() {
         .run({ width: 1024, height: 768, show: false })
       return result && result.length > 0 ? (result[0] as string | null) : null
     } catch (e) {
-      console.warn('[Bookmark] fetchPageTitle failed', e)
+      // 静默失败
       return null
     }
   }
