@@ -554,7 +554,7 @@ watch(() => store.bookmarks, () => {
                   <Input 
                      v-model="draft.url" 
                      placeholder="https://example.com 或含 {query} 的搜索模板" 
-                     class="h-12 bg-muted/30 font-mono text-base placeholder:text-muted-foreground/40 flex-1 px-4"
+                     class="h-12 bg-muted/30 font-mono text-base placeholder:text-muted-foreground/60 flex-1 px-4"
                      auto-focus
                    />
                      <Tooltip>
@@ -627,7 +627,7 @@ watch(() => store.bookmarks, () => {
                  <!-- Icon -->
                  <div class="shrink-0 flex flex-col items-center gap-1">
                    <div 
-                      class="w-10 h-10 rounded-lg border border-border flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
+                      class="w-12 h-12 rounded-lg border border-border flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
                       :style="previewIconStyle"
                       @click="showIconSelector = true"
                     >
@@ -649,7 +649,7 @@ watch(() => store.bookmarks, () => {
                   <Input 
                      v-model="draft.title" 
                      placeholder="网站标题" 
-                      class="h-12 border-border rounded-md bg-background px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 shadow-none text-base font-semibold placeholder:text-muted-foreground/40"
+                      class="h-12 border-border rounded-md bg-background px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 shadow-none text-base font-semibold placeholder:text-muted-foreground/60"
                    />
                      <p v-if="titleFetchFailed" class="text-xs text-muted-foreground mt-1">未能自动获取标题，请手动输入。</p>
                    </div>
@@ -657,7 +657,7 @@ watch(() => store.bookmarks, () => {
                         v-model="draft.desc" 
                         placeholder="请输入网站简介" 
                         :maxlength="maxDescLen"
-                        class="min-h-[80px] resize-none bg-background border border-border rounded-md px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 placeholder:text-muted-foreground/40 text-sm"
+                        class="min-h-[80px] resize-none bg-background border border-border rounded-md px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 placeholder:text-muted-foreground/60 text-sm"
                      />
                  </div>
              </div>
@@ -671,7 +671,7 @@ watch(() => store.bookmarks, () => {
                 <Popover v-model:open="showCategorySelector">
                   <PopoverTrigger as-child>
                     <div 
-                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-muted/50"
+                      class="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer hover:bg-muted/50"
                     >
                       <div v-if="selectedLocationsLabel" class="flex items-center gap-2 truncate text-primary font-medium">
                          {{ selectedLocationsLabel }}

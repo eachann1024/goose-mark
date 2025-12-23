@@ -181,6 +181,13 @@
     user-select: text;
     -webkit-user-select: text;
   }
+  
+  /* 全局 placeholder 样式 - 确保优先级高于 color: inherit */
+  input::placeholder,
+  textarea::placeholder {
+    color: hsl(var(--muted-foreground) / 0.6) !important;
+    opacity: 1 !important; /* Firefox 默认会降低 placeholder 透明度 */
+  }
   /* Prevent dragging of images and links */
   img, a, [role="img"] {
     -webkit-user-drag: none;
