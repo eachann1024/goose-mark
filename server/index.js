@@ -7,7 +7,7 @@ import { nanoid } from 'nanoid'
 import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { initDatabase, createShare, getShare, updateShare, cancelShare } from './db.js'
+import { initDatabase, createShare, getShare, updateShare, cancelShare, checkShareUpdate } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 // 兼容本地和容器环境的路径查找
@@ -105,6 +105,31 @@ fastify.post('/api/share', {
     const result = await createShare(shareId, type, sourceId, data)
     
     return { shareId: result.shareId }
+  } catch (err) {
+    request.log.error(err)
+    return reply.code(500).send({ error: 'Internal Server Error' })
+  }
+})
+
+// 轻量级检查分享更新（只返回 updatedAt 和 active）
+fastify.get('/api/share/:id/check', async (request, reply) => {
+  try {
+    const { id } = request.params
+    if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return reply.code(400).send({ error: 'Invalid ID' })
+    }
+
+    const checkData = await checkShareUpdate(id)
+    
+    if (!checkData) {
+      return reply.code(404).send({ error: 'Not Found' })
+    }
+    
+    if (!checkData.active) {
+      return reply.code(410).send({ error: 'Share has been canceled', canceled: true })
+    }
+    
+    return { updatedAt: checkData.updatedAt, active: checkData.active }
   } catch (err) {
     request.log.error(err)
     return reply.code(500).send({ error: 'Internal Server Error' })

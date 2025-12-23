@@ -3,7 +3,7 @@ import type { Bookmark } from '@/types/bookmark'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { notify } from '@/lib/notify'
 
-const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string }>()
+const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string; readonly?: boolean }>()
 const emit = defineEmits<{
   edit: [Bookmark, HTMLElement | undefined]
   remove: [Bookmark]
@@ -221,7 +221,7 @@ const deletePopoverOpen = ref(false)
     </div>
     
     <!-- Action Buttons -->
-    <div class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
+    <div v-if="!readonly" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
         <!-- Copy button removed as per requirement -->
         <!-- Edit Button -->
         <Tooltip>

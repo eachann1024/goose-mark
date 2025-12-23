@@ -434,9 +434,24 @@ export function useShare() {
     }
   }
 
-  // 检查分享更新
+  // 检查分享更新（优先使用轻量级接口）
   const checkForUpdate = async (shareId: string, lastSyncedAt: number, throwOnError = false): Promise<boolean> => {
     try {
+      // 优先使用轻量级检查接口
+      const checkRes = await fetch(`${API_BASE_URL}/${shareId}/check`)
+      
+      if (checkRes.ok) {
+        const checkData = await checkRes.json()
+        if (!checkData.active) return false
+        return checkData.updatedAt > lastSyncedAt
+      }
+      
+      // 如果轻量级接口失败（404/410 等），回退到完整接口
+      if (checkRes.status === 404 || checkRes.status === 410) {
+        return false
+      }
+      
+      // 其他错误，回退到完整接口
       const res = await fetch(`${API_BASE_URL}/${shareId}`)
       
       if (!res.ok) {
