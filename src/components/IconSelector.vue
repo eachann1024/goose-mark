@@ -240,7 +240,7 @@ watch(
           </div>
           
           <!-- Tool buttons -->
-          <div class="absolute -right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1.5">
+          <div class="absolute bottom-0 right-0 flex flex-col gap-1.5">
              <Button 
                size="icon"
                variant="secondary"

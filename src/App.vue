@@ -5,6 +5,7 @@ import SettingsPanel from '@/views/SettingsPanel.vue'
 import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Loader2 } from 'lucide-vue-next'
 
 
 
@@ -629,8 +630,6 @@ watch(() => store.bookmarks, () => {
     <Dialog v-model:open="showAdd">
       <DialogContent 
         class="sm:max-w-[600px] max-h-[90vh] overflow-y-auto p-0 gap-0 bg-card border-border"
-        :origin-x="dialogOrigin?.x"
-        :origin-y="dialogOrigin?.y"
       >
          <div class="px-6 py-4 border-b border-border flex items-center justify-between bg-muted/20">
             <DialogTitle class="text-lg font-medium flex items-center gap-2">
@@ -804,7 +803,7 @@ watch(() => store.bookmarks, () => {
     </Dialog>
     <!-- Delete Confirmation Dialog -->
     <Dialog v-model:open="showDeleteConfirm">
-      <DialogContent class="sm:max-w-[400px] p-4 bg-card border-border" @keydown.enter.prevent="confirmDelete">
+      <DialogContent class="sm:max-w-[400px] p-4 bg-card border-border">
         <DialogHeader>
           <DialogTitle class="text-lg">确认删除</DialogTitle>
         </DialogHeader>

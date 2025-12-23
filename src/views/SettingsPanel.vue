@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, nextTick } from 'vue'
+import { computed, ref, nextTick, watch } from 'vue'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useThemeStore } from '@/stores/theme'
 import { useSettingsStore } from '@/stores/settings'
@@ -110,6 +110,7 @@ const showShareImportDialog = ref(false)
 // 删除确认 Dialog 相关
 const showDeleteConfirm = ref(false)
 const deleteTarget = ref<{ type: 'group' | 'sub'; groupId: string; subId?: string; name: string } | null>(null)
+const confirmDeleteButtonRef = ref<HTMLElement | null>(null)
 
 // 撤回 Toast 相关
 const undoToast = ref<{ visible: boolean; message: string; data: { type: 'group' | 'sub'; groupId: string; subId?: string; name: string; groups: typeof store.groups; bookmarks: typeof store.bookmarks } | null }>({ visible: false, message: '', data: null })
@@ -721,6 +722,24 @@ const openDeleteConfirm = (type: 'group' | 'sub', groupId: string, name: string,
   deleteTarget.value = { type, groupId, subId, name }
   showDeleteConfirm.value = true
 }
+
+// 当删除确认对话框打开时，聚焦到确认删除按钮
+watch(showDeleteConfirm, (isOpen) => {
+  if (isOpen) {
+    nextTick(() => {
+      // 查找确认删除按钮并聚焦
+      const button = confirmDeleteButtonRef.value as HTMLElement | null
+      if (button) {
+        button.focus()
+      } else {
+        // 备用方案：通过查询选择器查找
+        const dialog = document.querySelector('[role="dialog"]')
+        const confirmBtn = dialog?.querySelector('button[class*="destructive"]') as HTMLElement
+        confirmBtn?.focus()
+      }
+    })
+  }
+})
 
 // 执行删除并显示撤回 Toast
 const handleConfirmDelete = () => {
@@ -1550,16 +1569,16 @@ const closeUndoToast = () => {
 
     <!-- Delete Confirmation Dialog -->
     <Dialog :open="showDeleteConfirm" @update:open="v => { if (!v) showDeleteConfirm = false }">
-      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent @keydown.enter.prevent="handleConfirmDelete">
+      <DialogContent class="sm:max-w-md" @pointer-down-outside.prevent @interact-outside.prevent>
         <DialogHeader>
           <DialogTitle>确认删除？</DialogTitle>
           <DialogDescription>
             {{ deleteTarget?.type === 'group' ? '分组' : '子分类' }} "{{ deleteTarget?.name }}" 及其独有的书签将被永久删除。
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter class="gap-2 sm:gap-0">
+        <DialogFooter class="gap-3">
           <Button variant="ghost" @click="showDeleteConfirm = false">取消</Button>
-          <Button variant="destructive" @click="handleConfirmDelete">
+          <Button ref="confirmDeleteButtonRef" variant="destructive" @click="handleConfirmDelete">
             确认删除
           </Button>
         </DialogFooter>
