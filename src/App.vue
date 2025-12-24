@@ -69,12 +69,9 @@ const {
   openEdit,
   handleSave,
   askAI,
-  undoAI,
   undoTitle,
   undoDesc,
-  undoIcon,
   hasAIGenerated,
-  hasIconToUndo,
   isUrlAccessible,
   isCheckingUrl,
   isGenerating
@@ -793,21 +790,6 @@ watch(() => store.bookmarks, () => {
                      class="h-12 bg-muted/30 font-mono text-base placeholder:text-muted-foreground/60 flex-1 px-4"
                      auto-focus
                    />
-                     <Tooltip v-if="hasAIGenerated">
-                       <TooltipTrigger as-child>
-                         <Button
-                           variant="outline"
-                           size="icon"
-                           class="h-12 w-12 shrink-0 transition-all text-base text-muted-foreground hover:text-foreground"
-                           @click="undoAI()"
-                         >
-                            <span class="i-mdi-undo text-lg" />
-                          </Button>
-                       </TooltipTrigger>
-                       <TooltipContent>
-                         <p>撤回 AI 识别</p>
-                       </TooltipContent>
-                     </Tooltip>
                      <Tooltip>
                        <TooltipTrigger as-child>
                          <Button
@@ -892,22 +874,6 @@ watch(() => store.bookmarks, () => {
                          </span>
                        </template>
                     </div>
-                     <Tooltip v-if="hasIconToUndo">
-                       <TooltipTrigger as-child>
-                         <Button
-                           variant="ghost"
-                           size="sm"
-                           class="h-6 px-2 text-[10px] text-muted-foreground hover:text-foreground"
-                           @click="undoIcon()"
-                         >
-                            <span class="i-mdi-undo text-xs mr-1" />
-                            撤回图标
-                          </Button>
-                       </TooltipTrigger>
-                       <TooltipContent>
-                         <p>撤回图标</p>
-                       </TooltipContent>
-                     </Tooltip>
                      <p v-if="iconFetchFailed && !iconLoading && draft.url" class="text-[10px] text-muted-foreground text-center max-w-[80px] leading-tight">
                        可复制网页图标后粘贴
                      </p>

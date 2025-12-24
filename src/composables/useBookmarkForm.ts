@@ -87,7 +87,6 @@ export function useBookmarkForm() {
   const originalBeforeAI = ref<{
     title: string
     desc: string
-    icon: IconSource | null
   } | null>(null)
 
   let previewTimer: ReturnType<typeof setTimeout> | null = null
@@ -180,7 +179,8 @@ export function useBookmarkForm() {
     }
   }
 
-  const askAI = async (showNotify = false) => {
+  const askAI = async (showNotify = false, fromAuto = false) => {
+    if (fromAuto && settingsStore.autoGenerateAI !== true) return
     if (!draft.url) return
 
     // 先检查 AI 可用性
@@ -195,8 +195,7 @@ export function useBookmarkForm() {
     if (!originalBeforeAI.value) {
       originalBeforeAI.value = {
         title: draft.title,
-        desc: draft.desc,
-        icon: previewIcon.value ? { ...previewIcon.value } : null
+        desc: draft.desc
       }
     }
 
@@ -211,14 +210,6 @@ export function useBookmarkForm() {
     }
   }
 
-  const undoAI = () => {
-    if (!originalBeforeAI.value) return
-    draft.title = originalBeforeAI.value.title
-    draft.desc = originalBeforeAI.value.desc
-    previewIcon.value = originalBeforeAI.value.icon
-    originalBeforeAI.value = null
-  }
-
   const undoTitle = () => {
     if (!originalBeforeAI.value) return
     draft.title = originalBeforeAI.value.title
@@ -229,16 +220,7 @@ export function useBookmarkForm() {
     draft.desc = originalBeforeAI.value.desc
   }
 
-  const undoIcon = () => {
-    if (!originalBeforeAI.value?.icon) {
-      previewIcon.value = null
-    } else {
-      previewIcon.value = { ...originalBeforeAI.value.icon }
-    }
-  }
-
   const hasAIGenerated = computed(() => !!originalBeforeAI.value)
-  const hasIconToUndo = computed(() => originalBeforeAI.value?.icon !== null && originalBeforeAI.value?.icon !== undefined)
 
   // Actions
   const openAdd = (eventOrEl?: MouseEvent | HTMLElement) => {
@@ -428,7 +410,7 @@ export function useBookmarkForm() {
         titleFetchFailed.value = false
 
         // 仅在新建书签（非编辑模式）且设置开启时自动调用 AI
-        const shouldAutoAI = settingsStore.autoGenerateAI && !editingId.value
+        const shouldAutoAI = settingsStore.autoGenerateAI === true && !editingId.value
         if (import.meta.env.DEV) {
           console.log('[BookmarkForm] Auto AI check:', { 
             autoGenerateAI: settingsStore.autoGenerateAI, 
@@ -437,12 +419,12 @@ export function useBookmarkForm() {
           })
         }
         if (shouldAutoAI) {
-          askAI(true)
+          askAI(true, true)
         }
       } else {
         titleFetchFailed.value = true
         // 仅在新建书签（非编辑模式）且设置开启时自动调用 AI
-        const shouldAutoAI = settingsStore.autoGenerateAI && !editingId.value
+        const shouldAutoAI = settingsStore.autoGenerateAI === true && !editingId.value
         if (import.meta.env.DEV) {
           console.log('[BookmarkForm] Auto AI check (title failed):', { 
             autoGenerateAI: settingsStore.autoGenerateAI, 
@@ -451,7 +433,7 @@ export function useBookmarkForm() {
           })
         }
         if (shouldAutoAI) {
-          askAI(true)
+          askAI(true, true)
         }
       }
     }, 600)
@@ -542,12 +524,9 @@ export function useBookmarkForm() {
     openEdit,
     handleSave,
     askAI,
-    undoAI,
     undoTitle,
     undoDesc,
-    undoIcon,
     hasAIGenerated,
-    hasIconToUndo,
     isUrlAccessible,
     isCheckingUrl,
     isGenerating,
