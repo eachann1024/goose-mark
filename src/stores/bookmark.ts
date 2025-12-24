@@ -797,18 +797,24 @@ export const useBookmarkStore = defineStore('bookmark', {
       const sourceGroup = data.groups[0]
       const targetGroupName = shareName || sourceGroup.name || '来自分享'
 
-      const checkData = {
-        targetGroupName,
-        allGroups: this.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => c.name) }))
-      }
-      console.log('[importFromShareSmart]', JSON.stringify(checkData, null, 2))
-
       // 检查是否存在同名父分组
       const existingGroup = this.findGroupByName(targetGroupName)
 
+      // 为书签生成新 ID
+      const idMap = new Map<string, string>()
+      data.bookmarks.forEach(b => idMap.set(b.id, uid()))
+      const newBookmarks: Bookmark[] = data.bookmarks.map(b => ({
+        ...b,
+        id: idMap.get(b.id)!,
+        locations: []
+      }))
+
       if (existingGroup) {
-        if (existingGroup.sourceShareId !== shareId) {
-          // 同名但来源不同，返回冲突信息
+        // 若存在同名子分组且来源不同，则提示冲突
+        const conflictSub = sourceGroup.children.find(sub =>
+          existingGroup.children.some(c => c.name === sub.name && c.sourceShareId !== shareId)
+        )
+        if (conflictSub) {
           return {
             conflict: true,
             targetGroup: existingGroup,
@@ -820,46 +826,25 @@ export const useBookmarkStore = defineStore('bookmark', {
           }
         }
 
-        // 同名且来源相同，执行合并逻辑
         const now = Date.now()
-        const idMap = new Map<string, string>()
-        
-        // 为书签生成新 ID
-        data.bookmarks.forEach(b => idMap.set(b.id, uid()))
-        
-        // 复制书签
-        const newBookmarks: Bookmark[] = data.bookmarks.map(b => ({
-          ...b,
-          id: idMap.get(b.id)!,
-          locations: []
-        }))
-        
-        // 处理子分组：更新已存在的同名子分组，或添加新的子分组
         const addedSubGroups: Array<{ id: string; name: string; bookmarkIds: string[]; sourceShareId: string; lastSyncedAt: number }> = []
         const updatedSubGroups: Array<{ id: string; name: string }> = []
-        
+
         sourceGroup.children.forEach(sub => {
           const existingSub = existingGroup.children.find(c => c.name === sub.name && c.sourceShareId === shareId)
-          
+
           if (existingSub) {
-            // 子分组已存在且来源相同，更新内容
-            // 先移除该子分组的旧书签
             const oldBookmarkIds = new Set(existingSub.bookmarkIds)
+            // 移除旧书签（仅移除只属于该子分组的）
             this.bookmarks = this.bookmarks.filter(b => {
               if (!oldBookmarkIds.has(b.id)) return true
-              // 如果书签还属于其他子分组，保留它
-              return b.locations?.some(loc => 
-                !(loc.groupId === existingGroup.id && loc.subGroupId === existingSub.id)
-              )
+              return b.locations?.some(loc => !(loc.groupId === existingGroup.id && loc.subGroupId === existingSub.id))
             })
-            
-            // 更新子分组
+
             existingSub.bookmarkIds = sub.bookmarkIds.map(oldId => idMap.get(oldId)!)
             existingSub.lastSyncedAt = now
-            
             updatedSubGroups.push({ id: existingSub.id, name: existingSub.name })
-            
-            // 更新书签 locations
+
             newBookmarks.forEach(b => {
               if (existingSub.bookmarkIds.includes(b.id)) {
                 b.locations = b.locations || []
@@ -867,7 +852,6 @@ export const useBookmarkStore = defineStore('bookmark', {
               }
             })
           } else {
-            // 子分组不存在或来源不同，创建新的
             const newSubId = uid()
             const newSub = {
               id: newSubId,
@@ -877,8 +861,7 @@ export const useBookmarkStore = defineStore('bookmark', {
               lastSyncedAt: now
             }
             addedSubGroups.push(newSub)
-            
-            // 更新书签 locations
+
             newBookmarks.forEach(b => {
               if (newSub.bookmarkIds.includes(b.id)) {
                 b.locations = b.locations || []
@@ -887,49 +870,27 @@ export const useBookmarkStore = defineStore('bookmark', {
             })
           }
         })
-        
-        // 添加新子分组
+
         existingGroup.children.push(...addedSubGroups)
-        
-        // 添加新书签（过滤掉已经存在的，避免重复）
+
         const existingBookmarkIds = new Set(this.bookmarks.map(b => b.id))
         const trulyNewBookmarks = newBookmarks.filter(b => !existingBookmarkIds.has(b.id))
         this.bookmarks.push(...trulyNewBookmarks)
-        
-        const mergeCompleteData = {
-          groupName: existingGroup.name,
-          addedSubGroups: addedSubGroups.map(s => s.name),
-          updatedSubGroups: updatedSubGroups.map(s => s.name),
-          addedBookmarks: trulyNewBookmarks.length,
-          totalSubGroups: existingGroup.children.map(c => c.name),
-          totalBookmarks: this.bookmarks.length
-        }
-        console.log('[importFromShareSmart] 合并完成', JSON.stringify(mergeCompleteData, null, 2))
-        
-        // 切换到合并后的第一个子分组
+
         this.activeGroupId = existingGroup.id
         this.activeSubGroupId = addedSubGroups[0]?.id || updatedSubGroups[0]?.id || existingGroup.children[0]?.id || ''
-        
+
         return { group: existingGroup, subGroupId: this.activeSubGroupId, merged: true }
-      } else {
-        // 不存在同名分组，创建新分组
-        console.log('[importFromShareSmart] 未找到同名分组，创建新分组', {
-          targetGroupName,
-          newSubGroups: sourceGroup.children.map(c => c.name),
-          newBookmarks: data.bookmarks.length
-        })
-        const newGroup = this.importFromShare(data, shareId, shareName)
-        if (newGroup) {
-          console.log('[importFromShareSmart] 新分组创建完成', {
-            groupId: newGroup.id,
-            groupName: newGroup.name,
-            subGroups: newGroup.children.map(c => c.name)
-          })
-          return { group: newGroup, subGroupId: newGroup.children[0]?.id || '', merged: false }
-        }
-        return null
       }
+
+      // 不存在同名分组，直接新建
+      const newGroup = this.importFromShare(data, shareId, shareName)
+      if (newGroup) {
+        return { group: newGroup, subGroupId: newGroup.children[0]?.id || '', merged: false }
+      }
+      return null
     },
+
     // 更新单个子分组的分享数据（只更新指定的子分组，保留其他子分组）
     updateSubGroupFromShare(
       groupId: string, 
