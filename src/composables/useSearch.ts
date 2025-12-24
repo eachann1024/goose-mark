@@ -182,6 +182,14 @@ export function useSearch(
   })
 
   useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+    const active = document.activeElement as HTMLElement | null
+    const isInput = isEditableElement(active)
+
+    // 忽略有修饰键的组合键，避免拦截系统快捷键（如 Cmd+A, Cmd+C 等）
+    // 如果在输入框中，或者按下了 Cmd/Ctrl/Alt，则不处理搜索逻辑
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (isInput && !searchViewOpen.value) return 
+
     if (e.key === 'Escape' && searchViewOpen.value) {
       e.preventDefault()
       closeSearchView()

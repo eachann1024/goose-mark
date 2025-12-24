@@ -262,7 +262,6 @@ const updatePageTitle = () => {
 watch(() => store.search, () => hideCmdHints())
 watch(() => tab.value, () => {
   hideCmdHints()
-  closeContext()
   onMainViewSwitch()
   updatePageTitle()
 })
@@ -270,7 +269,6 @@ watch(() => tab.value, () => {
 watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   selectedIndex.value = -1
   hideCmdHints()
-  closeContext()
   updatePageTitle()
 })
 
@@ -433,7 +431,7 @@ const exitTemplateMode = () => {
   
   // Restore default sub input
   const shouldUse = !isDetachedWindowNow()
-  if (canUse) {
+  if (shouldUse) {
     window.utools?.setSubInput?.(handleSubInput, '搜索书签...', true)
   } else {
     window.utools?.removeSubInput?.()
