@@ -122,18 +122,18 @@ const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, last
   }
 }
 
-const checkAllUpdates = () => {
-    props.activeSubGroups.forEach(sub => {
-        if (sub.sourceShareId && sub.lastSyncedAt) {
-            checkSingleUpdate(sub.id, sub.sourceShareId, sub.lastSyncedAt, props.activeGroupId)
-        }
-    })
+// 只检查当前活动的子分组
+const checkCurrentSubGroupUpdate = () => {
+  const sub = props.activeSubGroups.find(s => s.id === props.activeSubGroupId)
+  if (sub?.sourceShareId && sub.lastSyncedAt) {
+    checkSingleUpdate(sub.id, sub.sourceShareId, sub.lastSyncedAt, props.activeGroupId)
+  }
 }
 
-// 监听分组变化自动检测
+// 监听分组变化，重置状态并只检查当前子分组
 watch(() => props.activeGroupId, () => {
   updatesMap.value = {}
-  checkAllUpdates()
+  checkCurrentSubGroupUpdate()
 })
 
 // 监听子分组切换，自动检查并更新
@@ -151,7 +151,8 @@ watch(() => props.activeSubGroupId, async (newSubGroupId, oldSubGroupId) => {
 })
 
 onMounted(() => {
-    checkAllUpdates()
+  // 只检查当前活动的子分组，而不是所有子分组
+  checkCurrentSubGroupUpdate()
 })
 
 const hasUpdate = (subId: string) => !!updatesMap.value[subId]
