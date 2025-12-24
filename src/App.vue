@@ -65,7 +65,6 @@ const {
   copyShareLink,
   buildShareUrl,
   validateAndCleanGroupShares,
-  checkForUpdate,
   getShareData,
   validateShareStatus
 } = useShare()
@@ -305,56 +304,6 @@ const handleCopyShareLink = async (shareId: string) => {
   await copyShareLink(shareId)
 }
 
-const handleCheckUpdate = async () => {
-  if (!currentSubGroup.value?.sourceShareId) return
-  
-  const sourceShareId = currentSubGroup.value.sourceShareId
-  const lastSyncedAt = currentSubGroup.value.lastSyncedAt || 0
-  
-  try {
-    const hasUpdate = await checkForUpdate(sourceShareId, lastSyncedAt, true)
-    
-    if (!hasUpdate) {
-      showToast({ title: '当前已是最新版本', variant: 'success' })
-      return
-    }
-    
-    const result = await getShareData(sourceShareId)
-    if (result?.data) {
-      // ... (existing logic)
-    } else {
-      const error = result?.error || '未知错误'
-      if (error.includes('失效') || error.includes('取消')) {
-        shareCanceledInfo.value = {
-          type: 'subGroup',
-          groupId: store.activeGroupId,
-          subGroupId: currentSubGroup.value.id,
-          name: currentSubGroup.value.name
-        }
-        showShareCanceledDialog.value = true
-      } else {
-        showToast({ title: '获取更新失败', description: error, variant: 'error' })
-      }
-    }
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : '网络错误'
-    if (message.includes('失效') || message.includes('取消')) {
-        shareCanceledInfo.value = {
-          type: 'subGroup',
-          groupId: store.activeGroupId,
-          subGroupId: currentSubGroup.value?.id || '',
-          name: currentSubGroup.value?.name || '子分组'
-        }
-        showShareCanceledDialog.value = true
-    } else {
-        showToast({ 
-          title: '检查更新失败', 
-          description: message,
-          variant: 'error' 
-        })
-    }
-  }
-}
 
 const handleNameConflictAction = async (action: 'merge' | 'new') => {
   if (!nameConflictInfo.value) return
@@ -701,7 +650,6 @@ watch(() => store.bookmarks, () => {
       @open-share-url="handleOpenShareUrl"
       @copy-share-link="handleCopyShareLink"
       @manage-share="showSharePanel = true"
-      @check-update="handleCheckUpdate"
       @delete-sub-group="store.deleteSubGroup(store.activeGroupId, store.activeSubGroupId)"
     />
 
