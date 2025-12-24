@@ -173,6 +173,11 @@ export function useKeyboard(
   useEventListener(window, 'keydown', handleKeyNavigation)
   
   useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+    // 如果焦点在输入框中，且按下了修饰键（如 Cmd+A），则不进行任何 hint 操作
+    const active = document.activeElement as HTMLElement
+    const isInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+    if (isInput && (e.metaKey || e.ctrlKey || e.altKey)) return
+
     if (isHintHoldKey(e.key)) {
       if (!cmdPressed.value) {
         cmdPressed.value = true
