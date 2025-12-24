@@ -131,7 +131,7 @@ const fetchIconFromProxy = async (url: string): Promise<string | null> => {
   if (isUToolsEnv()) return null
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 3000)  // 3秒超时
+  const timer = setTimeout(() => controller.abort(), 10000)  // 10秒超时，后端需要从外部获取图标
 
   try {
     const response = await fetch(`${ICON_API_URL}?url=${encodeURIComponent(url)}`, {

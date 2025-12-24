@@ -910,12 +910,13 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
 
     // 更新单个子分组的分享数据（只更新指定的子分组，保留其他子分组）
+    // 返回变更摘要：{ success, added, removed, addedItems, removedItems }
     updateSubGroupFromShare(
       groupId: string, 
       subGroupId: string,
       sourceShareId: string,
       data: { groups: Group[]; bookmarks: Bookmark[] }
-    ): boolean {
+    ): false | { success: true; added: number; removed: number; addedItems: string[]; removedItems: string[] } {
       const group = this.groups.find(g => g.id === groupId)
       if (!group) return false
       
@@ -933,8 +934,23 @@ export const useBookmarkStore = defineStore('bookmark', {
         return false
       }
       
-      // 1. 清除该子分组下的旧书签
+      // 1. 收集本地旧书签信息（用 URL 作为唯一标识进行对比）
       const oldBookmarkIds = new Set(subGroup.bookmarkIds)
+      const oldBookmarks = this.bookmarks.filter(b => oldBookmarkIds.has(b.id))
+      const oldUrlToBookmark = new Map(oldBookmarks.map(b => [b.url, b]))
+      const oldUrls = new Set(oldBookmarks.map(b => b.url))
+      
+      // 收集远端新书签信息
+      const newUrls = new Set(data.bookmarks.map(b => b.url))
+      const newUrlToBookmark = new Map(data.bookmarks.map(b => [b.url, b]))
+      
+      // 计算差异：新增和删除的书签
+      const addedUrls = [...newUrls].filter(url => !oldUrls.has(url))
+      const removedUrls = [...oldUrls].filter(url => !newUrls.has(url))
+      const addedItems = addedUrls.map(url => newUrlToBookmark.get(url)?.title || url).slice(0, 10)
+      const removedItems = removedUrls.map(url => oldUrlToBookmark.get(url)?.title || url).slice(0, 10)
+      
+      // 2. 清除该子分组下的旧书签
       // 从 bookmarks 中移除只属于该子分组的书签
       this.bookmarks = this.bookmarks.filter(b => {
         if (!oldBookmarkIds.has(b.id)) return true
@@ -944,7 +960,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         )
       })
       
-      // 2. 准备新书签数据
+      // 3. 准备新书签数据
       const idMap = new Map<string, string>()
       data.bookmarks.forEach(b => idMap.set(b.id, uid()))
       
@@ -954,7 +970,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         locations: [{ groupId, subGroupId }]
       }))
       
-      // 3. 更新子分组（找到源数据中对应的子分组）
+      // 4. 更新子分组（找到源数据中对应的子分组）
       // 源数据可能有多个子分组，我们只取第一个（假设分享的是单个子分组）
       const srcSub = sourceGroup.children[0]
       if (!srcSub) return false
@@ -964,10 +980,16 @@ export const useBookmarkStore = defineStore('bookmark', {
       subGroup.bookmarkIds = srcSub.bookmarkIds.map(oldId => idMap.get(oldId)!)
       subGroup.lastSyncedAt = now
       
-      // 4. 添加新书签
+      // 5. 添加新书签
       this.bookmarks.push(...newBookmarks)
       
-      return true
+      return { 
+        success: true, 
+        added: addedUrls.length, 
+        removed: removedUrls.length,
+        addedItems,
+        removedItems
+      }
     },
     // 更新已导入的分享分组（整个分组都是从分享导入的情况）
     // 返回变更摘要：{ success, added, removed, addedItems, removedItems }

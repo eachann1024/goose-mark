@@ -62,16 +62,28 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
       
       const dataToUpdate = { groups, bookmarks: shareData.bookmarks || [] }
       // 使用新方法：只更新单个子分组，保留其他子分组
-      const success = store.updateSubGroupFromShare(groupId, subGroupId, sourceShareId, dataToUpdate)
+      const updateResult = store.updateSubGroupFromShare(groupId, subGroupId, sourceShareId, dataToUpdate)
       
-      if (success) {
+      if (updateResult && typeof updateResult === 'object') {
         // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
         await nextTick()
         // 立即刷新存储，确保在 uTools 环境下数据被保存
         utoolsStorage.flushItem('bookmark')
         
+        // 构建详细的变更描述
+        const logs: string[] = []
+        if (updateResult.added > 0) {
+          logs.push(`新增\n${updateResult.addedItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}`)
+        }
+        if (updateResult.removed > 0) {
+          logs.push(`移除了\n${updateResult.removedItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}`)
+        }
+        
+        const description = logs.length > 0 ? logs.join('\n\n') : undefined
+        
         showToast({ 
           title: '已自动同步更新', 
+          description,
           variant: 'success' 
         })
         // 清除更新标记
