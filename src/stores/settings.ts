@@ -11,6 +11,7 @@ export const useSettingsStore = defineStore('settings', {
     preferUtoolsBrowser: false,
     useCustomAiModel: false,
     customAiModel: '',
+    enableShare: true,
     windowHeight: 700
   }),
   actions: {
@@ -39,6 +40,9 @@ export const useSettingsStore = defineStore('settings', {
     },
     setCustomAiModel(value: string) {
       this.customAiModel = String(value || '')
+    },
+    setEnableShare(value: boolean) {
+      this.enableShare = !!value
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0

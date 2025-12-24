@@ -818,13 +818,44 @@ const closeUndoToast = () => {
                  :class="themeStore.currentTheme === 'coffee' ? 'text-primary' : 'text-muted-foreground'"
                >醇香拿铁</span>
             </div>
-          </div>
+            </div>
        </CardContent>
     </Card>
 
-    <!-- Share Card (已隐藏，功能由导入导出替代) -->
+    <!-- Share Card -->
+    <Card v-if="isUTools">
+      <CardHeader>
+        <CardTitle>在线分享</CardTitle>
+        <CardDescription>开启后可分享书签分组给他人，或导入他人的公开分享</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div class="space-y-4">
+          <label class="flex items-center justify-between cursor-pointer">
+            <div class="space-y-0.5">
+              <div class="text-sm font-medium">开启分享功能</div>
+              <div class="text-xs text-muted-foreground">在书签页显示分享与管理按钮</div>
+            </div>
+            <Switch 
+              :checked="settingsStore.enableShare"
+              @update:checked="settingsStore.setEnableShare"
+            />
+          </label>
+          
+          <div v-if="settingsStore.enableShare" class="pt-2 animate-in fade-in slide-in-from-top-2">
+             <Button variant="outline" class="w-full h-9 border-dashed border-primary/30 text-primary/80 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors" @click="showShareImportDialog = true">
+               <span class="i-mdi-share-variant mr-2 text-lg" />
+               导入分享链接
+             </Button>
+             <p class="text-xs text-muted-foreground mt-2 px-1">
+               提示：已导入的分组（绿色边框）和正在分享的分组（蓝色边框）将不受此开关影响，仍会保留。
+             </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
 
     <!-- Layout Card -->
+
     <div class="grid md:grid-cols-2 gap-6">
       <Card>
         <CardHeader>
@@ -1368,15 +1399,10 @@ const closeUndoToast = () => {
                    @change="handleFileSelect"
                  />
               </div>
-              
-              <!-- 导入分享按钮 (仅 uTools 环境显示) -->
-              <div v-if="isUTools" class="flex gap-3">
-                 <Button class="flex-1" variant="outline" @click="showShareImportDialog = true">
-                   <span class="i-mdi-share-variant mr-2" />
-                   导入分享
-                 </Button>
-              </div>
-              <p class="text-xs text-muted-foreground">
+               
+               <!-- 导入分享按钮 (已移至顶部在线分享卡片) -->
+               <p class="text-xs text-muted-foreground">
+
                 导出的 JSON 文件包含所有分组和书签数据
               </p>
               

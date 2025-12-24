@@ -650,6 +650,7 @@ watch(() => store.bookmarks, () => {
     
     <!-- Share Float Button -->
     <ShareFloatButton
+      v-if="settingsStore.enableShare"
       :show="tab === 'bookmarks' && activeSubGroups.length > 0"
       :current-sub-group="currentSubGroup"
       @open-share-url="handleOpenShareUrl"
