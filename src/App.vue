@@ -234,18 +234,50 @@ const currentSubGroup = computed(() =>
   activeSubGroups.value.find(s => s.id === store.activeSubGroupId)
 )
 
+// 更新页面标题
+const updatePageTitle = () => {
+  const baseTitle = '鹅的书签'
+  const parts: string[] = []
+  
+  // 检查是否在分享页面
+  const pathMatch = window.location.pathname.match(/^\/s\/([a-zA-Z0-9_-]+)$/)
+  const shareId = pathMatch?.[1] || new URLSearchParams(window.location.search).get('shareId')
+  
+  if (shareId) {
+    parts.push('分享')
+  } else if (tab.value === 'settings') {
+    parts.push('设置')
+  } else if (isTrashActive.value) {
+    parts.push('回收站')
+  } else {
+    // 添加子分组名称
+    if (currentSubGroup.value && shouldShowSubs.value) {
+      parts.push(currentSubGroup.value.name)
+    }
+    // 添加分组名称
+    if (activeGroup.value && activeGroup.value.id !== TRASH_GROUP_ID) {
+      parts.push(activeGroup.value.name)
+    }
+  }
+  
+  // 如果有部分，则组合标题；否则使用基础标题
+  document.title = parts.length > 0 ? `${parts.join(' - ')} - ${baseTitle}` : baseTitle
+}
+
 // Coordination Watchers
 watch(() => store.search, () => hideCmdHints())
 watch(() => tab.value, () => {
   hideCmdHints()
   closeContext()
   onMainViewSwitch()
+  updatePageTitle()
 })
 
 watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   selectedIndex.value = -1
   hideCmdHints()
   closeContext()
+  updatePageTitle()
 })
 
 // 使用防抖避免切换分组/子分组时重复请求 check 接口
@@ -337,6 +369,7 @@ const clearShareIdFromUrl = () => {
       url.searchParams.delete('shareId')
       url.pathname = url.pathname.replace(/^\/s\/[a-zA-Z0-9_-]+$/, '/')
       history.replaceState({}, '', url.pathname + url.search)
+      updatePageTitle()
     } catch (e) {
       console.warn('[App] URL 清理失败', e)
     }
@@ -424,6 +457,14 @@ onMounted(async () => {
     e.preventDefault()
   }, true) // Use capture to ensure we catch it before most others
 
+  // 监听 URL 变化（popstate 事件）
+  window.addEventListener('popstate', () => {
+    updatePageTitle()
+  })
+
+  // 初始化标题
+  updatePageTitle()
+
   let shareId: string | null = null
   
   const pathMatch = window.location.pathname.match(/^\/s\/([a-zA-Z0-9_-]+)$/)
@@ -446,6 +487,7 @@ onMounted(async () => {
     } else if ('success' in result && result.success) {
       clearShareIdFromUrl()
     }
+    updatePageTitle()
   } else {
     store.migrateFromLegacy()
   }

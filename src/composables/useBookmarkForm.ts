@@ -310,8 +310,6 @@ function _useBookmarkForm() {
   watch(() => draft.url, async (val) => {
     checkUrl(val)
     
-    if (editingId.value) return
-    
     if (!val) {
       if (fetchTimer) clearTimeout(fetchTimer)
       previewIcon.value = null
@@ -351,12 +349,11 @@ function _useBookmarkForm() {
           previewIcon.value = newIcon as IconSource
           iconFetchFailed.value = (fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src))
           
-          // 自动填充标题和描述 (如果当前为空或仅为 hostname)
-          const currentTitle = draft.title.trim()
-          if (!currentTitle || currentTitle === hostname) {
-            if (fetched.title) draft.title = fetched.title
+          // 自动填充标题和描述（URL 变化时总是更新）
+          if (fetched.title) {
+            draft.title = fetched.title
           }
-          if (!draft.desc.trim() && fetched.description) {
+          if (fetched.description) {
             draft.desc = fetched.description
           }
         } else {
@@ -374,7 +371,7 @@ function _useBookmarkForm() {
       } finally {
         iconLoading.value = false
       }
-    }, 400)
+    }, 1000)
   })
 
 
