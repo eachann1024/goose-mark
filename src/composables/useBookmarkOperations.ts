@@ -1,8 +1,7 @@
 
-import { TRASH_GROUP_ID } from '@/stores/bookmark'
-import { addBehaviorLog } from '@/lib/debugReport'
+
 import type { Bookmark } from '@/types/bookmark'
-import { useShare } from './useShare'
+
 
 type UToolsExtendedApi = {
   copyText?: (text: string) => void

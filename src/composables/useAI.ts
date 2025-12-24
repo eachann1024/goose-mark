@@ -1,8 +1,7 @@
 
 import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
-import { probeUrl } from '@/services/siteProbe'
-import { useSettingsStore } from '@/stores/settings'
+
 
 export function useAI() {
   const settingsStore = useSettingsStore()

@@ -1,5 +1,5 @@
 
-import { TRASH_GROUP_ID } from '@/stores/bookmark'
+
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark } from '@/types/bookmark'
 import type { Ref } from 'vue'

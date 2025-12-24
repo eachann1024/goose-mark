@@ -1,10 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useTextOverflow } from '@/composables/useTextOverflow'
-import { useShare } from '@/composables/useShare'
-import { useBookmarkStore } from '@/stores/bookmark'
-import { useToast } from '@/composables/useToast'
-import { utoolsStorage } from '@/lib/utoolsStorage'
 
 const props = defineProps<{
   show: boolean
