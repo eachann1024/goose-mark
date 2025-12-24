@@ -178,8 +178,39 @@ export const useBookmarkStore = defineStore('bookmark', {
           this.bookmarks = this.bookmarks.filter(b => !subGroup.bookmarkIds.includes(b.id))
           group.children.splice(index, 1)
           group.updatedAt = Date.now()
-          if (this.activeSubGroupId === subGroupId) {
-            this.activeSubGroupId = group.children[0]?.id || ''
+          
+          // 如果删除子分组后，主分组没有子分组了，且主分组是分享的分组（有 sourceShareId），则删除主分组
+          // 或者如果删除的是导入的子分组（有 sourceShareId），且删除后主分组没有子分组了，也删除主分组
+          const shouldDeleteGroup = group.children.length === 0 && 
+            group.id !== TRASH_GROUP_ID && 
+            (group.sourceShareId || subGroup.sourceShareId)
+          
+          if (shouldDeleteGroup) {
+            // 如果当前激活的是这个分组，需要切换到其他分组
+            if (this.activeGroupId === groupId) {
+              const otherGroup = this.groups.find(g => g.id !== groupId && g.id !== TRASH_GROUP_ID)
+              if (otherGroup) {
+                this.activeGroupId = otherGroup.id
+                this.activeSubGroupId = otherGroup.children[0]?.id || ''
+              } else {
+                // 如果没有其他分组，切换到默认分组
+                const defaultGroup = this.groups.find(g => g.id === 'g-default')
+                if (defaultGroup) {
+                  this.activeGroupId = defaultGroup.id
+                  this.activeSubGroupId = defaultGroup.children[0]?.id || ''
+                }
+              }
+            }
+            // 删除主分组
+            const groupIndex = this.groups.findIndex(g => g.id === groupId)
+            if (groupIndex !== -1) {
+              this.groups.splice(groupIndex, 1)
+            }
+          } else {
+            // 如果还有子分组，更新 activeSubGroupId
+            if (this.activeSubGroupId === subGroupId) {
+              this.activeSubGroupId = group.children[0]?.id || ''
+            }
           }
         }
       }
