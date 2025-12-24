@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useBookmarkStore } from '@/stores/bookmark'
+
 
 const store = useBookmarkStore()
 

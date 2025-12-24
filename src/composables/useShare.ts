@@ -1,6 +1,5 @@
 import { ref } from 'vue'
-import { useBookmarkStore } from '@/stores/bookmark'
-import { utoolsStorage } from '@/lib/utoolsStorage'
+
 import type { Group, SubGroup, Bookmark } from '@/types/bookmark'
 
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/share'

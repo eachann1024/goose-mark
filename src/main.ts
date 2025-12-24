@@ -4,9 +4,6 @@ import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
 import App from './App.vue'
 import './assets/index.css'
 import 'uno.css'
-import { useSettingsStore } from '@/stores/settings'
-import { useUTools } from '@/composables/useUTools'
-import { initConsoleCapture } from '@/lib/debugReport'
 
 const app = createApp(App)
 

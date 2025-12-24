@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Loader2 } from 'lucide-vue-next'
-import { TRASH_GROUP_ID } from '@/stores/bookmark'
+
 import type { Bookmark } from '@/types/bookmark'
 
 // Stores
@@ -75,21 +75,48 @@ const selectedIndex = ref(-1)
 const showSharePanel = ref(false)
 const showNameConflict = ref(false)
 const showShareCanceledDialog = ref(false)
-const shareCanceledInfo = ref<{ groupId: string; groupName: string } | null>(null)
+const shareCanceledInfo = ref<{ 
+  type: 'group' | 'subGroup'
+  groupId: string
+  subGroupId?: string
+  name: string 
+} | null>(null)
 
 const handleSelectGroup = async (groupId: string) => {
   store.selectGroup(groupId)
   tab.value = "bookmarks"
   
   const group = store.groups.find(g => g.id === groupId)
-  if (group?.sourceShareId) {
+  if (!group) return
+
+  // 1. 检查分组本身的分享状态
+  if (group.sourceShareId) {
     const status = await validateShareStatus(group.sourceShareId)
     if (status === "canceled" || status === "not_found") {
       shareCanceledInfo.value = {
+        type: 'group',
         groupId: group.id,
-        groupName: group.name
+        name: group.name
       }
       showShareCanceledDialog.value = true
+      return
+    }
+  }
+
+  // 2. 检查子分组的分享状态
+  for (const sub of group.children) {
+    if (sub.sourceShareId) {
+      const status = await validateShareStatus(sub.sourceShareId)
+      if (status === "canceled" || status === "not_found") {
+        shareCanceledInfo.value = {
+          type: 'subGroup',
+          groupId: group.id,
+          subGroupId: sub.id,
+          name: sub.name
+        }
+        showShareCanceledDialog.value = true
+        return // 一次只提示一个
+      }
     }
   }
 }
@@ -656,27 +683,35 @@ watch(() => store.bookmarks, () => {
         <DialogHeader>
           <DialogTitle>分享已失效</DialogTitle>
           <DialogDescription>
-            该分享分组已被发起者取消或删除。您可以选择移除该分组，或将其转换为本地分组继续使用。
+            分享者已经移除该分享... 你是否需要保留该本组到本地...
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="destructive" @click="() => {
             if (shareCanceledInfo) {
-              store.removeGroup(shareCanceledInfo.groupId)
+              if (shareCanceledInfo.type === 'group') {
+                store.removeGroup(shareCanceledInfo.groupId)
+              } else if (shareCanceledInfo.type === 'subGroup' && shareCanceledInfo.subGroupId) {
+                store.deleteSubGroup(shareCanceledInfo.groupId, shareCanceledInfo.subGroupId)
+              }
               showShareCanceledDialog = false
               shareCanceledInfo = null
             }
           }">
-            移除分组
+            不需要
           </Button>
-          <Button variant="outline" @click="() => {
+          <Button variant="default" @click="() => {
             if (shareCanceledInfo) {
-              store.detachGroupFromShare(shareCanceledInfo.groupId)
+              if (shareCanceledInfo.type === 'group') {
+                store.detachGroupFromShare(shareCanceledInfo.groupId)
+              } else if (shareCanceledInfo.type === 'subGroup' && shareCanceledInfo.subGroupId) {
+                store.detachSubGroupFromShare(shareCanceledInfo.groupId, shareCanceledInfo.subGroupId)
+              }
               showShareCanceledDialog = false
               shareCanceledInfo = null
             }
           }">
-            转为本地分组
+            保留为本地分组
           </Button>
         </DialogFooter>
       </DialogContent>

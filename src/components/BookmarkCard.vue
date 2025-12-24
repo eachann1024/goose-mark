@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import type { Bookmark } from '@/types/bookmark'
-import { iconToDisplayUrl } from '@/services/iconCache'
-import { notify } from '@/lib/notify'
 
 const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string; readonly?: boolean }>()
 const emit = defineEmits<{

@@ -380,6 +380,14 @@ export const useBookmarkStore = defineStore('bookmark', {
         })
       }
     },
+    detachSubGroupFromShare(groupId: string, subGroupId: string) {
+      const group = this.groups.find(g => g.id === groupId)
+      const sub = group?.children.find(c => c.id === subGroupId)
+      if (sub) {
+        delete sub.sourceShareId
+        delete sub.lastSyncedAt
+      }
+    },
 
     removeGroup(id: string) {
       const idx = this.groups.findIndex(g => g.id === id)

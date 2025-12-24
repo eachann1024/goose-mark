@@ -1,10 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
 import { Loader2 } from 'lucide-vue-next'
-import { useBookmarkStore, parseShareIdFromUrl, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useShare, type ShareData } from '@/composables/useShare'
-import { useToast } from '@/composables/useToast'
-import { useAppState } from '@/composables/useAppState'
+import type { ShareData } from '@/composables/useShare'
 
 const props = defineProps<{
   open: boolean

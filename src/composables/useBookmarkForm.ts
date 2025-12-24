@@ -1,15 +1,7 @@
 
-import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { onClickOutside, useEventListener, createSharedComposable } from '@vueuse/core'
-import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useSettingsStore } from '@/stores/settings'
-import { useStatsStore } from '@/stores/stats'
-import { ensureIconForBookmark, iconToDisplayUrl } from '@/services/iconCache'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
-import { useAI } from './useAI'
-import { useShare } from './useShare'
-import { addBehaviorLog } from '@/lib/debugReport'
-import { notify } from '@/lib/notify'
+
 
 type UBrowserApi = {
   goto: (url: string) => {

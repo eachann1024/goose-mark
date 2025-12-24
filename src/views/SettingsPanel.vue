@@ -1,18 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, nextTick, watch } from 'vue'
-import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useThemeStore } from '@/stores/theme'
-import { useSettingsStore } from '@/stores/settings'
-import { useStatsStore } from '@/stores/stats'
-import { probeUrl, type ProbeResult } from '@/services/siteProbe'
 import FaqNotice from '@/components/FaqNotice.vue'
 import ResultToast from '@/components/ResultToast.vue'
 import draggable from 'vuedraggable'
 import type { Group } from '@/types/bookmark'
 
-import { notify } from '@/lib/notify'
-import { getDebugSnapshot } from '@/lib/debugReport'
-import { useAppState } from '@/composables/useAppState'
 import ShareImportDialog from '@/components/ShareImportDialog.vue'
 
 
