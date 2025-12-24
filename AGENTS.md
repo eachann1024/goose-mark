@@ -56,6 +56,12 @@
 - 文档地址：https://www.u-tools.cn/docs/developer/api-reference/utools/ai.html
 - utools 版本：7.3.2
 
+## 组件导入规则（自动导入）
+- **禁止手动导入 UI 组件库**：`src/components/ui/` 下的所有组件已通过 `unplugin-vue-components` 全局自动注册（见 `src/components.d.ts`）。
+- **自定义组件需手动导入**：业务组件（如 `FaqNotice`、`ResultToast`、`BookmarkFormDialog` 等）仍需显式导入。
+- **第三方库需手动导入**：`vuedraggable`、`lucide-vue-next` 等第三方库需显式导入。
+- **检查方法**：使用 `grep "^import.*from.*@/components/ui"` 搜索不应有任何结果。
+
 ## 可复用约定（沉淀）
 - 操作完成需“最终结果反馈”时，优先用 `src/components/ResultToast.vue`（支持标题/描述/可选动作按钮），避免到处手写 Toast。
 - 轻量系统提示（不需要留在应用内）统一用 `src/lib/notify.ts` 的 `notify`（内部优先 `window.utools.showNotification`，无 uTools 降级 `console.info`）。
