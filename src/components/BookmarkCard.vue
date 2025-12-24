@@ -23,10 +23,12 @@ const letters = computed(() => {
 const isEmptyDesc = computed(() => !props.bookmark.desc || props.bookmark.desc.trim().length === 0)
 
 const cardEl = ref<InstanceType<typeof Card> | null>(null)
+const titleEl = ref<HTMLElement | null>(null)
 const descEl = ref<HTMLElement | null>(null)
 const isDescTruncated = ref(false)
+const isTitleTruncated = ref(false)
 let fallbackToastEl: HTMLDivElement | null = null
-let descResizeObserver: ResizeObserver | null = null
+let resizeObserver: ResizeObserver | null = null
 
 const clearFallbackToast = () => {
   if (fallbackToastEl) {
@@ -38,26 +40,26 @@ const clearFallbackToast = () => {
   }
 }
 
-const showFallbackToast = (message: string, anchor?: HTMLElement) => {
-  if (fallbackToastEl) return // 已显示则不重复创建
+const showFallbackToast = (title: string, desc: string, anchor?: HTMLElement) => {
+  if (fallbackToastEl) return 
   const el = document.createElement('div')
-  el.textContent = message
-  el.style.position = 'fixed'
+  
   const getCssVar = (name: string, fallback: string) => {
     const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
     if (!val) return fallback
-    // CSS 变量可能是 HSL 格式（如 "210 40% 98%"），需要包装成 hsl()
     if (/^\d+\.?\d*\s+\d+\.?\d*%\s+\d+\.?\d*%$/.test(val)) {
       return `hsl(${val})`
     }
     return val
   }
+  
   const bg = getCssVar('--card', 'rgba(24,24,27,0.92)')
   const border = getCssVar('--border', 'rgba(255,255,255,0.08)')
   const fg = getCssVar('--foreground', '#e5e7eb')
+  const primary = getCssVar('--primary', '#3b82f6')
 
   el.style.maxWidth = '420px'
-  el.style.padding = '10px 14px'
+  el.style.padding = '12px 16px'
   el.style.borderRadius = '12px'
   el.style.background = bg
   el.style.color = fg
@@ -66,13 +68,32 @@ const showFallbackToast = (message: string, anchor?: HTMLElement) => {
   el.style.boxShadow = '0 12px 36px rgba(0,0,0,0.32)'
   el.style.backdropFilter = 'blur(10px)'
   el.style.border = `1px solid ${border}`
-  el.style.whiteSpace = 'pre-wrap'
-  el.style.wordBreak = 'break-word'
   el.style.zIndex = '9999'
   el.style.pointerEvents = 'none'
   el.style.opacity = '0'
   el.style.transform = 'translateY(4px)'
   el.style.transition = 'opacity 120ms ease, transform 120ms ease'
+  el.style.position = 'fixed'
+
+  // 安全地构建内容
+  if (title) {
+    const titleDiv = document.createElement('div')
+    titleDiv.style.fontWeight = '600'
+    titleDiv.style.color = primary
+    titleDiv.style.marginBottom = '4px'
+    titleDiv.style.fontSize = '14px'
+    titleDiv.textContent = title
+    el.appendChild(titleDiv)
+  }
+  if (desc) {
+    const descDiv = document.createElement('div')
+    descDiv.style.opacity = '0.9'
+    descDiv.style.whiteSpace = 'pre-wrap'
+    descDiv.style.wordBreak = 'break-word'
+    descDiv.textContent = desc
+    el.appendChild(descDiv)
+  }
+  
   document.body.appendChild(el)
 
   const anchorRect = anchor?.getBoundingClientRect()
@@ -92,17 +113,31 @@ const showFallbackToast = (message: string, anchor?: HTMLElement) => {
 }
 
 const onCardEnter = () => {
-  checkDescTruncate()
-  if (!isDescTruncated.value || !props.bookmark.desc) return
+  checkTruncate()
+  const showTitle = isTitleTruncated.value
+  const showDesc = isDescTruncated.value && props.bookmark.desc
+  
+  if (!showTitle && !showDesc) return
+  
   const anchor = (cardEl.value?.$el ?? cardEl.value) as HTMLElement | undefined
-  showFallbackToast(props.bookmark.desc, anchor)
+  showFallbackToast(
+    showTitle ? props.bookmark.title : '',
+    showDesc ? props.bookmark.desc : '',
+    anchor
+  )
 }
 
 const hideDescToast = () => {
   clearFallbackToast()
 }
 
-const checkDescTruncate = () => {
+const checkTruncate = () => {
+  // Title check
+  if (titleEl.value) {
+    isTitleTruncated.value = titleEl.value.scrollWidth > titleEl.value.clientWidth + 1
+  }
+
+  // Desc check
   const el = descEl.value
   if (!el) {
     isDescTruncated.value = false
@@ -116,26 +151,26 @@ const checkDescTruncate = () => {
   isDescTruncated.value = horizOverflow || vertOverflow || heuristicOverflow
 }
 
-onMounted(() => nextTick(checkDescTruncate))
+onMounted(() => nextTick(checkTruncate))
 onMounted(() => {
   nextTick(() => {
-    const target = descEl.value
-    if (!target) return
-    descResizeObserver = new ResizeObserver(() => checkDescTruncate())
-    descResizeObserver.observe(target)
+    const targets = [descEl.value, titleEl.value].filter((t): t is HTMLElement => !!t)
+    if (targets.length === 0) return
+    resizeObserver = new ResizeObserver(() => checkTruncate())
+    targets.forEach(t => resizeObserver?.observe(t))
   })
 })
 
 watch(
-  () => props.bookmark.desc,
-  () => nextTick(checkDescTruncate)
+  () => [props.bookmark.title, props.bookmark.desc],
+  () => nextTick(checkTruncate)
 )
 
 onBeforeUnmount(() => {
   clearFallbackToast()
-  if (descResizeObserver) {
-    descResizeObserver.disconnect()
-    descResizeObserver = null
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
   }
 })
 
@@ -209,15 +244,15 @@ const handleEdit = () => {
       >
           <template v-if="isEmptyDesc">
             <h3
+              ref="titleEl"
               class="font-semibold text-base leading-snug truncate text-foreground"
-              :title="bookmark.title"
             >
               {{ bookmark.title }}
             </h3>
           </template>
           <template v-else>
             <div class="flex items-center justify-between">
-              <h3 class="font-medium text-sm truncate pr-2 text-foreground break-all" :title="bookmark.title">
+              <h3 ref="titleEl" class="font-medium text-sm truncate pr-2 text-foreground break-all">
                 {{ bookmark.title }}
               </h3>
               <span v-if="bookmark.pinned" class="i-mdi-pin text-primary text-[10px] shrink-0" />
