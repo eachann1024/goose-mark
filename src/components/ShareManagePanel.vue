@@ -68,23 +68,53 @@ const handleUpdate = async () => {
     try {
         const result = await getShareData(sourceShareId.value)
         if (result?.data) {
-             emit('update-from-share', sourceShareId.value, result.data.data) 
+             emit('update-from-share', sourceShareId.value, result.data.data)
              showToast({ title: '更新成功', variant: 'success' })
              updateAvailable.value = false
              emit('update:open', false)
         } else {
-             showToast({ 
-               title: '获取更新失败', 
-               description: result?.error || '未知错误',
-               variant: 'error' 
-             })
+             const error = result?.error || '未知错误'
+             // 检查是否为分享失效的错误
+             if (error.includes('失效') || error.includes('取消')) {
+               showToast({
+                 title: '分享已失效',
+                 description: '该分享已被分享者删除或取消',
+                 variant: 'warning',
+                 actionLabel: '删除本地副本',
+                 onAction: () => {
+                   store.removeSubGroup(props.groupId, props.subGroupId)
+                   emit('update:open', false)
+                 }
+               })
+             } else {
+               showToast({
+                 title: '获取更新失败',
+                 description: error,
+                 variant: 'error'
+               })
+             }
         }
     } catch (e: unknown) {
-         showToast({ 
-            title: '更新失败', 
-            description: e instanceof Error ? e.message : '网络错误',
-            variant: 'error' 
-        })
+         const errorMessage = e instanceof Error ? e.message : '网络错误'
+         // 检查是否为分享失效的错误
+         if (errorMessage.includes('失效') || errorMessage.includes('取消')) {
+           showToast({
+             title: '分享已失效',
+             description: '该分享已被分享者删除或取消',
+             variant: 'warning',
+             actionLabel: '删除本地副本',
+             onAction: () => {
+               store.removeSubGroup(props.groupId, props.subGroupId)
+               emit('update:open', false)
+             }
+           })
+         } else {
+           showToast({
+             title: '更新失败',
+             description: errorMessage,
+             variant: 'error'
+           })
+         }
     } finally {
         isUpdating.value = false
     }

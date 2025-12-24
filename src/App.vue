@@ -3,6 +3,7 @@
 
 import SettingsPanel from '@/views/SettingsPanel.vue'
 import SubGroupSidebar from '@/components/bookmarks/SubGroupSidebar.vue'
+import NameConflictDialog from '@/components/NameConflictDialog.vue'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Loader2 } from 'lucide-vue-next'
@@ -134,6 +135,17 @@ const shareConflictInfo = ref<{
   shareId: string
   shareName: string
   existingGroupName: string
+  isSubGroupImport?: boolean
+  existingSubGroupId?: string
+} | null>(null)
+
+// 同名分组冲突对话框状态
+const showNameConflict = ref(false)
+const nameConflictInfo = ref<{
+  targetGroup: { id: string; name: string }
+  sourceGroup: { id: string; name: string }
+  shareId: string
+  data: any
 } | null>(null)
 
 // 打开分享管理面板
@@ -192,9 +204,72 @@ const handleShared = (_shareId: string) => {}
 // 处理分享冲突动作
 const handleShareConflictAction = async (action: 'update' | 'keep' | 'duplicate') => {
   if (!shareConflictInfo.value) return
-  
+
   await loadShareData(shareConflictInfo.value.shareId, action)
   shareConflictInfo.value = null
+  // 清理 URL
+  clearShareIdFromUrl()
+}
+
+// 处理同名分组冲突动作
+const handleNameConflictAction = async (action: 'merge' | 'new') => {
+  if (!nameConflictInfo.value) return
+
+  const { targetGroup, sourceGroup, shareId, data } = nameConflictInfo.value
+
+  if (action === 'merge') {
+    // 合并到现有分组
+    await store.importToExistingGroup(data, targetGroup.id, shareId)
+    showToast({
+      title: '合并成功',
+      variant: 'success'
+    })
+  } else {
+    // 创建新分组（添加后缀）
+    const existingGroup = store.findGroupByName(sourceGroup.name)
+    let suffix = 1
+    let finalName = sourceGroup.name
+    while (store.groups.some(g => g.name === finalName && g.id !== TRASH_GROUP_ID)) {
+      finalName = `${sourceGroup.name} (${suffix++})`
+    }
+
+    const newData = {
+      ...data,
+      groups: [{ ...data.groups[0], name: finalName }]
+    }
+    const result = store.importFromShare(newData, shareId, finalName)
+    if (result) {
+      showToast({
+        title: '导入成功',
+        variant: 'success'
+      })
+    }
+  }
+
+  nameConflictInfo.value = null
+  // 清理 URL
+  clearShareIdFromUrl()
+}
+
+// 清理 URL 中的分享 ID
+const clearShareIdFromUrl = () => {
+  const url = new URL(window.location.href)
+  const hasShareIdParam = url.searchParams.has('shareId')
+  const hasSharePath = /^\/s\/[a-zA-Z0-9_-]+$/.test(url.pathname)
+
+  if (hasShareIdParam || hasSharePath) {
+    try {
+      if (history.replaceState) {
+        // 清理查询参数
+        url.searchParams.delete('shareId')
+        // 清理路径
+        url.pathname = url.pathname.replace(/^\/s\/[a-zA-Z0-9_-]+$/, '/')
+        history.replaceState({}, '', url.pathname + url.search)
+      }
+    } catch (e) {
+      console.warn('[App] URL 清理失败', e)
+    }
+  }
 }
 
 // Shared State
@@ -334,14 +409,31 @@ onMounted(async () => {
       const result = await loadShareData(shareId)
       // 检查是否冲突
       if ('conflict' in result && result.conflict) {
-        shareConflictInfo.value = {
-          shareId: result.shareId,
-          shareName: result.shareName,
-          existingGroupName: result.existingGroupName
+        if (result.isNameConflict) {
+          // 同名分组但来源不同
+          nameConflictInfo.value = {
+            targetGroup: result.targetGroup!,
+            sourceGroup: result.sourceGroup!,
+            shareId: result.shareId,
+            data: result.data
+          }
+          showNameConflict.value = true
+        } else {
+          // 已导入的分享（首次访问）
+          shareConflictInfo.value = {
+            shareId: result.shareId,
+            shareName: result.shareName,
+            existingGroupName: result.existingGroupName,
+            isSubGroupImport: result.isSubGroupImport,
+            existingSubGroupId: result.existingSubGroupId
+          }
+          showShareConflict.value = true
         }
-        showShareConflict.value = true
       } else if ('error' in result) {
-        // 错误已通过 shareError 处理
+        // 错误已通过 shareError 处理，保留 URL 方便用户重试
+      } else if ('success' in result && result.success) {
+        // 导入成功或已存在，清理 URL
+        clearShareIdFromUrl()
       }
     } else {
       store.migrateFromLegacy()
@@ -947,7 +1039,17 @@ watch(() => store.bookmarks, () => {
       v-model:open="showShareConflict"
       :share-name="shareConflictInfo?.shareName || ''"
       :existing-group-name="shareConflictInfo?.existingGroupName || ''"
+      :is-sub-group-import="shareConflictInfo?.isSubGroupImport"
+      :existing-sub-group-id="shareConflictInfo?.existingSubGroupId"
       @action="handleShareConflictAction"
+    />
+
+    <!-- 同名分组冲突对话框 -->
+    <NameConflictDialog
+      v-model:open="showNameConflict"
+      :target-group-name="nameConflictInfo?.targetGroup.name || ''"
+      :source-group-name="nameConflictInfo?.sourceGroup.name || ''"
+      @action="handleNameConflictAction"
     />
   </div>
   
