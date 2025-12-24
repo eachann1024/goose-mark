@@ -16,7 +16,14 @@ export default defineConfig({
     vue(),
     UnoCSS(),
     AutoImport({
-      imports: ['vue', 'pinia', '@vueuse/core'],
+      imports: [
+        'vue',
+        'pinia',
+        '@vueuse/core',
+        {
+          '@/stores/bookmark': ['TRASH_GROUP_ID']
+        }
+      ],
       dirs: [
         'src/composables',
         'src/stores',
@@ -32,6 +39,15 @@ export default defineConfig({
       dts: 'src/components.d.ts'
     })
   ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        secure: false
+      }
+    }
+  },
   build: {
     // 禁用 modulePreload 避免 uTools 环境中的警告
     modulePreload: false,

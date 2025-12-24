@@ -1,11 +1,127 @@
 import { ref } from 'vue'
+import { useDebounceFn } from '@vueuse/core'
 
 import type { Group, SubGroup, Bookmark } from '@/types/bookmark'
 
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/share'
 
-// 模块级缓存：已验证失效的 shareId，避免重复请求
+// 模块级缓存
 const invalidatedShareIds = new Set<string>()
+const validationCache = new Map<string, { status: 'active' | 'canceled' | 'not_found' | 'error'; timestamp: number }>()
+const VALIDATION_CACHE_TTL = 30 * 60 * 1000 
+
+// 辅助：优化书签
+const optimizeBookmarkData = (bookmarks: Bookmark[]): Bookmark[] => {
+  return bookmarks.map(b => {
+    let isTooLarge = false
+    let size = 0
+    if (b.icon?.type === 'remote') {
+      size = b.icon.src.length
+      isTooLarge = size > 500 * 1024
+    } else if (b.icon?.type === 'file') {
+      size = b.icon.path.length
+      isTooLarge = size > 500 * 1024
+    } else if (b.icon?.type === 'text') {
+      size = b.icon.value.length
+      isTooLarge = size > 10 * 1024 
+    }
+
+    if (isTooLarge) {
+        console.warn(`[Share] 书签 "${b.title}" 图标过大 (${Math.round(size / 1024)}KB)，已自动移除以节省流量`)
+        return { ...b, icon: { type: 'text', value: (b.title || 'NONE').slice(0, 4).toUpperCase(), bgColor: '#random' } }
+    }
+    return b
+  })
+}
+
+// 辅助：收集数据 (提取为纯函数，传入 store)
+const collectSubGroupData = (store: any, groupId: string, subGroupId: string): ShareData | null => {
+  const group = store.groups.find((g: any) => g.id === groupId)
+  const subGroup = group?.children.find((c: any) => c.id === subGroupId)
+  if (!group || !subGroup) return null
+
+  const bookmarks = subGroup.bookmarkIds
+    .map((id: string) => store.bookmarks.find((b: any) => b.id === id))
+    .filter((b: any): b is Bookmark => !!b)
+
+  return {
+    group: { id: group.id, name: group.name },
+    subGroups: [subGroup],
+    bookmarks: optimizeBookmarkData(bookmarks) // 自动应用优化
+  }
+}
+
+const collectGroupData = (store: any, groupId: string): ShareData | null => {
+  const group = store.groups.find((g: any) => g.id === groupId)
+  if (!group) return null
+
+  const allBookmarkIds = new Set<string>()
+  group.children.forEach((sub: any) => {
+    sub.bookmarkIds.forEach((id: string) => allBookmarkIds.add(id))
+  })
+
+  const bookmarks = Array.from(allBookmarkIds)
+    .map((id) => store.bookmarks.find((b: any) => b.id === id))
+    .filter((b: any): b is Bookmark => !!b)
+
+  return {
+    group: { id: group.id, name: group.name },
+    subGroups: group.children,
+    bookmarks: optimizeBookmarkData(bookmarks) // 自动应用优化
+  }
+}
+
+// 独立的更新请求函数
+const performUpdateShare = async (shareId: string, data: ShareData) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/${shareId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data })
+      })
+      return res.ok
+    } catch (e) {
+      console.error(`[Share] 更新失败: ${shareId}`, e)
+      return false
+    }
+}
+
+// 调度更新逻辑 (全局去重 + 防抖)
+const pendingUpdates = new Set<string>()
+
+const flushUpdates = async () => {
+    if (pendingUpdates.size === 0) return
+    const store = useBookmarkStore()
+    const tasks = Array.from(pendingUpdates)
+    pendingUpdates.clear()
+
+    console.log(`[Share] 触发防抖更新，共 ${tasks.length} 个任务`)
+
+    for (const taskKey of tasks) {
+        const [type, groupId, subGroupId] = taskKey.split('|') as ['group' | 'subGroup', string, string]
+        
+        let shareId: string | undefined
+        if (type === 'group') {
+            shareId = store.groups.find(g => g.id === groupId)?.shareId
+        } else {
+            const group = store.groups.find(g => g.id === groupId)
+            shareId = group?.children.find(c => c.id === subGroupId)?.shareId
+        }
+
+        if (!shareId) continue
+
+        const data = type === 'subGroup'
+            ? collectSubGroupData(store, groupId, subGroupId)
+            : collectGroupData(store, groupId)
+
+        if (data) {
+            await performUpdateShare(shareId, data)
+        }
+    }
+}
+
+// 5秒防抖
+const debouncedFlush = useDebounceFn(flushUpdates, 5000)
 
 export interface ShareData {
   group?: Pick<Group, 'id' | 'name'>
@@ -36,42 +152,11 @@ export function useShare() {
     return `${baseUrl}/s/${shareId}`
   }
 
-  // 收集子分组数据
-  const collectSubGroupData = (groupId: string, subGroupId: string): ShareData | null => {
-    const group = store.groups.find(g => g.id === groupId)
-    const subGroup = group?.children.find(c => c.id === subGroupId)
-    if (!group || !subGroup) return null
-
-    const bookmarks = subGroup.bookmarkIds
-      .map(id => store.bookmarks.find(b => b.id === id))
-      .filter((b): b is Bookmark => !!b)
-
-    return {
-      group: { id: group.id, name: group.name },
-      subGroups: [subGroup],
-      bookmarks
-    }
-  }
-
-  // 收集主分组数据（包含所有子分组）
-  const collectGroupData = (groupId: string): ShareData | null => {
-    const group = store.groups.find(g => g.id === groupId)
-    if (!group) return null
-
-    const allBookmarkIds = new Set<string>()
-    group.children.forEach(sub => {
-      sub.bookmarkIds.forEach(id => allBookmarkIds.add(id))
-    })
-
-    const bookmarks = Array.from(allBookmarkIds)
-      .map(id => store.bookmarks.find(b => b.id === id))
-      .filter((b): b is Bookmark => !!b)
-
-    return {
-      group: { id: group.id, name: group.name },
-      subGroups: group.children,
-      bookmarks
-    }
+  // 调度更新（对外暴露的优化接口）
+  const scheduleShareUpdate = (type: 'group' | 'subGroup', groupId: string, subGroupId?: string) => {
+      const key = `${type}|${groupId}|${subGroupId || ''}`
+      pendingUpdates.add(key)
+      debouncedFlush()
   }
 
   // 创建分享
@@ -81,8 +166,8 @@ export function useShare() {
     try {
       const sourceId = type === 'subGroup' ? subGroupId! : groupId
       const data = type === 'subGroup' 
-        ? collectSubGroupData(groupId, subGroupId!)
-        : collectGroupData(groupId)
+        ? collectSubGroupData(store, groupId, subGroupId!)
+        : collectGroupData(store, groupId)
       
       if (!data) {
         shareError.value = '找不到要分享的内容'
@@ -122,26 +207,16 @@ export function useShare() {
   // 更新分享数据（内容变更时调用）
   const updateShare = async (shareId: string, type: 'subGroup' | 'group', groupId: string, subGroupId?: string): Promise<boolean> => {
     try {
-      // 根据调用时传入的类型收集数据，确保数据范围正确
-      // 注意：这里使用传入的 type 而不是服务器返回的 type，因为：
-      // 1. 如果服务器上的 type 是 'subGroup' 但我们调用时传的是 'group'，说明要更新整个主分组
-      // 2. 如果服务器上的 type 是 'group' 但我们调用时传的是 'subGroup'，说明只需更新单个子分组
       const data = type === 'subGroup'
-        ? collectSubGroupData(groupId, subGroupId!)
-        : collectGroupData(groupId)
+        ? collectSubGroupData(store, groupId, subGroupId!)
+        : collectGroupData(store, groupId)
       
       if (!data) {
         console.warn(`[updateShare] 无法收集数据: shareId=${shareId}, type=${type}, groupId=${groupId}, subGroupId=${subGroupId}`)
         return false
       }
 
-      const res = await fetch(`${API_BASE_URL}/${shareId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data })
-      })
-      
-      return res.ok
+      return await performUpdateShare(shareId, data)
     } catch (e) {
       console.error(`[updateShare] 更新失败: ${shareId}`, e)
       return false
@@ -176,31 +251,76 @@ export function useShare() {
     }
   }
   
+  // 验证分享状态缓存：shareId -> { status, timestamp }
+  const validationCache = new Map<string, { status: 'active' | 'canceled' | 'not_found' | 'error'; timestamp: number }>()
+  const VALIDATION_CACHE_TTL = 30 * 60 * 1000 // 30 分钟缓存
+
+  // 辅助函数：优化书签数据（压缩图标等）
+  const optimizeBookmarkData = (bookmarks: Bookmark[]): Bookmark[] => {
+    return bookmarks.map(b => {
+      // 检查图标是否过大
+      let isTooLarge = false
+      let size = 0
+      
+      if (b.icon?.type === 'remote') {
+        size = b.icon.src.length
+        isTooLarge = size > 500 * 1024
+      } else if (b.icon?.type === 'file') {
+        size = b.icon.path.length
+        isTooLarge = size > 500 * 1024
+      } else if (b.icon?.type === 'text') {
+        size = b.icon.value.length
+        isTooLarge = size > 10 * 1024 // 文字图标不应这么大
+      }
+
+      if (isTooLarge) {
+         console.warn(`[Share] 书签 "${b.title}" 图标过大 (${Math.round(size / 1024)}KB)，已自动移除以节省流量`)
+         return { ...b, icon: { type: 'text', value: (b.title || 'NONE').slice(0, 4).toUpperCase(), bgColor: '#random' } }
+      }
+      return b
+    })
+  }
+
   // 验证分享状态（用于切换分组时检查）
   const validateShareStatus = async (shareId: string): Promise<'active' | 'canceled' | 'not_found' | 'error'> => {
-    // 如果已在失效缓存中，直接返回
+    // 1. 检查永久失效缓存
     if (invalidatedShareIds.has(shareId)) {
       return 'not_found'
     }
+
+    // 2. 检查 TTL 缓存
+    const cached = validationCache.get(shareId)
+    if (cached && Date.now() - cached.timestamp < VALIDATION_CACHE_TTL) {
+      if (import.meta.env.DEV) console.log(`[Share] 使用缓存状态: ${shareId} -> ${cached.status}`)
+      return cached.status
+    }
     
     try {
-      const res = await fetch(`${API_BASE_URL}/${shareId}`)
+      const res = await fetch(`${API_BASE_URL}/${shareId}/check`) // 优先用 lightweight check
       
+      let status: 'active' | 'canceled' | 'not_found' | 'error' = 'error'
+
       if (res.ok) {
         const data = await res.json()
-        return data.active ? 'active' : 'canceled'
+        status = data.active ? 'active' : 'canceled'
+      } else if (res.status === 404) {
+        status = 'not_found'
+      } else if (res.status === 410) {
+        status = 'canceled'
+      } else {
+        if (res.status !== 429) { 
+           status = 'error'
+        }
       }
       
-      if (res.status === 404) {
-        invalidatedShareIds.add(shareId)
-        return 'not_found'
-      }
-      if (res.status === 410) {
-        invalidatedShareIds.add(shareId)
-        return 'canceled'
+      if (status !== 'error') {
+          validationCache.set(shareId, { status, timestamp: Date.now() })
+          if (status === 'not_found' || status === 'canceled') {
+             invalidatedShareIds.add(shareId)
+          }
       }
       
-      return 'error'
+      return status
     } catch {
       return 'error'
     }
@@ -581,6 +701,7 @@ export function useShare() {
     checkForUpdate,
     getShareData,
     validateShareStatus,
-    validateAndCleanGroupShares
+    validateAndCleanGroupShares,
+    scheduleShareUpdate
   }
 }
