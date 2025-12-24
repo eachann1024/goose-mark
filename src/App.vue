@@ -46,12 +46,6 @@ const {
 } = useBookmarkForm()
 
 const {
-  contextMenu,
-  handleContextMenu: onContextMenu,
-  closeContextMenu: closeContext
-} = useContextMenu()
-
-const {
   syncFeatures,
   getEnterText,
   isDetachedWindowNow,
@@ -295,17 +289,14 @@ watch([() => store.activeGroupId, () => store.activeSubGroupId], ([groupId, subI
   }
 })
 
-// Context Menu Action Handler
-const onContextMenuAction = (action: string) => {
-  const b = contextMenu.target
-  if (!b) return
-  if (action === 'open') openBookmarkLink(b)
-  if (action === 'copy') copyBookmarkUrl(b)
-  if (action === 'restore') store.restoreBookmark(b.id)
-  if (action === 'remove') {
-    confirmDeleteId.value = b.id
-    showDeleteConfirm.value = true
-  }
+// 书签点击逻辑：左键打开，右键复制
+const handleBookmarkClick = (bookmark: Bookmark) => {
+  openBookmarkLink(bookmark)
+}
+
+const handleBookmarkRightClick = (e: MouseEvent, bookmark: Bookmark) => {
+  e.preventDefault()
+  copyBookmarkUrl(bookmark)
 }
 
 // 书签拖拽到子分组的处理
@@ -324,7 +315,7 @@ const handleBookmarkDrop = (bookmarkId: string, toSubId: string) => {
 
 const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
   e.preventDefault()
-  onContextMenu(e, bookmark)
+  copyBookmarkUrl(bookmark)
 }
 
 // Share Handlers
@@ -606,7 +597,7 @@ watch(() => store.bookmarks, () => {
     :bookmark="activeTemplateBookmark" 
     :query="templateQuery" 
   />
-  <div v-else class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="closeContext" @contextmenu.prevent>
+  <div v-else class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @contextmenu.prevent>
     <!-- Top Navigation for Groups -->
     <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
        <GroupTabs
@@ -642,10 +633,9 @@ watch(() => store.bookmarks, () => {
       @update:search-value="searchValue = $event"
       @close="closeSearchView"
       @keydown="handleLocalSearchKey"
-      @remove="handleRemove"
       @edit="(b, el) => openEdit(b, el)"
       @open="openBookmarkLink"
-      @contextmenu="handleContextMenuWrapper"
+      @contextmenu="handleBookmarkRightClick"
       @reorder="handleReorder"
     />
 
@@ -673,7 +663,7 @@ watch(() => store.bookmarks, () => {
         @remove="(b) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && handleRemove(b)"
         @edit="(b, el) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && openEdit(b, el)"
         @open="openBookmarkLink"
-        @contextmenu="handleContextMenuWrapper"
+        @contextmenu="handleBookmarkRightClick"
         @reorder="handleReorder"
         @add="(el) => openAdd(el)"
         @emptyTrash="emptyTrash"
@@ -694,17 +684,6 @@ watch(() => store.bookmarks, () => {
       @manage-share="showSharePanel = true"
       @delete-sub-group="store.deleteSubGroup(store.activeGroupId, store.activeSubGroupId)"
     />
-
-    <ContextMenu 
-      v-if="contextMenu.show" 
-      :x="contextMenu.x" 
-      :y="contextMenu.y" 
-      :isTrash="isTrashActive"
-      :readonly="store.isReadOnly || !!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
-      @close="closeContext"
-      @action="onContextMenuAction"
-    />
-
 
     <!-- Bookmark Form Dialog -->
     <BookmarkFormDialog

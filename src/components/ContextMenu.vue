@@ -42,7 +42,7 @@ onUnmounted(() => {
 <template>
   <div
     ref="menu"
-    class="fixed z-[9999] min-w-[160px] bg-white/90 dark:bg-[#1a1c20]/90 backdrop-blur-md rounded-xl shadow-xl border border-white/10 p-1.5 flex flex-col gap-1 text-sm animate-fade-in"
+    class="fixed z-[10000] min-w-[160px] bg-white/90 dark:bg-[#1a1c20]/90 backdrop-blur-md rounded-xl shadow-xl border border-white/10 p-1.5 flex flex-col gap-1 text-sm animate-fade-in"
     :style="{ top: `${y}px`, left: `${x}px` }"
     @click.stop
     @contextmenu.prevent

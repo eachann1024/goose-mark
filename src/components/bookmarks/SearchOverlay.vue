@@ -19,7 +19,6 @@ const emit = defineEmits<{
   'update:searchValue': [value: string]
   close: []
   keydown: [e: KeyboardEvent]
-  remove: [bookmark: Bookmark]
   edit: [bookmark: Bookmark, el?: HTMLElement]
   open: [bookmark: Bookmark]
   contextmenu: [e: MouseEvent, bookmark: Bookmark]
@@ -113,7 +112,7 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
           :hide-add-card="true"
           :show-command-hints="showCmdHints"
           :hint-key-by-id="hintKeyById"
-          @remove="emit('remove', $event)"
+          :readonly="true"
           @edit="(b, el) => emit('edit', b, el)"
           @open="emit('open', $event)"
           @contextmenu="(e, b) => emit('contextmenu', e, b)"
