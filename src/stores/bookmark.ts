@@ -784,28 +784,43 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
     // 智能导入分享：检测同名父分组并合并子分组
     // 返回 { group, subGroupId, merged } 用于跳转和提示
+    // 或者返回冲突信息 { conflict, targetGroup, sourceGroup }
     importFromShareSmart(
       data: { groups: Group[]; bookmarks: Bookmark[] },
       shareId: string,
       shareName?: string
-    ): { group: Group; subGroupId: string; merged: boolean } | null {
+    ): { group: Group; subGroupId: string; merged: boolean }
+      | { conflict: true; targetGroup: Group; sourceGroup: { id: string; name: string; children: Group['children'] } }
+      | null {
       if (!data.groups.length) return null
-      
+
       const sourceGroup = data.groups[0]
       const targetGroupName = shareName || sourceGroup.name || '来自分享'
-      
-      // 检查是否存在同名父分组
-      const existingGroup = this.findGroupByName(targetGroupName)
-      
+
       const checkData = {
         targetGroupName,
-        existingGroup: existingGroup ? { id: existingGroup.id, name: existingGroup.name, children: existingGroup.children.map(c => c.name) } : null,
         allGroups: this.groups.map(g => ({ id: g.id, name: g.name, children: g.children.map(c => c.name) }))
       }
       console.log('[importFromShareSmart]', JSON.stringify(checkData, null, 2))
-      
+
+      // 检查是否存在同名父分组
+      const existingGroup = this.findGroupByName(targetGroupName)
+
       if (existingGroup) {
-        // 存在同名分组，将子分组合并到该分组下
+        if (existingGroup.sourceShareId !== shareId) {
+          // 同名但来源不同，返回冲突信息
+          return {
+            conflict: true,
+            targetGroup: existingGroup,
+            sourceGroup: {
+              id: sourceGroup.id,
+              name: sourceGroup.name,
+              children: sourceGroup.children
+            }
+          }
+        }
+
+        // 同名且来源相同，执行合并逻辑
         const now = Date.now()
         const idMap = new Map<string, string>()
         

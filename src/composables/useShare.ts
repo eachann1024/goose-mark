@@ -286,10 +286,10 @@ export function useShare() {
   }
 
   // 加载结果类型
-  type LoadShareResult = 
+  type LoadShareResult =
     | { success: true; existing?: true }
     | { success: false; error: string }
-    | { conflict: true; shareId: string; shareName: string; existingGroupId: string; existingGroupName: string; data: ShareData }
+    | { conflict: true; shareId: string; shareName: string; existingGroupId: string; existingGroupName: string; isSubGroupImport?: boolean; existingSubGroupId?: string; data?: ShareData; isNameConflict?: boolean; targetGroup?: { id: string; name: string }; sourceGroup?: { id: string; name: string } }
 
   // 加载分享数据并应用到 store（用于访问分享链接）
   const loadShareData = async (shareId: string, conflictAction?: 'update' | 'keep' | 'duplicate'): Promise<LoadShareResult> => {
@@ -333,11 +333,36 @@ export function useShare() {
     }
 
     if (existingGroup && !conflictAction) {
-      // 直接跳转到已存在的分组，不再创建新分组或合并
-      store.activeGroupId = existingGroup.id
-      // 如果找到了匹配的子分组，跳转到该子分组；否则跳转到第一个子分组
-      store.activeSubGroupId = existingSubGroup?.subGroupId || existingGroup.children[0]?.id || ''
-      return { success: true, existing: true } as const
+      // 检查是否为首次访问该分享链接
+      const visitKey = `share_visited_${shareId}`
+      const isFirstVisit = !sessionStorage.getItem(visitKey)
+
+      if (isFirstVisit) {
+        // 首次访问，记录并弹窗
+        sessionStorage.setItem(visitKey, 'true')
+
+        // 构建冲突信息（包括是主分组还是子分组）
+        const isSubGroupImport = !!existingSubGroup
+        const existingName = isSubGroupImport
+          ? existingGroup.children.find(c => c.id === existingSubGroup!.subGroupId)?.name
+          : existingGroup.name
+
+        return {
+          conflict: true,
+          shareId,
+          shareName: result.data.group?.name || '分享内容',
+          existingGroupId: existingGroup.id,
+          existingGroupName: existingName || '未命名分组',
+          isSubGroupImport,
+          existingSubGroupId: existingSubGroup?.subGroupId,
+          data: result.data
+        }
+      } else {
+        // 后续访问（刷新页面），静默跳转
+        store.activeGroupId = existingGroup.id
+        store.activeSubGroupId = existingSubGroup?.subGroupId || existingGroup.children[0]?.id || ''
+        return { success: true, existing: true } as const
+      }
     }
     
     // 构建 groups 结构
@@ -380,18 +405,34 @@ export function useShare() {
       }
       console.log('[loadShareData] 使用智能合并模式', JSON.stringify(mergeData, null, 2))
       const result = store.importFromShareSmart(dataToApply, shareId, shareName)
+
       if (result) {
+        if ('conflict' in result && result.conflict) {
+          // 同名分组但来源不同，返回冲突信息
+          return {
+            conflict: true,
+            shareId,
+            shareName: result.sourceGroup.name,
+            existingGroupId: result.targetGroup.id,
+            existingGroupName: result.targetGroup.name,
+            isNameConflict: true,
+            targetGroup: { id: result.targetGroup.id, name: result.targetGroup.name },
+            sourceGroup: { id: result.sourceGroup.id, name: result.sourceGroup.name }
+          }
+        }
+
+        const mergedResult = result as { group: Group; subGroupId: string; merged: boolean }
         const resultData = {
-          groupId: result.group.id,
-          groupName: result.group.name,
-          subGroupId: result.subGroupId,
-          merged: result.merged,
-          allSubGroups: result.group.children.map(c => c.name)
+          groupId: mergedResult.group.id,
+          groupName: mergedResult.group.name,
+          subGroupId: mergedResult.subGroupId,
+          merged: mergedResult.merged,
+          allSubGroups: mergedResult.group.children.map((c: any) => c.name)
         }
         console.log('[loadShareData] 智能合并结果', JSON.stringify(resultData, null, 2))
-        store.activeGroupId = result.group.id
-        store.activeSubGroupId = result.subGroupId
-        
+        store.activeGroupId = mergedResult.group.id
+        store.activeSubGroupId = mergedResult.subGroupId
+
         // 立即刷新 localStorage，确保数据被保存（避免防抖延迟导致数据丢失）
         // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
         await new Promise(resolve => setTimeout(resolve, 0))
@@ -401,7 +442,7 @@ export function useShare() {
       } else {
         // 如果智能导入失败（理论上不应该），回退到快照模式
         console.warn('[loadShareData] 智能合并失败，回退到快照模式')
-        store.loadFromSnapshot(dataToApply)
+        store.loadFromSnapshot(dataToApply, true)
       }
     } else {
       // 只读模式，使用快照模式
@@ -456,21 +497,29 @@ export function useShare() {
     try {
       // 优先使用轻量级检查接口
       const checkRes = await fetch(`${API_BASE_URL}/${shareId}/check`)
-      
+
       if (checkRes.ok) {
         const checkData = await checkRes.json()
-        if (!checkData.active) return false
+        if (!checkData.active) {
+          if (throwOnError) throw new Error('分享已被分享者取消')
+          return false
+        }
         return checkData.updatedAt > lastSyncedAt
       }
-      
-      // 如果轻量级接口失败（404/410 等），回退到完整接口
-      if (checkRes.status === 404 || checkRes.status === 410) {
+
+      // 如果轻量级接口失败（404/410 等），抛出错误
+      if (checkRes.status === 404) {
+        if (throwOnError) throw new Error('分享已失效（分享者已删除）')
         return false
       }
-      
+      if (checkRes.status === 410) {
+        if (throwOnError) throw new Error('分享已被分享者取消')
+        return false
+      }
+
       // 其他错误，回退到完整接口
       const res = await fetch(`${API_BASE_URL}/${shareId}`)
-      
+
       if (!res.ok) {
         if (throwOnError) {
             if (res.status === 429) throw new Error('请求过于频繁，请稍后再试')
@@ -478,10 +527,13 @@ export function useShare() {
         }
         return false
       }
-      
+
       const shareData: ShareResponse = await res.json()
-      if (!shareData.active) return false
-      
+      if (!shareData.active) {
+        if (throwOnError) throw new Error('分享已被分享者取消')
+        return false
+      }
+
       // 注意：server 端的 updatedAt 是分享记录的更新时间
       return shareData.updatedAt > lastSyncedAt
     } catch (e) {

@@ -6,12 +6,25 @@ const props = defineProps<{
   open: boolean
   shareName: string
   existingGroupName: string
+  isSubGroupImport?: boolean
+  existingSubGroupId?: string
 }>()
 
 const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'action', action: 'update' | 'keep' | 'duplicate'): void
 }>()
+
+const title = computed(() => {
+  return props.isSubGroupImport ? '检测到已导入的子分组' : '检测到已导入的分享'
+})
+
+const description = computed(() => {
+  if (props.isSubGroupImport) {
+    return `您已导入过「${props.shareName}」分享中的子分组`
+  }
+  return `您已导入过「${props.shareName}」分享内容`
+})
 
 const handleAction = (action: 'update' | 'keep' | 'duplicate') => {
   emit('action', action)
@@ -25,10 +38,10 @@ const handleAction = (action: 'update' | 'keep' | 'duplicate') => {
       <DialogHeader class="px-6 py-4 border-b border-border bg-muted/20">
         <DialogTitle class="text-lg font-medium flex items-center gap-2">
           <span class="i-mdi-sync-alert text-amber-500 text-xl" />
-          检测到已导入的分享
+          {{ title }}
         </DialogTitle>
         <DialogDescription>
-          您已导入过「{{ shareName }}」分享内容
+          {{ description }}
         </DialogDescription>
       </DialogHeader>
 
@@ -44,8 +57,8 @@ const handleAction = (action: 'update' | 'keep' | 'duplicate') => {
         </div>
 
         <div class="space-y-2">
-          <Button 
-            variant="default" 
+          <Button
+            variant="default"
             class="w-full justify-start gap-3 h-auto py-3"
             @click="handleAction('update')"
           >
@@ -56,8 +69,8 @@ const handleAction = (action: 'update' | 'keep' | 'duplicate') => {
             </div>
           </Button>
 
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             class="w-full justify-start gap-3 h-auto py-3"
             @click="handleAction('keep')"
           >
@@ -68,8 +81,8 @@ const handleAction = (action: 'update' | 'keep' | 'duplicate') => {
             </div>
           </Button>
 
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             class="w-full justify-start gap-3 h-auto py-3"
             @click="handleAction('duplicate')"
           >
