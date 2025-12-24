@@ -1,9 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Loader2 } from 'lucide-vue-next'
 import { useBookmarkStore, parseShareIdFromUrl, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useShare, type ShareData } from '@/composables/useShare'

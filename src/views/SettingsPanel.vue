@@ -13,7 +13,6 @@ import type { Group } from '@/types/bookmark'
 import { notify } from '@/lib/notify'
 import { getDebugSnapshot } from '@/lib/debugReport'
 import { useAppState } from '@/composables/useAppState'
-import { Loader2 } from 'lucide-vue-next'
 import ShareImportDialog from '@/components/ShareImportDialog.vue'
 
 
@@ -103,7 +102,7 @@ const isMac = computed(() => {
 
 // 可拖拽的分组列表 (排除回收站)
 const draggableGroups = computed({
-  get: () => store.groups.filter(g => g.id !== TRASH_GROUP_ID),
+  get: () => (Array.isArray(store.groups) ? store.groups : []).filter(g => g.id !== TRASH_GROUP_ID),
   set: (val: Group[]) => store.reorderGroups(val)
 })
 
@@ -157,7 +156,7 @@ const handleGridColumnsChange = (val: string | number) => {
 }
 
 const missingCount = computed(() =>
-  store.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
+  (Array.isArray(store.bookmarks) ? store.bookmarks : []).filter(b => !b.icon || b.icon.type === 'text').length
 )
 
 const toIsoWeekKey = (ts: string) => {
@@ -176,7 +175,8 @@ const aggregateUsage = (mode: 'day' | 'week' | 'month') => {
     if (mode === 'month') return ts.slice(0, 7)
     return ts.slice(0, 10)
   }
-  statsStore.usageEvents.forEach(ev => {
+  const events = Array.isArray(statsStore.usageEvents) ? statsStore.usageEvents : []
+  events.forEach(ev => {
     const key = formatKey(ev.timestamp)
     const row = map.get(key) ?? { total: 0, open: 0, add: 0 }
     row.total += 1
@@ -218,7 +218,8 @@ const usageAverage = computed(() => {
 const usageTotals = computed(() => {
   let open = 0
   let add = 0
-  statsStore.usageEvents.forEach(ev => {
+  const events = Array.isArray(statsStore.usageEvents) ? statsStore.usageEvents : []
+  events.forEach(ev => {
     if (ev.type === 'open') open += 1
     if (ev.type === 'add') add += 1
   })
@@ -575,15 +576,16 @@ const probeReasonText = (reason?: ProbeResult['reason']) => {
 
 const checkInvalid = async () => {
   if (probing.value) return
-  if (store.bookmarks.length === 0) {
+  const bookmarks = Array.isArray(store.bookmarks) ? store.bookmarks : []
+  if (bookmarks.length === 0) {
     showResultToast({ variant: 'info', title: '暂无可检测的书签', description: '先添加书签再进行无效地址分析' }, 4500)
     return
   }
   probing.value = true
   probeResult.value = []
-  probeTotal.value = store.bookmarks.length
+  probeTotal.value = bookmarks.length
   probeDone.value = 0
-  const all = store.bookmarks
+  const all = bookmarks
   const started = performance.now()
   try {
     const results = await mapWithConcurrency(all, 6, async (bookmark) => {

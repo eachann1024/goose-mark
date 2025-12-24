@@ -1,11 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useEventListener } from '@vueuse/core'
-import { Button } from '@/components/ui/button'
-import { Image } from '@/components/ui/image'
-import { Input } from '@/components/ui/input'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import VuePictureCropper, { cropper } from 'vue-picture-cropper'
 import type { IconSource } from '@/types/bookmark'
 

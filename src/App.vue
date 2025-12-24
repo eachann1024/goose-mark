@@ -27,20 +27,17 @@ const {
 
 const openBookmarkLink = (bookmark: Bookmark) => {
   const hasTemplate = /{[^}]+}/.test(bookmark.url)
-  // Check if we already have a search query (from UI search)
-  // If user searched for "douban" and clicked the card, maybe they want to open "douban" search?
-  // But usually clicking a card means "open this tool".
   
   if (hasTemplate) {
-    // Check if store.search is effectively a query for this template?
-    // If I search "douban", finding the "douban" bookmark.
-    // If I click it, I expect to enter the template mode.
     enterTemplateMode(bookmark)
     return
   }
   
   originalOpenBookmarkLink(bookmark)
 }
+
+// 暂停/恢复 watcher 的标记
+const isSyncPaused = ref(false)
 
 
 const {
@@ -77,6 +74,26 @@ const {
 const selectedIndex = ref(-1)
 const showSharePanel = ref(false)
 const showNameConflict = ref(false)
+const showShareCanceledDialog = ref(false)
+const shareCanceledInfo = ref<{ groupId: string; groupName: string } | null>(null)
+
+const handleSelectGroup = async (groupId: string) => {
+  store.selectGroup(groupId)
+  tab.value = "bookmarks"
+  
+  const group = store.groups.find(g => g.id === groupId)
+  if (group?.sourceShareId) {
+    const status = await validateShareStatus(group.sourceShareId)
+    if (status === "canceled" || status === "not_found") {
+      shareCanceledInfo.value = {
+        groupId: group.id,
+        groupName: group.name
+      }
+      showShareCanceledDialog.value = true
+    }
+  }
+}
+
 const nameConflictInfo = ref<{
   targetGroup: { id: string; name: string }
   sourceGroup: { id: string; name: string }
@@ -280,10 +297,42 @@ const clearShareIdFromUrl = () => {
 const activeTemplateBookmark = ref<Bookmark | null>(null)
 const templateQuery = ref('')
 
+// Template Mode - Execute Search
+const executeTemplateSearch = () => {
+  const bookmark = activeTemplateBookmark.value
+  if (!bookmark) return
+  
+  const query = templateQuery.value.trim()
+  if (!query) return
+  
+  // 替换模板变量
+  let url = bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query))
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+  
+  showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
+  openUrl(url)
+  
+  if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
+    window.utools?.outPlugin()
+  } else {
+    window.utools?.hideMainWindow?.()
+    exitTemplateMode()
+  }
+}
+
+// Template Mode - Keydown Handler
+const handleTemplateKeydown = (e: KeyboardEvent) => {
+  if (e.key === 'Enter' && activeTemplateBookmark.value) {
+    e.preventDefault()
+    executeTemplateSearch()
+  }
+}
+
 // Template Mode Actions
 const enterTemplateMode = (bookmark: Bookmark) => {
   activeTemplateBookmark.value = bookmark
   templateQuery.value = ''
+  isSyncPaused.value = true // 进入模式时暂停同步
   
   // Clean UI
   searchViewOpen.value = false
@@ -296,11 +345,18 @@ const enterTemplateMode = (bookmark: Bookmark) => {
   window.utools?.setSubInput?.(({ text }) => {
     templateQuery.value = text
   }, `搜索 ${bookmark.title}${label ? ` (${label})` : ''}，回车打开`)
+  
+  // 添加键盘事件监听
+  window.addEventListener('keydown', handleTemplateKeydown)
 }
 
 const exitTemplateMode = () => {
+  // 移除键盘事件监听
+  window.removeEventListener('keydown', handleTemplateKeydown)
+  
   activeTemplateBookmark.value = null
   templateQuery.value = ''
+  isSyncPaused.value = false // 退出模式时恢复同步
   
   // Restore default sub input
   const shouldUse = !isDetachedWindowNow()
@@ -373,63 +429,75 @@ onMounted(async () => {
     syncSubInput()
     
     window.utools?.onPluginEnter?.((params) => {
-      onMainViewSwitch() // 清理所有 UI 状态（tooltip、toast）
-      activeTemplateBookmark.value = null // 清理模板模式状态
-      syncTheme()
-      syncFeatures(store.bookmarks)
-      syncSubInput()
-
       const code = params?.code
-      if (typeof code === 'string' && code.startsWith(FEATURE_PREFIX)) {
-        const id = code.slice(FEATURE_PREFIX.length)
-        const bookmark = store.bookmarks.find(b => b.id === id)
-        const query = getEnterText(params?.payload).trim()
-        if (!bookmark) {
-          window.utools?.outPlugin()
-          return
-        }
-        
-        const hasTemplate = /{[^}]+}/.test(bookmark.url)
-        
-        // 如果是模板书签
-        if (hasTemplate) {
-          // 1. 如果开启了全局/正则匹配 (allowUniversal)，说明 payload 是用户明确选中的文本或正则匹配内容，直接搜索
-          if (bookmark.allowUniversal) {
-             if (!query) {
-               // 极其罕见的情况：正则匹配但无文本？回退到模板模式
-               enterTemplateMode(bookmark)
-               return
-             }
-             // 继续向下执行直接搜索逻辑
-          } else {
-             // 2. 如果是普通关键词匹配 (e.g. 输入"豆瓣")，
-             // uTools 传递的 payload 通常就是关键词本身，
-             // 用户意图是唤起搜索框，而不是搜索关键词本身。
-             // 因此强制进入模板模式。
-             enterTemplateMode(bookmark)
-             return
-          }
-        }
-        
-        // 执行搜索/打开逻辑
-        let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
-        if (!/^https?:\/\//i.test(url)) url = 'https://' + url
-        openUrl(url)
-        if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
-          window.utools?.outPlugin()
-        }
+      const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
+      
+      // 1. 如果不是模板特性，执行常规清理和同步
+      if (!isTemplateFeature) {
+        onMainViewSwitch()
+        activeTemplateBookmark.value = null
+        syncTheme()
+        // 仅在非交互敏感时刻同步 features
+        syncFeatures(store.bookmarks)
+        syncSubInput()
+        store.setSearch('')
         return
       }
-
-      store.setSearch('')
-      closeSearchView() 
-      setExpendHeight(settingsStore.windowHeight)
-      if (settingsStore.enableSubInput) focusUToolsInput()
+      
+      // 2. 如果是模板特性，处理模板逻辑
+      syncTheme()
+      // 注意：此时已在 onPluginEnter 内部，绝对不能调用 syncFeatures
+      // 且由于进入了模板模式，我们应该已经通过 enterTemplateMode 设置了 isSyncPaused = true
+      
+      const id = (code as string).slice(FEATURE_PREFIX.length)
+      const bookmark = store.bookmarks.find(b => b.id === id)
+      
+      if (!bookmark) {
+        window.utools?.outPlugin()
+        return
+      }
+      
+      const hasTemplate = /{[^}]+}/.test(bookmark.url)
+      
+      // 判断是否已经在模板模式中
+      const isInTemplateMode = activeTemplateBookmark.value?.id === id
+      // 在模板模式中使用 templateQuery，否则使用 payload
+      const payloadQuery = getEnterText(params?.payload).trim()
+      const query = isInTemplateMode ? templateQuery.value.trim() : payloadQuery
+      
+      if (hasTemplate) {
+        // 通过关键词进入（无查询词或查询词等于书签标题）且不在模板模式时，进入模板模式
+        const isKeywordLaunch = (!payloadQuery || payloadQuery === bookmark.title) && !isInTemplateMode
+        
+        if (isKeywordLaunch) {
+           enterTemplateMode(bookmark)
+           return
+        }
+      }
+      
+      // 执行搜索
+      let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+      
+      // 添加反馈提示
+      showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
+      
+      openUrl(url)
+      
+      if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
+        window.utools?.outPlugin()
+      } else {
+        if (activeTemplateBookmark.value) {
+          window.utools?.hideMainWindow()
+          exitTemplateMode()
+        }
+      }
     })
   }
 })
 
 watch(() => store.bookmarks, () => {
+  if (isSyncPaused.value) return // 暂停时跳过同步
   syncFeatures(store.bookmarks)
 }, { deep: true })
 </script>
@@ -453,7 +521,7 @@ watch(() => store.bookmarks, () => {
          :group-layout="settingsStore.groupTabsLayout"
          :searching="searchViewOpen"
          @update:tab="tab = $event"
-         @select-group="(id) => { store.selectGroup(id); tab = 'bookmarks' }"
+         @select-group="handleSelectGroup"
          @select-trash="store.selectGroup(TRASH_GROUP_ID); tab = 'bookmarks'"
          @toggle-dark="toggleDark()"
          @open-search="openSearchView"
@@ -582,6 +650,38 @@ watch(() => store.bookmarks, () => {
     <p class="text-muted-foreground font-medium">正在加载分享数据...</p>
   </div>
   
+    <!-- Share Canceled Dialog -->
+    <Dialog v-model:open="showShareCanceledDialog">
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>分享已失效</DialogTitle>
+          <DialogDescription>
+            该分享分组已被发起者取消或删除。您可以选择移除该分组，或将其转换为本地分组继续使用。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="destructive" @click="() => {
+            if (shareCanceledInfo) {
+              store.removeGroup(shareCanceledInfo.groupId)
+              showShareCanceledDialog = false
+              shareCanceledInfo = null
+            }
+          }">
+            移除分组
+          </Button>
+          <Button variant="outline" @click="() => {
+            if (shareCanceledInfo) {
+              store.detachGroupFromShare(shareCanceledInfo.groupId)
+              showShareCanceledDialog = false
+              shareCanceledInfo = null
+            }
+          }">
+            转为本地分组
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <ResultToast
       :open="toastState.visible"
       :title="toastState.title"

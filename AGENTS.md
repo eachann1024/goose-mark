@@ -105,3 +105,6 @@
 - `.github/workflows/deploy.yml`：自动化部署配置
 - `scripts/deploy.sh`：服务器端部署脚本
 - `server/index.js`：后端入口（Fastify + 静态文件）
+
+## 自动化流程
+- 每次修改代码后，必须自动执行 `pnpm build` 以确保构建通过且产物最新。

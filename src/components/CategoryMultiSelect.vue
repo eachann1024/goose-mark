@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { Button } from '@/components/ui/button'
 
 const props = defineProps<{
   modelValue: BookmarkLocation[]

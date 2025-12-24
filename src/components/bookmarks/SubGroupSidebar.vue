@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, nextTick } from 'vue'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useTextOverflow } from '@/composables/useTextOverflow'
 import { useShare } from '@/composables/useShare'
 import { useBookmarkStore } from '@/stores/bookmark'
