@@ -28,7 +28,9 @@ const {
   hasAIGenerated,
   isUrlAccessible,
   isCheckingUrl,
-  isGenerating
+  isGenerating,
+  onTitleInput,
+  onDescInput
 } = useBookmarkForm()
 
 const props = defineProps<{
@@ -161,6 +163,7 @@ const onSave = async () => {
                 v-model="draft.title" 
                 placeholder="网站标题" 
                 class="h-12 border-border rounded-md bg-background px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 shadow-none text-base font-semibold placeholder:text-muted-foreground/60 flex-1"
+                @input="onTitleInput"
               />
               <Tooltip v-if="hasAIGenerated">
                 <TooltipTrigger as-child>
@@ -184,6 +187,7 @@ const onSave = async () => {
                 placeholder="请输入网站简介" 
                 :maxlength="maxDescLen"
                 class="min-h-[80px] resize-none bg-background border border-border rounded-md px-4 py-3 focus-visible:ring-2 focus-visible:ring-primary/30 placeholder:text-muted-foreground/60 text-sm pr-10"
+                @input="onDescInput"
               />
               <Tooltip v-if="hasAIGenerated">
                 <TooltipTrigger as-child>

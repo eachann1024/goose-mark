@@ -195,7 +195,7 @@ const handleEdit = () => {
 <template>
   <Card 
     ref="cardEl"
-    class="relative group hover:shadow-lg transition-shadow dark:hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col justify-center"
+    class="relative group hover:shadow-lg transition-shadow dark:hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
     :class="{ 'border-primary ring-1 ring-primary': selected }"
     @click="openLink"
     @contextmenu.prevent="emit('contextmenu', $event)"
@@ -232,14 +232,14 @@ const handleEdit = () => {
           </template>
           <template v-else>
             <div class="flex items-center justify-between">
-              <h3 ref="titleEl" class="font-medium text-sm truncate pr-2 text-foreground break-all">
+            <h3 ref="titleEl" class="font-medium text-sm truncate pr-2 text-foreground break-all cursor-pointer">
                 {{ bookmark.title }}
               </h3>
               <span v-if="bookmark.pinned" class="i-mdi-pin text-primary text-[10px] shrink-0" />
             </div>
             <p
               ref="descEl"
-              class="text-[10px] text-muted-foreground truncate min-h-[16px] leading-[1.2]"
+              class="text-[10px] text-muted-foreground truncate min-h-[16px] leading-[1.2] cursor-pointer"
             >
               {{ bookmark.desc || ' ' }}
             </p>
@@ -248,7 +248,7 @@ const handleEdit = () => {
     </div>
     
     <!-- Action Buttons -->
-    <div v-if="!readonly" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
+    <div v-if="!readonly" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
         <!-- Copy button removed as per requirement -->
         <!-- Edit Button -->
         <Tooltip v-model:open="editTooltipOpen" :disable-hoverable-content="true">

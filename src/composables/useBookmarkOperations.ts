@@ -1,5 +1,4 @@
 
-
 import type { Bookmark } from '@/types/bookmark'
 
 
@@ -78,24 +77,60 @@ export function useBookmarkOperations() {
   const notifyCopySuccess = () => {
     showToast({
       title: '已复制书签地址',
-      variant: 'success'
+      variant: 'success',
+      duration: 2000
     })
   }
 
   const copyBookmarkUrl = async (bookmark: Bookmark) => {
+    if (!bookmark || !bookmark.url) return
+    
+    const url = bookmark.url
+    
     try {
-      const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-      if (utoolsApi?.copyText) {
-        utoolsApi.copyText(bookmark.url)
+      // 1. 优先使用 uTools 原生 API
+      if (window.utools && typeof window.utools.copyText === 'function') {
+        window.utools.copyText(url)
         notifyCopySuccess()
         return
       }
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(bookmark.url)
+      
+      // 2. 尝试使用现代 Clipboard API
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+        try {
+          await navigator.clipboard.writeText(url)
+          notifyCopySuccess()
+          return
+        } catch (clipboardErr) {
+          console.warn('[Bookmark] Clipboard API 失败，尝试备用方案', clipboardErr)
+        }
+      }
+      
+      // 3. 最后的保底方案：execCommand('copy')
+      const textArea = document.createElement('textarea')
+      textArea.value = url
+      textArea.style.position = 'fixed'
+      textArea.style.left = '-9999px'
+      textArea.style.top = '0'
+      textArea.style.opacity = '0'
+      document.body.appendChild(textArea)
+      textArea.focus()
+      textArea.select()
+      
+      const successful = document.execCommand('copy')
+      document.body.removeChild(textArea)
+      
+      if (successful) {
         notifyCopySuccess()
+      } else {
+        throw new Error('无法访问剪贴板')
       }
     } catch (error) {
-      console.warn('[Bookmark] 复制链接失败', error)
+      showToast({
+        title: '复制失败',
+        description: '由于环境限制，请手动开启书签后在地址栏复制',
+        variant: 'error'
+      })
     }
   }
 

@@ -98,8 +98,12 @@ export function useKeyboard(
   const handleKeyNavigation = (e: KeyboardEvent) => {
     if (showAdd.value || showDeleteConfirm.value || showIconSelector.value || tab.value !== 'bookmarks') return
     
+    // 有修饰键时直接放行（允许 Cmd+A、Cmd+C 等系统快捷键）
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    
     const active = document.activeElement as HTMLElement
-    if (!searchViewOpen.value && active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) return
+    // 焦点在输入框/文本域/可编辑元素时不拦截导航键
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return
     
     const key = e.key
     const bookmarks = activeBookmarks.value

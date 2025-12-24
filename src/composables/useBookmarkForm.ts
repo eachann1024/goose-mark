@@ -50,6 +50,10 @@ function _useBookmarkForm() {
   const iconLoading = ref(false)
   const iconFetchFailed = ref(false)
   
+  const isTitleDirty = ref(false)
+  const isDescDirty = ref(false)
+  const lastAutoHostname = ref('')
+
   const dialogOrigin = ref<{ x: string; y: string } | null>(null)
 
   // 撤回功能：保存 AI 调用前的原始值
@@ -202,6 +206,14 @@ function _useBookmarkForm() {
 
   const hasAIGenerated = computed(() => !!originalBeforeAI.value)
 
+  const onTitleInput = () => {
+    isTitleDirty.value = true
+  }
+
+  const onDescInput = () => {
+    isDescDirty.value = true
+  }
+
   // Actions
   const openAdd = (eventOrEl?: MouseEvent | HTMLElement) => {
     setDialogOrigin(eventOrEl)
@@ -214,6 +226,9 @@ function _useBookmarkForm() {
     draftLocations.value = [{ groupId: store.activeGroupId, subGroupId: store.activeSubGroupId }]
     previewIcon.value = null
     formError.value = ''
+    isTitleDirty.value = false
+    isDescDirty.value = false
+    lastAutoHostname.value = ''
     showAdd.value = true
   }
 
@@ -227,6 +242,9 @@ function _useBookmarkForm() {
     draft.desc = bookmark.desc || ''
     previewIcon.value = bookmark.icon ?? null
     formError.value = ''
+    isTitleDirty.value = true // 编辑模式下默认认为已脏，不自动覆盖
+    isDescDirty.value = true
+    lastAutoHostname.value = ''
     
     draftLocations.value = store.getBookmarkLocations(bookmark.id)
     showAdd.value = true
@@ -314,6 +332,8 @@ function _useBookmarkForm() {
       if (fetchTimer) clearTimeout(fetchTimer)
       previewIcon.value = null
       iconLoading.value = false
+      if (!isTitleDirty.value) draft.title = ''
+      if (!isDescDirty.value) draft.desc = ''
       return
     }
   
@@ -328,8 +348,12 @@ function _useBookmarkForm() {
     }
     
     const hostname = resolveHostname()
-    if (!draft.title) {
-      if (hostname) draft.title = hostname
+    // 只要用户没手动改过标题，或者当前标题就是我们自动生成的上一个 hostname，就跟随最新的 hostname 变
+    if (!isTitleDirty.value || draft.title === lastAutoHostname.value) {
+      if (hostname) {
+        draft.title = hostname
+        lastAutoHostname.value = hostname
+      }
     }
   
     if (fetchTimer) clearTimeout(fetchTimer)
@@ -349,11 +373,11 @@ function _useBookmarkForm() {
           previewIcon.value = newIcon as IconSource
           iconFetchFailed.value = (fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src))
           
-          // 自动填充标题和描述（URL 变化时总是更新）
-          if (fetched.title) {
+          // 自动填充标题和描述（如果用户没改过）
+          if (fetched.title && (!isTitleDirty.value || draft.title === lastAutoHostname.value)) {
             draft.title = fetched.title
           }
-          if (fetched.description) {
+          if (fetched.description && !isDescDirty.value) {
             draft.desc = fetched.description
           }
         } else {
@@ -433,6 +457,8 @@ function _useBookmarkForm() {
     isUrlAccessible,
     isCheckingUrl,
     isGenerating,
+    onTitleInput,
+    onDescInput
   }
 }
 

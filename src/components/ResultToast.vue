@@ -60,7 +60,7 @@ const leaveToClass = computed(() => enterFromClass.value)
     >
       <div
         v-if="open"
-        class="fixed z-[9999] w-[320px] max-w-[calc(100vw-2rem)] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm p-4"
+        class="fixed z-[20000] w-[320px] max-w-[calc(100vw-2rem)] max-h-[200px] overflow-y-auto rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm p-4"
         :style="positionStyle"
       >
         <div class="flex gap-3" :class="description ? 'items-start' : 'items-center'">
