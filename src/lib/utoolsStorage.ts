@@ -1,6 +1,5 @@
 /**
- * uTools 持久化存储适配器
- * 用于 pinia-plugin-persistedstate
+ * uTools 持久化存储适配器 (版本 5 - 智能同步版)
  */
 
 interface UToolsDbStorage {
@@ -17,67 +16,65 @@ const getUtoolsApi = (): UToolsApi | undefined => {
   return typeof window !== 'undefined' ? (window as unknown as { utools?: UToolsApi }).utools : undefined
 }
 
-// 防抖写入，避免拖拽时频繁持久化导致卡顿
-const pendingWrites = new Map<string, { value: string; timer: ReturnType<typeof setTimeout> }>()
-const DEBOUNCE_MS = 300
+const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('better-marks-storage-sync') : null
+const sessionCache = new Map<string, string | null>()
 
-const flushWrite = (key: string, value: string) => {
-  const utools = getUtoolsApi()
-  if (utools?.dbStorage) {
-    utools.dbStorage.setItem(key, value)
-  } else {
-    localStorage.setItem(key, value)
+if (bc) {
+  bc.onmessage = (event) => {
+    const { key, value, source } = event.data
+    // 忽略自己发出的消息 (虽然 BroadcastChannel 默认不发给自己，但显式防御更好)
+    if (source === window.name || !key) return
+    
+    // 更新内存缓存，供下一次读取使用
+    sessionCache.set(key, value)
+    
+    // 触发全局事件，让 Store 监听并同步
+    window.dispatchEvent(new CustomEvent('storage-sync', { detail: { key, value } }))
   }
 }
 
 export const utoolsStorage = {
   getItem(key: string): string | null {
-    // 如果有待写入的值，先返回它
-    const pending = pendingWrites.get(key)
-    if (pending) return pending.value
+    if (sessionCache.has(key)) return sessionCache.get(key) || null
     
     const utools = getUtoolsApi()
-    if (utools?.dbStorage) {
-      return utools.dbStorage.getItem(key)
-    }
-    return localStorage.getItem(key)
+    const value = utools?.dbStorage ? utools.dbStorage.getItem(key) : localStorage.getItem(key)
+    
+    sessionCache.set(key, value)
+    return value
   },
+
   setItem(key: string, value: string): void {
-    // 清除之前的定时器
-    const existing = pendingWrites.get(key)
-    if (existing) clearTimeout(existing.timer)
-    
-    // 设置新的防抖定时器
-    const timer = setTimeout(() => {
-      pendingWrites.delete(key)
-      flushWrite(key, value)
-    }, DEBOUNCE_MS)
-    
-    pendingWrites.set(key, { value, timer })
-  },
-  // 立即保存，不使用防抖（用于关键操作，如分享导入）
-  flushItem(key: string): void {
-    const pending = pendingWrites.get(key)
-    if (pending) {
-      clearTimeout(pending.timer)
-      pendingWrites.delete(key)
-      flushWrite(key, pending.value)
+    const oldValue = this.getItem(key)
+    if (oldValue === value) return // 内容未变，不执行写入和广播，有效防止循环
+
+    sessionCache.set(key, value)
+
+    const utools = getUtoolsApi()
+    if (utools?.dbStorage) {
+      utools.dbStorage.setItem(key, value)
+      localStorage.removeItem(key)
+    } else {
+      localStorage.setItem(key, value)
+    }
+
+    if (bc) {
+      bc.postMessage({ key, value, source: window.name })
     }
   },
+
   removeItem(key: string): void {
-    // 清除待写入
-    const existing = pendingWrites.get(key)
-    if (existing) {
-      clearTimeout(existing.timer)
-      pendingWrites.delete(key)
-    }
-    
+    sessionCache.delete(key)
     const utools = getUtoolsApi()
     if (utools?.dbStorage) {
       utools.dbStorage.removeItem(key)
-    } else {
-      localStorage.removeItem(key)
     }
-  }
-}
+    localStorage.removeItem(key)
+    
+    if (bc) {
+      bc.postMessage({ key, value: null, source: window.name })
+    }
+  },
 
+  flushItem(key: string): void {}
+}

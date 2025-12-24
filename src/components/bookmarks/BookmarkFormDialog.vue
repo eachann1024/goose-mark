@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import BookmarkIcon from '@/components/BookmarkIcon.vue'
+
 // 直接使用 App.vue 中传递的 useBookmarkForm
 const {
   showAdd,
@@ -140,19 +142,14 @@ const onSave = async () => {
         <div class="flex gap-4 p-4 rounded-xl border border-border bg-muted/10">
           <!-- Icon -->
           <div class="shrink-0 flex flex-col items-center gap-1">
-            <div 
-              class="w-12 h-12 rounded-lg border border-border flex items-center justify-center overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
-              :style="previewIconStyle"
+            <BookmarkIcon 
+              :icon="previewIcon"
+              :fallback-text="draft.title || draft.url"
+              :loading="iconLoading"
+              size="lg"
+              class="cursor-pointer hover:ring-2 hover:ring-primary/50"
               @click="showIconSelector = true"
-            >
-              <div v-if="iconLoading" class="w-7 h-7 border-2 border-primary/60 border-t-transparent rounded-full animate-spin" />
-              <template v-else>
-                <Image v-if="previewIconUrl" :src="previewIconUrl" class="w-4/5 h-4/5 object-contain" />
-                <span v-else class="text-xs font-bold px-1 text-center" :class="previewIcon?.type === 'text' && previewIcon.bgColor ? 'text-white' : 'text-muted-foreground'">
-                  {{ previewIcon?.type === 'text' ? previewIcon.value : previewText }}
-                </span>
-              </template>
-            </div>
+            />
             <p v-if="iconFetchFailed && !iconLoading && draft.url" class="text-[10px] text-muted-foreground text-center max-w-[80px] leading-tight">
               可复制网页图标后粘贴
             </p>

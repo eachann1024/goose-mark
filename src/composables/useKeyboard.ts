@@ -110,15 +110,16 @@ export function useKeyboard(
     
     let newIndex = selectedIndex.value
     const detached = isDetachedWindowNow()
+    const isGridNav = detached || !searchViewOpen.value
     
     switch (key) {
       case 'ArrowRight':
-        if (!detached) return
+        if (!isGridNav) return
         e.preventDefault()
         newIndex = selectedIndex.value < 0 ? 0 : Math.min(selectedIndex.value + 1, total - 1)
         break
       case 'ArrowLeft':
-        if (!detached) return
+        if (!isGridNav) return
         e.preventDefault()
         newIndex = selectedIndex.value < 0 ? 0 : Math.max(selectedIndex.value - 1, 0)
         break
@@ -126,13 +127,13 @@ export function useKeyboard(
         e.preventDefault()
         newIndex = selectedIndex.value < 0
           ? 0
-          : Math.min(selectedIndex.value + (detached ? cols : 1), total - 1)
+          : Math.min(selectedIndex.value + (isGridNav ? cols : 1), total - 1)
         break
       case 'ArrowUp':
         e.preventDefault()
         newIndex = selectedIndex.value < 0
           ? 0
-          : Math.max(selectedIndex.value - (detached ? cols : 1), 0)
+          : Math.max(selectedIndex.value - (isGridNav ? cols : 1), 0)
         break
       case 'Enter':
         e.preventDefault()

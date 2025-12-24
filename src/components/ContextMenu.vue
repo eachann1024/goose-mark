@@ -5,6 +5,7 @@ const props = defineProps<{
   x: number
   y: number
   isTrash?: boolean
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -53,18 +54,27 @@ onUnmounted(() => {
       </Button>
       
       <div class="h-px bg-white/10 my-0.5 mx-1" />
-  
-      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('edit')">
-        <span class="i-mdi-pencil-outline text-muted" />
-        <span>编辑</span>
-      </Button>
 
-      <div class="h-px bg-white/10 my-0.5 mx-1" />
-      
-      <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
-        <span class="i-mdi-delete-outline" />
-        <span>移除</span>
+      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('copy')">
+        <span class="i-mdi-content-copy text-muted" />
+        <span>复制链接</span>
       </Button>
+  
+      <template v-if="!readonly">
+        <div class="h-px bg-white/10 my-0.5 mx-1" />
+    
+        <Button variant="ghost" class="menu-item justify-start" @click="handleAction('edit')">
+          <span class="i-mdi-pencil-outline text-muted" />
+          <span>编辑</span>
+        </Button>
+
+        <div class="h-px bg-white/10 my-0.5 mx-1" />
+        
+        <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
+          <span class="i-mdi-delete-outline" />
+          <span>移除</span>
+        </Button>
+      </template>
     </template>
 
     <template v-else>

@@ -5,6 +5,7 @@ import draggable from 'vuedraggable'
 import type { Group } from '@/types/bookmark'
 
 import ShareImportDialog from '@/components/ShareImportDialog.vue'
+import { Input } from '@/components/ui/input'
 
 
 const store = useBookmarkStore()
@@ -57,8 +58,8 @@ const newGroupName = ref('')
 const addingSubGroupId = ref('')
 const newSubName = ref('')
 const groupInput = ref<HTMLInputElement[] | null>(null)
-const addGroupInput = ref<HTMLInputElement | null>(null)
-const addSubInput = ref<HTMLInputElement | null>(null)
+const addGroupInput = ref<InstanceType<typeof Input> | null>(null)
+const addSubInput = ref<InstanceType<typeof Input> | null>(null)
 const groupListRef = ref<HTMLElement | null>(null)
 const groupRowRefs = ref<Record<string, HTMLElement | null>>({})
 const fileInputRef = ref<HTMLInputElement | null>(null)
@@ -648,7 +649,7 @@ const cancelEdit = () => {
 const startAddGroup = () => {
   isAddingGroup.value = true
   newGroupName.value = ''
-  nextTick(() => addGroupInput.value?.focus())
+  nextTick(() => (addGroupInput.value?.$el as HTMLInputElement)?.focus())
 }
 
 const confirmAddGroup = () => {
@@ -668,7 +669,7 @@ const startAddSub = (groupId: string) => {
     } else if (groupListRef.value) {
       groupListRef.value.scrollTop = groupListRef.value.scrollHeight
     }
-    addSubInput.value?.focus()
+    (addSubInput.value?.$el as HTMLInputElement)?.focus()
   })
 }
 
@@ -698,9 +699,12 @@ watch(showDeleteConfirm, (isOpen) => {
   if (isOpen) {
     nextTick(() => {
       // 查找确认删除按钮并聚焦
-      const button = confirmDeleteButtonRef.value as HTMLElement | null
-      if (button) {
-        button.focus()
+      const button = confirmDeleteButtonRef.value
+      // 如果是组件，尝试获取 $el
+      const el = button && '$el' in button ? (button as any).$el : button
+      
+      if (el && typeof el.focus === 'function') {
+        el.focus()
       } else {
         // 备用方案：通过查询选择器查找
         const dialog = document.querySelector('[role="dialog"]')
@@ -823,7 +827,7 @@ const closeUndoToast = () => {
     </Card>
 
     <!-- Share Card -->
-    <Card v-if="isUTools">
+    <Card>
       <CardHeader>
         <CardTitle>在线分享</CardTitle>
         <CardDescription>开启后可分享书签分组给他人，或导入他人的公开分享</CardDescription>
@@ -836,8 +840,7 @@ const closeUndoToast = () => {
               <div class="text-xs text-muted-foreground">在书签页显示分享与管理按钮</div>
             </div>
             <Switch 
-              :checked="settingsStore.enableShare"
-              @update:checked="settingsStore.setEnableShare"
+              v-model="settingsStore.enableShare"
             />
           </label>
           
@@ -936,8 +939,7 @@ const closeUndoToast = () => {
                 <div class="text-xs text-muted-foreground">在独立窗口模式下，打开书签后自动关闭窗口</div>
               </div>
               <Switch 
-                :checked="settingsStore.autoCloseWindow"
-                @update:checked="settingsStore.setAutoCloseWindow"
+                v-model:checked="settingsStore.autoCloseWindow"
               />
             </label>
             
@@ -947,8 +949,7 @@ const closeUndoToast = () => {
                 <div class="text-xs text-muted-foreground">不支持时将回退到系统默认浏览器</div>
               </div>
               <Switch 
-                :checked="settingsStore.preferUtoolsBrowser"
-                @update:checked="settingsStore.setPreferUtoolsBrowser"
+                v-model:checked="settingsStore.preferUtoolsBrowser"
               />
             </label>
           </div>
@@ -958,10 +959,24 @@ const closeUndoToast = () => {
       <Card>
         <CardHeader>
           <CardTitle>搜索体验</CardTitle>
-          <CardDescription>控制搜索界面的自动退出行为</CardDescription>
+          <CardDescription>控制搜索界面的自动退出行为与输入方式</CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="flex flex-col gap-2 max-w-md">
+          <div class="flex flex-col gap-4 max-w-md">
+            <label class="flex items-center justify-between cursor-pointer">
+              <div class="space-y-0.5">
+                <div class="text-sm font-medium">启用 uTools 子输入框</div>
+                <div class="text-xs text-muted-foreground">直接在主界面输入即可搜索，无需点击搜索按钮</div>
+              </div>
+              <Switch 
+                :checked="settingsStore.enableSubInput"
+                @update:checked="(val) => {
+                  settingsStore.setEnableSubInput(val);
+                  showSubInputToast(val);
+                }"
+              />
+            </label>
+
             <div class="flex items-center gap-3">
               <label class="text-sm text-muted-foreground shrink-0">自动退出（分钟）</label>
               <Input
@@ -977,7 +992,6 @@ const closeUndoToast = () => {
             </div>
             <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
           </div>
-          <!-- "显示 uTools 子输入框" 功能已隐藏，默认关闭 -->
         </CardContent>
       </Card>
 
@@ -995,8 +1009,7 @@ const closeUndoToast = () => {
                   <div class="text-xs text-muted-foreground">默认使用 deepseek-v3</div>
                 </div>
                 <Switch 
-                  :checked="settingsStore.useCustomAiModel"
-                  @update:checked="settingsStore.setUseCustomAiModel"
+                  v-model:checked="settingsStore.useCustomAiModel"
                 />
               </label>
 
@@ -1033,7 +1046,7 @@ const closeUndoToast = () => {
          <CardDescription>管理书签分组和子分组，拖拽可调整排序或移动分类</CardDescription>
        </CardHeader>
        <CardContent class="space-y-4">
-         <!-- Add Group (移到最前面) -->
+         <!-- Add Group -->
          <div class="pb-2">
            <div v-if="!isAddingGroup">
                <Button variant="outline" class="w-full h-9 border-dashed border-input hover:border-primary hover:text-primary transition-colors" :disabled="editingLocked" @click="startAddGroup">
@@ -1058,7 +1071,7 @@ const closeUndoToast = () => {
             </div>
          </div>
          
-         <!-- 升级为主分组的放置区域 -->
+         <!-- Promote zone -->
          <div
            v-if="isDragging"
            class="border-2 border-dashed border-primary/50 rounded-lg p-4 text-center text-sm text-primary/70 bg-primary/5 transition-all"
@@ -1067,7 +1080,7 @@ const closeUndoToast = () => {
            <span class="i-mdi-arrow-up-bold mr-2" />拖拽子分类到此处升级为主分组
          </div>
          
-         <!-- 分组列表 (移除滚动条限制) -->
+         <!-- Group List -->
          <draggable
            v-model="draggableGroups"
            item-key="id"
@@ -1142,7 +1155,7 @@ const closeUndoToast = () => {
                  </div>
                </div>
                
-               <!-- Sub Groups with drag -->
+               <!-- Sub Groups -->
                <draggable
                  :model-value="group.children"
                  @update:model-value="(val) => store.reorderSubGroups(group.id, val)"
@@ -1232,22 +1245,22 @@ const closeUndoToast = () => {
        </CardContent>
     </Card>
 
-   <FaqNotice
-     class="mb-2"
-     title="常见问题"
-     description="当一个分组下只有 1 个子分组时，为了保持界面简洁，侧边栏将不会显示该子分组。"
-   />
-
-   <FaqNotice
+    <FaqNotice
       class="mb-2"
-      title="使用技巧"
-      :description="`· 直接输入字符即可进入搜索，无需点击搜索按钮
-· 按 ESC 退出搜索界面
-· 按住 ${isMac ? 'Option' : 'Alt'} 显示书签序号，配合数字键快速打开
-· 使用 ↑ ↓ ← → 方向键导航，Enter 打开
-· 🚀 快捷搜索：URL 包含 {query} 等占位符的书签，可在 uTools 主搜索输入书签名，按 Tab 后输入关键词直接搜索`"
+      title="常见问题"
+      description="当一个分组下只有 1 个子分组时，为了保持界面简洁，侧边栏将不会显示该子分组。"
     />
-           
+
+    <FaqNotice
+       class="mb-2"
+       title="使用技巧"
+       :description="`· 直接输入字符即可进入搜索，无需点击搜索按钮
+ · 按 ESC 退出搜索界面
+ · 按住 ${isMac ? 'Option' : 'Alt'} 显示书签序号，配合数字键快速打开
+ · 使用 ↑ ↓ ← → 方向键导航，Enter 打开
+ · 🚀 快捷搜索：URL 包含 {query} 等占位符的书签，可在 uTools 主搜索输入书签名，按 Tab 后输入关键词直接搜索`"
+     />
+            
     <!-- Tools Card -->
     <div class="grid md:grid-cols-2 gap-6">
        <!-- Icon Match -->
@@ -1400,9 +1413,7 @@ const closeUndoToast = () => {
                  />
               </div>
                
-               <!-- 导入分享按钮 (已移至顶部在线分享卡片) -->
                <p class="text-xs text-muted-foreground">
-
                 导出的 JSON 文件包含所有分组和书签数据
               </p>
               
@@ -1612,7 +1623,7 @@ const closeUndoToast = () => {
       @action="handleResultToastAction"
     />
 
-    <!-- 分享导入对话框 -->
+    <!-- Share Import -->
     <ShareImportDialog v-model:open="showShareImportDialog" />
   </div>
 </template>
@@ -1632,7 +1643,6 @@ const closeUndoToast = () => {
   background-color: hsl(var(--muted-foreground) / 0.5);
 }
 
-/* 拖拽动效样式 */
 .drag-ghost {
   opacity: 0.5;
   background: hsl(var(--primary) / 0.1);
@@ -1654,7 +1664,6 @@ const closeUndoToast = () => {
   cursor: grabbing !important;
 }
 
-/* 拖拽手柄 hover */
 .drag-handle:hover {
   color: hsl(var(--primary));
 }

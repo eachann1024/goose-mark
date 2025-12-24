@@ -1,4 +1,4 @@
-# uTools 极简书签插件
+# 鹅的书签插件
 
 ## 概述
 - 参考 noice.so 的极简风格，基于 Vue 3 + Vite + UnoCSS + Pinia + Naive UI（Image 组件）实现。

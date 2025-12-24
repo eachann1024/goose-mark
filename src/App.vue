@@ -171,6 +171,38 @@ const {
   focusUToolsInput,
 } = useSearch(tab, selectedIndex, isUTools)
 
+// SearchOverlay 组件 ref
+const searchOverlayRef = ref<{ 
+  focus: () => void;
+  localSearchInputRef?: HTMLInputElement | null 
+} | null>(null)
+
+// 当搜索视图打开时，同步并聚焦输入框
+watch(searchViewOpen, (isOpen) => {
+  if (isOpen && !settingsStore.enableSubInput) {
+    nextTick(() => {
+      requestAnimationFrame(() => {
+        const overlay = searchOverlayRef.value
+        if (overlay) {
+          // 1. 调用组件的 focus 方法确保聚焦
+          overlay.focus()
+          
+          // 2. 同步 DOM 元素给 useSearch (用于其他逻辑)
+          // 注意：被 expose 的 ref 会自动解包，所以这里直接获取即可
+          const inputEl = overlay.localSearchInputRef
+          if (inputEl instanceof HTMLInputElement) {
+            localSearchInputRef.value = inputEl
+            // 确保光标在末尾 (focus 可能已经做了，但双重保险)
+            const len = inputEl.value?.length ?? 0
+            try { inputEl.setSelectionRange(len, len) } catch {}
+          }
+        }
+      })
+    })
+  }
+})
+
+
 // Keyboard
 const {
   setBookmarkGridRef,
@@ -217,16 +249,18 @@ watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   closeContext()
 })
 
-watch(() => store.activeGroupId, (groupId) => {
-  if (groupId && groupId !== TRASH_GROUP_ID) {
-    validateAndCleanGroupShares(groupId)
-    checkCurrentShareStatus(groupId)
-  }
-})
+// 使用防抖避免切换分组/子分组时重复请求 check 接口
+const debouncedShareCheck = useDebounceFn(async (groupId: string, subId?: string) => {
+  // validateAndCleanGroupShares 内部会调用 validateShareStatus 并使用缓存
+  // 所以只需要调用一次即可
+  await validateAndCleanGroupShares(groupId)
+  // 验证后检查当前子分组的状态（利用缓存，不会重复请求）
+  checkCurrentShareStatus(groupId, subId)
+}, 300)
 
-watch(() => store.activeSubGroupId, (subId) => {
-  if (subId && store.activeGroupId !== TRASH_GROUP_ID) {
-    checkCurrentShareStatus(store.activeGroupId, subId)
+watch([() => store.activeGroupId, () => store.activeSubGroupId], ([groupId, subId]) => {
+  if (groupId && groupId !== TRASH_GROUP_ID) {
+    debouncedShareCheck(groupId, subId || undefined)
   }
 })
 
@@ -235,6 +269,7 @@ const onContextMenuAction = (action: string) => {
   const b = contextMenu.target
   if (!b) return
   if (action === 'open') openBookmarkLink(b)
+  if (action === 'copy') copyBookmarkUrl(b)
   if (action === 'restore') store.restoreBookmark(b.id)
   if (action === 'remove') {
     confirmDeleteId.value = b.id
@@ -242,10 +277,23 @@ const onContextMenuAction = (action: string) => {
   }
 }
 
+// 书签拖拽到子分组的处理
+const handleBookmarkDrop = (bookmarkId: string, toSubId: string) => {
+  const moved = store.moveBookmarkToSubGroup(
+    bookmarkId,
+    store.activeGroupId,
+    store.activeSubGroupId,
+    store.activeGroupId,
+    toSubId
+  )
+  if (moved) {
+    showToast({ title: '书签已移动', variant: 'success', duration: 1500 })
+  }
+}
+
 const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
   e.preventDefault()
   onContextMenu(e, bookmark)
-  void copyBookmarkUrl(bookmark)
 }
 
 // Share Handlers
@@ -412,7 +460,7 @@ const exitTemplateMode = () => {
   
   // Restore default sub input
   const shouldUse = !isDetachedWindowNow()
-  if (shouldUse) {
+  if (canUse) {
     window.utools?.setSubInput?.(handleSubInput, '搜索书签...', true)
   } else {
     window.utools?.removeSubInput?.()
@@ -467,7 +515,6 @@ onMounted(async () => {
     onPluginEnter?: (cb: (params: { code?: unknown; payload?: unknown } | undefined) => void) => void
   }
   const utoolsApi = window.utools as unknown as UToolsApi | undefined
-  if (!utoolsApi) settingsStore.setEnableSubInput(false)
   
   if (utoolsApi) {
     const syncTheme = () => {
@@ -478,9 +525,8 @@ onMounted(async () => {
     }
 
     const syncSubInput = () => {
-      const shouldUse = !isDetachedWindowNow()
-      settingsStore.setEnableSubInput(shouldUse)
-      if (shouldUse) {
+      const canUse = !isDetachedWindowNow() && settingsStore.enableSubInput
+      if (canUse) {
         utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
       } else {
         utoolsApi.removeSubInput?.()
@@ -490,28 +536,33 @@ onMounted(async () => {
     syncTheme()
     syncFeatures(store.bookmarks)
     syncSubInput()
+    watch(() => settingsStore.enableSubInput, () => syncSubInput())
     
+    window.addEventListener('storage-sync', ((e: any) => {
+      const { key, value } = e.detail
+      if (!value) return
+      try {
+        const data = JSON.parse(value)
+        if (key === 'settings') settingsStore.$patch(data)
+        if (key === 'bookmark') store.$patch(data)
+      } catch {}
+    }) as any)
+
     window.utools?.onPluginEnter?.((params) => {
       const code = params?.code
       const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
       
-      // 1. 如果不是模板特性，执行常规清理和同步
       if (!isTemplateFeature) {
         onMainViewSwitch()
         activeTemplateBookmark.value = null
         syncTheme()
-        // 仅在非交互敏感时刻同步 features
         syncFeatures(store.bookmarks)
         syncSubInput()
         store.setSearch('')
         return
       }
       
-      // 2. 如果是模板特性，处理模板逻辑
       syncTheme()
-      // 注意：此时已在 onPluginEnter 内部，绝对不能调用 syncFeatures
-      // 且由于进入了模板模式，我们应该已经通过 enterTemplateMode 设置了 isSyncPaused = true
-      
       const id = (code as string).slice(FEATURE_PREFIX.length)
       const bookmark = store.bookmarks.find(b => b.id === id)
       
@@ -521,30 +572,21 @@ onMounted(async () => {
       }
       
       const hasTemplate = /{[^}]+}/.test(bookmark.url)
-      
-      // 判断是否已经在模板模式中
       const isInTemplateMode = activeTemplateBookmark.value?.id === id
-      // 在模板模式中使用 templateQuery，否则使用 payload
       const payloadQuery = getEnterText(params?.payload).trim()
       const query = isInTemplateMode ? templateQuery.value.trim() : payloadQuery
       
       if (hasTemplate) {
-        // 通过关键词进入（无查询词或查询词等于书签标题）且不在模板模式时，进入模板模式
         const isKeywordLaunch = (!payloadQuery || payloadQuery === bookmark.title) && !isInTemplateMode
-        
         if (isKeywordLaunch) {
            enterTemplateMode(bookmark)
            return
         }
       }
       
-      // 执行搜索
       let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
       if (!/^https?:\/\//i.test(url)) url = 'https://' + url
-      
-      // 添加反馈提示
       showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
-      
       openUrl(url)
       
       if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
@@ -564,6 +606,7 @@ watch(() => store.bookmarks, () => {
   syncFeatures(store.bookmarks)
 }, { deep: true })
 </script>
+
 
 <template>
   <TooltipProvider :delay-duration="100">
@@ -593,6 +636,7 @@ watch(() => store.bookmarks, () => {
 
     <!-- Search Overlay -->
     <SearchOverlay
+      ref="searchOverlayRef"
       :open="searchViewOpen"
       :search-value="searchValue"
       :active-bookmarks="activeBookmarks"
@@ -622,6 +666,7 @@ watch(() => store.bookmarks, () => {
         :active-sub-group-id="store.activeSubGroupId"
         :active-group-id="store.activeGroupId"
         @select="store.selectSubGroup"
+        @drop="handleBookmarkDrop"
       />
 
       <BookmarksGrid
@@ -661,10 +706,11 @@ watch(() => store.bookmarks, () => {
     />
 
     <ContextMenu 
-      v-if="contextMenu.show && !store.isReadOnly" 
+      v-if="contextMenu.show" 
       :x="contextMenu.x" 
       :y="contextMenu.y" 
       :isTrash="isTrashActive"
+      :readonly="store.isReadOnly || !!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
       @close="closeContext"
       @action="onContextMenuAction"
     />
@@ -756,6 +802,7 @@ watch(() => store.bookmarks, () => {
       :description="toastState.description"
       :variant="toastState.variant"
       :action-label="toastState.actionLabel"
+      :position="toastState.position"
       @close="closeToast"
       @action="toastState.onAction?.()"
     />

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Bookmark } from '@/types/bookmark'
+import BookmarkIcon from '@/components/BookmarkIcon.vue'
 
 const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string; readonly?: boolean }>()
 const emit = defineEmits<{
@@ -9,17 +10,6 @@ const emit = defineEmits<{
   open: [Bookmark]
 }>()
 
-const iconUrl = computed(() => iconToDisplayUrl(props.bookmark.icon))
-const iconBgStyle = computed(() => {
-  const icon = props.bookmark.icon
-  if (icon?.bgColor) return { backgroundColor: icon.bgColor }
-  return { backgroundColor: 'transparent' }
-})
-const letters = computed(() => {
-  if (props.bookmark.icon?.type === 'text') return props.bookmark.icon.value.slice(0, 4)
-  const title = props.bookmark.title.trim()
-  return (title || '•').slice(0, 4).toUpperCase()
-})
 const isEmptyDesc = computed(() => !props.bookmark.desc || props.bookmark.desc.trim().length === 0)
 
 const cardEl = ref<InstanceType<typeof Card> | null>(null)
@@ -221,21 +211,11 @@ const handleEdit = () => {
     <div class="px-4 py-3 flex gap-3 items-center">
        <!-- Icon -->
        <div class="shrink-0">
-          <div 
-            class="w-10 h-10 rounded-lg border border-border flex items-center justify-center overflow-hidden transition-colors"
-            :style="iconBgStyle"
-          >
-             <Image 
-               v-if="iconUrl" 
-               :src="iconUrl" 
-               class="w-4/5 h-4/5 object-contain" 
-             />
-             <span 
-                v-else 
-                class="text-xs font-bold"
-                :class="bookmark.icon?.type === 'text' && bookmark.icon.bgColor ? 'text-white' : 'text-foreground'"
-             >{{ letters }}</span>
-          </div>
+          <BookmarkIcon 
+            :icon="bookmark.icon"
+            :fallback-text="bookmark.title"
+            size="md"
+          />
        </div>
 
       <div

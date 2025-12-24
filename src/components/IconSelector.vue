@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useEventListener } from '@vueuse/core'
 import VuePictureCropper, { cropper } from 'vue-picture-cropper'
 import type { IconSource } from '@/types/bookmark'
+import BookmarkIcon from '@/components/BookmarkIcon.vue'
 
 const props = defineProps<{
   modelValue?: IconSource
@@ -60,6 +61,23 @@ const previewImageUrl = computed(() => {
   if (activeTab.value === 'text') return null
   // 如果正在裁剪，优先显示裁剪结果(这里暂不需实时，确认后再更新 localImageSrc)
   return localImageSrc.value
+})
+
+const previewIconObject = computed<IconSource | null>(() => {
+  if (activeTab.value === 'text') {
+    return {
+      type: 'text',
+      value: letters.value,
+      bgColor: localColor.value
+    }
+  } else {
+    if (!previewImageUrl.value) return null
+    return {
+      type: 'remote', // 这里的 type 仅用于 BookmarkIcon 内部渲染逻辑，remote 足够通用
+      src: previewImageUrl.value,
+      bgColor: localColor.value
+    }
+  }
 })
 
 const applyColor = (c: string | undefined) => {
@@ -261,14 +279,13 @@ watch(
         <!-- Preview / Action Area -->
         <div class="flex-1 flex justify-center">
            <div class="relative group">
-              <div 
-               class="w-32 h-32 rounded-xl flex items-center justify-center shadow-lg overflow-hidden border border-border/50 bg-background transition-all"
-                :style="localColor ? { backgroundColor: localColor } : {}"
-              >
-                 <span v-if="activeTab === 'text'" class="font-bold text-4xl" :class="localColor ? 'text-white' : 'text-foreground'">{{ letters }}</span>
-                 <Image v-else-if="previewImageUrl" :src="previewImageUrl" class="w-full h-full object-contain" />
-                 <span v-else class="i-mdi-image-outline text-4xl text-muted-foreground/50" />
-              </div>
+              <BookmarkIcon 
+                :icon="previewIconObject"
+                :fallback-text="title"
+                size="custom"
+                custom-size-class="w-32 h-32 rounded-xl"
+                class="shadow-lg border border-border/50 bg-background"
+              />
 
               <!-- Hover Overlay Actions -->
               <div class="absolute inset-0 bg-black/40 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -278,7 +295,7 @@ watch(
                         <Button 
                           size="icon" 
                           variant="secondary" 
-                          class="h-8 w-8 rounded-full bg-white/90 hover:bg-white text-muted-foreground hover:text-primary shadow-sm"
+                          class="h-8 w-8 rounded-full shadow-sm"
                           @click="triggerFileSelect"
                         >
                           <span class="i-mdi-upload text-sm" />
@@ -293,7 +310,7 @@ watch(
                       v-if="previewImageUrl"
                       size="icon" 
                       variant="secondary" 
-                      class="h-8 w-8 rounded-full bg-white/90 hover:bg-white text-muted-foreground hover:text-primary shadow-sm"
+                      class="h-8 w-8 rounded-full shadow-sm"
                       title="裁剪/编辑"
                       @click="handleEditImage"
                     >
@@ -303,6 +320,7 @@ watch(
               </div>
 
                <!-- Clear Button (Always visible if value exists) -->
+
                <Button 
                  v-if="(activeTab === 'image' && previewImageUrl) || (activeTab === 'text' && customText)"
                  size="icon"

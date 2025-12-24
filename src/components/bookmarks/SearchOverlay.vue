@@ -26,12 +26,24 @@ const emit = defineEmits<{
   reorder: [payload: { fromId: string; toId: string }]
 }>() 
 
-const localSearchInputRef = ref<HTMLInputElement | null>(null)
+const localSearchInputComponentRef = ref<{ $el: HTMLElement } | null>(null)
+
+// 依然提供 ref，供 useSearch 使用
+const localSearchInputRef = computed(() => {
+  const el = localSearchInputComponentRef.value?.$el
+  if (el instanceof HTMLInputElement) return el
+  return el?.querySelector('input') || null as HTMLInputElement | null
+})
+
+// 提供聚焦方法给父组件调用
+const focus = () => {
+  localSearchInputRef.value?.focus()
+}
 
 const handleClose = () => emit('close')
 const handleKeydown = (e: KeyboardEvent) => emit('keydown', e)
 
-defineExpose({ localSearchInputRef })
+defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以防万一，但主要推荐使用 focus
 </script>
 
 <template>
@@ -60,7 +72,7 @@ defineExpose({ localSearchInputRef })
           <template v-else>
             <Input
               :model-value="searchValue"
-              ref="localSearchInputRef"
+              ref="localSearchInputComponentRef"
               @update:model-value="emit('update:searchValue', $event as string)"
               @keydown="handleKeydown"
               placeholder="输入关键字搜索书签..."
