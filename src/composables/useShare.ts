@@ -296,16 +296,18 @@ export function useShare() {
     }
     
     try {
-      const res = await fetch(`${API_BASE_URL}/${shareId}/check`) // 优先用 lightweight check
+      const res = await fetch(`${API_BASE_URL}/${shareId}/check`)
       
       let status: 'active' | 'canceled' | 'not_found' | 'error' = 'error'
 
+      // Robust status detection: parse body to check for 'canceled' flag
+      const data = await res.json().catch(() => ({}))
+
       if (res.ok) {
-        const data = await res.json()
         status = data.active ? 'active' : 'canceled'
       } else if (res.status === 404) {
         status = 'not_found'
-      } else if (res.status === 410) {
+      } else if (res.status === 410 || data.canceled) {
         status = 'canceled'
       } else {
         if (res.status !== 429) { 

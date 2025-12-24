@@ -49,7 +49,6 @@ function _useBookmarkForm() {
   
   const iconLoading = ref(false)
   const iconFetchFailed = ref(false)
-  const titleFetchFailed = ref(false)
   
   const dialogOrigin = ref<{ x: string; y: string } | null>(null)
 
@@ -59,8 +58,7 @@ function _useBookmarkForm() {
     desc: string
   } | null>(null)
 
-  let previewTimer: ReturnType<typeof setTimeout> | null = null
-  let titleTimer: ReturnType<typeof setTimeout> | null = null
+  let fetchTimer: ReturnType<typeof setTimeout> | null = null
   const { scheduleShareUpdate } = useShare()
   const { showToast } = useToast()
 
@@ -160,26 +158,6 @@ function _useBookmarkForm() {
       }
     } else {
       dialogOrigin.value = null
-    }
-  }
-
-  const fetchPageTitle = async (url: string): Promise<string | null> => {
-    const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-    if (!utoolsApi?.ubrowser) return null
-
-    try {
-      const result = await utoolsApi.ubrowser
-        .goto(url)
-        .wait(2000)
-        .evaluate(() => {
-          const title = (document.title || document.querySelector('title')?.textContent || '').trim()
-          return title || null
-        })
-        .run({ width: 1024, height: 768, show: false })
-      return result && result.length > 0 ? (result[0] as string | null) : null
-    } catch (e) {
-      // 静默失败
-      return null
     }
   }
 
@@ -335,10 +313,8 @@ function _useBookmarkForm() {
     if (editingId.value) return
     
     if (!val) {
-      if (previewTimer) clearTimeout(previewTimer)
-      if (titleTimer) clearTimeout(titleTimer)
+      if (fetchTimer) clearTimeout(fetchTimer)
       previewIcon.value = null
-      titleFetchFailed.value = false
       iconLoading.value = false
       return
     }
@@ -358,14 +334,13 @@ function _useBookmarkForm() {
       if (hostname) draft.title = hostname
     }
   
-    if (previewTimer) clearTimeout(previewTimer)
-    previewTimer = setTimeout(async () => {
+    if (fetchTimer) clearTimeout(fetchTimer)
+    fetchTimer = setTimeout(async () => {
       iconLoading.value = true
       iconFetchFailed.value = false
       try {
         const fetched = await fetchAndCacheIcon(val, true)
         if (fetched) {
-          // 类型安全的赋值方式
           const newIcon: any = { type: fetched.type }
           if ('src' in fetched) newIcon.src = fetched.src
           if ('path' in fetched) newIcon.path = fetched.path
@@ -376,25 +351,21 @@ function _useBookmarkForm() {
           previewIcon.value = newIcon as IconSource
           iconFetchFailed.value = (fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src))
           
-          // 如果是 Web 环境，且拿到元数据，且当前标题/描述为空，则自动填充
-          if (!isUToolsEnv()) {
-            const currentTitle = draft.title.trim()
-            if (!currentTitle || currentTitle === hostname) {
-              if (fetched.title) draft.title = fetched.title
-            }
-            if (!draft.desc.trim() && fetched.description) {
-              draft.desc = fetched.description
-            }
+          // 自动填充标题和描述 (如果当前为空或仅为 hostname)
+          const currentTitle = draft.title.trim()
+          if (!currentTitle || currentTitle === hostname) {
+            if (fetched.title) draft.title = fetched.title
+          }
+          if (!draft.desc.trim() && fetched.description) {
+            draft.desc = fetched.description
           }
         } else {
           previewIcon.value = null
           iconFetchFailed.value = true
-          // Web 环境：如果 fetchAndCacheIcon 返回 null 且标题仍是 hostname，则提示
-          if (!isUToolsEnv()) {
-            const currentTitle = draft.title.trim()
-            if (!currentTitle || currentTitle === hostname) {
-              showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
-            }
+          // 如果标题仍是 hostname，则提示
+          const currentTitle = draft.title.trim()
+          if (!currentTitle || currentTitle === hostname) {
+            showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
           }
         }
       } catch {
@@ -403,47 +374,9 @@ function _useBookmarkForm() {
       } finally {
         iconLoading.value = false
       }
-    }, 300)
-  
-    if (titleTimer) clearTimeout(titleTimer)
-    // 仅 uTools 环境使用 evaluate 方式获取标题，Web 环境已在 previewTimer 中由后端获取
-    if (!isUToolsEnv()) return
-
-    titleTimer = setTimeout(async () => {
-      const currentTitle = draft.title.trim()
-      const shouldUpdate = !currentTitle || currentTitle === hostname
-      if (!shouldUpdate) return
-      titleFetchFailed.value = false
-      
-      let targetUrl = val
-  
-      if (/{[^}]+}/.test(targetUrl)) {
-        try {
-          const temp = targetUrl.replace(/{[^}]+}/g, 'x')
-          const u = new URL(/^https?:\/\//i.test(temp) ? temp : 'https://' + temp)
-          targetUrl = u.origin
-        } catch {
-          targetUrl = targetUrl.replace(/{[^}]+}/g, '')
-        }
-      }
-  
-      if (!/^https?:\/\//i.test(targetUrl)) {
-        targetUrl = 'https://' + targetUrl
-      }
-      
-      const pageTitle = await fetchPageTitle(targetUrl)
-      if (pageTitle) {
-        const latest = draft.title.trim()
-        if (!latest || latest === hostname) {
-          draft.title = pageTitle
-        }
-        titleFetchFailed.value = false
-      } else {
-        titleFetchFailed.value = true
-        showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
-      }
-    }, 600)
+    }, 400)
   })
+
 
   // Watchers to reset state
   watch(isDraftTemplate, (val) => {
@@ -458,7 +391,6 @@ function _useBookmarkForm() {
       showCategorySelector.value = false
       iconLoading.value = false
       editingId.value = ''
-      titleFetchFailed.value = false
       iconFetchFailed.value = false
       formError.value = ''
       isSaving.value = false
@@ -485,7 +417,6 @@ function _useBookmarkForm() {
     isSaving,
     iconLoading,
     iconFetchFailed,
-    titleFetchFailed,
     dialogOrigin,
     isEditing,
     maxDescLen,

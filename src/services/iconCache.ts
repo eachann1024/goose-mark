@@ -14,28 +14,20 @@ type UToolsIconApi = {
   ubrowser?: UBrowserApi
 }
 
-// 检测是否在 uTools 环境
 const isUToolsEnv = () => typeof window !== 'undefined' && !!(window as any).utools
 
-// 图标 API 基础地址（从环境变量或默认值获取）
 const getIconApiBase = () => {
-  // 1. 如果有显示的环境变量，使用它
   if (import.meta.env.VITE_SHARE_API_URL) {
     return import.meta.env.VITE_SHARE_API_URL.replace('/api/share', '')
   }
-  
-  // 2. 本地开发环境：使用相对路径以支持 Vite Proxy
   if (import.meta.env.DEV) {
-    return '' // 会拼接成 /api/icon
+    return '' 
   }
-
-  // 3. 生产环境默认值
   return 'http://43.142.149.157:3001'
 }
 
 const ICON_API_URL = `${getIconApiBase()}/api/icon`
 
-// 文本图标生成
 const textIconFromBookmark = (bookmark: Bookmark): IconSource => {
   const base = bookmark.title.trim() || bookmark.url.trim()
   const text = base ? base.slice(0, 4).toUpperCase() : '•'
@@ -49,49 +41,40 @@ export const iconToDisplayUrl = (icon?: IconSource) => {
   return null
 }
 
-// 默认不自动取色，背景留空，必要时由用户手动选择
-
-/**
- * 从 DuckDuckGo Icons 服务获取图标（回退方案）
- * 快速稳定，适合作为兜底
- * 注意：Web 端浏览器 CORS 限制会阻止此请求，仅在 uTools 环境有效
- */
 const fetchIconFromDuckDuckGo = async (host: string): Promise<string | null> => {
-  // Web 端跳过，避免 CORS 错误
-  if (!isUToolsEnv()) {
-    return null
-  }
+  if (!isUToolsEnv()) return null
 
   try {
     const ddgUrl = `https://icons.duckduckgo.com/ip3/${host}.ico`
     const response = await fetch(ddgUrl, { method: 'HEAD' })
-    if (response.ok) {
-      return ddgUrl
-    }
+    if (response.ok) return ddgUrl
     return null
-  } catch (e) {
-    // 静默失败，避免控制台噪音
+  } catch {
     return null
   }
 }
 
-/**
- * 从网页 HTML 获取图标链接（uTools ubrowser 优先方案）
- * 优先级：apple-touch-icon > SVG > icon/shortcut icon > og:image
- * 注意：仅在 uTools 环境有效
- */
-const fetchIconFromPage = async (url: string): Promise<string | null> => {
+const fetchIconAndMetadataFromPage = async (url: string): Promise<{ icon: string | null; title: string | null; description: string | null } | null> => {
   const utoolsApi = window.utools as unknown as UToolsIconApi | undefined
   if (!utoolsApi?.ubrowser) return null
 
   try {
     const result = await utoolsApi.ubrowser
       .goto(url)
-      .wait(2000)
+      .wait(1500)
       .evaluate(() => {
+        const metadata = {
+          icon: null as string | null,
+          title: (document.title || '').trim(),
+          description: '' as string | null
+        }
+
+        const descTag = document.querySelector<HTMLMetaElement>('meta[name="description"]') || 
+                      document.querySelector<HTMLMetaElement>('meta[property="og:description"]')
+        metadata.description = descTag?.content?.trim() || ''
+
         const icons: { href: string; priority: number; size: number }[] = []
 
-        // 1. apple-touch-icon
         document.querySelectorAll<HTMLLinkElement>('link[rel*="apple-touch-icon"]').forEach(link => {
           if (link.href) {
             const sizeMatch = link.sizes?.value?.match(/(\d+)/)
@@ -100,7 +83,6 @@ const fetchIconFromPage = async (url: string): Promise<string | null> => {
           }
         })
 
-        // 2. icon / shortcut icon
         document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"]').forEach(link => {
           if (link.href) {
             const sizeMatch = link.sizes?.value?.match(/(\d+)/)
@@ -110,7 +92,6 @@ const fetchIconFromPage = async (url: string): Promise<string | null> => {
           }
         })
 
-        // 3. og:image
         const ogImage = document.querySelector<HTMLMetaElement>('meta[property="og:image"]')?.content
         if (ogImage) {
           icons.push({ href: ogImage, priority: 1, size: 512 })
@@ -121,27 +102,30 @@ const fetchIconFromPage = async (url: string): Promise<string | null> => {
           return b.size - a.size
         })
 
-        return icons[0]?.href || null
+        metadata.icon = icons[0]?.href || null
+        return metadata
       })
       .run({ width: 1024, height: 768, show: false })
 
-    return result && result.length > 0 ? (result[0] as string | null) : null
-  } catch (e) {
-    // 静默失败，避免控制台噪音
+    if (result && result.length > 0) {
+      const data = result[0] as any
+      return {
+        icon: data.icon || null,
+        title: data.title || null,
+        description: data.description || null
+      }
+    }
+    return null
+  } catch {
     return null
   }
 }
 
-/**
- * 从后端代理获取图标和元数据（Web 端专用）
- * 通过后端绕过 CORS 限制，获取 base64 格式的图标及标题、简介
- */
 const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; title?: string | null; description?: string | null } | null> => {
-  // uTools 环境不使用代理
   if (isUToolsEnv()) return null
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12000)  // 增加到 12 秒，因为后端现在需要解析 HTML
+  const timer = setTimeout(() => controller.abort(), 12000)
 
   try {
     const response = await fetch(`${ICON_API_URL}?url=${encodeURIComponent(url)}`, {
@@ -163,27 +147,14 @@ const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; t
   }
 }
 
-/**
- * 获取图标及元数据（多策略）
- *
- * uTools 环境：
- *   1. ubrowser 解析 HTML（优先）
- *   2. DuckDuckGo Icons（回退）
- *
- * Web 环境：
- *   1. 后端代理 API
- *   2. 文本图标 fallback
- */
 export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(IconSource & { title?: string | null; description?: string | null }) | null> => {
   if (!url) return null
 
-  // 如果包含模板占位符 {xxx}，直接取 Origin，避免参数残留导致页面加载异常或搜索不到
   let targetUrl = url
   const hasTemplate = /{[^}]+}/.test(url)
 
   if (hasTemplate) {
     try {
-      // 临时移除占位符以便解析
       const temp = url.replace(/{[^}]+}/g, 'x')
       const u = new URL(/^https?:\/\//i.test(temp) ? temp : 'https://' + temp)
       targetUrl = u.origin
@@ -192,7 +163,6 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
     }
   }
 
-  // 确保 URL 有协议
   if (!/^https?:\/\//i.test(targetUrl)) {
     targetUrl = 'https://' + targetUrl
   }
@@ -205,20 +175,22 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
   }
 
   if (isUToolsEnv()) {
-    // uTools 环境：原有策略
-    // 策略 1：ubrowser 解析 HTML
-    const pageIcon = await fetchIconFromPage(targetUrl)
-    if (pageIcon) {
-      return { type: 'remote', src: pageIcon, fetchedAt: Date.now() }
+    const pageResult = await fetchIconAndMetadataFromPage(targetUrl)
+    if (pageResult) {
+      return { 
+        type: 'remote', 
+        src: pageResult.icon || '', 
+        fetchedAt: Date.now(),
+        title: pageResult.title,
+        description: pageResult.description
+      }
     }
 
-    // 策略 2：DuckDuckGo Icons 兜底
     const ddgIcon = await fetchIconFromDuckDuckGo(host)
     if (ddgIcon) {
       return { type: 'remote', src: ddgIcon, fetchedAt: Date.now() }
     }
   } else {
-    // Web 环境：使用后端代理 API
     const result = await fetchIconFromProxy(targetUrl)
     if (result && result.icon) {
       return { 
@@ -229,10 +201,9 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
         description: result.description
       }
     } else if (result) {
-       // 即使没有图标，如果拿到了标题或描述，也返回一部分信息
        return {
          type: 'remote',
-         src: '', // 占位，会被 fallback 到 text icon
+         src: '', 
          fetchedAt: Date.now(),
          title: result.title,
          description: result.description

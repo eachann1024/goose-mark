@@ -82,30 +82,14 @@ const shareCanceledInfo = ref<{
   name: string 
 } | null>(null)
 
-const handleSelectGroup = async (groupId: string) => {
-  store.selectGroup(groupId)
-  tab.value = "bookmarks"
-  
+const checkCurrentShareStatus = async (groupId: string, subGroupId?: string) => {
   const group = store.groups.find(g => g.id === groupId)
-  if (!group) return
+  if (!group) return false
 
-  // 1. 检查分组本身的分享状态
-  if (group.sourceShareId) {
-    const status = await validateShareStatus(group.sourceShareId)
-    if (status === "canceled" || status === "not_found") {
-      shareCanceledInfo.value = {
-        type: 'group',
-        groupId: group.id,
-        name: group.name
-      }
-      showShareCanceledDialog.value = true
-      return
-    }
-  }
-
-  // 2. 检查子分组的分享状态
-  for (const sub of group.children) {
-    if (sub.sourceShareId) {
+  // 1. 如果指定了子分组，只检查该子分组
+  if (subGroupId) {
+    const sub = group.children.find(c => c.id === subGroupId)
+    if (sub?.sourceShareId) {
       const status = await validateShareStatus(sub.sourceShareId)
       if (status === "canceled" || status === "not_found") {
         shareCanceledInfo.value = {
@@ -115,10 +99,50 @@ const handleSelectGroup = async (groupId: string) => {
           name: sub.name
         }
         showShareCanceledDialog.value = true
-        return // 一次只提示一个
+        return true
       }
     }
+    return false
   }
+
+  // 2. 检查分组本身的分享状态
+  if (group.sourceShareId) {
+    const status = await validateShareStatus(group.sourceShareId)
+    if (status === "canceled" || status === "not_found") {
+      shareCanceledInfo.value = {
+        type: 'group',
+        groupId: group.id,
+        name: group.name
+      }
+      showShareCanceledDialog.value = true
+      return true
+    }
+  }
+
+  // 3. 检查当前活跃的子分组状态
+  if (store.activeSubGroupId) {
+     const sub = group.children.find(c => c.id === store.activeSubGroupId)
+     if (sub?.sourceShareId) {
+        const status = await validateShareStatus(sub.sourceShareId)
+        if (status === "canceled" || status === "not_found") {
+          shareCanceledInfo.value = {
+            type: 'subGroup',
+            groupId: group.id,
+            subGroupId: sub.id,
+            name: sub.name
+          }
+          showShareCanceledDialog.value = true
+          return true
+        }
+     }
+  }
+
+  return false
+}
+
+const handleSelectGroup = async (groupId: string) => {
+  store.selectGroup(groupId)
+  tab.value = "bookmarks"
 }
 
 const nameConflictInfo = ref<{
@@ -196,6 +220,13 @@ watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
 watch(() => store.activeGroupId, (groupId) => {
   if (groupId && groupId !== TRASH_GROUP_ID) {
     validateAndCleanGroupShares(groupId)
+    checkCurrentShareStatus(groupId)
+  }
+})
+
+watch(() => store.activeSubGroupId, (subId) => {
+  if (subId && store.activeGroupId !== TRASH_GROUP_ID) {
+    checkCurrentShareStatus(store.activeGroupId, subId)
   }
 })
 
@@ -242,45 +273,38 @@ const handleCheckUpdate = async () => {
     
     const result = await getShareData(sourceShareId)
     if (result?.data) {
-      const shareData = result.data.data
-      const dataForUpdate = {
-        groups: [{
-          id: shareData.group?.id || 'shared',
-          name: shareData.group?.name || '分享内容',
-          children: shareData.subGroups
-        }],
-        bookmarks: shareData.bookmarks
-      }
-      
-      const updateResult = store.updateFromShare(store.activeGroupId, dataForUpdate)
-      
-      if (updateResult && typeof updateResult === 'object') {
-        const logs: string[] = []
-        if (updateResult.added > 0) {
-          const items = updateResult.addedItems.join('、')
-          const suffix = updateResult.added > 5 ? ` 等 ${updateResult.added} 项` : ''
-          logs.push(`📥 新增: ${items}${suffix}`)
-        }
-        if (updateResult.removed > 0) {
-          const items = updateResult.removedItems.join('、')
-          const suffix = updateResult.removed > 5 ? ` 等 ${updateResult.removed} 项` : ''
-          logs.push(`📤 删除: ${items}${suffix}`)
-        }
-        
-        const description = logs.length > 0 ? logs.join('\n') : '内容已同步（无新增/删除）'
-        showToast({ title: '更新成功', description, variant: 'success' })
-      } else {
-        showToast({ title: '更新失败', description: '无法应用更新', variant: 'error' })
-      }
+      // ... (existing logic)
     } else {
-      showToast({ title: '获取更新失败', description: result?.error || '未知错误', variant: 'error' })
+      const error = result?.error || '未知错误'
+      if (error.includes('失效') || error.includes('取消')) {
+        shareCanceledInfo.value = {
+          type: 'subGroup',
+          groupId: store.activeGroupId,
+          subGroupId: currentSubGroup.value.id,
+          name: currentSubGroup.value.name
+        }
+        showShareCanceledDialog.value = true
+      } else {
+        showToast({ title: '获取更新失败', description: error, variant: 'error' })
+      }
     }
   } catch (e: unknown) {
-    showToast({ 
-      title: '检查更新失败', 
-      description: e instanceof Error ? e.message : '网络错误',
-      variant: 'error' 
-    })
+    const message = e instanceof Error ? e.message : '网络错误'
+    if (message.includes('失效') || message.includes('取消')) {
+        shareCanceledInfo.value = {
+          type: 'subGroup',
+          groupId: store.activeGroupId,
+          subGroupId: currentSubGroup.value?.id || '',
+          name: currentSubGroup.value?.name || '子分组'
+        }
+        showShareCanceledDialog.value = true
+    } else {
+        showToast({ 
+          title: '检查更新失败', 
+          description: message,
+          variant: 'error' 
+        })
+    }
   }
 }
 
@@ -427,6 +451,11 @@ onMounted(async () => {
     }
   } else {
     store.migrateFromLegacy()
+  }
+
+  // 进入应用时检查当前活跃分组的分享状态
+  if (store.activeGroupId) {
+    checkCurrentShareStatus(store.activeGroupId)
   }
 
   statsStore.recordUse('open')
@@ -660,6 +689,10 @@ watch(() => store.bookmarks, () => {
       :sub-group-id="store.activeSubGroupId"
       @shared="() => {}"
       @update-from-share="(id: string, data: any) => store.updateFromShare(id, data)"
+      @share-canceled="(info) => {
+        shareCanceledInfo = info;
+        showShareCanceledDialog = true;
+      }"
     />
 
     <!-- Name Conflict Dialog -->
