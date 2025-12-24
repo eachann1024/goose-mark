@@ -354,8 +354,8 @@ export function useShare() {
     }
 
     if (existingMainGroup && allSubGroupsExist) {
-      store.activeGroupId = 'g-default'
-      store.activeSubGroupId = 'sg-default'
+      store.activeGroupId = existingMainGroup.id
+      store.activeSubGroupId = existingMainGroup.children[0]?.id || ''
       return { success: true, existing: true } as const
     }
 

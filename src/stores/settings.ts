@@ -3,7 +3,6 @@ import { utoolsStorage } from '@/lib/utoolsStorage'
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
-    autoGenerateAI: false, // 自动使用 AI 生成标题和描述
     gridColumns: 3,
     searchAutoExitMinutes: 5,
     groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
@@ -15,9 +14,6 @@ export const useSettingsStore = defineStore('settings', {
     windowHeight: 700
   }),
   actions: {
-    setAutoGenerateAI(value: boolean) {
-      this.autoGenerateAI = value
-    },
     setGridColumns(value: number) {
       const next = Math.min(5, Math.max(2, Math.round(value)))
       this.gridColumns = next

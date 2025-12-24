@@ -952,7 +952,10 @@ export const useBookmarkStore = defineStore('bookmark', {
       return true
     },
     // 更新已导入的分享分组（整个分组都是从分享导入的情况）
-    updateFromShare(groupId: string, data: { groups: Group[]; bookmarks: Bookmark[] }) {
+    // 返回变更摘要：{ success, added, removed, addedItems, removedItems }
+    updateFromShare(groupId: string, data: { groups: Group[]; bookmarks: Bookmark[] }): 
+      | false 
+      | { success: true; added: number; removed: number; addedItems: string[]; removedItems: string[] } {
       const group = this.groups.find(g => g.id === groupId)
       if (!group || !group.sourceShareId) return false
       
@@ -966,16 +969,24 @@ export const useBookmarkStore = defineStore('bookmark', {
         return false
       }
       
-      // 1. 更新子分组结构：保留本地 ID，同步名称和顺序
-      // 策略：尽量复用现有子分组 ID，以保持用户习惯（虽然不仅读，但为了 UI 稳定）。
-      // 实际上对于只读分组，我们可以直接全量替换子分组和书签内容，但要小心本地状态（如展开状态）。
-      // 为了简化，我们清空该组下所有旧书签，重新导入新书签。
-      
-      // 找出该组下的所有旧书签 ID
+      // 收集本地旧书签信息（用 URL 作为唯一标识进行对比）
       const oldBookmarkIds = new Set<string>()
       group.children.forEach(sub => sub.bookmarkIds.forEach(id => oldBookmarkIds.add(id)))
+      const oldBookmarks = this.bookmarks.filter(b => oldBookmarkIds.has(b.id))
+      const oldUrlToBookmark = new Map(oldBookmarks.map(b => [b.url, b]))
+      const oldUrls = new Set(oldBookmarks.map(b => b.url))
       
-      // 从 store.bookmarks 中移除
+      // 收集远端新书签信息
+      const newUrls = new Set(data.bookmarks.map(b => b.url))
+      const newUrlToBookmark = new Map(data.bookmarks.map(b => [b.url, b]))
+      
+      // 计算差异：新增和删除的书签
+      const addedUrls = [...newUrls].filter(url => !oldUrls.has(url))
+      const removedUrls = [...oldUrls].filter(url => !newUrls.has(url))
+      const addedItems = addedUrls.map(url => newUrlToBookmark.get(url)?.title || url).slice(0, 5)
+      const removedItems = removedUrls.map(url => oldUrlToBookmark.get(url)?.title || url).slice(0, 5)
+      
+      // 从 store.bookmarks 中移除旧书签
       this.bookmarks = this.bookmarks.filter(b => !oldBookmarkIds.has(b.id))
       
       // 准备新数据
@@ -988,10 +999,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         locations: [] // 稍后设置
       }))
       
-      // 重建子分组
-      // 复用现有子分组 ID 很难一一对应，因为源数据只有 name。
-      // 所以每次都新建子分组吧，或者尝试按名称匹配复用 ID？
-      // 按名称匹配复用 ID 用户体验更好。
+      // 重建子分组（按名称匹配复用 ID）
       const newChildren = sourceGroup.children.map(srcSub => {
         const existingSub = group.children.find(c => c.name === srcSub.name)
         const subId = existingSub ? existingSub.id : uid()
@@ -1016,7 +1024,14 @@ export const useBookmarkStore = defineStore('bookmark', {
       })
       
       this.bookmarks.push(...newBookmarks)
-      return true
+      
+      return { 
+        success: true, 
+        added: addedUrls.length, 
+        removed: removedUrls.length,
+        addedItems,
+        removedItems
+      }
     }
   },
   persist: {

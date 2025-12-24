@@ -19,7 +19,6 @@ import type { Group } from '@/types/bookmark'
 
 import { notify } from '@/lib/notify'
 import { getDebugSnapshot } from '@/lib/debugReport'
-import { useAI } from '@/composables/useAI'
 import { useAppState } from '@/composables/useAppState'
 import { Loader2 } from 'lucide-vue-next'
 import ShareImportDialog from '@/components/ShareImportDialog.vue'
@@ -31,23 +30,6 @@ const settingsStore = useSettingsStore()
 const statsStore = useStatsStore()
 
 const { isUTools } = useAppState()
-const { checkAiAvailable } = useAI()
-
-// 切换"自动生成"开关时验证 AI 可用性
-const toggleAutoGenerateAI = (newValue: boolean) => {
-  if (newValue) {
-    const { available, reason } = checkAiAvailable()
-    if (!available) {
-      notify(reason)
-      // AI 不可用时，确保设置为 false，防止状态不一致
-      settingsStore.setAutoGenerateAI(false)
-      return
-    }
-  }
-  settingsStore.setAutoGenerateAI(newValue)
-}
-
-
 
 const matching = ref(false)
 const probing = ref(false)
@@ -989,19 +971,8 @@ const closeUndoToast = () => {
            <CardDescription>配置 AI 智能辅助功能（需在 uTools 中开启 AI）</CardDescription>
          </CardHeader>
          <CardContent>
-            <div class="flex flex-col gap-4">
-              <label class="flex items-center justify-between cursor-pointer">
-                <div class="space-y-0.5">
-                  <div class="text-sm font-medium">自动生成标题和描述</div>
-                  <div class="text-xs text-muted-foreground">新建书签时自动调用 AI 优化标题并生成描述</div>
-                </div>
-                <Switch 
-                  :checked="settingsStore.autoGenerateAI"
-                  @update:checked="toggleAutoGenerateAI"
-                />
-              </label>
-
-              <label class="flex items-center justify-between cursor-pointer">
+             <div class="flex flex-col gap-4">
+               <label class="flex items-center justify-between cursor-pointer">
                 <div class="space-y-0.5">
                   <div class="text-sm font-medium">使用指定 AI 模型</div>
                   <div class="text-xs text-muted-foreground">默认使用 deepseek-v3</div>
