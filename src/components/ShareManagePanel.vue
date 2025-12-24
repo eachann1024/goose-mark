@@ -11,6 +11,7 @@ const emit = defineEmits<{
   (e: 'update:open', value: boolean): void
   (e: 'shared', shareId: string): void
   (e: 'update-from-share', shareId: string, data: any): void
+  (e: 'share-canceled', info: { type: 'group' | 'subGroup'; groupId: string; subGroupId?: string; name: string }): void
 }>()
 
 const store = useBookmarkStore()
@@ -71,16 +72,13 @@ const handleUpdate = async () => {
              const error = result?.error || '未知错误'
              // 检查是否为分享失效的错误
              if (error.includes('失效') || error.includes('取消')) {
-               showToast({
-                 title: '分享已失效',
-                 description: '该分享已被分享者删除或取消',
-                 variant: 'warning',
-                 actionLabel: '删除本地副本',
-                 onAction: () => {
-                   store.removeSubGroup(props.groupId, props.subGroupId)
-                   emit('update:open', false)
-                 }
+               emit('share-canceled', {
+                 type: 'subGroup',
+                 groupId: props.groupId,
+                 subGroupId: props.subGroupId,
+                 name: currentSubGroup.value?.name || '子分组'
                })
+               emit('update:open', false)
              } else {
                showToast({
                  title: '获取更新失败',
@@ -93,16 +91,13 @@ const handleUpdate = async () => {
          const errorMessage = e instanceof Error ? e.message : '网络错误'
          // 检查是否为分享失效的错误
          if (errorMessage.includes('失效') || errorMessage.includes('取消')) {
-           showToast({
-             title: '分享已失效',
-             description: '该分享已被分享者删除或取消',
-             variant: 'warning',
-             actionLabel: '删除本地副本',
-             onAction: () => {
-               store.removeSubGroup(props.groupId, props.subGroupId)
-               emit('update:open', false)
-             }
+           emit('share-canceled', {
+             type: 'subGroup',
+             groupId: props.groupId,
+             subGroupId: props.subGroupId,
+             name: currentSubGroup.value?.name || '子分组'
            })
+           emit('update:open', false)
          } else {
            showToast({
              title: '更新失败',

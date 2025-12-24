@@ -12,7 +12,6 @@ const {
   isSaving,
   iconLoading,
   iconFetchFailed,
-  titleFetchFailed,
   maxDescLen,
   previewIconStyle,
   previewText,
