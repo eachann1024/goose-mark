@@ -159,6 +159,14 @@ const copyUrl = async () => {
 }
 const deletePopoverOpen = ref(false)
 const editTooltipOpen = ref(false)
+
+const handleEdit = () => {
+  editTooltipOpen.value = false
+  // 使用 nextTick 确保 tooltip 先关闭
+  nextTick(() => {
+    emit('edit', props.bookmark, (cardEl.value?.$el ?? cardEl.value) as HTMLElement | undefined)
+  })
+}
 </script>
 
 <template>
@@ -230,9 +238,9 @@ const editTooltipOpen = ref(false)
     <div v-if="!readonly" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
         <!-- Copy button removed as per requirement -->
         <!-- Edit Button -->
-        <Tooltip v-model:open="editTooltipOpen">
+        <Tooltip v-model:open="editTooltipOpen" :disable-hoverable-content="true">
           <TooltipTrigger as-child>
-            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted" @click.stop="editTooltipOpen = false; emit('edit', bookmark, cardEl?.$el ?? cardEl ?? undefined)">
+            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted" @click.stop="handleEdit">
               <span class="i-mdi-pencil text-xs" />
             </Button>
           </TooltipTrigger>

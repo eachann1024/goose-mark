@@ -1,6 +1,6 @@
 
 import { ref, reactive, computed, watch, nextTick } from 'vue'
-import { onClickOutside, useEventListener } from '@vueuse/core'
+import { onClickOutside, useEventListener, createSharedComposable } from '@vueuse/core'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { useStatsStore } from '@/stores/stats'
@@ -25,37 +25,13 @@ type UToolsExtendedApi = {
     ubrowser?: UBrowserApi
 }
 
-export function useBookmarkForm() {
+function _useBookmarkForm() {
   const store = useBookmarkStore()
   const statsStore = useStatsStore()
   const settingsStore = useSettingsStore()
   const { checkUrl, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata, checkAiAvailable } = useAI()
-  const { updateShare } = useShare()
 
-  // 通用的自动更新分享函数
-  const autoUpdateShareForLocations = (locations: BookmarkLocation[]) => {
-    // 优先使用主分组分享（包含所有子分组），避免子分组更新覆盖主分组数据
-    for (const loc of locations) {
-      const group = store.groups.find(g => g.id === loc.groupId)
-      if (!group) continue
-      
-      // 优先检查主分组是否有 shareId（主分组分享包含所有子分组，更安全）
-      if (group.shareId) {
-        // 静默更新分享，不显示 toast（因为是自动的）
-        void updateShare(group.shareId, 'group', loc.groupId)
-        break // 只更新第一个匹配的分享
-      }
-      
-      // 如果主分组没有 shareId，再检查子分组是否有 shareId
-      const subGroup = group.children.find(c => c.id === loc.subGroupId)
-      if (subGroup?.shareId) {
-        // 静默更新分享，不显示 toast（因为是自动的）
-        void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
-        break // 只更新第一个匹配的分享
-      }
-    }
-  }
-
+  // 状态定义 - 在函数内部，但由于 createSharedComposable 只会执行一次
   const showAdd = ref(false)
   const modalTitle = ref('新建书签')
   const editingId = ref('')
@@ -91,6 +67,34 @@ export function useBookmarkForm() {
 
   let previewTimer: ReturnType<typeof setTimeout> | null = null
   let titleTimer: ReturnType<typeof setTimeout> | null = null
+  const { updateShare } = useShare()
+
+  // 通用的自动更新分享函数
+  // 支持多个位置，会更新所有涉及的分享
+  const autoUpdateShareForLocations = (locations: BookmarkLocation[]) => {
+    // 已更新的 shareId 集合，避免重复更新
+    const updatedShareIds = new Set<string>()
+    
+    for (const loc of locations) {
+      const group = store.groups.find(g => g.id === loc.groupId)
+      if (!group) continue
+      
+      // 1. 优先检查主分组是否有 shareId
+      if (group.shareId && !updatedShareIds.has(group.shareId)) {
+        void updateShare(group.shareId, 'group', loc.groupId)
+        updatedShareIds.add(group.shareId)
+        // 主分组分享包含所有子分组，不需要再单独更新该分组下的子分组分享
+        continue
+      }
+      
+      // 2. 如果主分组没有 shareId，检查子分组是否有 shareId
+      const subGroup = group.children.find(c => c.id === loc.subGroupId)
+      if (subGroup?.shareId && !updatedShareIds.has(subGroup.shareId)) {
+        void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
+        updatedShareIds.add(subGroup.shareId)
+      }
+    }
+  }
 
   // Computed
   const isEditing = computed(() => !!editingId.value)
@@ -505,3 +509,8 @@ export function useBookmarkForm() {
     isGenerating,
   }
 }
+
+// 使用 createSharedComposable 确保全局只有一个实例
+// 这样所有组件共享同一份状态，且 watchers 只注册一次
+export const useBookmarkForm = createSharedComposable(_useBookmarkForm)
+

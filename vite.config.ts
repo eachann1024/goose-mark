@@ -25,6 +25,8 @@ export default defineConfig({
     })
   ],
   build: {
+    // 禁用 modulePreload 避免 uTools 环境中的警告
+    modulePreload: false,
     rollupOptions: {
       output: {
         manualChunks: {
