@@ -437,41 +437,7 @@ function _useBookmarkForm() {
     }
   })
 
-  // Paste Listener
-  useEventListener(window, 'paste', (e: ClipboardEvent) => {
-    if (!showAdd.value) return
-    
-    // Ignore if pasting into input/textarea
-    const active = document.activeElement as HTMLElement
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
-      return
-    }
-    
-    const items = e.clipboardData?.items
-    if (!items || items.length === 0) return
-  
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-         e.preventDefault() 
-         const file = item.getAsFile()
-         if (file) {
-           const reader = new FileReader()
-           reader.onload = (evt) => {
-              const result = evt.target?.result as string
-              if (result) {
-                previewIcon.value = {
-                  type: 'remote',
-                  src: result,
-                  fetchedAt: Date.now()
-                }
-              }
-           }
-           reader.readAsDataURL(file)
-         }
-         return
-      }
-    }
-  })
+
 
   return {
     showAdd,

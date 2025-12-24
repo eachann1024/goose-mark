@@ -12,7 +12,7 @@ const { toastState, closeToast, showToast, tooltipProviderKey, onMainViewSwitch 
 // Composables
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
 const { 
-  openBookmarkLink, 
+  openBookmarkLink: originalOpenBookmarkLink, 
   openUrl,
   copyBookmarkUrl, 
   handleRemove, 
@@ -24,6 +24,24 @@ const {
   copyNotice,
   getTemplateLabel
 } = useBookmarkOperations()
+
+const openBookmarkLink = (bookmark: Bookmark) => {
+  const hasTemplate = /{[^}]+}/.test(bookmark.url)
+  // Check if we already have a search query (from UI search)
+  // If user searched for "douban" and clicked the card, maybe they want to open "douban" search?
+  // But usually clicking a card means "open this tool".
+  
+  if (hasTemplate) {
+    // Check if store.search is effectively a query for this template?
+    // If I search "douban", finding the "douban" bookmark.
+    // If I click it, I expect to enter the template mode.
+    enterTemplateMode(bookmark)
+    return
+  }
+  
+  originalOpenBookmarkLink(bookmark)
+}
+
 
 const {
   showAdd,
@@ -69,7 +87,7 @@ const nameConflictInfo = ref<{
 // Window Height Watcher
 watch(() => settingsStore.windowHeight, (h) => {
   setExpendHeight(h)
-}, { immediate: true })
+})
 
 // Search
 const {
@@ -259,6 +277,40 @@ const clearShareIdFromUrl = () => {
   }
 }
 
+const activeTemplateBookmark = ref<Bookmark | null>(null)
+const templateQuery = ref('')
+
+// Template Mode Actions
+const enterTemplateMode = (bookmark: Bookmark) => {
+  activeTemplateBookmark.value = bookmark
+  templateQuery.value = ''
+  
+  // Clean UI
+  searchViewOpen.value = false
+  showSharePanel.value = false
+  showAdd.value = false
+  showDeleteConfirm.value = false
+  
+  // Set uTools sub input
+  const label = getTemplateLabel(bookmark.url)
+  window.utools?.setSubInput?.(({ text }) => {
+    templateQuery.value = text
+  }, `搜索 ${bookmark.title}${label ? ` (${label})` : ''}，回车打开`)
+}
+
+const exitTemplateMode = () => {
+  activeTemplateBookmark.value = null
+  templateQuery.value = ''
+  
+  // Restore default sub input
+  const shouldUse = !isDetachedWindowNow()
+  if (shouldUse) {
+    window.utools?.setSubInput?.(handleSubInput, '搜索书签...', true)
+  } else {
+    window.utools?.removeSubInput?.()
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
   let shareId: string | null = null
@@ -322,6 +374,7 @@ onMounted(async () => {
     
     window.utools?.onPluginEnter?.((params) => {
       onMainViewSwitch() // 清理所有 UI 状态（tooltip、toast）
+      activeTemplateBookmark.value = null // 清理模板模式状态
       syncTheme()
       syncFeatures(store.bookmarks)
       syncSubInput()
@@ -337,11 +390,28 @@ onMounted(async () => {
         }
         
         const hasTemplate = /{[^}]+}/.test(bookmark.url)
-        if (hasTemplate && !query) {
-          window.utools?.outPlugin()
-          return
+        
+        // 如果是模板书签
+        if (hasTemplate) {
+          // 1. 如果开启了全局/正则匹配 (allowUniversal)，说明 payload 是用户明确选中的文本或正则匹配内容，直接搜索
+          if (bookmark.allowUniversal) {
+             if (!query) {
+               // 极其罕见的情况：正则匹配但无文本？回退到模板模式
+               enterTemplateMode(bookmark)
+               return
+             }
+             // 继续向下执行直接搜索逻辑
+          } else {
+             // 2. 如果是普通关键词匹配 (e.g. 输入"豆瓣")，
+             // uTools 传递的 payload 通常就是关键词本身，
+             // 用户意图是唤起搜索框，而不是搜索关键词本身。
+             // 因此强制进入模板模式。
+             enterTemplateMode(bookmark)
+             return
+          }
         }
         
+        // 执行搜索/打开逻辑
         let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
         if (!/^https?:\/\//i.test(url)) url = 'https://' + url
         openUrl(url)
@@ -366,7 +436,12 @@ watch(() => store.bookmarks, () => {
 
 <template>
   <TooltipProvider :key="tooltipProviderKey" :delay-duration="100">
-  <div class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="closeContext">
+  <TemplateSearch 
+    v-if="activeTemplateBookmark" 
+    :bookmark="activeTemplateBookmark" 
+    :query="templateQuery" 
+  />
+  <div v-else class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="closeContext">
     <!-- Top Navigation for Groups -->
     <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
        <GroupTabs
