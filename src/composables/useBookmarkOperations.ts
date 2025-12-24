@@ -19,25 +19,28 @@ export function useBookmarkOperations() {
   const isDevRuntime = import.meta.env.DEV
 
   // 通用的自动更新分享函数
+  // 支持多个位置，会更新所有涉及的分享
   const autoUpdateShareForLocations = (locations: Array<{ groupId: string; subGroupId: string }>) => {
-    // 优先使用主分组分享（包含所有子分组），避免子分组更新覆盖主分组数据
+    // 已更新的 shareId 集合，避免重复更新
+    const updatedShareIds = new Set<string>()
+    
     for (const loc of locations) {
       const group = store.groups.find(g => g.id === loc.groupId)
       if (!group) continue
       
-      // 优先检查主分组是否有 shareId（主分组分享包含所有子分组，更安全）
-      if (group.shareId) {
-        // 静默更新分享，不显示 toast（因为是自动的）
+      // 1. 优先检查主分组是否有 shareId
+      if (group.shareId && !updatedShareIds.has(group.shareId)) {
         void updateShare(group.shareId, 'group', loc.groupId)
-        break // 只更新第一个匹配的分享
+        updatedShareIds.add(group.shareId)
+        // 主分组分享包含所有子分组，不需要再单独更新该分组下的子分组分享
+        continue
       }
       
-      // 如果主分组没有 shareId，再检查子分组是否有 shareId
+      // 2. 如果主分组没有 shareId，检查子分组是否有 shareId
       const subGroup = group.children.find(c => c.id === loc.subGroupId)
-      if (subGroup?.shareId) {
-        // 静默更新分享，不显示 toast（因为是自动的）
+      if (subGroup?.shareId && !updatedShareIds.has(subGroup.shareId)) {
         void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
-        break // 只更新第一个匹配的分享
+        updatedShareIds.add(subGroup.shareId)
       }
     }
   }
@@ -183,13 +186,15 @@ export function useBookmarkOperations() {
   }
 
   const handleRemove = (bookmark: Bookmark) => {
-    // 获取书签的位置信息（删除前）
-    const locations = store.getBookmarkLocations(bookmark.id)
-    store.removeBookmark(bookmark.id)
-    // 删除书签后，自动更新相关分享（排除回收站）
-    const nonTrashLocations = locations.filter(loc => loc.groupId !== TRASH_GROUP_ID)
-    if (nonTrashLocations.length > 0) {
-      autoUpdateShareForLocations(nonTrashLocations)
+    // 只从当前位置移除书签（如果还有其他位置则保留书签）
+    const groupId = store.activeGroupId
+    const subGroupId = store.activeSubGroupId
+    
+    store.removeBookmarkFromLocation(bookmark.id, groupId, subGroupId)
+    
+    // 更新当前位置的分享（如果有的话）
+    if (groupId !== TRASH_GROUP_ID) {
+      autoUpdateShareForLocations([{ groupId, subGroupId }])
     }
   }
 
@@ -201,13 +206,15 @@ export function useBookmarkOperations() {
 
   const confirmDelete = () => {
     if (confirmDeleteId.value) {
-      // 获取书签的位置信息（删除前）
-      const locations = store.getBookmarkLocations(confirmDeleteId.value)
-      store.removeBookmark(confirmDeleteId.value)
-      // 删除书签后，自动更新相关分享（排除回收站）
-      const nonTrashLocations = locations.filter(loc => loc.groupId !== TRASH_GROUP_ID)
-      if (nonTrashLocations.length > 0) {
-        autoUpdateShareForLocations(nonTrashLocations)
+      // 只从当前位置移除书签
+      const groupId = store.activeGroupId
+      const subGroupId = store.activeSubGroupId
+      
+      store.removeBookmarkFromLocation(confirmDeleteId.value, groupId, subGroupId)
+      
+      // 更新当前位置的分享
+      if (groupId !== TRASH_GROUP_ID) {
+        autoUpdateShareForLocations([{ groupId, subGroupId }])
       }
     }
     showDeleteConfirm.value = false

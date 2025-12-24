@@ -1,7 +1,4 @@
 <script setup lang="ts">
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-
 const props = defineProps<{
   open: boolean
   targetGroupName: string

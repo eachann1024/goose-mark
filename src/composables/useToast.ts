@@ -1,59 +1,14 @@
-import { ref } from 'vue'
+/**
+ * @deprecated 请使用 useUIManager 替代
+ * 保留此文件仅为向后兼容
+ */
+import { useUIManager, type ToastVariant, type ToastState } from './useUIManager'
 
-export type ToastVariant = 'success' | 'info' | 'warning' | 'error'
-
-export interface ToastState {
-  visible: boolean
-  title: string
-  description?: string
-  variant?: ToastVariant
-  actionLabel?: string
-  onAction?: () => void
-  duration?: number
-}
-
-const state = ref<ToastState>({
-  visible: false,
-  title: '',
-  variant: 'info'
-})
-
-let timer: ReturnType<typeof setTimeout> | null = null
+export type { ToastVariant, ToastState }
 
 export function useToast() {
-  const showToast = (options: Omit<ToastState, 'visible'>) => {
-    if (timer) clearTimeout(timer)
-    
-    state.value = {
-      visible: true,
-      title: options.title,
-      description: options.description,
-      variant: options.variant || 'info',
-      actionLabel: options.actionLabel,
-      onAction: options.onAction
-    }
-
-    const duration = options.duration || 4500
-    timer = setTimeout(() => {
-      closeToast()
-    }, duration)
-  }
-
-  const closeToast = () => {
-    if (timer) clearTimeout(timer)
-    timer = null
-    state.value.visible = false
-    // Delay clearing data to allow transition out
-    setTimeout(() => {
-        if (!state.value.visible) {
-             state.value.onAction = undefined
-        }
-    }, 300)
-  }
-
-  return {
-    toastState: state,
-    showToast,
-    closeToast
-  }
+  const { toastState, showToast, closeToast } = useUIManager()
+  return { toastState, showToast, closeToast }
 }
+
+

@@ -312,6 +312,24 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.updateBookmarkLocations(id, [{ groupId: TRASH_GROUP_ID, subGroupId: 'sg-trash' }])
       }
     },
+    // 从指定位置移除书签（保留其他位置）
+    // 如果书签只在一个位置，则移到回收站
+    removeBookmarkFromLocation(id: string, groupId: string, subGroupId: string) {
+      const locations = this.getBookmarkLocations(id)
+      
+      // 过滤掉要移除的位置
+      const remainingLocations = locations.filter(
+        loc => !(loc.groupId === groupId && loc.subGroupId === subGroupId)
+      )
+      
+      if (remainingLocations.length > 0) {
+        // 还有其他位置，只从当前位置移除
+        this.updateBookmarkLocations(id, remainingLocations)
+      } else {
+        // 没有其他位置了，移到回收站
+        this.removeBookmark(id)
+      }
+    },
     restoreBookmark(id: string) {
       // Restore to default group
       this.updateBookmarkLocations(id, [{ groupId: 'g-default', subGroupId: 'sg-default' }])
