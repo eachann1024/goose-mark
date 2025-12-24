@@ -1,5 +1,5 @@
-
 import { utoolsStorage } from '@/lib/utoolsStorage'
+import { defineStore } from 'pinia'
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -7,7 +7,7 @@ export const useSettingsStore = defineStore('settings', {
     searchAutoExitMinutes: 5,
     groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
     enableSubInput: false,
-    autoCloseWindow: true, // 独立窗口模式下，打开标签后自动关闭
+    autoCloseWindow: true,
     preferUtoolsBrowser: false,
     useCustomAiModel: false,
     customAiModel: '',
@@ -16,8 +16,7 @@ export const useSettingsStore = defineStore('settings', {
   }),
   actions: {
     setGridColumns(value: number) {
-      const next = Math.min(5, Math.max(2, Math.round(value)))
-      this.gridColumns = next
+      this.gridColumns = Math.min(5, Math.max(2, Math.round(value)))
     },
     setGroupTabsLayout(mode: 'wrap' | 'scroll') {
       this.groupTabsLayout = mode === 'scroll' ? 'scroll' : 'wrap'
@@ -49,5 +48,8 @@ export const useSettingsStore = defineStore('settings', {
       this.windowHeight = num < 100 ? 100 : Math.round(num)
     }
   },
-  persist: { storage: utoolsStorage }
+  persist: {
+    storage: utoolsStorage,
+    // 移除 afterRestore，依靠 state() 的初始值
+  }
 })

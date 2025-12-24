@@ -9,6 +9,8 @@ const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.15
 const invalidatedShareIds = new Set<string>()
 const validationCache = new Map<string, { status: 'active' | 'canceled' | 'not_found' | 'error'; timestamp: number }>()
 const VALIDATION_CACHE_TTL = 30 * 60 * 1000 
+// In-flight requests deduplication
+const pendingRequests = new Map<string, Promise<'active' | 'canceled' | 'not_found' | 'error'>>()
 
 // 辅助：优化书签
 const optimizeBookmarkData = (bookmarks: Bookmark[]): Bookmark[] => {
@@ -233,6 +235,7 @@ export function useShare() {
       if (res.ok) {
         store.clearShareId(type, groupId, subGroupId)
         invalidatedShareIds.add(shareId) // 加入失效缓存
+        pendingRequests.delete(shareId) // 清除进行中的请求（如果有）
         return { success: true }
       }
       
@@ -240,6 +243,7 @@ export function useShare() {
       if (res.status === 404) {
         store.clearShareId(type, groupId, subGroupId)
         invalidatedShareIds.add(shareId) // 加入失效缓存
+        pendingRequests.delete(shareId) // 清除进行中的请求（如果有）
         return { success: true }
       }
       
@@ -251,41 +255,13 @@ export function useShare() {
     }
   }
   
-  // 验证分享状态缓存：shareId -> { status, timestamp }
-  const validationCache = new Map<string, { status: 'active' | 'canceled' | 'not_found' | 'error'; timestamp: number }>()
-  const VALIDATION_CACHE_TTL = 30 * 60 * 1000 // 30 分钟缓存
 
-  // 辅助函数：优化书签数据（压缩图标等）
-  const optimizeBookmarkData = (bookmarks: Bookmark[]): Bookmark[] => {
-    return bookmarks.map(b => {
-      // 检查图标是否过大
-      let isTooLarge = false
-      let size = 0
-      
-      if (b.icon?.type === 'remote') {
-        size = b.icon.src.length
-        isTooLarge = size > 500 * 1024
-      } else if (b.icon?.type === 'file') {
-        size = b.icon.path.length
-        isTooLarge = size > 500 * 1024
-      } else if (b.icon?.type === 'text') {
-        size = b.icon.value.length
-        isTooLarge = size > 10 * 1024 // 文字图标不应这么大
-      }
-
-      if (isTooLarge) {
-         console.warn(`[Share] 书签 "${b.title}" 图标过大 (${Math.round(size / 1024)}KB)，已自动移除以节省流量`)
-         return { ...b, icon: { type: 'text', value: (b.title || 'NONE').slice(0, 4).toUpperCase(), bgColor: '#random' } }
-      }
-      return b
-    })
-  }
 
   // 验证分享状态（用于切换分组时检查）
   const validateShareStatus = async (shareId: string): Promise<'active' | 'canceled' | 'not_found' | 'error'> => {
     // 1. 检查永久失效缓存
     if (invalidatedShareIds.has(shareId)) {
-      return 'not_found'
+      return 'canceled'
     }
 
     // 2. 检查 TTL 缓存
@@ -294,38 +270,54 @@ export function useShare() {
       if (import.meta.env.DEV) console.log(`[Share] 使用缓存状态: ${shareId} -> ${cached.status}`)
       return cached.status
     }
-    
-    try {
-      const res = await fetch(`${API_BASE_URL}/${shareId}/check`)
-      
-      let status: 'active' | 'canceled' | 'not_found' | 'error' = 'error'
 
-      // Robust status detection: parse body to check for 'canceled' flag
-      const data = await res.json().catch(() => ({}))
-
-      if (res.ok) {
-        status = data.active ? 'active' : 'canceled'
-      } else if (res.status === 404) {
-        status = 'not_found'
-      } else if (res.status === 410 || data.canceled) {
-        status = 'canceled'
-      } else {
-        if (res.status !== 429) { 
-           status = 'error'
-        }
-      }
-      
-      if (status !== 'error') {
-          validationCache.set(shareId, { status, timestamp: Date.now() })
-          if (status === 'not_found' || status === 'canceled') {
-             invalidatedShareIds.add(shareId)
-          }
-      }
-      
-      return status
-    } catch {
-      return 'error'
+    // 3. Check for in-flight requests
+    if (pendingRequests.has(shareId)) {
+      if (import.meta.env.DEV) console.log(`[Share] 复用进行中的请求: ${shareId}`)
+      return pendingRequests.get(shareId)!
     }
+    
+    // Create new request promise
+    const requestPromise = (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/${shareId}/check`)
+        
+        let status: 'active' | 'canceled' | 'not_found' | 'error' = 'error'
+
+        if (res.status === 404) {
+          status = 'not_found'
+        } else if (res.status === 410) {
+          status = 'canceled'
+        } else {
+          // 仅在必要时解析 JSON，避免 410 等无 body 情况下的解析错误
+          const data = await res.json().catch(() => ({}))
+          if (res.ok) {
+            status = data.active ? 'active' : 'canceled'
+          } else if (data.canceled) {
+            status = 'canceled'
+          } else if (res.status !== 429) {
+            status = 'error'
+          }
+        }
+        
+        if (status !== 'error') {
+            validationCache.set(shareId, { status, timestamp: Date.now() })
+            if (status === 'not_found' || status === 'canceled') {
+               invalidatedShareIds.add(shareId)
+            }
+        }
+        
+        return status
+      } catch (e) {
+        console.error(`[Share] 验证状态失败: ${shareId}`, e)
+        return 'error'
+      } finally {
+        pendingRequests.delete(shareId)
+      }
+    })()
+
+    pendingRequests.set(shareId, requestPromise)
+    return requestPromise
   }
   
   // 验证分组的分享状态并清理失效的（切换分组时调用）
@@ -554,12 +546,12 @@ export function useShare() {
         store.activeGroupId = mergedResult.group.id
         store.activeSubGroupId = mergedResult.subGroupId
 
-        // 立即刷新 localStorage，确保数据被保存（避免防抖延迟导致数据丢失）
+        // 立即刷新存储，确保数据被保存（避免防抖延迟导致数据丢失）
         // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
         await new Promise(resolve => setTimeout(resolve, 0))
         // 立即刷新待写入的数据
         utoolsStorage.flushItem('bookmark')
-        console.log('[loadShareData] 数据已立即保存到 localStorage')
+        console.log('[loadShareData] 数据已立即保存到持久化存储')
       } else {
         // 如果智能导入失败（理论上不应该），回退到快照模式
         console.warn('[loadShareData] 智能合并失败，回退到快照模式')
@@ -592,7 +584,7 @@ export function useShare() {
 
       const data: ShareData = {
         subGroups: allGroups.flatMap(g => g.children),
-        bookmarks: allBookmarks
+        bookmarks: optimizeBookmarkData(allBookmarks)
       }
 
       const res = await fetch(API_BASE_URL, {

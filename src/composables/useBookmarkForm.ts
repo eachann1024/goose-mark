@@ -96,7 +96,7 @@ function _useBookmarkForm() {
 
   // Computed
   const isEditing = computed(() => !!editingId.value)
-  const maxDescLen = 200
+  const maxDescLen = 300
 
   const previewIconStyle = computed(() => {
     if (previewIcon.value?.bgColor) {

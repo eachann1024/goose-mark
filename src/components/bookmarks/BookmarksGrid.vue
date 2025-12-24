@@ -54,6 +54,37 @@ const gridStyle = computed(() => {
   return { gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }
 })
 
+// 拖拽开始时设置书签 ID
+const handleDragStart = (evt: any) => {
+  // vuedraggable 的 @start 事件直接传递 Sortable 事件对象
+  const item = evt.item as HTMLElement
+  const originalEvent = evt.originalEvent as DragEvent | undefined
+  
+  if (!item || !originalEvent?.dataTransfer) {
+    console.warn('[BookmarksGrid] Drag start: missing item or dataTransfer')
+    return
+  }
+  
+  const index = item.dataset.bookmarkIndex
+  if (index !== undefined) {
+    const bookmark = props.bookmarks[parseInt(index)]
+    if (bookmark) {
+      originalEvent.dataTransfer.setData('text/bookmark-id', bookmark.id)
+      originalEvent.dataTransfer.effectAllowed = 'move'
+      console.log('[BookmarksGrid] Drag start:', bookmark.id, bookmark.title)
+    }
+  }
+}
+
+// 原生 dragstart 事件处理（作为备用方案）
+const handleNativeDragStart = (e: DragEvent, bookmark: Bookmark) => {
+  if (e.dataTransfer) {
+    e.dataTransfer.setData('text/bookmark-id', bookmark.id)
+    e.dataTransfer.effectAllowed = 'move'
+    console.log('[BookmarksGrid] Native drag start:', bookmark.id, bookmark.title)
+  }
+}
+
 const emptyTrashConfirmOpen = ref(false)
 const emptyToastOpen = ref(false)
 const emptyToastTitle = ref('')
@@ -124,11 +155,14 @@ const confirmEmptyTrash = () => {
       :style="gridStyle"
       :disabled="readonly"
       @change="handleDragChange"
+      @start="handleDragStart"
     >
       <template #item="{ element: bookmark, index }">
         <div
           :data-bookmark-index="index"
+          :data-bookmark-id="bookmark.id"
           class="bookmark-card-wrapper"
+          @dragstart="(e) => handleNativeDragStart(e, bookmark)"
         >
           <BookmarkCard
             :bookmark="bookmark"

@@ -6,6 +6,17 @@ const isTooltipEnabled = ref(true)
 
 // ============ Toast 管理 ============
 export type ToastVariant = 'success' | 'info' | 'warning' | 'error'
+export type ToastPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+/** 锚点信息，用于智能计算 Toast 位置 */
+export interface ToastAnchor {
+  /** 锚点元素的边界矩形 */
+  rect?: DOMRect
+  /** 锚点元素（会自动获取 getBoundingClientRect） */
+  element?: HTMLElement
+  /** 偏好策略：avoid=避开锚点，near=靠近锚点 */
+  strategy?: 'avoid' | 'near'
+}
 
 export interface ToastState {
   visible: boolean
@@ -15,15 +26,60 @@ export interface ToastState {
   actionLabel?: string
   onAction?: () => void
   duration?: number
+  position?: ToastPosition
+}
+
+export interface ToastOptions extends Omit<ToastState, 'visible'> {
+  /** 锚点信息，用于智能计算位置（优先级高于 position） */
+  anchor?: ToastAnchor
 }
 
 const toastState = ref<ToastState>({
   visible: false,
   title: '',
-  variant: 'info'
+  variant: 'info',
+  position: 'top-right'
 })
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 根据锚点位置计算最佳 Toast 显示位置
+ * @param anchor 锚点信息
+ * @returns 最佳位置
+ */
+const calcToastPosition = (anchor?: ToastAnchor): ToastPosition => {
+  if (!anchor) return 'top-right'
+  
+  const rect = anchor.rect || anchor.element?.getBoundingClientRect()
+  if (!rect) return 'top-right'
+  
+  const strategy = anchor.strategy || 'avoid'
+  const viewWidth = window.innerWidth
+  const viewHeight = window.innerHeight
+  
+  // 锚点中心点
+  const anchorCenterX = rect.left + rect.width / 2
+  const anchorCenterY = rect.top + rect.height / 2
+  
+  // 判断锚点在视口的哪个象限
+  const isLeft = anchorCenterX < viewWidth / 2
+  const isTop = anchorCenterY < viewHeight / 2
+  
+  if (strategy === 'avoid') {
+    // 避开锚点：Toast 显示在对角位置
+    if (isLeft && isTop) return 'top-right'      // 锚点左上 → Toast 右上
+    if (!isLeft && isTop) return 'top-left'      // 锚点右上 → Toast 左上
+    if (isLeft && !isTop) return 'bottom-right'  // 锚点左下 → Toast 右下
+    return 'bottom-left'                         // 锚点右下 → Toast 左下
+  } else {
+    // 靠近锚点：Toast 显示在同侧
+    if (isLeft && isTop) return 'top-left'
+    if (!isLeft && isTop) return 'top-right'
+    if (isLeft && !isTop) return 'bottom-left'
+    return 'bottom-right'
+  }
+}
 
 // ============ Dialog 管理 ============
 const openDialogCount = ref(0)
@@ -47,8 +103,13 @@ export function useUIManager() {
   // ========== Toast ==========
   
   /** 显示 Toast 提示 */
-  const showToast = (options: Omit<ToastState, 'visible'>) => {
+  const showToast = (options: ToastOptions) => {
     if (toastTimer) clearTimeout(toastTimer)
+    
+    // 如果提供了 anchor，自动计算位置
+    const position = options.anchor 
+      ? calcToastPosition(options.anchor)
+      : (options.position || 'top-right')
     
     toastState.value = {
       visible: true,
@@ -56,7 +117,8 @@ export function useUIManager() {
       description: options.description,
       variant: options.variant || 'info',
       actionLabel: options.actionLabel,
-      onAction: options.onAction
+      onAction: options.onAction,
+      position
     }
 
     const duration = options.duration || 4500

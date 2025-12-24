@@ -18,6 +18,11 @@ export interface Bookmark {
   pinned?: boolean
   locations?: BookmarkLocation[]  // 支持多分组，可选以保持向后兼容
   allowUniversal?: boolean // 是否注册为 uTools 全局搜索（主输入框任意内容匹配）
+  
+  // 元数据字段，用于增量同步与离线冲突解决
+  createdAt: number
+  updatedAt: number
+  isDeleted?: boolean
 }
 
 export interface SubGroup {
@@ -27,6 +32,10 @@ export interface SubGroup {
   shareId?: string        // 作为分享者：分享 ID
   sourceShareId?: string  // 作为接收者：来源分享 ID
   lastSyncedAt?: number   // 最后同步时间
+  
+  // 元数据字段
+  createdAt: number
+  updatedAt: number
 }
 
 export interface Group {
@@ -36,4 +45,8 @@ export interface Group {
   shareId?: string        // 作为分享者：分享 ID
   sourceShareId?: string  // 作为接收者：来源分享 ID
   lastSyncedAt?: number   // 最后同步时间
+  
+  // 元数据字段
+  createdAt: number
+  updatedAt: number
 }

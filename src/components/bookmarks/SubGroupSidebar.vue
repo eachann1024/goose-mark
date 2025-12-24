@@ -10,6 +10,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select', id: string): void
+  (e: 'drop', bookmarkId: string, toSubId: string): void
 }>()
 
 const { checkForUpdate, getShareData } = useShare()
@@ -77,7 +78,8 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
         showToast({ 
           title: '已自动同步更新', 
           description,
-          variant: 'success' 
+          variant: 'success',
+          position: 'bottom-right'
         })
         // 清除更新标记
         updatesMap.value[subGroupId] = false
@@ -170,6 +172,52 @@ const handleMouseEnter = (e: MouseEvent, key: string) => {
   const target = (e.currentTarget as HTMLElement).querySelector('.sub-name') as HTMLElement
   updateOverflow(key, target)
 }
+
+// 拖拽相关状态
+const dragOverSubId = ref<string | null>(null)
+
+const handleDragOver = (e: DragEvent, subId: string, isReadonly: boolean) => {
+  // 只读子分组不接受拖放
+  if (isReadonly) return
+  // 不能拖到当前激活的子分组
+  if (subId === props.activeSubGroupId) return
+  
+  e.preventDefault()
+  e.dataTransfer!.dropEffect = 'move'
+  dragOverSubId.value = subId
+}
+
+const handleDragLeave = (e: DragEvent) => {
+  // 检查是否真的离开了元素（而不是进入子元素）
+  const relatedTarget = e.relatedTarget as HTMLElement | null
+  if (relatedTarget && (e.currentTarget as HTMLElement).contains(relatedTarget)) {
+    return
+  }
+  dragOverSubId.value = null
+}
+
+const handleDrop = (e: DragEvent, toSubId: string, isReadonly: boolean) => {
+  e.preventDefault()
+  dragOverSubId.value = null
+  
+  if (isReadonly) {
+    console.log('[SubGroupSidebar] Drop rejected: readonly')
+    return
+  }
+  if (toSubId === props.activeSubGroupId) {
+    console.log('[SubGroupSidebar] Drop rejected: same subgroup')
+    return
+  }
+  
+  const bookmarkId = e.dataTransfer?.getData('text/bookmark-id')
+  console.log('[SubGroupSidebar] Drop received:', { bookmarkId, toSubId })
+  
+  if (bookmarkId) {
+    emit('drop', bookmarkId, toSubId)
+  } else {
+    console.warn('[SubGroupSidebar] No bookmark ID in dataTransfer')
+  }
+}
 </script>
 
 <template>
@@ -186,10 +234,14 @@ const handleMouseEnter = (e: MouseEvent, key: string) => {
             'text-primary font-medium border-l-2 border-primary bg-primary/5': activeSubGroupId === sub.id,
             'text-muted-foreground hover:text-foreground hover:bg-muted/50': activeSubGroupId !== sub.id,
             'border border-dashed border-blue-500/50': sub.shareId,
-            'border border-dashed border-green-500/50': sub.sourceShareId
+            'border border-dashed border-green-500/50': sub.sourceShareId,
+            'ring-2 ring-primary ring-offset-1 bg-primary/10': dragOverSubId === sub.id
           }"
           @click="emit('select', sub.id)"
           @mouseenter="handleMouseEnter($event, sub.id)"
+          @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
         >
           <span class="sub-name">
             {{ sub.name }}

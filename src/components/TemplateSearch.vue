@@ -1,24 +1,11 @@
 <script setup lang="ts">
 import type { Bookmark } from '@/types/bookmark'
-import { iconToDisplayUrl } from '@/services/iconCache'
+import BookmarkIcon from '@/components/BookmarkIcon.vue'
 
 const props = defineProps<{
   bookmark: Bookmark
   query: string
 }>()
-
-const iconUrl = computed(() => iconToDisplayUrl(props.bookmark.icon))
-const letters = computed(() => {
-  if (props.bookmark.icon?.type === 'text') return props.bookmark.icon.value.slice(0, 4)
-  const title = props.bookmark.title.trim()
-  return (title || '•').slice(0, 4).toUpperCase()
-})
-
-const iconBgStyle = computed(() => {
-  const icon = props.bookmark.icon
-  if (icon?.bgColor) return { backgroundColor: icon.bgColor }
-  return { backgroundColor: 'transparent' }
-})
 
 const getTemplateLabel = (url: string) => {
   const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
@@ -29,21 +16,12 @@ const getTemplateLabel = (url: string) => {
 <template>
   <div class="h-screen flex flex-col items-center justify-center p-8 text-center space-y-8 animate-in fade-in zoom-in-95 duration-200">
     <!-- Icon -->
-    <div 
-      class="w-24 h-24 rounded-2xl border border-border flex items-center justify-center overflow-hidden shadow-2xl bg-card"
-      :style="iconBgStyle"
-    >
-      <Image 
-        v-if="iconUrl" 
-        :src="iconUrl" 
-        class="w-4/5 h-4/5 object-contain" 
-      />
-      <span 
-        v-else 
-        class="text-4xl font-bold"
-        :class="bookmark.icon?.type === 'text' && bookmark.icon.bgColor ? 'text-white' : 'text-foreground'"
-      >{{ letters }}</span>
-    </div>
+    <BookmarkIcon 
+      :icon="bookmark.icon"
+      :fallback-text="bookmark.title"
+      size="xl"
+      class="shadow-2xl bg-card"
+    />
 
     <!-- Title & Desc -->
     <div class="space-y-2">
