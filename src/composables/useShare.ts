@@ -355,7 +355,8 @@ export function useShare() {
 
     if (existingMainGroup && allSubGroupsExist) {
       store.activeGroupId = existingMainGroup.id
-      store.activeSubGroupId = existingMainGroup.children[0]?.id || ''
+      // 使用循环中找到的子分组 ID，而非总是跳转到第一个子分组
+      store.activeSubGroupId = existingSubGroup?.subGroupId || existingMainGroup.children[0]?.id || ''
       return { success: true, existing: true } as const
     }
 
