@@ -611,37 +611,63 @@ export const useBookmarkStore = defineStore('bookmark', {
       
       // 将源分组的子分组添加到目标分组
       const sourceGroup = data.groups[0]
-      const newSubGroups = sourceGroup.children.map(sub => {
-        // 检查子分组名冲突
-        let subName = sub.name
-        let suffix = 1
-        while (targetGroup.children.some(c => c.name === subName)) {
-          subName = `${sub.name} (${suffix++})`
-        }
-        const newSubId = uid()
-        return {
-          id: newSubId,
-          name: subName,
-          bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId) || oldId),
-          sourceShareId: shareId,
-          lastSyncedAt: now
+      const addedSubGroups: Array<{ id: string; name: string; bookmarkIds: string[]; sourceShareId: string; lastSyncedAt: number }> = []
+      
+      sourceGroup.children.forEach(sub => {
+        // 查找同名且同来源的子分组
+        const existingSub = targetGroup.children.find(c => c.name === sub.name && c.sourceShareId === shareId)
+        
+        if (existingSub) {
+          // 子分组已存在且来源相同，更新内容
+          const oldBookmarkIds = new Set(existingSub.bookmarkIds)
+          this.bookmarks = this.bookmarks.filter(b => {
+            if (!oldBookmarkIds.has(b.id)) return true
+            return b.locations?.some(loc => 
+              !(loc.groupId === targetGroupId && loc.subGroupId === existingSub.id)
+            )
+          })
+          
+          existingSub.bookmarkIds = sub.bookmarkIds.map(oldId => idMap.get(oldId)!)
+          existingSub.lastSyncedAt = now
+          
+          newBookmarks.forEach(b => {
+            if (existingSub.bookmarkIds.includes(b.id)) {
+              b.locations = b.locations || []
+              b.locations.push({ groupId: targetGroupId, subGroupId: existingSub.id })
+            }
+          })
+        } else {
+          // 子分组不存在或来源不同，创建新的
+          const newSubId = uid()
+          const newSub = {
+            id: newSubId,
+            name: sub.name,
+            bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId)!),
+            sourceShareId: shareId,
+            lastSyncedAt: now
+          }
+          addedSubGroups.push(newSub)
+          
+          newBookmarks.forEach(b => {
+            if (newSub.bookmarkIds.includes(b.id)) {
+              b.locations = b.locations || []
+              b.locations.push({ groupId: targetGroupId, subGroupId: newSubId })
+            }
+          })
         }
       })
       
-      // 更新书签 locations
-      newBookmarks.forEach(b => {
-        b.locations = newSubGroups
-          .filter(sub => sub.bookmarkIds.includes(b.id))
-          .map(sub => ({ groupId: targetGroupId, subGroupId: sub.id }))
-      })
+      // 添加新子分组
+      targetGroup.children.push(...addedSubGroups)
       
-      // 添加子分组和书签
-      targetGroup.children.push(...newSubGroups)
-      this.bookmarks.push(...newBookmarks)
+      // 添加新书签（过滤掉已经存在的）
+      const existingBookmarkIds = new Set(this.bookmarks.map(b => b.id))
+      const trulyNewBookmarks = newBookmarks.filter(b => !existingBookmarkIds.has(b.id))
+      this.bookmarks.push(...trulyNewBookmarks)
       
       // 切换到导入的第一个子分组
       this.activeGroupId = targetGroupId
-      this.activeSubGroupId = newSubGroups[0]?.id || targetGroup.children[0]?.id || ''
+      this.activeSubGroupId = addedSubGroups[0]?.id || targetGroup.children[0]?.id || ''
       
       return true
     },
@@ -793,38 +819,73 @@ export const useBookmarkStore = defineStore('bookmark', {
           locations: []
         }))
         
-        // 将源分组的子分组添加到目标分组，检查子分组名冲突
-        const newSubGroups = sourceGroup.children.map(sub => {
-          let subName = sub.name
-          let suffix = 1
-          while (existingGroup.children.some(c => c.name === subName)) {
-            subName = `${sub.name} (${suffix++})`
-          }
-          const newSubId = uid()
-          return {
-            id: newSubId,
-            name: subName,
-            bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId) || oldId),
-            sourceShareId: shareId,
-            lastSyncedAt: now
+        // 处理子分组：更新已存在的同名子分组，或添加新的子分组
+        const addedSubGroups: Array<{ id: string; name: string; bookmarkIds: string[]; sourceShareId: string; lastSyncedAt: number }> = []
+        const updatedSubGroups: Array<{ id: string; name: string }> = []
+        
+        sourceGroup.children.forEach(sub => {
+          const existingSub = existingGroup.children.find(c => c.name === sub.name && c.sourceShareId === shareId)
+          
+          if (existingSub) {
+            // 子分组已存在且来源相同，更新内容
+            // 先移除该子分组的旧书签
+            const oldBookmarkIds = new Set(existingSub.bookmarkIds)
+            this.bookmarks = this.bookmarks.filter(b => {
+              if (!oldBookmarkIds.has(b.id)) return true
+              // 如果书签还属于其他子分组，保留它
+              return b.locations?.some(loc => 
+                !(loc.groupId === existingGroup.id && loc.subGroupId === existingSub.id)
+              )
+            })
+            
+            // 更新子分组
+            existingSub.bookmarkIds = sub.bookmarkIds.map(oldId => idMap.get(oldId)!)
+            existingSub.lastSyncedAt = now
+            
+            updatedSubGroups.push({ id: existingSub.id, name: existingSub.name })
+            
+            // 更新书签 locations
+            newBookmarks.forEach(b => {
+              if (existingSub.bookmarkIds.includes(b.id)) {
+                b.locations = b.locations || []
+                b.locations.push({ groupId: existingGroup.id, subGroupId: existingSub.id })
+              }
+            })
+          } else {
+            // 子分组不存在或来源不同，创建新的
+            const newSubId = uid()
+            const newSub = {
+              id: newSubId,
+              name: sub.name,
+              bookmarkIds: sub.bookmarkIds.map(oldId => idMap.get(oldId)!),
+              sourceShareId: shareId,
+              lastSyncedAt: now
+            }
+            addedSubGroups.push(newSub)
+            
+            // 更新书签 locations
+            newBookmarks.forEach(b => {
+              if (newSub.bookmarkIds.includes(b.id)) {
+                b.locations = b.locations || []
+                b.locations.push({ groupId: existingGroup.id, subGroupId: newSubId })
+              }
+            })
           }
         })
         
-        // 更新书签 locations
-        newBookmarks.forEach(b => {
-          b.locations = newSubGroups
-            .filter(sub => sub.bookmarkIds.includes(b.id))
-            .map(sub => ({ groupId: existingGroup.id, subGroupId: sub.id }))
-        })
+        // 添加新子分组
+        existingGroup.children.push(...addedSubGroups)
         
-        // 添加子分组和书签
-        existingGroup.children.push(...newSubGroups)
-        this.bookmarks.push(...newBookmarks)
+        // 添加新书签（过滤掉已经存在的，避免重复）
+        const existingBookmarkIds = new Set(this.bookmarks.map(b => b.id))
+        const trulyNewBookmarks = newBookmarks.filter(b => !existingBookmarkIds.has(b.id))
+        this.bookmarks.push(...trulyNewBookmarks)
         
         const mergeCompleteData = {
           groupName: existingGroup.name,
-          addedSubGroups: newSubGroups.map(s => s.name),
-          addedBookmarks: newBookmarks.length,
+          addedSubGroups: addedSubGroups.map(s => s.name),
+          updatedSubGroups: updatedSubGroups.map(s => s.name),
+          addedBookmarks: trulyNewBookmarks.length,
           totalSubGroups: existingGroup.children.map(c => c.name),
           totalBookmarks: this.bookmarks.length
         }
@@ -832,7 +893,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         
         // 切换到合并后的第一个子分组
         this.activeGroupId = existingGroup.id
-        this.activeSubGroupId = newSubGroups[0]?.id || existingGroup.children[0]?.id || ''
+        this.activeSubGroupId = addedSubGroups[0]?.id || updatedSubGroups[0]?.id || existingGroup.children[0]?.id || ''
         
         return { group: existingGroup, subGroupId: this.activeSubGroupId, merged: true }
       } else {
