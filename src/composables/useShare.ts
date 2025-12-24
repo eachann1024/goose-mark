@@ -315,54 +315,54 @@ export function useShare() {
     }
 
     const shareName = result.data.group?.name || '分享内容'
-    
-    // 检查是否已导入过此分享（检查主分组和所有子分组的 sourceShareId）
-    let existingGroup = store.findGroupBySourceShareId(shareId)
+
+    const shareGroupId = result.data.group?.id
+    const shareSubGroups = result.data.subGroups
+
+    let existingMainGroup = store.findGroupBySourceShareId(shareId)
+    const existingMainGroupById = shareGroupId ? store.groups.find(g => g.id === shareGroupId) : null
+
     let existingSubGroup: { groupId: string; subGroupId: string } | null = null
-    
-    // 如果主分组没有匹配，检查所有子分组
-    if (!existingGroup) {
-      for (const group of store.groups) {
-        const matchedSub = group.children.find(sub => sub.sourceShareId === shareId)
-        if (matchedSub) {
-          existingGroup = group
-          existingSubGroup = { groupId: group.id, subGroupId: matchedSub.id }
-          break
+    let allSubGroupsExist = false
+
+    if (shareSubGroups && shareSubGroups.length > 0) {
+      allSubGroupsExist = true
+      for (const shareSub of shareSubGroups) {
+        const groupToCheck = existingMainGroup || existingMainGroupById || null
+        if (groupToCheck) {
+          const matchedSub = groupToCheck.children.find(
+            c => c.id === shareSub.id || c.sourceShareId === shareId
+          )
+          if (matchedSub) {
+            existingSubGroup = { groupId: groupToCheck.id, subGroupId: matchedSub.id }
+          } else {
+            allSubGroupsExist = false
+          }
+        } else {
+          for (const group of store.groups) {
+            const matchedSub = group.children.find(
+              c => c.id === shareSub.id || c.sourceShareId === shareId
+            )
+            if (matchedSub) {
+              existingSubGroup = { groupId: group.id, subGroupId: matchedSub.id }
+              break
+            }
+          }
+          allSubGroupsExist = false
         }
       }
     }
 
-    if (existingGroup && !conflictAction) {
-      // 检查是否为首次访问该分享链接
-      const visitKey = `share_visited_${shareId}`
-      const isFirstVisit = !sessionStorage.getItem(visitKey)
+    if (existingMainGroup && allSubGroupsExist) {
+      store.activeGroupId = 'g-default'
+      store.activeSubGroupId = 'sg-default'
+      return { success: true, existing: true } as const
+    }
 
-      if (isFirstVisit) {
-        // 首次访问，记录并弹窗
-        sessionStorage.setItem(visitKey, 'true')
-
-        // 构建冲突信息（包括是主分组还是子分组）
-        const isSubGroupImport = !!existingSubGroup
-        const existingName = isSubGroupImport
-          ? existingGroup.children.find(c => c.id === existingSubGroup!.subGroupId)?.name
-          : existingGroup.name
-
-        return {
-          conflict: true,
-          shareId,
-          shareName: result.data.group?.name || '分享内容',
-          existingGroupId: existingGroup.id,
-          existingGroupName: existingName || '未命名分组',
-          isSubGroupImport,
-          existingSubGroupId: existingSubGroup?.subGroupId,
-          data: result.data
-        }
-      } else {
-        // 后续访问（刷新页面），静默跳转
-        store.activeGroupId = existingGroup.id
-        store.activeSubGroupId = existingSubGroup?.subGroupId || existingGroup.children[0]?.id || ''
-        return { success: true, existing: true } as const
-      }
+    if (existingSubGroup) {
+      store.activeGroupId = existingSubGroup.groupId
+      store.activeSubGroupId = existingSubGroup.subGroupId
+      return { success: true, existing: true } as const
     }
     
     // 构建 groups 结构
@@ -386,11 +386,10 @@ export function useShare() {
       return { success: true }
     }
     
-    if (conflictAction === 'update' && existingGroup) {
-      // 更新本地分组
-      store.updateFromShare(existingGroup.id, dataToApply)
-      store.activeGroupId = existingGroup.id
-      store.activeSubGroupId = existingGroup.children[0]?.id || ''
+    if (conflictAction === 'update' && existingMainGroup) {
+      store.updateFromShare(existingMainGroup.id, dataToApply)
+      store.activeGroupId = existingMainGroup.id
+      store.activeSubGroupId = existingMainGroup.children[0]?.id || ''
       return { success: true }
     }
     

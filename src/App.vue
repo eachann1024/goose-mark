@@ -126,16 +126,6 @@ const currentSubShareId = computed(() => currentSubGroup.value?.shareId)
 // 分享管理面板状态
 const showSharePanel = ref(false)
 
-// 分享冲突对话框状态
-const showShareConflict = ref(false)
-const shareConflictInfo = ref<{
-  shareId: string
-  shareName: string
-  existingGroupName: string
-  isSubGroupImport?: boolean
-  existingSubGroupId?: string
-} | null>(null)
-
 // 同名分组冲突对话框状态
 const showNameConflict = ref(false)
 const nameConflictInfo = ref<{
@@ -197,16 +187,6 @@ const handleCheckUpdate = async () => {
 
 // 分享成功回调（通过 Toast 反馈，无需额外处理）
 const handleShared = (_shareId: string) => {}
-
-// 处理分享冲突动作
-const handleShareConflictAction = async (action: 'update' | 'keep' | 'duplicate') => {
-  if (!shareConflictInfo.value) return
-
-  await loadShareData(shareConflictInfo.value.shareId, action)
-  shareConflictInfo.value = null
-  // 清理 URL
-  clearShareIdFromUrl()
-}
 
 // 处理同名分组冲突动作
 const handleNameConflictAction = async (action: 'merge' | 'new') => {
@@ -404,32 +384,15 @@ onMounted(async () => {
     
     if (shareId) {
       const result = await loadShareData(shareId)
-      // 检查是否冲突
-      if ('conflict' in result && result.conflict) {
-        if (result.isNameConflict) {
-          // 同名分组但来源不同
-          nameConflictInfo.value = {
-            targetGroup: result.targetGroup!,
-            sourceGroup: result.sourceGroup!,
-            shareId: result.shareId,
-            data: result.data
-          }
-          showNameConflict.value = true
-        } else {
-          // 已导入的分享（首次访问）
-          shareConflictInfo.value = {
-            shareId: result.shareId,
-            shareName: result.shareName,
-            existingGroupName: result.existingGroupName,
-            isSubGroupImport: result.isSubGroupImport,
-            existingSubGroupId: result.existingSubGroupId
-          }
-          showShareConflict.value = true
+      if ('conflict' in result && result.conflict && result.isNameConflict) {
+        nameConflictInfo.value = {
+          targetGroup: result.targetGroup!,
+          sourceGroup: result.sourceGroup!,
+          shareId: result.shareId,
+          data: result.data
         }
-      } else if ('error' in result) {
-        // 错误已通过 shareError 处理，保留 URL 方便用户重试
+        showNameConflict.value = true
       } else if ('success' in result && result.success) {
-        // 导入成功或已存在，清理 URL
         clearShareIdFromUrl()
       }
     } else {
@@ -998,16 +961,6 @@ watch(() => store.bookmarks, () => {
       :sub-group-id="store.activeSubGroupId"
       @shared="handleShared"
       @update-from-share="(id: string, data: any) => store.updateFromShare(id, data)"
-    />
-
-    <!-- 分享冲突对话框 -->
-    <ShareConflictDialog
-      v-model:open="showShareConflict"
-      :share-name="shareConflictInfo?.shareName || ''"
-      :existing-group-name="shareConflictInfo?.existingGroupName || ''"
-      :is-sub-group-import="shareConflictInfo?.isSubGroupImport"
-      :existing-sub-group-id="shareConflictInfo?.existingSubGroupId"
-      @action="handleShareConflictAction"
     />
 
     <!-- 同名分组冲突对话框 -->

@@ -180,7 +180,10 @@ export function useBookmarkForm() {
   }
 
   const askAI = async (showNotify = false, fromAuto = false) => {
-    if (fromAuto && settingsStore.autoGenerateAI !== true) return
+    if (fromAuto && settingsStore.autoGenerateAI !== true) {
+      console.log('[askAI] 自动调用已跳过（开关未开启）：', settingsStore.autoGenerateAI)
+      return
+    }
     if (!draft.url) return
 
     // 先检查 AI 可用性
