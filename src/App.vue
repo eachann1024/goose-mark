@@ -163,12 +163,50 @@ const handleCheckUpdate = async () => {
     // 有更新，获取最新数据并更新
     const result = await getShareData(sourceShareId)
     if (result?.data) {
-      // 更新本地数据
-      store.updateFromShare(store.activeGroupId, result.data.data)
-      showToast({ 
-        title: '更新成功', 
-        variant: 'success' 
-      })
+      // 转换数据格式：ShareData -> { groups, bookmarks }
+      const shareData = result.data.data
+      const dataForUpdate = {
+        groups: [{
+          id: shareData.group?.id || 'shared',
+          name: shareData.group?.name || '分享内容',
+          children: shareData.subGroups
+        }],
+        bookmarks: shareData.bookmarks
+      }
+      
+      // 更新本地数据并获取变更摘要
+      const updateResult = store.updateFromShare(store.activeGroupId, dataForUpdate)
+      
+      if (updateResult && typeof updateResult === 'object') {
+        // 生成变更日志描述
+        const logs: string[] = []
+        if (updateResult.added > 0) {
+          const items = updateResult.addedItems.join('、')
+          const suffix = updateResult.added > 5 ? ` 等 ${updateResult.added} 项` : ''
+          logs.push(`📥 新增: ${items}${suffix}`)
+        }
+        if (updateResult.removed > 0) {
+          const items = updateResult.removedItems.join('、')
+          const suffix = updateResult.removed > 5 ? ` 等 ${updateResult.removed} 项` : ''
+          logs.push(`📤 删除: ${items}${suffix}`)
+        }
+        
+        const description = logs.length > 0 
+          ? logs.join('\n') 
+          : '内容已同步（无新增/删除）'
+        
+        showToast({ 
+          title: '更新成功', 
+          description,
+          variant: 'success' 
+        })
+      } else {
+        showToast({ 
+          title: '更新失败', 
+          description: '无法应用更新',
+          variant: 'error' 
+        })
+      }
     } else {
       showToast({ 
         title: '获取更新失败', 

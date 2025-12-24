@@ -179,14 +179,9 @@ export function useBookmarkForm() {
     }
   }
 
-  const askAI = async (showNotify = false, fromAuto = false) => {
-    if (fromAuto && settingsStore.autoGenerateAI !== true) {
-      console.log('[askAI] 自动调用已跳过（开关未开启）：', settingsStore.autoGenerateAI)
-      return
-    }
+  const askAI = async (showNotify = false) => {
     if (!draft.url) return
 
-    // 先检查 AI 可用性
     const { available, reason } = checkAiAvailable()
     if (!available) {
       if (showNotify) notify(reason)
@@ -411,33 +406,8 @@ export function useBookmarkForm() {
           draft.title = pageTitle
         }
         titleFetchFailed.value = false
-
-        // 仅在新建书签（非编辑模式）且设置开启时自动调用 AI
-        const shouldAutoAI = settingsStore.autoGenerateAI === true && !editingId.value
-        if (import.meta.env.DEV) {
-          console.log('[BookmarkForm] Auto AI check:', { 
-            autoGenerateAI: settingsStore.autoGenerateAI, 
-            isEditing: !!editingId.value,
-            shouldAutoAI 
-          })
-        }
-        if (shouldAutoAI) {
-          askAI(true, true)
-        }
       } else {
         titleFetchFailed.value = true
-        // 仅在新建书签（非编辑模式）且设置开启时自动调用 AI
-        const shouldAutoAI = settingsStore.autoGenerateAI === true && !editingId.value
-        if (import.meta.env.DEV) {
-          console.log('[BookmarkForm] Auto AI check (title failed):', { 
-            autoGenerateAI: settingsStore.autoGenerateAI, 
-            isEditing: !!editingId.value,
-            shouldAutoAI 
-          })
-        }
-        if (shouldAutoAI) {
-          askAI(true, true)
-        }
       }
     }, 600)
   })
