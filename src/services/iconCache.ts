@@ -19,8 +19,18 @@ const isUToolsEnv = () => typeof window !== 'undefined' && !!(window as any).uto
 
 // 图标 API 基础地址（从环境变量或默认值获取）
 const getIconApiBase = () => {
-  const shareApiUrl = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/share'
-  return shareApiUrl.replace('/api/share', '')
+  // 1. 如果有显示的环境变量，使用它
+  if (import.meta.env.VITE_SHARE_API_URL) {
+    return import.meta.env.VITE_SHARE_API_URL.replace('/api/share', '')
+  }
+  
+  // 2. 本地开发环境：使用相对路径以支持 Vite Proxy
+  if (import.meta.env.DEV) {
+    return '' // 会拼接成 /api/icon
+  }
+
+  // 3. 生产环境默认值
+  return 'http://43.142.149.157:3001'
 }
 
 const ICON_API_URL = `${getIconApiBase()}/api/icon`
@@ -123,15 +133,15 @@ const fetchIconFromPage = async (url: string): Promise<string | null> => {
 }
 
 /**
- * 从后端代理获取图标（Web 端专用）
- * 通过后端绕过 CORS 限制，获取 base64 格式的图标数据
+ * 从后端代理获取图标和元数据（Web 端专用）
+ * 通过后端绕过 CORS 限制，获取 base64 格式的图标及标题、简介
  */
-const fetchIconFromProxy = async (url: string): Promise<string | null> => {
+const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; title?: string | null; description?: string | null } | null> => {
   // uTools 环境不使用代理
   if (isUToolsEnv()) return null
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 10000)  // 10秒超时，后端需要从外部获取图标
+  const timer = setTimeout(() => controller.abort(), 12000)  // 增加到 12 秒，因为后端现在需要解析 HTML
 
   try {
     const response = await fetch(`${ICON_API_URL}?url=${encodeURIComponent(url)}`, {
@@ -143,14 +153,18 @@ const fetchIconFromProxy = async (url: string): Promise<string | null> => {
     if (!response.ok) return null
 
     const data = await response.json()
-    return data.icon || null
+    return {
+      icon: data.icon || null,
+      title: data.title || null,
+      description: data.description || null
+    }
   } catch {
     return null
   }
 }
 
 /**
- * 获取图标（多策略）
+ * 获取图标及元数据（多策略）
  *
  * uTools 环境：
  *   1. ubrowser 解析 HTML（优先）
@@ -160,7 +174,7 @@ const fetchIconFromProxy = async (url: string): Promise<string | null> => {
  *   1. 后端代理 API
  *   2. 文本图标 fallback
  */
-export const fetchAndCacheIcon = async (url: string, _force = false): Promise<IconSource | null> => {
+export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(IconSource & { title?: string | null; description?: string | null }) | null> => {
   if (!url) return null
 
   // 如果包含模板占位符 {xxx}，直接取 Origin，避免参数残留导致页面加载异常或搜索不到
@@ -205,9 +219,24 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<Ic
     }
   } else {
     // Web 环境：使用后端代理 API
-    const proxyIcon = await fetchIconFromProxy(targetUrl)
-    if (proxyIcon) {
-      return { type: 'remote', src: proxyIcon, fetchedAt: Date.now() }
+    const result = await fetchIconFromProxy(targetUrl)
+    if (result && result.icon) {
+      return { 
+        type: 'remote', 
+        src: result.icon, 
+        fetchedAt: Date.now(),
+        title: result.title,
+        description: result.description
+      }
+    } else if (result) {
+       // 即使没有图标，如果拿到了标题或描述，也返回一部分信息
+       return {
+         type: 'remote',
+         src: '', // 占位，会被 fallback 到 text icon
+         fetchedAt: Date.now(),
+         title: result.title,
+         description: result.description
+       }
     }
   }
 

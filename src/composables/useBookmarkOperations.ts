@@ -14,32 +14,38 @@ type UToolsExtendedApi = {
 export function useBookmarkOperations() {
   const store = useBookmarkStore()
   const settingsStore = useSettingsStore()
-  const { updateShare } = useShare()
+  const { scheduleShareUpdate } = useShare()
+  const { showToast } = useUIManager()
   const isDevRuntime = import.meta.env.DEV
 
   // 通用的自动更新分享函数
   // 支持多个位置，会更新所有涉及的分享
   const autoUpdateShareForLocations = (locations: Array<{ groupId: string; subGroupId: string }>) => {
-    // 已更新的 shareId 集合，避免重复更新
-    const updatedShareIds = new Set<string>()
+    // 已调度的 shareId 集合，避免重复调度（虽然 scheduleShareUpdate 也会去重）
+    const scheduledKeys = new Set<string>()
     
     for (const loc of locations) {
       const group = store.groups.find(g => g.id === loc.groupId)
       if (!group) continue
       
       // 1. 优先检查主分组是否有 shareId
-      if (group.shareId && !updatedShareIds.has(group.shareId)) {
-        void updateShare(group.shareId, 'group', loc.groupId)
-        updatedShareIds.add(group.shareId)
-        // 主分组分享包含所有子分组，不需要再单独更新该分组下的子分组分享
+      if (group.shareId) {
+        const key = `group:${group.id}`
+        if (!scheduledKeys.has(key)) {
+          scheduleShareUpdate('group', loc.groupId)
+          scheduledKeys.add(key)
+        }
         continue
       }
       
       // 2. 如果主分组没有 shareId，检查子分组是否有 shareId
       const subGroup = group.children.find(c => c.id === loc.subGroupId)
-      if (subGroup?.shareId && !updatedShareIds.has(subGroup.shareId)) {
-        void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
-        updatedShareIds.add(subGroup.shareId)
+      if (subGroup?.shareId) {
+        const key = `subGroup:${group.id}:${subGroup.id}`
+        if (!scheduledKeys.has(key)) {
+          scheduleShareUpdate('subGroup', loc.groupId, loc.subGroupId)
+          scheduledKeys.add(key)
+        }
       }
     }
   }
@@ -48,12 +54,6 @@ export function useBookmarkOperations() {
   const showDeleteConfirm = ref(false)
   const confirmDeleteId = ref('')
 
-  // Copy Notice State
-  const copyNotice = reactive({
-    visible: false,
-    text: ''
-  })
-  let copyNoticeTimer: ReturnType<typeof setTimeout> | null = null
 
   // Helpers
   const getWindowType = () => {
@@ -76,12 +76,10 @@ export function useBookmarkOperations() {
 
   // Actions
   const notifyCopySuccess = () => {
-    copyNotice.text = '已复制链接'
-    copyNotice.visible = true
-    if (copyNoticeTimer) clearTimeout(copyNoticeTimer)
-    copyNoticeTimer = setTimeout(() => {
-      copyNotice.visible = false
-    }, 1400)
+    showToast({
+      title: '已复制书签地址',
+      variant: 'success'
+    })
   }
 
   const copyBookmarkUrl = async (bookmark: Bookmark) => {
@@ -236,7 +234,6 @@ export function useBookmarkOperations() {
   return {
     showDeleteConfirm,
     confirmDeleteId,
-    copyNotice,
     openBookmarkLink,
     copyBookmarkUrl,
     openUrl,

@@ -2,6 +2,7 @@ import { ref } from 'vue'
 
 // ============ Tooltip 管理 ============
 const tooltipProviderKey = ref(0)
+const isTooltipEnabled = ref(true)
 
 // ============ Toast 管理 ============
 export type ToastVariant = 'success' | 'info' | 'warning' | 'error'
@@ -36,7 +37,11 @@ export function useUIManager() {
   
   /** 隐藏所有悬浮提示 */
   const hideAllTooltips = () => {
-    tooltipProviderKey.value++
+    // 采用非毁灭性方式：通过状态切换强制销毁当前的 Tooltip 内容
+    isTooltipEnabled.value = false
+    nextTick(() => {
+      isTooltipEnabled.value = true
+    })
   }
 
   // ========== Toast ==========
@@ -124,6 +129,7 @@ export function useUIManager() {
   return {
     // Tooltip
     tooltipProviderKey,
+    isTooltipEnabled,
     hideAllTooltips,
     
     // Toast

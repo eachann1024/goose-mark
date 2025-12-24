@@ -21,7 +21,6 @@ const {
   handleReorder,
   showDeleteConfirm, 
   confirmDeleteId, 
-  copyNotice,
   getTemplateLabel
 } = useBookmarkOperations()
 
@@ -67,7 +66,8 @@ const {
   buildShareUrl,
   validateAndCleanGroupShares,
   checkForUpdate,
-  getShareData
+  getShareData,
+  validateShareStatus
 } = useShare()
 
 // Shared State
@@ -212,6 +212,7 @@ const onContextMenuAction = (action: string) => {
 }
 
 const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
+  e.preventDefault()
   onContextMenu(e, bookmark)
   void copyBookmarkUrl(bookmark)
 }
@@ -396,6 +397,12 @@ const exitTemplateMode = () => {
 
 // Lifecycle
 onMounted(async () => {
+  window.addEventListener('contextmenu', (e) => {
+    // 允许书签卡片触发自定义行为（已经在 handleContextMenuWrapper 中处理）
+    // 但阻止所有默认浏览器菜单
+    e.preventDefault()
+  }, true) // Use capture to ensure we catch it before most others
+
   let shareId: string | null = null
   
   const pathMatch = window.location.pathname.match(/^\/s\/([a-zA-Z0-9_-]+)$/)
@@ -515,7 +522,7 @@ onMounted(async () => {
         window.utools?.outPlugin()
       } else {
         if (activeTemplateBookmark.value) {
-          window.utools?.hideMainWindow()
+          window.utools?.hideMainWindow?.()
           exitTemplateMode()
         }
       }
@@ -530,13 +537,13 @@ watch(() => store.bookmarks, () => {
 </script>
 
 <template>
-  <TooltipProvider :key="tooltipProviderKey" :delay-duration="100">
+  <TooltipProvider :delay-duration="100">
   <TemplateSearch 
     v-if="activeTemplateBookmark" 
     :bookmark="activeTemplateBookmark" 
     :query="templateQuery" 
   />
-  <div v-else class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="closeContext">
+  <div v-else class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @click="closeContext" @contextmenu.prevent>
     <!-- Top Navigation for Groups -->
     <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
        <GroupTabs
@@ -632,14 +639,6 @@ watch(() => store.bookmarks, () => {
       @action="onContextMenuAction"
     />
 
-    <Transition name="fade">
-      <div
-        v-if="copyNotice.visible"
-        class="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] bg-card/90 backdrop-blur px-4 py-2 rounded-lg border border-border shadow-lg text-sm text-foreground"
-      >
-        {{ copyNotice.text }}
-      </div>
-    </Transition>
 
     <!-- Bookmark Form Dialog -->
     <BookmarkFormDialog
@@ -745,6 +744,5 @@ watch(() => store.bookmarks, () => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-  transform: translate(-50%, -6px);
 }
 </style>

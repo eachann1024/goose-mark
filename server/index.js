@@ -281,8 +281,10 @@ fastify.setNotFoundHandler((req, reply) => {
 // Start server
 const start = async () => {
   try {
-    // Initialize Database
-    await initDatabase()
+    // Initialize Database (Non-blocking)
+    initDatabase().catch(err => {
+      console.warn('⚠️  Database initialization failed, share features might not work:', err.message)
+    })
     
     const port = process.env.PORT || 3001
     await fastify.listen({ port, host: '0.0.0.0' })

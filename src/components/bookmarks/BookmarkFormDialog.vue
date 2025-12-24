@@ -181,7 +181,6 @@ const onSave = async () => {
                   <p>撤回标题</p>
                 </TooltipContent>
               </Tooltip>
-              <p v-if="titleFetchFailed" class="text-xs text-muted-foreground mt-1">未能自动获取标题，请手动输入。</p>
             </div>
             <div class="relative">
               <Textarea 

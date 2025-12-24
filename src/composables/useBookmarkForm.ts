@@ -1,6 +1,8 @@
 
 import { onClickOutside, useEventListener, createSharedComposable } from '@vueuse/core'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
+import { iconToDisplayUrl, fetchAndCacheIcon } from '@/services/iconCache'
+import { useToast } from './useToast'
 
 
 type UBrowserApi = {
@@ -59,31 +61,37 @@ function _useBookmarkForm() {
 
   let previewTimer: ReturnType<typeof setTimeout> | null = null
   let titleTimer: ReturnType<typeof setTimeout> | null = null
-  const { updateShare } = useShare()
+  const { scheduleShareUpdate } = useShare()
+  const { showToast } = useToast()
 
   // 通用的自动更新分享函数
   // 支持多个位置，会更新所有涉及的分享
   const autoUpdateShareForLocations = (locations: BookmarkLocation[]) => {
-    // 已更新的 shareId 集合，避免重复更新
-    const updatedShareIds = new Set<string>()
+    // 已调度的 shareId 集合，避免重复调度
+    const scheduledKeys = new Set<string>()
     
     for (const loc of locations) {
       const group = store.groups.find(g => g.id === loc.groupId)
       if (!group) continue
       
       // 1. 优先检查主分组是否有 shareId
-      if (group.shareId && !updatedShareIds.has(group.shareId)) {
-        void updateShare(group.shareId, 'group', loc.groupId)
-        updatedShareIds.add(group.shareId)
-        // 主分组分享包含所有子分组，不需要再单独更新该分组下的子分组分享
+      if (group.shareId) {
+        const key = `group:${group.id}`
+        if (!scheduledKeys.has(key)) {
+          scheduleShareUpdate('group', loc.groupId)
+          scheduledKeys.add(key)
+        }
         continue
       }
       
       // 2. 如果主分组没有 shareId，检查子分组是否有 shareId
       const subGroup = group.children.find(c => c.id === loc.subGroupId)
-      if (subGroup?.shareId && !updatedShareIds.has(subGroup.shareId)) {
-        void updateShare(subGroup.shareId, 'subGroup', loc.groupId, loc.subGroupId)
-        updatedShareIds.add(subGroup.shareId)
+      if (subGroup?.shareId) {
+        const key = `subGroup:${group.id}:${subGroup.id}`
+        if (!scheduledKeys.has(key)) {
+          scheduleShareUpdate('subGroup', loc.groupId, loc.subGroupId)
+          scheduledKeys.add(key)
+        }
       }
     }
   }
@@ -355,15 +363,40 @@ function _useBookmarkForm() {
       iconLoading.value = true
       iconFetchFailed.value = false
       try {
-        const icon = await ensureIconForBookmark({
-          id: 'temp',
-          title: draft.title || val,
-          url: val,
-          desc: draft.desc,
-          tags: []
-        }, true)
-        previewIcon.value = icon ?? null
-        iconFetchFailed.value = !icon || icon.type === 'text'
+        const fetched = await fetchAndCacheIcon(val, true)
+        if (fetched) {
+          // 类型安全的赋值方式
+          const newIcon: any = { type: fetched.type }
+          if ('src' in fetched) newIcon.src = fetched.src
+          if ('path' in fetched) newIcon.path = fetched.path
+          if ('value' in fetched) newIcon.value = fetched.value
+          if ('bgColor' in fetched) newIcon.bgColor = fetched.bgColor
+          if ('fetchedAt' in fetched) newIcon.fetchedAt = fetched.fetchedAt
+          
+          previewIcon.value = newIcon as IconSource
+          iconFetchFailed.value = (fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src))
+          
+          // 如果是 Web 环境，且拿到元数据，且当前标题/描述为空，则自动填充
+          if (!isUToolsEnv()) {
+            const currentTitle = draft.title.trim()
+            if (!currentTitle || currentTitle === hostname) {
+              if (fetched.title) draft.title = fetched.title
+            }
+            if (!draft.desc.trim() && fetched.description) {
+              draft.desc = fetched.description
+            }
+          }
+        } else {
+          previewIcon.value = null
+          iconFetchFailed.value = true
+          // Web 环境：如果 fetchAndCacheIcon 返回 null 且标题仍是 hostname，则提示
+          if (!isUToolsEnv()) {
+            const currentTitle = draft.title.trim()
+            if (!currentTitle || currentTitle === hostname) {
+              showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
+            }
+          }
+        }
       } catch {
         previewIcon.value = null
         iconFetchFailed.value = true
@@ -373,6 +406,9 @@ function _useBookmarkForm() {
     }, 300)
   
     if (titleTimer) clearTimeout(titleTimer)
+    // 仅 uTools 环境使用 evaluate 方式获取标题，Web 环境已在 previewTimer 中由后端获取
+    if (!isUToolsEnv()) return
+
     titleTimer = setTimeout(async () => {
       const currentTitle = draft.title.trim()
       const shouldUpdate = !currentTitle || currentTitle === hostname
@@ -404,6 +440,7 @@ function _useBookmarkForm() {
         titleFetchFailed.value = false
       } else {
         titleFetchFailed.value = true
+        showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
       }
     }, 600)
   })
@@ -430,6 +467,9 @@ function _useBookmarkForm() {
   })
 
 
+
+  // 检测是否在 uTools 环境
+  const isUToolsEnv = () => typeof window !== 'undefined' && !!(window as any).utools
 
   return {
     showAdd,

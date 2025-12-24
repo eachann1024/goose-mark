@@ -41,10 +41,10 @@ const iconClass = computed(() => {
         v-if="open"
         class="fixed top-20 right-4 z-[9999] w-[360px] max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm p-4"
       >
-        <div class="flex items-start gap-3">
-          <span :class="[iconClass, 'text-lg shrink-0 mt-0.5']" />
+        <div class="flex gap-3" :class="description ? 'items-start' : 'items-center'">
+          <span :class="[iconClass, 'text-lg shrink-0', description ? 'mt-0.5' : '']" />
           <div class="min-w-0 flex-1">
-            <p class="text-sm font-medium text-foreground">{{ title }}</p>
+            <p class="text-sm font-medium text-foreground leading-tight">{{ title }}</p>
             <p v-if="description" class="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words">{{ description }}</p>
           </div>
           <Button variant="ghost" size="icon" class="h-7 w-7" title="关闭" @click="emit('close')">
