@@ -17,10 +17,18 @@ export default defineConfig({
     UnoCSS(),
     AutoImport({
       imports: ['vue', 'pinia', '@vueuse/core'],
-      dirs: ['src/composables', 'src/stores'],
+      dirs: [
+        'src/composables',
+        'src/stores',
+        'src/lib',
+        'src/services',
+        'src/types'
+      ],
       dts: 'src/auto-imports.d.ts'
     }),
     Components({
+      dirs: ['src/components', 'src/views'],
+      deep: true,
       dts: 'src/components.d.ts'
     })
   ],

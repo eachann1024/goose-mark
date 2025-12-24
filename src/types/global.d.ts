@@ -31,6 +31,7 @@ interface UToolsApi {
   copyText?(text: string): void
   setExpendHeight?(height: number): void
   showNotification?(text: string): void
+  hideMainWindow?(): void
 }
 
 declare global {

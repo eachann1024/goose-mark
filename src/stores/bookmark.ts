@@ -369,6 +369,18 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.bookmarks.splice(idx, 1, { ...this.bookmarks[idx], icon })
       }
     },
+    detachGroupFromShare(groupId: string) {
+      const group = this.groups.find(g => g.id === groupId)
+      if (group) {
+        delete group.sourceShareId
+        delete group.lastSyncedAt
+        group.children.forEach(sub => {
+          delete sub.sourceShareId
+          delete sub.lastSyncedAt
+        })
+      }
+    },
+
     removeGroup(id: string) {
       const idx = this.groups.findIndex(g => g.id === id)
       if (idx === -1) return false

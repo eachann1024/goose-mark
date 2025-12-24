@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Button } from '@/components/ui/button'
 
 type Variant = 'success' | 'info' | 'warning' | 'error'
 

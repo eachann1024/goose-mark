@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useBookmarkStore } from '@/stores/bookmark'
-import { Button } from '@/components/ui/button'
 
 const store = useBookmarkStore()
 

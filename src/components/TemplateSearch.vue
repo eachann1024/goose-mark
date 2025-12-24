@@ -48,7 +48,6 @@ const getTemplateLabel = (url: string) => {
     <!-- Title & Desc -->
     <div class="space-y-2">
       <h2 class="text-3xl font-bold tracking-tight text-foreground">{{ bookmark.title }}</h2>
-      <p class="text-lg text-muted-foreground">{{ getTemplateLabel(bookmark.url) }}</p>
     </div>
 
     <!-- Live Preview -->
