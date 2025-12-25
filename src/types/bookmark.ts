@@ -1,7 +1,8 @@
 export type IconSource =
   | { type: 'file'; path: string; hash?: string; fetchedAt?: number; bgColor?: string }
-  | { type: 'remote'; src: string; fetchedAt?: number; bgColor?: string }
+  | { type: 'remote'; src: string; cache?: string; fetchedAt?: number; bgColor?: string }
   | { type: 'text'; value: string; bgColor?: string }
+  | { type: 'custom'; data: string; bgColor?: string }
 
 export interface BookmarkLocation {
   groupId: string

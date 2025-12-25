@@ -19,19 +19,30 @@ const VALIDATION_CACHE_TTL = 30 * 60 * 1000
 // In-flight requests deduplication
 const pendingRequests = new Map<string, Promise<ShareCheckResult>>()
 
-// 辅助：优化书签
+// 辅助：优化书签（分享时过滤不必要的数据）
 const optimizeBookmarkData = (bookmarks: Bookmark[]): Bookmark[] => {
   return bookmarks.map(b => {
     let isTooLarge = false
     let size = 0
-    if (b.icon?.type === 'remote') {
-      size = b.icon.src.length
+    
+    // 深拷贝图标以避免修改原数据
+    let optimizedIcon = b.icon ? { ...b.icon } : undefined
+    
+    if (optimizedIcon?.type === 'remote') {
+      // 分享时删除 cache 字段，只保留 src
+      const { cache, ...iconWithoutCache } = optimizedIcon as { cache?: string; [key: string]: any }
+      optimizedIcon = iconWithoutCache as typeof optimizedIcon
+      size = optimizedIcon.src?.length || 0
       isTooLarge = size > 500 * 1024
-    } else if (b.icon?.type === 'file') {
-      size = b.icon.path.length
+    } else if (optimizedIcon?.type === 'custom') {
+      // 用户自定义图标需要完整传输
+      size = optimizedIcon.data?.length || 0
       isTooLarge = size > 500 * 1024
-    } else if (b.icon?.type === 'text') {
-      size = b.icon.value.length
+    } else if (optimizedIcon?.type === 'file') {
+      size = optimizedIcon.path?.length || 0
+      isTooLarge = size > 500 * 1024
+    } else if (optimizedIcon?.type === 'text') {
+      size = optimizedIcon.value?.length || 0
       isTooLarge = size > 10 * 1024 
     }
 
@@ -39,7 +50,8 @@ const optimizeBookmarkData = (bookmarks: Bookmark[]): Bookmark[] => {
         console.warn(`[Share] 书签 "${b.title}" 图标过大 (${Math.round(size / 1024)}KB)，已自动移除以节省流量`)
         return { ...b, icon: { type: 'text', value: (b.title || 'NONE').slice(0, 4).toUpperCase(), bgColor: '#random' } }
     }
-    return b
+    
+    return { ...b, icon: optimizedIcon }
   })
 }
 

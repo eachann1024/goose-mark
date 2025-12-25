@@ -38,7 +38,29 @@ export const iconToDisplayUrl = (icon?: IconSource) => {
   if (!icon) return null
   if (icon.type === 'file') return `file://${icon.path}`
   if (icon.type === 'remote') return icon.src
+  if (icon.type === 'custom') return icon.data
   return null
+}
+
+// 将远程 URL 转换为 base64 data URL
+const urlToBase64 = async (url: string): Promise<string | null> => {
+  if (!url) return null
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    const arrayBuffer = await response.arrayBuffer()
+    const uint8Array = new Uint8Array(arrayBuffer)
+    let binary = ''
+    for (let i = 0; i < uint8Array.length; i++) {
+      binary += String.fromCharCode(uint8Array[i])
+    }
+    const base64 = btoa(binary)
+    const contentType = response.headers.get('content-type') || 'image/png'
+    return `data:${contentType};base64,${base64}`
+  } catch (e) {
+    console.warn('[iconCache] urlToBase64 失败:', url, e)
+    return null
+  }
 }
 
 const fetchIconFromDuckDuckGo = async (host: string): Promise<string | null> => {
@@ -176,10 +198,13 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
 
   if (isUToolsEnv()) {
     const pageResult = await fetchIconAndMetadataFromPage(targetUrl)
-    if (pageResult) {
+    if (pageResult && pageResult.icon) {
+      // 获取图标后立即转换为 base64 缓存
+      const cache = await urlToBase64(pageResult.icon)
       return { 
         type: 'remote', 
-        src: pageResult.icon || '', 
+        src: pageResult.icon, 
+        cache: cache || undefined,
         fetchedAt: Date.now(),
         title: pageResult.title,
         description: pageResult.description
@@ -188,14 +213,17 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
 
     const ddgIcon = await fetchIconFromDuckDuckGo(host)
     if (ddgIcon) {
-      return { type: 'remote', src: ddgIcon, fetchedAt: Date.now() }
+      const cache = await urlToBase64(ddgIcon)
+      return { type: 'remote', src: ddgIcon, cache: cache || undefined, fetchedAt: Date.now() }
     }
   } else {
     const result = await fetchIconFromProxy(targetUrl)
     if (result && result.icon) {
+      const cache = await urlToBase64(result.icon)
       return { 
         type: 'remote', 
         src: result.icon, 
+        cache: cache || undefined,
         fetchedAt: Date.now(),
         title: result.title,
         description: result.description
