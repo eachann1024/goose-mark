@@ -86,7 +86,7 @@ export function useSearch(
     nextTick(() => {
       requestAnimationFrame(() => {
         const el = getLocalSearchInputEl()
-        if (!el) return
+        if (!el || typeof el.focus !== 'function') return
         el.focus()
         if (selectText) {
           el.select?.()

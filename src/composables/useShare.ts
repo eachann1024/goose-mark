@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 
 import type { Group, SubGroup, Bookmark } from '@/types/bookmark'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
 
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/share'
 
@@ -588,7 +589,6 @@ export function useShare() {
     shareError.value = null
     try {
       // 收集所有非回收站分组的数据
-      const TRASH_GROUP_ID = 'g-trash'
       const allGroups = store.groups.filter(g => g.id !== TRASH_GROUP_ID)
       const allBookmarkIds = new Set<string>()
       allGroups.forEach(g => {

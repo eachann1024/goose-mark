@@ -1,5 +1,5 @@
 
-import { onClickOutside, useEventListener, createSharedComposable } from '@vueuse/core'
+import { onClickOutside, createSharedComposable } from '@vueuse/core'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { iconToDisplayUrl, fetchAndCacheIcon } from '@/services/iconCache'
 import { useToast } from './useToast'
@@ -57,6 +57,7 @@ function _useBookmarkForm() {
   const isTitleDirty = ref(false)
   const isDescDirty = ref(false)
   const lastAutoHostname = ref('')
+  const originalUrl = ref('') // 编辑时的原始 URL，用于判断是否需要重新获取图标
 
   const dialogOrigin = ref<{ x: string; y: string } | null>(null)
 
@@ -308,6 +309,7 @@ function _useBookmarkForm() {
     isTitleDirty.value = false
     isDescDirty.value = false
     lastAutoHostname.value = ''
+    originalUrl.value = ''
     showAdd.value = true
   }
 
@@ -324,6 +326,7 @@ function _useBookmarkForm() {
     isTitleDirty.value = true // 编辑模式下默认认为已脏，不自动覆盖
     isDescDirty.value = true
     lastAutoHostname.value = ''
+    originalUrl.value = bookmark.url // 保存原始 URL，用于判断是否需要重新获取图标
     
     draftLocations.value = store.getBookmarkLocations(bookmark.id)
     showAdd.value = true
@@ -416,6 +419,11 @@ function _useBookmarkForm() {
       return
     }
   
+    // 编辑模式下：如果 URL 没有变化，跳过自动获取图标和标题
+    if (editingId.value && val === originalUrl.value) {
+      return
+    }
+  
     const resolveHostname = () => {
       try {
         const cleanUrl = val.replace(/{[^}]+}/g, '')
@@ -496,6 +504,11 @@ function _useBookmarkForm() {
       isSaving.value = false
       originalBeforeAI.value = null
       categorySuggestion.value = null
+      originalUrl.value = ''
+      if (fetchTimer) {
+        clearTimeout(fetchTimer)
+        fetchTimer = null
+      }
     }
   })
 

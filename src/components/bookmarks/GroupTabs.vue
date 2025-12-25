@@ -126,21 +126,6 @@ const handleGroupMouseEnter = (group: Group) => {
             variant="ghost"
             size="icon"
             class="w-8 h-8 text-muted-foreground hover:text-foreground"
-            :class="{ 'bg-muted text-foreground': tab === 'bookmarks' }"
-            @click="setTab('bookmarks')"
-            aria-label="查看"
-          >
-            <span class="i-mdi-view-grid-outline text-lg" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent><p>查看</p></TooltipContent>
-      </Tooltip>
-      <Tooltip>
-        <TooltipTrigger as-child>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="w-8 h-8 text-muted-foreground hover:text-foreground"
             :class="{ 'bg-muted text-foreground': tab === 'settings' }"
             @click="setTab('settings')"
             aria-label="设置"
