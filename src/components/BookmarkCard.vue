@@ -2,12 +2,25 @@
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
 
-const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string; readonly?: boolean; index?: number; gridColumns?: number }>()
+const props = defineProps<{ 
+  bookmark: Bookmark; 
+  selected?: boolean; 
+  showHint?: boolean; 
+  hintKey?: string; 
+  readonly?: boolean; 
+  index?: number; 
+  gridColumns?: number;
+  showEdit?: boolean;
+  showDelete?: boolean;
+  showLocate?: boolean;
+  highlighted?: boolean;
+}>()
 const emit = defineEmits<{
   edit: [Bookmark, HTMLElement | undefined]
   remove: [Bookmark]
   contextmenu: [MouseEvent]
   open: [Bookmark]
+  locate: [Bookmark]
 }>()
 
 const isEmptyDesc = computed(() => !props.bookmark.desc || props.bookmark.desc.trim().length === 0)
@@ -230,6 +243,10 @@ const copyUrl = async () => {
 const deletePopoverOpen = ref(false)
 const editTooltipOpen = ref(false)
 
+const canEdit = computed(() => props.showEdit ?? !props.readonly)
+const canDelete = computed(() => props.showDelete ?? !props.readonly)
+const canLocate = computed(() => props.showLocate ?? false)
+
 const handleEdit = () => {
   editTooltipOpen.value = false
   // 使用 nextTick 确保 tooltip 先关闭
@@ -243,18 +260,54 @@ const handleEdit = () => {
   <Card 
     ref="cardEl"
     class="relative group hover:shadow-lg transition-shadow dark:hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
-    :class="{ 'border-primary ring-1 ring-primary': selected }"
+    :class="{ 
+      'border-primary ring-1 ring-primary': selected
+    }"
     @click="openLink"
     @contextmenu.prevent="emit('contextmenu', $event)"
     @mouseenter="onCardEnter"
     @mouseleave="hideDescToast"
   >
-    <div
-      v-if="showHint && hintKey"
-      class="absolute top-1.5 right-1.5 z-20 h-6 min-w-[24px] px-2 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold shadow"
+    <!-- Snake Border Animation -->
+    <Transition
+      enter-active-class="transition-opacity duration-300 ease-in"
+      enter-from-class="opacity-0"
+      enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-500 ease-out"
+      leave-from-class="opacity-100"
+      leave-to-class="opacity-0"
     >
-      {{ hintKey }}
-    </div>
+      <div v-if="highlighted" class="absolute inset-0 pointer-events-none z-0">
+        <svg class="w-full h-full" xmlns="http://www.w3.org/2000/svg">
+          <rect
+            width="100%"
+            height="100%"
+            rx="12"
+            fill="none"
+            stroke="hsl(var(--primary))"
+            stroke-width="3"
+            stroke-dasharray="250"
+            stroke-dashoffset="0"
+            class="animate-snake-border"
+          />
+        </svg>
+      </div>
+    </Transition>
+    <Transition
+      enter-active-class="transition-all duration-200 ease-out"
+      enter-from-class="opacity-0 scale-75"
+      enter-to-class="opacity-100 scale-100"
+      leave-active-class="transition-all duration-200 ease-in"
+      leave-from-class="opacity-100 scale-100"
+      leave-to-class="opacity-0 scale-75"
+    >
+      <div
+        v-if="showHint && hintKey"
+        class="absolute top-1.5 right-1.5 z-20 h-6 min-w-[24px] px-2 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold shadow"
+      >
+        {{ hintKey }}
+      </div>
+    </Transition>
     <div class="px-4 py-3 flex gap-3 items-center">
        <!-- Icon -->
        <div class="shrink-0">
@@ -295,10 +348,21 @@ const handleEdit = () => {
     </div>
     
     <!-- Action Buttons -->
-    <div v-if="!readonly" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
+    <div v-if="canEdit || canDelete || canLocate" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
         <!-- Copy button removed as per requirement -->
+        
+        <!-- Locate Button -->
+        <Tooltip v-if="canLocate" :disable-hoverable-content="true">
+          <TooltipTrigger as-child>
+            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 group/locate-btn" @click.stop="emit('locate', bookmark)">
+              <span class="i-mdi-target text-xs transition-colors group-hover/locate-btn:text-primary" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom"><p>定位到原分组</p></TooltipContent>
+        </Tooltip>
+
         <!-- Edit Button -->
-        <Tooltip v-model:open="editTooltipOpen" :disable-hoverable-content="true">
+        <Tooltip v-if="canEdit" v-model:open="editTooltipOpen" :disable-hoverable-content="true">
           <TooltipTrigger as-child>
             <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 group/edit-btn" @click.stop="handleEdit">
               <span class="i-mdi-pencil text-xs transition-colors group-hover/edit-btn:text-primary" />
@@ -308,7 +372,7 @@ const handleEdit = () => {
         </Tooltip>
 
         <!-- Delete Button -->
-        <Popover v-model:open="deletePopoverOpen">
+        <Popover v-if="canDelete" v-model:open="deletePopoverOpen">
           <PopoverTrigger asChild>
              <div class="inline-block" @click.stop> <!-- 阻止点击事件冒泡到卡片 -->
                <Tooltip>
@@ -332,3 +396,18 @@ const handleEdit = () => {
     </div>
   </Card>
 </template>
+
+<style scoped>
+@keyframes snake-border {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -1000;
+  }
+}
+
+.animate-snake-border {
+  animation: snake-border 3s linear infinite;
+}
+</style>

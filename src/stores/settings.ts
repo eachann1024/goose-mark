@@ -4,9 +4,8 @@ import { defineStore } from 'pinia'
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
     gridColumns: 3,
-    searchAutoExitMinutes: 5,
+    searchAutoExitSeconds: 15,
     groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
-    enableSubInput: false,
     autoCloseWindow: true,
     preferUtoolsBrowser: false,
     useCustomAiModel: false,
@@ -14,7 +13,9 @@ export const useSettingsStore = defineStore('settings', {
     enableShare: true,
     windowHeight: 700,
     // 首次用户引导是否已关闭
-    onboardingDismissed: false
+    onboardingDismissed: false,
+    // 彩蛋：深色模式使用星空背景图
+    easterEggEnabled: false
   }),
   actions: {
     setGridColumns(value: number) {
@@ -23,12 +24,9 @@ export const useSettingsStore = defineStore('settings', {
     setGroupTabsLayout(mode: 'wrap' | 'scroll') {
       this.groupTabsLayout = mode === 'scroll' ? 'scroll' : 'wrap'
     },
-    setSearchAutoExitMinutes(value: number) {
+    setSearchAutoExitSeconds(value: number) {
       const num = Number.isFinite(value) ? value : 0
-      this.searchAutoExitMinutes = num < 0 ? 0 : Math.round(num)
-    },
-    setEnableSubInput(value: boolean) {
-      this.enableSubInput = !!value
+      this.searchAutoExitSeconds = num < 0 ? 0 : Math.round(num)
     },
     setAutoCloseWindow(value: boolean) {
       this.autoCloseWindow = !!value
@@ -51,6 +49,11 @@ export const useSettingsStore = defineStore('settings', {
     },
     dismissOnboarding() {
       this.onboardingDismissed = true
+    },
+    setEasterEggEnabled(value: boolean) {
+      console.log('[settings] setEasterEggEnabled 被调用:', value, '→', !!value)
+      this.easterEggEnabled = !!value
+      console.log('[settings] 当前 state:', JSON.stringify(this.$state))
     }
   },
   persist: {

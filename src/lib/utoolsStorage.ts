@@ -46,15 +46,22 @@ export const utoolsStorage = {
 
   setItem(key: string, value: string): void {
     const oldValue = this.getItem(key)
-    if (oldValue === value) return // 内容未变，不执行写入和广播，有效防止循环
+    if (oldValue === value) {
+      console.log('[utoolsStorage] 内容未变，跳过写入:', key)
+      return // 内容未变，不执行写入和广播，有效防止循环
+    }
+    
+    console.log('[utoolsStorage] 写入:', key, '长度:', value.length)
 
     sessionCache.set(key, value)
 
     const utools = getUtoolsApi()
     if (utools?.dbStorage) {
+      console.log('[utoolsStorage] → 写入 utools.dbStorage')
       utools.dbStorage.setItem(key, value)
       localStorage.removeItem(key)
     } else {
+      console.log('[utoolsStorage] → 写入 localStorage')
       localStorage.setItem(key, value)
     }
 

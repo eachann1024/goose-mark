@@ -12,6 +12,19 @@ export function useSearch(
   const store = useBookmarkStore()
   const settingsStore = useSettingsStore()
 
+  // Helper to determine if we should use uTools sub-input
+  const canUseSubInput = () => {
+     // 简单判断：必须是 uTools 环境且非独立/浏览器窗口
+     // 注意：isUTools 是 Ref，通过 .value 获取
+     if (!isUTools.value) return false
+     try {
+       const type = window.utools?.getWindowType?.()
+       return type !== 'detach' && type !== 'browser'
+     } catch {
+       return false
+     }
+  }
+
   const localSearchInputRef = ref<HTMLInputElement | { $el?: HTMLElement } | null>(null)
   const searchViewOpen = ref(false)
   let searchAutoExitTimer: ReturnType<typeof setTimeout> | null = null
@@ -43,8 +56,8 @@ export function useSearch(
   const activeBookmarks = computed(() => searchViewOpen.value ? searchResults.value : store.filteredBookmarks)
 
   const searchAutoExitText = computed(() => {
-    const minutes = settingsStore.searchAutoExitMinutes
-    return minutes > 0 ? `${minutes} 分钟无操作自动退出` : '自动退出已关闭'
+    const seconds = settingsStore.searchAutoExitSeconds
+    return seconds > 0 ? `${seconds} 秒无操作自动退出` : '自动退出已关闭'
   })
 
   const clearSearchAutoExit = () => {
@@ -58,7 +71,8 @@ export function useSearch(
     searchViewOpen.value = false
     clearSearchAutoExit()
     store.setSearch('')
-    if (settingsStore.enableSubInput) {
+    store.setSearch('')
+    if (canUseSubInput()) {
       window.utools?.setSubInputValue?.('')
     }
     selectedIndex.value = -1
@@ -67,11 +81,11 @@ export function useSearch(
   const scheduleSearchAutoExit = () => {
     clearSearchAutoExit()
     if (!searchViewOpen.value) return
-    const minutes = settingsStore.searchAutoExitMinutes
-    if (!minutes || minutes <= 0) return
+    const seconds = settingsStore.searchAutoExitSeconds
+    if (!seconds || seconds <= 0) return
     searchAutoExitTimer = setTimeout(() => {
       closeSearchView()
-    }, minutes * 60 * 1000)
+    }, seconds * 1000)
   }
 
   const getLocalSearchInputEl = () => {
@@ -121,7 +135,7 @@ export function useSearch(
       store.setSearch(initialQuery)
     }
     scheduleSearchAutoExit()
-    if (settingsStore.enableSubInput) {
+    if (canUseSubInput()) {
       focusUToolsInput()
       syncUToolsSubInputValue(store.search)
     } else {
@@ -138,7 +152,7 @@ export function useSearch(
   const handleTypeToSearch = (e: KeyboardEvent) => {
     const active = document.activeElement as HTMLElement | null
     if (isEditableElement(active)) return
-    if (settingsStore.enableSubInput && searchViewOpen.value) return
+    if (canUseSubInput() && searchViewOpen.value) return
     if (e.metaKey || e.ctrlKey || e.altKey) return
     const key = e.key
     if (!key || key.length !== 1) return
@@ -153,7 +167,7 @@ export function useSearch(
 
     const nextValue = store.search + key
     store.setSearch(nextValue)
-    if (settingsStore.enableSubInput) {
+    if (canUseSubInput()) {
       focusUToolsInput()
       syncUToolsSubInputValue(nextValue)
     } else {
@@ -177,7 +191,7 @@ export function useSearch(
     if (searchViewOpen.value) scheduleSearchAutoExit()
   })
 
-  watch(() => settingsStore.searchAutoExitMinutes, () => {
+  watch(() => settingsStore.searchAutoExitSeconds, () => {
     if (searchViewOpen.value) scheduleSearchAutoExit()
   })
 

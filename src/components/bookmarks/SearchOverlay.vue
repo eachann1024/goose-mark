@@ -23,6 +23,7 @@ const emit = defineEmits<{
   open: [bookmark: Bookmark]
   contextmenu: [e: MouseEvent, bookmark: Bookmark]
   reorder: [payload: { fromId: string; toId: string }]
+  locate: [bookmark: Bookmark]
 }>() 
 
 const localSearchInputComponentRef = ref<{ $el: HTMLElement } | null>(null)
@@ -116,10 +117,14 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
           :show-command-hints="showCmdHints"
           :hint-key-by-id="hintKeyById"
           :readonly="true"
+          :show-edit="false"
+          :show-delete="false"
+          :show-locate="true"
           @edit="(b, el) => emit('edit', b, el)"
           @open="emit('open', $event)"
           @contextmenu="(e, b) => emit('contextmenu', e, b)"
           @reorder="emit('reorder', $event)"
+          @locate="emit('locate', $event)"
         />
       </div>
     </section>

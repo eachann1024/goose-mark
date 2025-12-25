@@ -91,7 +91,8 @@ const topBookmarkName = computed(() => topBookmarks.value[0]?.title || '-')
  · 方向键 ↑↓←→ 导航，Enter 打开书签
  · 右键点击书签复制链接到剪贴板
  · 拖拽书签到侧边栏可移动到其他子分组
- · 🚀 模板书签：URL 含 {query} 的书签可快捷搜索`"
+ · 🚀 模板书签：URL 含 {query} 的书签可快捷搜索
+ · 🎁 深色模式下，主题设置界面有惊喜~`"
     />
 
     <!-- Dashboard Cards -->
