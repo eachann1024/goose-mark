@@ -161,22 +161,41 @@ export function useUTools() {
       }
       
       // 优先使用书签设置的图标，否则 fallback 到文字图标
-      let iconDataUrl = b.icon?.type === 'remote' && b.icon.src
-        ? await toDataUrlFromRemote(b.icon.src)
-        : b.icon?.type === 'file' && b.icon.path
-          ? await toDataUrlFromFile(b.icon.path)
-          : b.icon?.type === 'text'
-            ? toDataUrlFromText(b.icon.value || b.title || b.url)
-            : null
+      let iconDataUrl: string | null = null
+      
+      try {
+        if (b.icon?.type === 'remote') {
+          // 优先使用缓存的 base64，若无则从 URL 获取
+          if (b.icon.cache) {
+            iconDataUrl = b.icon.cache
+          } else if (b.icon.src) {
+            iconDataUrl = await toDataUrlFromRemote(b.icon.src)
+          }
+        } else if (b.icon?.type === 'custom' && b.icon.data) {
+          // 用户自定义图标，直接使用 data
+          iconDataUrl = b.icon.data
+        } else if (b.icon?.type === 'file' && b.icon.path) {
+          iconDataUrl = await toDataUrlFromFile(b.icon.path)
+        } else if (b.icon?.type === 'text') {
+          iconDataUrl = toDataUrlFromText(b.icon.value || b.title || b.url)
+        }
+      } catch (e) {
+        console.warn('[useUTools] 获取图标失败:', b.title, e)
+      }
       
       // fallback: 没有图标时生成文字图标
       if (!iconDataUrl) {
         iconDataUrl = toDataUrlFromText(b.title || b.url)
+        if (import.meta.env.DEV) {
+          console.log('[useUTools] 使用文字图标 fallback:', b.title)
+        }
       }
 
       if (iconDataUrl) {
         feature.icon = iconDataUrl
         if (overCmd) overCmd.icon = iconDataUrl
+      } else {
+        console.warn('[useUTools] 未能生成任何图标:', b.title)
       }
       
       ut.setFeature(feature)

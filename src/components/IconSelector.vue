@@ -105,7 +105,15 @@ const emitChange = () => {
     })
   } else {
     if (localImageSrc.value) {
-      if (localImageSrc.value.startsWith('http') || localImageSrc.value.startsWith('data:')) {
+      if (localImageSrc.value.startsWith('data:')) {
+        // 用户上传/粘贴/裁剪的图片，使用 custom 类型
+        emit('update:modelValue', {
+          type: 'custom',
+          data: localImageSrc.value,
+          bgColor: localColor.value
+        })
+      } else if (localImageSrc.value.startsWith('http')) {
+        // 远程 URL
         emit('update:modelValue', {
           type: 'remote',
           src: localImageSrc.value,
