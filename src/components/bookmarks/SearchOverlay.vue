@@ -36,7 +36,10 @@ const localSearchInputRef = computed(() => {
 
 // 提供聚焦方法给父组件调用
 const focus = () => {
-  localSearchInputRef.value?.focus()
+  const inputEl = localSearchInputRef.value
+  if (inputEl && typeof inputEl.focus === 'function') {
+    inputEl.focus()
+  }
 }
 
 const handleClose = () => emit('close')

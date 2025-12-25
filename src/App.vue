@@ -184,7 +184,7 @@ watch(searchViewOpen, (isOpen) => {
     nextTick(() => {
       requestAnimationFrame(() => {
         const overlay = searchOverlayRef.value
-        if (overlay) {
+        if (overlay && typeof overlay.focus === 'function') {
           // 1. 调用组件的 focus 方法确保聚焦
           overlay.focus()
           
@@ -869,7 +869,7 @@ watch(() => store.bookmarks, () => {
     <!-- Share Float Button -->
     <ShareFloatButton
       v-if="settingsStore.enableShare"
-      :show="tab === 'bookmarks' && activeSubGroups.length > 0"
+      :show="tab === 'bookmarks' && activeSubGroups.length > 0 && !isTrashActive"
       :current-sub-group="currentSubGroup"
       @open-share-url="handleOpenShareUrl"
       @copy-share-link="handleCopyShareLink"

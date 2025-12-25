@@ -115,13 +115,15 @@ watch(emptyTrashConfirmOpen, (isOpen) => {
     nextTick(() => {
       // 查找确认清空按钮并聚焦
       const button = confirmEmptyTrashButtonRef.value as HTMLElement | null
-      if (button) {
+      if (button && typeof button.focus === 'function') {
         button.focus()
       } else {
         // 备用方案：通过查询选择器查找
         const dialog = document.querySelector('[role="dialog"]')
-        const confirmBtn = dialog?.querySelector('button[class*="destructive"]') as HTMLElement
-        confirmBtn?.focus()
+        const confirmBtn = dialog?.querySelector('button[class*="destructive"]') as HTMLElement | null
+        if (confirmBtn && typeof confirmBtn.focus === 'function') {
+          confirmBtn.focus()
+        }
       }
     })
   }

@@ -19,10 +19,7 @@ export default defineConfig({
       imports: [
         'vue',
         'pinia',
-        '@vueuse/core',
-        {
-          '@/stores/bookmark': ['TRASH_GROUP_ID']
-        }
+        '@vueuse/core'
       ],
       dirs: [
         'src/composables',

@@ -84,7 +84,7 @@ const handleRemoveImported = () => {
           class="h-8 px-3 rounded-full relative gap-1.5 shadow-lg backdrop-blur-sm bg-card/90 border-dashed border-green-500/50 text-green-600"
         >
           <span class="i-mdi-cloud-download-outline text-sm" />
-          <span class="text-xs">导入</span>
+          <span class="text-xs">管理导入</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent class="w-40 p-1" align="start" :side-offset="4">
