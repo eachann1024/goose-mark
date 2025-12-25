@@ -556,6 +556,16 @@ export const useBookmarkStore = defineStore('bookmark', {
         delete sub.lastSyncedAt
         sub.updatedAt = Date.now()
         group!.updatedAt = Date.now()
+
+        // 检查主分组是否还有其他子分组关联分享
+        // 如果没有了，也移除主分组的 sourceShareId
+        if (group?.sourceShareId) {
+          const hasSharedChildren = group.children.some(c => !!c.sourceShareId)
+          if (!hasSharedChildren) {
+             delete group.sourceShareId
+             delete group.lastSyncedAt
+          }
+        }
       }
     },
     removeGroup(id: string) {
