@@ -22,6 +22,7 @@ export interface Bookmark {
   // 元数据字段，用于增量同步与离线冲突解决
   createdAt: number
   updatedAt: number
+  serverUpdatedAt?: number
   isDeleted?: boolean
 }
 
@@ -36,6 +37,8 @@ export interface SubGroup {
   // 元数据字段
   createdAt: number
   updatedAt: number
+  serverUpdatedAt?: number
+  isDeleted?: boolean
 }
 
 export interface Group {
@@ -49,4 +52,6 @@ export interface Group {
   // 元数据字段
   createdAt: number
   updatedAt: number
+  serverUpdatedAt?: number
+  isDeleted?: boolean
 }
