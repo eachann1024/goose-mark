@@ -224,10 +224,16 @@ export const useBookmarkStore = defineStore('bookmark', {
           subGroup.bookmarkIds.forEach(bid => {
             const bookmark = this.bookmarks.find(b => b.id === bid)
             if (bookmark) {
+              const oldLocations = bookmark.locations ? [...bookmark.locations] : []
               bookmark.locations = bookmark.locations?.filter(loc => 
                 !(loc.groupId === groupId && loc.subGroupId === subGroupId)
               ) || []
+              
               if (bookmark.locations.length === 0) {
+                // 记录移入回收站前的位置
+                if (oldLocations.length > 0) {
+                  bookmark.prevLocations = oldLocations
+                }
                 bookmark.updatedAt = now
                 toTrash.push(bid)
               }
@@ -489,6 +495,10 @@ export const useBookmarkStore = defineStore('bookmark', {
         const bookmark = this.bookmarks.find(b => b.id === id)
         if (bookmark) {
           bookmark.updatedAt = now
+          // 记录移入回收站前的位置
+          if (bookmark.locations && bookmark.locations.length > 0) {
+            bookmark.prevLocations = JSON.parse(JSON.stringify(bookmark.locations))
+          }
           // bookmark.isDeleted = true // 暂时不开启物理隐藏，先走回收站逻辑
           this.updateBookmarkLocations(id, [{ groupId: TRASH_GROUP_ID, subGroupId: 'sg-trash' }])
           
@@ -520,7 +530,34 @@ export const useBookmarkStore = defineStore('bookmark', {
       }
     },
     restoreBookmark(id: string) {
-      this.updateBookmarkLocations(id, [{ groupId: 'g-default', subGroupId: 'sg-default' }])
+      const bookmark = this.bookmarks.find(b => b.id === id)
+      if (!bookmark) return
+
+      let targetLocations: BookmarkLocation[] = []
+
+      // 1. 优先尝试从记录的原位置还原
+      if (bookmark.prevLocations && bookmark.prevLocations.length > 0) {
+        // 过滤掉已经不存在的分组或子分组
+        targetLocations = bookmark.prevLocations.filter(loc => {
+          const group = this.groups.find(g => g.id === loc.groupId)
+          return group && group.children.some(c => c.id === loc.subGroupId)
+        })
+      }
+
+      // 2. 如果没有记录原位置，或原位置已失效，则还原到默认位置
+      if (targetLocations.length === 0) {
+        const defaultGroup = this.groups.find(g => g.id !== TRASH_GROUP_ID)
+        if (defaultGroup && defaultGroup.children.length > 0) {
+          targetLocations = [{ groupId: defaultGroup.id, subGroupId: defaultGroup.children[0].id }]
+        } else {
+          // 极端情况：没有任何分组，则还原到内置默认 ID（通常 migrateFromLegacy 会确保有分组）
+          targetLocations = [{ groupId: 'g-default', subGroupId: 'sg-default' }]
+        }
+      }
+
+      this.updateBookmarkLocations(id, targetLocations)
+      // 还原后清理原位置记录
+      delete bookmark.prevLocations
     },
     emptyTrash() {
       const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
@@ -629,10 +666,15 @@ export const useBookmarkStore = defineStore('bookmark', {
         sub.bookmarkIds.forEach(bid => {
           const bookmark = this.bookmarks.find(b => b.id === bid)
           if (bookmark) {
+            const oldLocations = bookmark.locations ? [...bookmark.locations] : []
             // 移除当前分组的位置
             bookmark.locations = bookmark.locations?.filter(loc => loc.groupId !== id) || []
             // 如果书签没有其他位置了，标记为需要移动到回收站
             if (bookmark.locations.length === 0) {
+              // 记录移入回收站前的位置
+              if (oldLocations.length > 0) {
+                bookmark.prevLocations = oldLocations
+              }
               bookmark.updatedAt = now
               toTrash.push(bid)
             }

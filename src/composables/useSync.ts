@@ -146,6 +146,8 @@ export function useSync() {
         console.log('[Sync] Pulled', items.length, 'items from', shareId)
         applyRemoteChanges(store, items)
         lastSyncTimes.value.set(shareId, lastUpdatedAt)
+        // 同步后刷新缺失图标
+        store.refreshMissingIcons()
       }
 
     } catch (e: any) {

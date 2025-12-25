@@ -16,6 +16,7 @@ const { toastState, closeToast, showToast, tooltipProviderKey, onMainViewSwitch 
 // Composables
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
 const { isSyncing, syncError } = useSync()
+const { contextMenu, handleContextMenu, closeContextMenu } = useContextMenu()
 const { 
   openBookmarkLink: originalOpenBookmarkLink, 
   openUrl,
@@ -324,6 +325,13 @@ const handleBookmarkRightClick = (e: MouseEvent, bookmark: Bookmark) => {
   copyBookmarkUrl(bookmark)
 }
 
+const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
+  console.log('[ContextMenu] triggered:', bookmark?.title, 'at', e.clientX, e.clientY)
+  e.preventDefault()
+  e.stopPropagation() // 阻止冒泡，避免触发 document 的 click/contextmenu 导致菜单立即关闭
+  handleContextMenu(e, bookmark)
+}
+
 // 书签拖拽到子分组的处理
 const handleBookmarkDrop = (bookmarkId: string, toSubId: string) => {
   const moved = store.moveBookmarkToSubGroup(
@@ -338,9 +346,28 @@ const handleBookmarkDrop = (bookmarkId: string, toSubId: string) => {
   }
 }
 
-const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
-  e.preventDefault()
-  copyBookmarkUrl(bookmark)
+const handleContextMenuAction = (action: string) => {
+  const bookmark = contextMenu.target
+  if (!bookmark) return
+  
+  switch (action) {
+    case 'open':
+      openBookmarkLink(bookmark)
+      break
+    case 'copy':
+      copyBookmarkUrl(bookmark)
+      break
+    case 'edit':
+      openEdit(bookmark)
+      break
+    case 'remove':
+      handleRemove(bookmark)
+      break
+    case 'restore':
+      store.restoreBookmark(bookmark.id)
+      showToast({ title: '已还原', variant: 'success', duration: 1500 })
+      break
+  }
 }
 
 // Share Handlers
@@ -916,7 +943,7 @@ const handleLocate = async (bookmark: Bookmark) => {
         @remove="(b) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && handleRemove(b)"
         @edit="(b, el) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && openEdit(b, el)"
         @open="openBookmarkLink"
-        @contextmenu="handleBookmarkRightClick"
+        @contextmenu="handleContextMenuWrapper"
         @reorder="handleReorder"
         @add="(el) => openAdd(el)"
         @emptyTrash="emptyTrash"
@@ -947,6 +974,17 @@ const handleLocate = async (bookmark: Bookmark) => {
       @check-update="handleCheckImportedUpdate"
       @convert-to-local="showConvertLocalDialog = true"
       @remove-imported-sub-group="showRemoveImportedDialog = true"
+    />
+
+    <!-- Bookmark Context Menu -->
+    <ContextMenu 
+      v-if="contextMenu.show" 
+      :x="contextMenu.x" 
+      :y="contextMenu.y"
+      :is-trash="isTrashActive"
+      :readonly="!!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
+      @close="closeContextMenu"
+      @action="handleContextMenuAction"
     />
 
     <!-- Bookmark Form Dialog -->
@@ -1157,6 +1195,18 @@ body.easter-egg-active [class*="bg-zinc-400/20"],
 body.easter-egg-active [class*="bg-orange-400/20"] {
   background-color: hsla(var(--muted), 0.3) !important;
   backdrop-filter: blur(4px);
+}
+
+/* Tooltip 在透明模式下保持不透明 */
+body.easter-egg-active .tooltip-content,
+body.easter-egg-active [data-reka-tooltip-content],
+body.easter-egg-active [id*="reka-tooltip-content"],
+body.easter-egg-active [role="tooltip"] {
+  background-color: hsla(var(--primary), 0.95) !important;
+  backdrop-filter: blur(12px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
+  border: 1px solid hsla(var(--primary), 0.3) !important;
+  opacity: 1 !important;
 }
 </style>
 

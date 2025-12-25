@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useTextOverflow } from '@/composables/useTextOverflow'
+import SubGroupItem from './SubGroupItem.vue'
 
 const props = defineProps<{
   show: boolean
@@ -15,7 +15,7 @@ const emit = defineEmits<{
 
 const { checkForUpdate, getShareData } = useShare()
 const store = useBookmarkStore()
-const { showToast } = useToast()
+const { showToast, isTooltipEnabled } = useUIManager()
 
 // 更新检测状态
 const updatesMap = ref<Record<string, boolean>>({})
@@ -164,15 +164,6 @@ onMounted(() => {
 
 const hasUpdate = (subId: string) => !!updatesMap.value[subId]
 
-// 溢出检测
-const { overflowMap, updateOverflow } = useTextOverflow()
-
-// 鼠标进入时检查溢出
-const handleMouseEnter = (e: MouseEvent, key: string) => {
-  const target = (e.currentTarget as HTMLElement).querySelector('.sub-name') as HTMLElement
-  updateOverflow(key, target)
-}
-
 // 拖拽相关状态
 const dragOverSubId = ref<string | null>(null)
 
@@ -223,52 +214,30 @@ const handleDrop = (e: DragEvent, toSubId: string, isReadonly: boolean) => {
 <template>
   <aside
     v-if="show"
-    class="shrink-0 w-32 flex flex-col gap-1 relative"
+    class="shrink-0 w-32 flex flex-col gap-1 relative overflow-y-auto no-scrollbar"
   >
-    <Tooltip v-for="sub in activeSubGroups" :key="sub.id" :disabled="!overflowMap[sub.id]">
-      <TooltipTrigger as-child>
-        <Button
-          variant="ghost"
-          class="justify-start w-full px-3 py-2 rounded-md text-sm transition-all text-left relative"
-          :class="{
-            'text-primary font-medium border-l-2 border-primary bg-primary/5': activeSubGroupId === sub.id,
-            'text-muted-foreground hover:text-foreground hover:bg-muted/50': activeSubGroupId !== sub.id,
-            'border border-dashed border-blue-500/50': sub.shareId,
-            'border border-dashed border-green-500/50': sub.sourceShareId,
-            'ring-2 ring-primary ring-offset-1 bg-primary/10': dragOverSubId === sub.id
-          }"
-          @click="emit('select', sub.id)"
-          @mouseenter="handleMouseEnter($event, sub.id)"
-          @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
-          @dragleave="handleDragLeave"
-          @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
-        >
-          <span class="sub-name">
-            {{ sub.name }}
-          </span>
-          <!-- 分享图标 -->
-          <span v-if="sub.shareId" class="i-mdi-share-variant text-xs text-blue-500/60 ml-auto shrink-0" title="我分享的" />
-          <!-- 导入来源图标 -->
-          <div v-if="sub.sourceShareId" class="ml-auto shrink-0 relative flex items-center">
-             <span class="i-mdi-cloud-download-outline text-xs text-green-500/60" title="已导入" />
-             <span v-if="hasUpdate(sub.id)" class="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
-          </div>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="right" :side-offset="8">
-        <p>{{ sub.name }}</p>
-      </TooltipContent>
-    </Tooltip>
-
+    <SubGroupItem
+      v-for="sub in activeSubGroups"
+      :key="sub.id"
+      :sub="sub"
+      :is-active="activeSubGroupId === sub.id"
+      :is-drag-over="dragOverSubId === sub.id"
+      :has-update="hasUpdate(sub.id)"
+      @select="emit('select', $event)"
+      @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
+      @dragleave="handleDragLeave"
+      @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
+    />
   </aside>
 </template>
 
 <style scoped>
-.sub-name {
-  display: inline-block;
-  width: 8em; /* 固定可视宽度，保证溢出被裁剪在标签内 */
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+/* 隐藏滚动条 */
+aside::-webkit-scrollbar {
+  display: none;
+}
+aside {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 </style>
