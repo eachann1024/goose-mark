@@ -7,10 +7,16 @@ const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.15
 
 // 模块级缓存
 const invalidatedShareIds = new Set<string>()
-const validationCache = new Map<string, { status: 'active' | 'canceled' | 'not_found' | 'error'; timestamp: number }>()
+const validationCache = new Map<string, { status: 'active' | 'canceled' | 'not_found' | 'error'; updatedAt?: number; timestamp: number }>()
+
+interface ShareCheckResult {
+  status: 'active' | 'canceled' | 'not_found' | 'error'
+  updatedAt?: number
+}
+
 const VALIDATION_CACHE_TTL = 30 * 60 * 1000 
 // In-flight requests deduplication
-const pendingRequests = new Map<string, Promise<'active' | 'canceled' | 'not_found' | 'error'>>()
+const pendingRequests = new Map<string, Promise<ShareCheckResult>>()
 
 // 辅助：优化书签
 const optimizeBookmarkData = (bookmarks: Bookmark[]): Bookmark[] => {
@@ -257,18 +263,20 @@ export function useShare() {
   
 
 
-  // 验证分享状态（用于切换分组时检查）
-  const validateShareStatus = async (shareId: string): Promise<'active' | 'canceled' | 'not_found' | 'error'> => {
+  // 内部通用检查函数：带缓存和去重
+  const fetchShareStatus = async (shareId: string, ignoreCache = false): Promise<ShareCheckResult> => {
     // 1. 检查永久失效缓存
     if (invalidatedShareIds.has(shareId)) {
-      return 'canceled'
+      return { status: 'canceled' }
     }
 
     // 2. 检查 TTL 缓存
-    const cached = validationCache.get(shareId)
-    if (cached && Date.now() - cached.timestamp < VALIDATION_CACHE_TTL) {
-      if (import.meta.env.DEV) console.log(`[Share] 使用缓存状态: ${shareId} -> ${cached.status}`)
-      return cached.status
+    if (!ignoreCache) {
+      const cached = validationCache.get(shareId)
+      if (cached && Date.now() - cached.timestamp < VALIDATION_CACHE_TTL) {
+        if (import.meta.env.DEV) console.log(`[Share] 使用缓存状态: ${shareId} -> ${cached.status}`)
+        return { status: cached.status, updatedAt: cached.updatedAt }
+      }
     }
 
     // 3. Check for in-flight requests
@@ -278,11 +286,12 @@ export function useShare() {
     }
     
     // Create new request promise
-    const requestPromise = (async () => {
+    const requestPromise = (async (): Promise<ShareCheckResult> => {
       try {
         const res = await fetch(`${API_BASE_URL}/${shareId}/check`)
         
         let status: 'active' | 'canceled' | 'not_found' | 'error' = 'error'
+        let updatedAt: number | undefined
 
         if (res.status === 404) {
           status = 'not_found'
@@ -293,6 +302,7 @@ export function useShare() {
           const data = await res.json().catch(() => ({}))
           if (res.ok) {
             status = data.active ? 'active' : 'canceled'
+            updatedAt = data.updatedAt
           } else if (data.canceled) {
             status = 'canceled'
           } else if (res.status !== 429) {
@@ -301,16 +311,17 @@ export function useShare() {
         }
         
         if (status !== 'error') {
-            validationCache.set(shareId, { status, timestamp: Date.now() })
+            validationCache.set(shareId, { status, updatedAt, timestamp: Date.now() })
             if (status === 'not_found' || status === 'canceled') {
                invalidatedShareIds.add(shareId)
             }
         }
         
-        return status
+        return { status, updatedAt }
       } catch (e) {
         console.error(`[Share] 验证状态失败: ${shareId}`, e)
-        return 'error'
+        // Keep error
+        return { status: 'error' }
       } finally {
         pendingRequests.delete(shareId)
       }
@@ -318,6 +329,13 @@ export function useShare() {
 
     pendingRequests.set(shareId, requestPromise)
     return requestPromise
+  }
+
+  // 验证分享状态（用于切换分组时检查）
+  // 仅暴露 status 供外部使用
+  const validateShareStatus = async (shareId: string): Promise<'active' | 'canceled' | 'not_found' | 'error'> => {
+    const result = await fetchShareStatus(shareId)
+    return result.status
   }
   
   // 验证分组的分享状态并清理失效的（切换分组时调用）
@@ -608,47 +626,46 @@ export function useShare() {
   // 检查分享更新（优先使用轻量级接口）
   const checkForUpdate = async (shareId: string, lastSyncedAt: number, throwOnError = false): Promise<boolean> => {
     try {
-      // 优先使用轻量级检查接口
-      const checkRes = await fetch(`${API_BASE_URL}/${shareId}/check`)
-
-      if (checkRes.ok) {
-        const checkData = await checkRes.json()
-        if (!checkData.active) {
-          if (throwOnError) throw new Error('分享已被分享者取消')
-          return false
-        }
-        return checkData.updatedAt > lastSyncedAt
+      // 使用带缓存和去重的通用检查函数
+      // throwOnError 为 true 时（手动检查），跳过缓存
+      const { status, updatedAt } = await fetchShareStatus(shareId, throwOnError)
+      
+      if (status === 'active') {
+        return (updatedAt || 0) > lastSyncedAt
       }
-
-      // 如果轻量级接口失败（404/410 等），抛出错误
-      if (checkRes.status === 404) {
+      
+      if (status === 'not_found') {
         if (throwOnError) throw new Error('分享已失效（分享者已删除）')
         return false
       }
-      if (checkRes.status === 410) {
+      
+      if (status === 'canceled') {
         if (throwOnError) throw new Error('分享已被分享者取消')
         return false
       }
+      
+      // 如果轻量级检查返回 error，尝试回退到完整接口 (主要处理可能的兼容性问题或未知错误)
+      if (status === 'error') {
+        const res = await fetch(`${API_BASE_URL}/${shareId}`)
 
-      // 其他错误，回退到完整接口
-      const res = await fetch(`${API_BASE_URL}/${shareId}`)
-
-      if (!res.ok) {
-        if (throwOnError) {
-            if (res.status === 429) throw new Error('请求过于频繁，请稍后再试')
-            throw new Error(`请求失败: ${res.status}`)
+        if (!res.ok) {
+          if (throwOnError) {
+              if (res.status === 429) throw new Error('请求过于频繁，请稍后再试')
+              throw new Error(`请求失败: ${res.status}`)
+          }
+          return false
         }
-        return false
+
+        const shareData: ShareResponse = await res.json()
+        if (!shareData.active) {
+          if (throwOnError) throw new Error('分享已被分享者取消')
+          return false
+        }
+
+        return shareData.updatedAt > lastSyncedAt
       }
 
-      const shareData: ShareResponse = await res.json()
-      if (!shareData.active) {
-        if (throwOnError) throw new Error('分享已被分享者取消')
-        return false
-      }
-
-      // 注意：server 端的 updatedAt 是分享记录的更新时间
-      return shareData.updatedAt > lastSyncedAt
+      return false
     } catch (e) {
       if (throwOnError) throw e
       return false
