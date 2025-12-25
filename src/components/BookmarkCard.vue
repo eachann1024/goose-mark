@@ -2,7 +2,7 @@
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
 
-const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string; readonly?: boolean }>()
+const props = defineProps<{ bookmark: Bookmark; selected?: boolean; showHint?: boolean; hintKey?: string; readonly?: boolean; index?: number; gridColumns?: number }>()
 const emit = defineEmits<{
   edit: [Bookmark, HTMLElement | undefined]
   remove: [Bookmark]
@@ -32,6 +32,19 @@ const clearFallbackToast = () => {
 
 const showFallbackToast = (title: string, desc: string, anchor?: HTMLElement) => {
   if (fallbackToastEl) return 
+  
+  // 计算字数和位置
+  const totalLen = (title?.length || 0) + (desc?.length || 0)
+  const cols = props.gridColumns || 3
+  const colIndex = props.index !== undefined ? props.index % cols : 0
+  
+  // 决定显示模式: 40字以内统一置顶; 长文本根据列数平分左右 (左侧优先)
+  let mode: 'top' | 'right' | 'left' = 'top'
+  if (totalLen >= 40) {
+    // 3列: 0->右, 1,2->左 | 4列: 0,1->右, 2,3->左 | 5列: 0,1->右, 2,3,4->左
+    mode = colIndex < Math.floor(cols / 2) ? 'right' : 'left'
+  }
+  
   const el = document.createElement('div')
   
   const getCssVar = (name: string, fallback: string) => {
@@ -61,7 +74,14 @@ const showFallbackToast = (title: string, desc: string, anchor?: HTMLElement) =>
   el.style.zIndex = '9999'
   el.style.pointerEvents = 'none'
   el.style.opacity = '0'
-  el.style.transform = 'translateY(4px)'
+  // 根据显示方向设置初始偏移
+  if (mode === 'top') {
+    el.style.transform = 'translateY(8px)'
+  } else if (mode === 'right') {
+    el.style.transform = 'translateX(-8px)'
+  } else {
+    el.style.transform = 'translateX(8px)'
+  }
   el.style.transition = 'opacity 120ms ease, transform 120ms ease'
   el.style.position = 'fixed'
 
@@ -88,31 +108,58 @@ const showFallbackToast = (title: string, desc: string, anchor?: HTMLElement) =>
 
   const anchorRect = anchor?.getBoundingClientRect()
   const toastRect = el.getBoundingClientRect()
-  let top = anchorRect ? anchorRect.top - toastRect.height - 10 : window.innerHeight - toastRect.height - 16
-  let left = anchorRect ? anchorRect.left + anchorRect.width / 2 - toastRect.width / 2 : window.innerWidth - toastRect.width - 16
+  const gap = 12 // tooltip 与书签之间的间距
+  
+  let left: number
+  let top: number
+  
+  if (anchorRect) {
+    if (mode === 'top') {
+      // 顶部显示：居中对齐
+      left = anchorRect.left + (anchorRect.width - toastRect.width) / 2
+      top = anchorRect.top - toastRect.height - gap
+    } else if (mode === 'right') {
+      // 右侧显示：tooltip 左边缘在书签右边缘 + gap
+      left = anchorRect.right + gap
+      top = anchorRect.top + (anchorRect.height - toastRect.height) / 2
+    } else {
+      // 左侧显示：tooltip 右边缘在书签左边缘 - gap
+      left = anchorRect.left - toastRect.width - gap
+      top = anchorRect.top + (anchorRect.height - toastRect.height) / 2
+    }
+  } else {
+    left = window.innerWidth - toastRect.width - 16
+    top = window.innerHeight - toastRect.height - 16
+  }
+  
+  // 边界保护：确保不超出屏幕
   const maxLeft = window.innerWidth - toastRect.width - 8
-  top = Math.max(8, top)
+  const maxTop = window.innerHeight - toastRect.height - 8
+  top = Math.max(8, Math.min(top, maxTop))
   left = Math.max(8, Math.min(left, maxLeft))
+  
   el.style.top = `${top}px`
   el.style.left = `${left}px`
   requestAnimationFrame(() => {
     el.style.opacity = '1'
-    el.style.transform = 'translateY(0)'
+    el.style.transform = mode === 'top' ? 'translateY(0)' : 'translateX(0)'
   })
   fallbackToastEl = el
 }
 
 const onCardEnter = () => {
   checkTruncate()
+  
   const showTitle = isTitleTruncated.value
   const showDesc = isDescTruncated.value && props.bookmark.desc
   
+  // 只有在标题或描述被截断时才显示 tooltip
   if (!showTitle && !showDesc) return
   
   const anchor = (cardEl.value?.$el ?? cardEl.value) as HTMLElement | undefined
   showFallbackToast(
     showTitle ? props.bookmark.title : '',
-    showDesc ? props.bookmark.desc : '',
+    showDesc ? props.bookmark.desc || '' : '',
     anchor
   )
 }
@@ -253,11 +300,11 @@ const handleEdit = () => {
         <!-- Edit Button -->
         <Tooltip v-model:open="editTooltipOpen" :disable-hoverable-content="true">
           <TooltipTrigger as-child>
-            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted" @click.stop="handleEdit">
-              <span class="i-mdi-pencil text-xs" />
+            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 group/edit-btn" @click.stop="handleEdit">
+              <span class="i-mdi-pencil text-xs transition-colors group-hover/edit-btn:text-primary" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent><p>编辑</p></TooltipContent>
+          <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
         </Tooltip>
 
         <!-- Delete Button -->
@@ -266,11 +313,11 @@ const handleEdit = () => {
              <div class="inline-block" @click.stop> <!-- 阻止点击事件冒泡到卡片 -->
                <Tooltip>
                  <TooltipTrigger as-child>
-                    <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:bg-muted hover:text-destructive">
+                    <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 hover:text-destructive">
                       <span class="i-mdi-delete-outline text-xs" />
                     </Button>
                  </TooltipTrigger>
-                 <TooltipContent><p>删除</p></TooltipContent>
+                 <TooltipContent side="bottom"><p>删除</p></TooltipContent>
                </Tooltip>
              </div>
           </PopoverTrigger>
