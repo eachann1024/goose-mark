@@ -2,6 +2,7 @@ import PinyinMatch from 'pinyin-match'
 import type { Bookmark, Group, IconSource, BookmarkLocation, SubGroup } from '@/types/bookmark'
 import { bulkMatchMissing, ensureIconForBookmark } from '@/services/iconCache'
 import { utoolsStorage } from '@/lib/utoolsStorage'
+import { useSync } from '@/composables/useSync'
 
 const uid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`)
 
@@ -391,6 +392,18 @@ export const useBookmarkStore = defineStore('bookmark', {
           group!.updatedAt = now
         }
       })
+
+      
+      // Sync Hook
+      const { schedulePush } = useSync()
+      schedulePush({
+        itemId: bookmark.id,
+        itemType: 'bookmark',
+        content: bookmark,
+        isDeleted: false,
+        updatedAt: now
+      })
+
       return bookmark
     },
     updateBookmarkLocations(bookmarkId: string, newLocations: BookmarkLocation[]) {
@@ -442,6 +455,16 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (updater.url && updater.url !== original.url && (!original.icon || original.icon.type === 'text')) {
         this.refreshSingleIcon(updated)
       }
+      
+      // Sync Hook
+      const { schedulePush } = useSync()
+      schedulePush({
+        itemId: updated.id,
+        itemType: 'bookmark',
+        content: updated,
+        isDeleted: false,
+        updatedAt: now
+      })
     },
     removeBookmark(id: string) {
       const now = Date.now()
@@ -468,6 +491,20 @@ export const useBookmarkStore = defineStore('bookmark', {
           bookmark.updatedAt = now
           // bookmark.isDeleted = true // 暂时不开启物理隐藏，先走回收站逻辑
           this.updateBookmarkLocations(id, [{ groupId: TRASH_GROUP_ID, subGroupId: 'sg-trash' }])
+          
+          // Sync Hook: Soft Delete (Tombstone)
+          // 注意：如果只是移动到回收站，本质上是 Update 操作（Location 变更）
+          // 但如果是"彻底删除"（emptyTrash），则需要发送 isDeleted=true
+          // 这里 removeBookmark 实际上是移入回收站，所以应该视为 update
+          // 只有 emptyTrash 才是真正的删除
+          const { schedulePush } = useSync()
+          schedulePush({
+             itemId: bookmark.id,
+             itemType: 'bookmark',
+             content: bookmark, // 发送最新状态（在回收站中）
+             isDeleted: false,
+             updatedAt: now
+          })
         }
       }
     },
@@ -498,6 +535,18 @@ export const useBookmarkStore = defineStore('bookmark', {
       })
       trashSub.updatedAt = now
       trashGroup!.updatedAt = now
+      
+      // Sync Hook: 物理删除
+      const { schedulePush } = useSync()
+      idsToRemove.forEach(id => {
+         schedulePush({
+            itemId: id,
+            itemType: 'bookmark',
+            content: null,
+            isDeleted: true,
+            updatedAt: now
+         })
+      })
     },
     async refreshSingleIcon(bookmark: Bookmark) {
       const icon = await ensureIconForBookmark(bookmark)

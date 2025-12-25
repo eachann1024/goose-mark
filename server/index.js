@@ -8,6 +8,7 @@ import fs from 'fs-extra'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { initDatabase, createShare, getShare, updateShare, cancelShare, checkShareUpdate } from './db.js'
+import { pushItems, pullItems } from './syncService.js'
 import { fetchSiteIcon } from './iconService.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -217,6 +218,48 @@ fastify.delete('/api/share/:id', async (request, reply) => {
   } catch (err) {
     request.log.error(err)
     return reply.code(500).send({ error: 'Internal Server Error' })
+  }
+})
+
+// --- Sync API ---
+
+// 增量 Push
+fastify.post('/api/sync/:shareId/push', {
+  config: {
+    rateLimit: {
+      max: 60,
+      timeWindow: '1 minute'
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const { shareId } = request.params
+    const { items } = request.body
+    
+    if (!shareId || !items || !Array.isArray(items)) {
+      return reply.code(400).send({ error: 'Invalid payload' })
+    }
+
+    const result = await pushItems(shareId, items)
+    return result
+  } catch (err) {
+    request.log.error(err)
+    return reply.code(500).send({ error: 'Sync Push Failed' })
+  }
+})
+
+// 增量 Pull
+fastify.get('/api/sync/:shareId/pull', async (request, reply) => {
+  try {
+    const { shareId } = request.params
+    const { since } = request.query
+    
+    const sinceTs = parseInt(since) || 0
+    const result = await pullItems(shareId, sinceTs)
+    return result
+  } catch (err) {
+    request.log.error(err)
+    return reply.code(500).send({ error: 'Sync Pull Failed' })
   }
 })
 

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Loader2 } from 'lucide-vue-next'
+import { useSync } from '@/composables/useSync'
 
 import type { Bookmark } from '@/types/bookmark'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
@@ -14,6 +15,7 @@ const { toastState, closeToast, showToast, tooltipProviderKey, onMainViewSwitch 
 
 // Composables
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
+const { isSyncing, syncError } = useSync()
 const { 
   openBookmarkLink: originalOpenBookmarkLink, 
   openUrl,
