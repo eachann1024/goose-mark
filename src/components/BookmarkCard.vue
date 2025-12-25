@@ -272,7 +272,7 @@ const handleEdit = () => {
           <template v-if="isEmptyDesc">
             <h3
               ref="titleEl"
-              class="font-semibold text-base leading-snug truncate text-foreground"
+              class="font-semibold text-base leading-snug truncate text-foreground w-full max-w-full"
             >
               {{ bookmark.title }}
             </h3>
