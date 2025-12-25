@@ -178,6 +178,8 @@ const confirmEmptyTrash = () => {
             :show-hint="showCommandHints"
             :hint-key="hintKeyById?.[bookmark.id]"
             :readonly="readonly"
+            :index="index"
+            :grid-columns="columns"
             @remove="emit('remove', bookmark)"
             @edit="(b, el) => emit('edit', b, el)"
             @open="emit('open', bookmark)"
