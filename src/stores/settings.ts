@@ -51,9 +51,7 @@ export const useSettingsStore = defineStore('settings', {
       this.onboardingDismissed = true
     },
     setEasterEggEnabled(value: boolean) {
-      console.log('[settings] setEasterEggEnabled 被调用:', value, '→', !!value)
       this.easterEggEnabled = !!value
-      console.log('[settings] 当前 state:', JSON.stringify(this.$state))
     }
   },
   persist: {

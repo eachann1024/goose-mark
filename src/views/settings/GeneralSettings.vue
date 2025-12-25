@@ -8,13 +8,12 @@ const { isUTools, isDark } = useAppState()
 
 const showShareImportDialog = ref(false)
 
-// 彩蛋：默认黑白主题悬停状态
-const isHoveringDefaultTheme = ref(false)
-
 // 彩蛋开关的 computed（用于 v-model 双向绑定）
 const easterEggEnabled = computed({
   get: () => settingsStore.easterEggEnabled,
-  set: (val) => settingsStore.setEasterEggEnabled(val)
+  set: (val) => {
+    settingsStore.setEasterEggEnabled(val)
+  }
 })
 
 const gridColumnsOptions = [2, 3, 4, 5]
@@ -43,46 +42,17 @@ const handleGridColumnsChange = (val: string | number) => {
       </CardHeader>
       <CardContent>
         <div class="flex gap-6">
-          <!-- Monochrome (Default) with Easter Egg -->
+          <!-- Monochrome (Default) -->
           <div 
             class="flex flex-col items-center gap-2 cursor-pointer group"
             @click="themeStore.setTheme('default')"
-            @mouseenter="isHoveringDefaultTheme = true"
-            @mouseleave="isHoveringDefaultTheme = false"
           >
-            <!-- 波纹容器 + 开关（相对定位的父容器） -->
-            <div class="relative">
-              <!-- 波纹动画层（仅深色模式且选中时显示） -->
-              <div 
-                v-if="isDark && themeStore.currentTheme === 'default'"
-                class="absolute inset-0 rounded-full theme-ripple"
-                :class="{ 'paused': isHoveringDefaultTheme }"
-              />
-              
-              <!-- 圆形图标 -->
-              <div 
-                class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all relative z-10"
-                :class="themeStore.currentTheme === 'default' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
-              >
-                <div class="w-1/2 h-full bg-zinc-900"></div>
-                <div class="w-1/2 h-full bg-white"></div>
-              </div>
-
-              <!-- 彩蛋开关（深色模式悬停时显示，居中覆盖在圆形图标上） -->
-              <Transition name="fade-center">
-                <div 
-                  v-if="isDark && isHoveringDefaultTheme"
-                  class="absolute inset-0 flex items-center justify-center z-30"
-                  @click.stop
-                >
-                <div 
-                  class="bg-popover/95 backdrop-blur-sm rounded-full p-2 shadow-lg border border-border"
-                  @click="console.log('[Easter Egg] 开关容器被点击')"
-                >
-                  <Switch v-model:checked="easterEggEnabled" @click="console.log('[Easter Egg] Switch 被点击')" />
-                </div>
-                </div>
-              </Transition>
+            <div 
+              class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all relative z-10"
+              :class="themeStore.currentTheme === 'default' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
+            >
+              <div class="w-1/2 h-full bg-zinc-900"></div>
+              <div class="w-1/2 h-full bg-white"></div>
             </div>
             
             <span 
@@ -109,6 +79,23 @@ const handleGridColumnsChange = (val: string | number) => {
             >醇香拿铁</span>
           </div>
         </div>
+
+        <!-- 彩蛋开关：使用最简单的按钮，确保点击必生效 -->
+        <div v-if="isDark" class="mt-6 pt-6 border-t border-border/50 flex flex-col gap-3">
+          <div class="flex items-center justify-between bg-muted/30 p-4 rounded-xl border border-border/50">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm font-medium">星空背景模式 (Beta)</span>
+              <span class="text-xs text-muted-foreground text-balance">开启后界面将呈现星空背景与深度毛玻璃质感，由于背景图较大，加载可能需要 1-2 秒。</span>
+            </div>
+            <Button 
+              :variant="easterEggEnabled ? 'default' : 'outline'"
+              class="shrink-0"
+              @click="easterEggEnabled = !easterEggEnabled"
+            >
+              {{ easterEggEnabled ? '已开启' : '点击开启' }}
+            </Button>
+          </div>
+        </div>
       </CardContent>
     </Card>
 
@@ -120,15 +107,19 @@ const handleGridColumnsChange = (val: string | number) => {
       </CardHeader>
       <CardContent>
         <div class="space-y-4">
-          <label class="flex items-center justify-between cursor-pointer">
+          <div class="flex items-center justify-between">
             <div class="space-y-0.5">
               <div class="text-sm font-medium">开启分享功能</div>
               <div class="text-xs text-muted-foreground">在书签页显示分享与管理按钮</div>
             </div>
-            <Switch 
-              v-model="settingsStore.enableShare"
-            />
-          </label>
+            <Button 
+              :variant="settingsStore.enableShare ? 'default' : 'outline'"
+              size="sm"
+              @click="settingsStore.setEnableShare(!settingsStore.enableShare)"
+            >
+              {{ settingsStore.enableShare ? '已开启' : '点击开启' }}
+            </Button>
+          </div>
           
           <div v-if="settingsStore.enableShare" class="pt-2 animate-in fade-in slide-in-from-top-2">
             <Button variant="outline" class="w-full h-9 border-dashed border-primary/30 text-primary/80 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors" @click="showShareImportDialog = true">
@@ -151,24 +142,26 @@ const handleGridColumnsChange = (val: string | number) => {
           <CardDescription>设置主界面每行卡片数量（2-5）</CardDescription>
         </CardHeader>
         <CardContent>
-          <div class="flex items-center gap-3 max-w-xs">
-            <label class="text-sm text-muted-foreground shrink-0">每行数量</label>
-            <Input
-              type="number"
-              min="2"
-              max="5"
-              step="1"
-              class="h-9"
-              :value="settingsStore.gridColumns"
-              @input="handleGridColumnsChange(($event.target as HTMLInputElement).value)"
-            />
-            <div class="flex gap-2">
+          <div class="flex items-center gap-4 flex-wrap">
+            <div class="flex items-center gap-2 shrink-0">
+              <label class="text-sm text-muted-foreground shrink-0">每行数量</label>
+              <Input
+                type="number"
+                min="2"
+                max="5"
+                step="1"
+                class="h-9 w-16"
+                :model-value="settingsStore.gridColumns"
+                @update:model-value="handleGridColumnsChange"
+              />
+            </div>
+            <div class="flex gap-1.5 shrink-0">
               <Button
                 v-for="opt in gridColumnsOptions"
                 :key="opt"
                 size="sm"
                 :variant="settingsStore.gridColumns === opt ? 'default' : 'outline'"
-                class="h-8 px-3"
+                class="h-8 w-10 px-0 shrink-0"
                 @click="settingsStore.setGridColumns(opt)"
               >
                 {{ opt }}
@@ -212,31 +205,43 @@ const handleGridColumnsChange = (val: string | number) => {
                   :max="1000"
                   :step="10"
                   class="flex-1"
-                  @update:model-value="(val: number[]) => settingsStore.setWindowHeight(val[0])"
+                  @update:model-value="(val: number[] | undefined) => {
+                    if (val && val.length > 0) {
+                      settingsStore.setWindowHeight(val[0])
+                    }
+                  }"
                 />
                 <span class="text-sm w-10 text-right">{{ settingsStore.windowHeight }}</span>
               </div>
             </div>
             
-            <label class="flex items-center justify-between cursor-pointer">
+            <div class="flex items-center justify-between">
               <div class="space-y-0.5">
                 <div class="text-sm font-medium">独立窗口自动关闭</div>
                 <div class="text-xs text-muted-foreground">在独立窗口模式下，打开书签后自动关闭窗口</div>
               </div>
-              <Switch 
-                v-model:checked="settingsStore.autoCloseWindow"
-              />
-            </label>
+              <Button 
+                :variant="settingsStore.autoCloseWindow ? 'default' : 'outline'"
+                size="sm"
+                @click="settingsStore.setAutoCloseWindow(!settingsStore.autoCloseWindow)"
+              >
+                {{ settingsStore.autoCloseWindow ? '已开启' : '点击开启' }}
+              </Button>
+            </div>
             
-            <label class="flex items-center justify-between cursor-pointer">
+            <div class="flex items-center justify-between">
               <div class="space-y-0.5">
                 <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
                 <div class="text-xs text-muted-foreground">不支持时将回退到系统默认浏览器</div>
               </div>
-              <Switch 
-                v-model:checked="settingsStore.preferUtoolsBrowser"
-              />
-            </label>
+              <Button 
+                :variant="settingsStore.preferUtoolsBrowser ? 'default' : 'outline'"
+                size="sm"
+                @click="settingsStore.setPreferUtoolsBrowser(!settingsStore.preferUtoolsBrowser)"
+              >
+                {{ settingsStore.preferUtoolsBrowser ? '已开启' : '点击开启' }}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -258,8 +263,8 @@ const handleGridColumnsChange = (val: string | number) => {
                 inputmode="numeric"
                 class="h-9 w-20"
                 placeholder="15"
-                :value="settingsStore.searchAutoExitSeconds"
-                @change="settingsStore.setSearchAutoExitSeconds(Number(($event.target as HTMLInputElement).value))"
+                :model-value="settingsStore.searchAutoExitSeconds"
+                @update:model-value="(val) => settingsStore.setSearchAutoExitSeconds(Number(val))"
               />
             </div>
             <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
@@ -275,23 +280,27 @@ const handleGridColumnsChange = (val: string | number) => {
         </CardHeader>
         <CardContent>
           <div class="flex flex-col gap-4">
-            <label class="flex items-center justify-between cursor-pointer">
+            <div class="flex items-center justify-between">
               <div class="space-y-0.5">
                 <div class="text-sm font-medium">使用指定 AI 模型</div>
                 <div class="text-xs text-muted-foreground">默认使用 deepseek-v3</div>
               </div>
-              <Switch 
-                v-model:checked="settingsStore.useCustomAiModel"
-              />
-            </label>
-
+              <Button 
+                :variant="settingsStore.useCustomAiModel ? 'default' : 'outline'"
+                size="sm"
+                @click="settingsStore.setUseCustomAiModel(!settingsStore.useCustomAiModel)"
+              >
+                {{ settingsStore.useCustomAiModel ? '已开启' : '点击开启' }}
+              </Button>
+            </div>
+            
             <div v-if="settingsStore.useCustomAiModel" class="flex items-center gap-3">
               <label class="text-sm text-muted-foreground shrink-0">模型</label>
               <Input
                 class="h-9 flex-1"
                 placeholder="例如 deepseek-v3 自定义模型名"
-                :value="settingsStore.customAiModel"
-                @input="settingsStore.setCustomAiModel(($event.target as HTMLInputElement).value)"
+                :model-value="settingsStore.customAiModel"
+                @update:model-value="(val) => settingsStore.setCustomAiModel(String(val))"
               />
             </div>
           </div>
