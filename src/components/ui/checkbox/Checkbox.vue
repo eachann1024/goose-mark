@@ -9,9 +9,7 @@ import { cn } from "@/lib/utils"
 const props = defineProps<CheckboxRootProps & { class?: HTMLAttributes["class"] }>()
 const emits = defineEmits<CheckboxRootEmits>()
 
-const delegatedProps = reactiveOmit(props, "class")
-
-const forwarded = useForwardPropsEmits(delegatedProps, emits)
+const forwarded = useForwardPropsEmits(props, emits)
 </script>
 
 <template>

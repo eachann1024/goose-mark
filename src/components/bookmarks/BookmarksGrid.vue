@@ -144,6 +144,9 @@ const confirmEmptyTrash = () => {
     :ref="setGridRef"
     class="flex-1"
   >
+    <!-- Header Slot for Onboarding Banner -->
+    <slot name="header" />
+    
     <draggable
       v-model="localBookmarks"
       item-key="id"

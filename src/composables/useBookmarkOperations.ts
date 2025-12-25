@@ -135,6 +135,10 @@ export function useBookmarkOperations() {
   }
 
   const openBookmarkLink = (bookmark: Bookmark) => {
+    // 记录书签点击统计
+    const statsStore = useStatsStore()
+    statsStore.recordClick(bookmark.id)
+    
     if (isDevRuntime) {
       console.info('[Bookmark] open', bookmark)
     }

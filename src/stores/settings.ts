@@ -12,7 +12,9 @@ export const useSettingsStore = defineStore('settings', {
     useCustomAiModel: false,
     customAiModel: '',
     enableShare: true,
-    windowHeight: 700
+    windowHeight: 700,
+    // 首次用户引导是否已关闭
+    onboardingDismissed: false
   }),
   actions: {
     setGridColumns(value: number) {
@@ -46,6 +48,9 @@ export const useSettingsStore = defineStore('settings', {
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0
       this.windowHeight = num < 100 ? 100 : Math.round(num)
+    },
+    dismissOnboarding() {
+      this.onboardingDismissed = true
     }
   },
   persist: {

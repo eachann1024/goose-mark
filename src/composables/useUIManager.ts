@@ -18,6 +18,12 @@ export interface ToastAnchor {
   strategy?: 'avoid' | 'near'
 }
 
+/** 动画原点，用于 transform-origin */
+export interface AnimationOrigin {
+  x: string  // CSS 值，如 "320px" 或 "right"
+  y: string  // CSS 值，如 "480px" 或 "bottom"
+}
+
 export interface ToastState {
   visible: boolean
   title: string
@@ -27,6 +33,8 @@ export interface ToastState {
   onAction?: () => void
   duration?: number
   position?: ToastPosition
+  /** 动画起始点，用于 @starting-style 动画的 transform-origin */
+  origin?: AnimationOrigin
 }
 
 export interface ToastOptions extends Omit<ToastState, 'visible'> {
@@ -38,7 +46,7 @@ const toastState = ref<ToastState>({
   visible: false,
   title: '',
   variant: 'info',
-  position: 'top-right'
+  position: 'bottom-right'
 })
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null
@@ -81,6 +89,43 @@ const calcToastPosition = (anchor?: ToastAnchor): ToastPosition => {
   }
 }
 
+/**
+ * 根据锚点和 Toast 位置计算动画原点
+ * 
+ * 【动画锚点规范】
+ * - 动画从触发位置"生长"出来
+ * - transform-origin 指向触发元素方向
+ * - 无锚点时使用 Toast 位置对应的角落
+ * 
+ * @param anchor 锚点信息
+ * @param position Toast 显示位置
+ */
+const calcAnimationOrigin = (anchor?: ToastAnchor, position?: ToastPosition): AnimationOrigin => {
+  // 有锚点时：origin 指向锚点方向
+  if (anchor) {
+    const rect = anchor.rect || anchor.element?.getBoundingClientRect()
+    if (rect) {
+      // 锚点中心作为 origin 参考点
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      return {
+        x: `${centerX}px`,
+        y: `${centerY}px`
+      }
+    }
+  }
+  
+  // 无锚点：根据 position 返回对应角落
+  const pos = position || 'bottom-right'
+  const origins: Record<ToastPosition, AnimationOrigin> = {
+    'top-left': { x: 'left', y: 'top' },
+    'top-right': { x: 'right', y: 'top' },
+    'bottom-left': { x: 'left', y: 'bottom' },
+    'bottom-right': { x: 'right', y: 'bottom' }
+  }
+  return origins[pos]
+}
+
 // ============ Dialog 管理 ============
 const openDialogCount = ref(0)
 
@@ -106,10 +151,23 @@ export function useUIManager() {
   const showToast = (options: ToastOptions) => {
     if (toastTimer) clearTimeout(toastTimer)
     
+    // 自动检测锚点：优先使用传入的 anchor，否则尝试使用当前焦点元素
+    let anchor = options.anchor
+    if (!anchor) {
+      // 尝试使用 document.activeElement (刚点击的按钮通常会获得焦点)
+      const active = document.activeElement as HTMLElement | null
+      if (active && active !== document.body && active.tagName !== 'HTML') {
+        anchor = { element: active }
+      }
+    }
+    
     // 如果提供了 anchor，自动计算位置
-    const position = options.anchor 
-      ? calcToastPosition(options.anchor)
-      : (options.position || 'top-right')
+    const position = anchor 
+      ? calcToastPosition(anchor)
+      : (options.position || 'bottom-right')
+    
+    // 计算动画原点
+    const origin = calcAnimationOrigin(anchor, position)
     
     toastState.value = {
       visible: true,
@@ -118,7 +176,8 @@ export function useUIManager() {
       variant: options.variant || 'info',
       actionLabel: options.actionLabel,
       onAction: options.onAction,
-      position
+      position,
+      origin
     }
 
     const duration = options.duration || 4500
