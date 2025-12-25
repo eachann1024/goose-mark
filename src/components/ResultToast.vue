@@ -8,7 +8,7 @@
  * - 调用 showToast 时传入 anchor: { element } 可指定触发位置
  */
 import { computed } from 'vue'
-import type { ToastPosition, AnimationOrigin } from '@/composables/useUIManager'
+import type { AnimationOrigin } from '@/composables/useUIManager'
 
 type Variant = 'success' | 'info' | 'warning' | 'error'
 
@@ -19,7 +19,6 @@ const props = defineProps<{
   variant?: Variant
   icon?: string
   actionLabel?: string
-  position?: ToastPosition
   origin?: AnimationOrigin
 }>()
 
@@ -50,17 +49,8 @@ const sanitizedDescription = computed(() => {
   return d.length > MAX_DESC_LEN ? d.slice(0, MAX_DESC_LEN) + '…' : d
 })
 
-// 位置样式
-const positionClass = computed(() => {
-  const pos = props.position || 'bottom-right'
-  const classes: Record<ToastPosition, string> = {
-    'top-left': 'top-20 left-4',
-    'top-right': 'top-20 right-4',
-    'bottom-left': 'bottom-4 left-4',
-    'bottom-right': 'bottom-4 right-4'
-  }
-  return classes[pos]
-})
+// 始终在右上角
+const positionClass = 'top-20 right-4'
 
 // 动画原点 CSS 变量
 const originStyle = computed(() => {
