@@ -159,6 +159,16 @@ watch(() => settingsStore.windowHeight, (h) => {
 })
 
 // Search
+const canUseSubInput = computed(() => {
+  if (!isUTools.value) return false
+  try {
+     return !isDetachedWindowNow()
+  } catch {
+     return false
+  }
+})
+
+// Search
 const {
   localSearchInputRef,
   searchViewOpen,
@@ -180,7 +190,7 @@ const searchOverlayRef = ref<{
 
 // 当搜索视图打开时，同步并聚焦输入框
 watch(searchViewOpen, (isOpen) => {
-  if (isOpen && !settingsStore.enableSubInput) {
+  if (isOpen && !canUseSubInput.value) {
     nextTick(() => {
       requestAnimationFrame(() => {
         const overlay = searchOverlayRef.value
@@ -692,8 +702,7 @@ onMounted(async () => {
     }
 
     const syncSubInput = () => {
-      const canUse = !isDetachedWindowNow() && settingsStore.enableSubInput
-      if (canUse) {
+      if (canUseSubInput.value) {
         utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
       } else {
         utoolsApi.removeSubInput?.()
@@ -703,7 +712,11 @@ onMounted(async () => {
     syncTheme()
     syncFeatures(store.bookmarks)
     syncSubInput()
-    watch(() => settingsStore.enableSubInput, () => syncSubInput())
+    // Watch canUseSubInput indirectly via isDetachedWindowNow changes if needed, 
+    // but usually window type doesn't change dynamically in a way that affects this without reload?
+    // Actually, converting to detached might change it.
+    // Let's watch the computed value.
+    watch(canUseSubInput, () => syncSubInput())
     
     window.addEventListener('storage-sync', ((e: any) => {
       const { key, value } = e.detail
@@ -772,8 +785,43 @@ watch(() => store.bookmarks, () => {
   if (isSyncPaused.value) return // 暂停时跳过同步
   syncFeatures(store.bookmarks)
 }, { deep: true })
-</script>
+// Highlight State
+const highlightedBookmarkId = ref<string | null>(null)
 
+// 定位逻辑
+const handleLocate = async (bookmark: Bookmark) => {
+  if (bookmark.locations && bookmark.locations.length > 0) {
+    const loc = bookmark.locations[0]
+    
+    // 1. 先关闭搜索
+    if (searchViewOpen.value) {
+       closeSearchView()
+       // 等待 UI 更新 (Overlay 消失动画)
+       await new Promise(resolve => setTimeout(resolve, 300))
+    }
+
+    // 2. 切换位置
+    store.selectGroup(loc.groupId)
+    if (loc.subGroupId) {
+      store.selectSubGroup(loc.subGroupId)
+    }
+    
+    // 3. 切换到书签 tab
+    tab.value = 'bookmarks'
+
+    // 4. 设置高亮
+    highlightedBookmarkId.value = bookmark.id
+    
+    // 5. 4秒后清除高亮
+    setTimeout(() => {
+      highlightedBookmarkId.value = null
+    }, 4000)
+    
+  } else {
+    showToast({ title: '无法定位', description: '该书签没有关联的位置信息', variant: 'error' })
+  }
+}
+</script>
 
 <template>
   <TooltipProvider :delay-duration="100">
@@ -782,7 +830,12 @@ watch(() => store.bookmarks, () => {
     :bookmark="activeTemplateBookmark" 
     :query="templateQuery" 
   />
-  <div v-else class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" @contextmenu.prevent>
+  <div 
+    v-else 
+    class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" 
+    :class="{ 'easter-egg-bg': isDark && settingsStore.easterEggEnabled }"
+    @contextmenu.prevent
+  >
     <!-- Top Navigation for Groups -->
     <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
        <GroupTabs
@@ -808,7 +861,7 @@ watch(() => store.bookmarks, () => {
       :search-value="searchValue"
       :active-bookmarks="activeBookmarks"
       :selected-index="selectedIndex"
-      :enable-sub-input="settingsStore.enableSubInput"
+      :enable-sub-input="canUseSubInput"
       :store-search="store.search"
       :search-auto-exit-text="searchAutoExitText"
       :show-cmd-hints="showCmdHints"
@@ -822,6 +875,7 @@ watch(() => store.bookmarks, () => {
       @open="openBookmarkLink"
       @contextmenu="handleBookmarkRightClick"
       @reorder="handleReorder"
+      @locate="handleLocate"
     />
 
     <!-- Main Content with Sub-groups sidebar -->
@@ -845,6 +899,7 @@ watch(() => store.bookmarks, () => {
         :show-command-hints="showCmdHints"
         :hint-key-by-id="hintKeyById"
         :readonly="!!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
+        :highlighted-id="highlightedBookmarkId"
         @remove="(b) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && handleRemove(b)"
         @edit="(b, el) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && openEdit(b, el)"
         @open="openBookmarkLink"
@@ -852,6 +907,7 @@ watch(() => store.bookmarks, () => {
         @reorder="handleReorder"
         @add="(el) => openAdd(el)"
         @emptyTrash="emptyTrash"
+        @locate="handleLocate"
       >
         <template #header>
           <OnboardingBanner 
@@ -998,7 +1054,6 @@ watch(() => store.bookmarks, () => {
       :description="toastState.description"
       :variant="toastState.variant"
       :action-label="toastState.actionLabel"
-      :position="toastState.position"
       :origin="toastState.origin"
       @close="closeToast"
       @action="toastState.onAction?.()"
@@ -1022,5 +1077,13 @@ watch(() => store.bookmarks, () => {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* 彩蛋：星空背景 */
+.easter-egg-bg {
+  background-image: url('https://source.unsplash.com/1741261498263-a5704667520d/1920x1080');
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }
 </style>

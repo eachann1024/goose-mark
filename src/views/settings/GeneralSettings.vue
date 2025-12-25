@@ -4,9 +4,18 @@ import ShareImportDialog from '@/components/ShareImportDialog.vue'
 const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 
-const { isUTools } = useAppState()
+const { isUTools, isDark } = useAppState()
 
 const showShareImportDialog = ref(false)
+
+// 彩蛋：默认黑白主题悬停状态
+const isHoveringDefaultTheme = ref(false)
+
+// 彩蛋开关的 computed（用于 v-model 双向绑定）
+const easterEggEnabled = computed({
+  get: () => settingsStore.easterEggEnabled,
+  set: (val) => settingsStore.setEasterEggEnabled(val)
+})
 
 const gridColumnsOptions = [2, 3, 4, 5]
 const groupLayoutOptions: Array<{ value: 'wrap' | 'scroll'; label: string }> = [
@@ -21,12 +30,7 @@ const handleGridColumnsChange = (val: string | number) => {
   }
 }
 
-const showSubInputToast = (enabled: boolean) => {
-  const msg = enabled
-    ? '已启用 uTools 子输入框：直接输入即可搜索，但焦点可能拦截方向键，需先切换焦点再导航。'
-    : '已关闭子输入框：点击搜索按钮进入搜索界面，不会被输入框抢占焦点。'
-  notify(msg)
-}
+
 </script>
 
 <template>
@@ -39,18 +43,48 @@ const showSubInputToast = (enabled: boolean) => {
       </CardHeader>
       <CardContent>
         <div class="flex gap-6">
-          <!-- Monochrome (Default) -->
+          <!-- Monochrome (Default) with Easter Egg -->
           <div 
             class="flex flex-col items-center gap-2 cursor-pointer group"
             @click="themeStore.setTheme('default')"
+            @mouseenter="isHoveringDefaultTheme = true"
+            @mouseleave="isHoveringDefaultTheme = false"
           >
-            <div 
-              class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all"
-              :class="themeStore.currentTheme === 'default' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
-            >
-              <div class="w-1/2 h-full bg-zinc-900"></div>
-              <div class="w-1/2 h-full bg-white"></div>
+            <!-- 波纹容器 + 开关（相对定位的父容器） -->
+            <div class="relative">
+              <!-- 波纹动画层（仅深色模式且选中时显示） -->
+              <div 
+                v-if="isDark && themeStore.currentTheme === 'default'"
+                class="absolute inset-0 rounded-full theme-ripple"
+                :class="{ 'paused': isHoveringDefaultTheme }"
+              />
+              
+              <!-- 圆形图标 -->
+              <div 
+                class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all relative z-10"
+                :class="themeStore.currentTheme === 'default' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
+              >
+                <div class="w-1/2 h-full bg-zinc-900"></div>
+                <div class="w-1/2 h-full bg-white"></div>
+              </div>
+
+              <!-- 彩蛋开关（深色模式悬停时显示，居中覆盖在圆形图标上） -->
+              <Transition name="fade-center">
+                <div 
+                  v-if="isDark && isHoveringDefaultTheme"
+                  class="absolute inset-0 flex items-center justify-center z-30"
+                  @click.stop
+                >
+                <div 
+                  class="bg-popover/95 backdrop-blur-sm rounded-full p-2 shadow-lg border border-border"
+                  @click="console.log('[Easter Egg] 开关容器被点击')"
+                >
+                  <Switch v-model:checked="easterEggEnabled" @click="console.log('[Easter Egg] Switch 被点击')" />
+                </div>
+                </div>
+              </Transition>
             </div>
+            
             <span 
               class="text-sm font-medium transition-colors"
               :class="themeStore.currentTheme === 'default' ? 'text-primary' : 'text-muted-foreground'"
@@ -214,31 +248,18 @@ const showSubInputToast = (enabled: boolean) => {
         </CardHeader>
         <CardContent>
           <div class="flex flex-col gap-4 max-w-md">
-            <label class="flex items-center justify-between cursor-pointer">
-              <div class="space-y-0.5">
-                <div class="text-sm font-medium">启用 uTools 子输入框</div>
-                <div class="text-xs text-muted-foreground">直接在主界面输入即可搜索，无需点击搜索按钮</div>
-              </div>
-              <Switch 
-                :checked="settingsStore.enableSubInput"
-                @update:checked="(val) => {
-                  settingsStore.setEnableSubInput(val);
-                  showSubInputToast(val);
-                }"
-              />
-            </label>
 
             <div class="flex items-center gap-3">
-              <label class="text-sm text-muted-foreground shrink-0">自动退出（分钟）</label>
+              <label class="text-sm text-muted-foreground shrink-0">自动退出搜索（秒）</label>
               <Input
                 type="number"
                 min="0"
                 step="1"
                 inputmode="numeric"
                 class="h-9 w-20"
-                placeholder="5"
-                :value="settingsStore.searchAutoExitMinutes"
-                @change="settingsStore.setSearchAutoExitMinutes(Number(($event.target as HTMLInputElement).value))"
+                placeholder="15"
+                :value="settingsStore.searchAutoExitSeconds"
+                @change="settingsStore.setSearchAutoExitSeconds(Number(($event.target as HTMLInputElement).value))"
               />
             </div>
             <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
@@ -282,3 +303,53 @@ const showSubInputToast = (enabled: boolean) => {
     <ShareImportDialog v-model:open="showShareImportDialog" />
   </div>
 </template>
+
+<style scoped>
+/* 波纹动画 */
+@keyframes ripple {
+  0% {
+    box-shadow: 
+      0 0 0 0 rgba(255, 255, 255, 0.4),
+      0 0 0 0 rgba(255, 255, 255, 0.3),
+      0 0 0 0 rgba(255, 255, 255, 0.2);
+  }
+  100% {
+    box-shadow: 
+      0 0 0 10px rgba(255, 255, 255, 0),
+      0 0 0 20px rgba(255, 255, 255, 0),
+      0 0 0 30px rgba(255, 255, 255, 0);
+  }
+}
+
+.theme-ripple {
+  animation: ripple 3s ease-out infinite;
+}
+
+.theme-ripple.paused {
+  animation-play-state: paused;
+}
+
+/* Switch 淡入淡出 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-50%) translateX(-8px);
+}
+
+/* 居中开关缩放动画 */
+.fade-center-enter-active,
+.fade-center-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.fade-center-enter-from,
+.fade-center-leave-to {
+  opacity: 0;
+  transform: scale(0.8);
+}
+</style>

@@ -16,6 +16,10 @@ const props = defineProps<{
   hideAddCard?: boolean
   showCommandHints?: boolean
   hintKeyById?: Record<string, string>
+  showEdit?: boolean
+  showDelete?: boolean
+  showLocate?: boolean
+  highlightedId?: string | null
   readonly?: boolean
 }>()
 
@@ -24,6 +28,7 @@ const emit = defineEmits<{
   (e: 'edit', bookmark: Bookmark, el?: HTMLElement): void
   (e: 'open', bookmark: Bookmark): void
   (e: 'contextmenu', event: MouseEvent, bookmark: Bookmark): void
+  (e: 'locate', bookmark: Bookmark): void
   (e: 'add', el?: HTMLElement): void
   (e: 'emptyTrash'): void
   (e: 'reorder', payload: { fromId: string; toId: string }): void
@@ -139,6 +144,16 @@ const confirmEmptyTrash = () => {
   emptyToastDesc.value = count > 0 ? `已永久删除 ${count} 条书签` : undefined
   emptyToastOpen.value = true
 }
+
+watch(() => props.highlightedId, (id) => {
+  if (!id) return
+  nextTick(() => {
+    const el = document.querySelector(`[data-bookmark-id="${id}"]`)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  })
+})
 </script>
 
 <template>
@@ -178,11 +193,16 @@ const confirmEmptyTrash = () => {
             :show-hint="showCommandHints"
             :hint-key="hintKeyById?.[bookmark.id]"
             :readonly="readonly"
+            :show-edit="showEdit"
+            :show-delete="showDelete"
+            :show-locate="showLocate"
+            :highlighted="highlightedId === bookmark.id"
             :index="index"
             :grid-columns="columns"
             @remove="emit('remove', bookmark)"
             @edit="(b, el) => emit('edit', b, el)"
             @open="emit('open', bookmark)"
+            @locate="emit('locate', bookmark)"
             @contextmenu="(e) => emit('contextmenu', e, bookmark)"
           />
         </div>
