@@ -140,6 +140,8 @@ const handleImport = () => {
         : `已创建分组「${result.group?.name}」`,
       variant: 'success'
     })
+    // 异步触发图标获取
+    store.refreshMissingIcons()
     emit('update:open', false)
     tab.value = 'bookmarks'
   }
@@ -165,6 +167,8 @@ const handleForceSync = () => {
       description: `已将「${conflictInfo.value.group.name}」恢复为在线分组并覆盖内容`,
       variant: 'success'
     })
+    // 异步触发图标获取
+    store.refreshMissingIcons()
     emit('update:open', false)
     tab.value = 'bookmarks'
   }
@@ -192,6 +196,8 @@ const handleCreateCopy = () => {
       description: `已创建副本分组「${newGroup.name}」`,
       variant: 'success'
     })
+    // 异步触发图标获取
+    store.refreshMissingIcons()
     emit('update:open', false)
     tab.value = 'bookmarks'
   }

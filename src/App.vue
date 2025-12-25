@@ -240,6 +240,15 @@ const getHintKey = (id: string) => hintKeyById.value[id]
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
 const shouldShowSubs = computed(() => activeSubGroups.value.length > 1)
+// 监听彩蛋状态，同步到 body 类名
+watch([() => settingsStore.easterEggEnabled, isDark], ([enabled, dark]) => {
+  if (enabled && dark) {
+    document.body.classList.add('easter-egg-active')
+  } else {
+    document.body.classList.remove('easter-egg-active')
+  }
+}, { immediate: true })
+
 const visibleGroups = computed(() => store.groups.filter(g => g.id !== TRASH_GROUP_ID))
 const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 const currentSubGroup = computed(() => 
@@ -544,6 +553,8 @@ const handleNameConflictAction = async (action: 'merge' | 'new') => {
     if (result) showToast({ title: '导入成功', variant: 'success' })
   }
 
+  // 异步触发图标获取
+  store.refreshMissingIcons()
   nameConflictInfo.value = null
   clearShareIdFromUrl()
 }
@@ -832,12 +843,14 @@ const handleLocate = async (bookmark: Bookmark) => {
   />
   <div 
     v-else 
-    class="min-h-screen h-screen flex flex-col bg-background text-foreground overflow-hidden" 
-    :class="{ 'easter-egg-bg': isDark && settingsStore.easterEggEnabled }"
+    class="min-h-screen h-screen flex flex-col text-foreground overflow-hidden transition-all duration-500 bg-background app-container" 
     @contextmenu.prevent
   >
     <!-- Top Navigation for Groups -->
-    <header class="sticky top-0 z-30 flex flex-col gap-2 p-6 bg-background/80 backdrop-blur-md">
+    <header 
+      class="sticky top-0 z-30 flex flex-col gap-2 p-6 transition-all duration-500"
+      :class="isDark && settingsStore.easterEggEnabled ? 'bg-background/10 backdrop-blur-md' : 'bg-background/80 backdrop-blur-md'"
+    >
        <GroupTabs
          :visible-groups="visibleGroups"
          :active-group-id="store.activeGroupId"
@@ -1061,6 +1074,92 @@ const handleLocate = async (bookmark: Bookmark) => {
   </TooltipProvider>
 </template>
 
+<style>
+/* 全局彩蛋适配样式 */
+html.dark body.easter-egg-active {
+  background-image: linear-gradient(rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.5)), url('https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=2071&auto=format&fit=crop') !important;
+  background-size: cover !important;
+  background-position: center !important;
+  background-attachment: fixed !important;
+  background-color: #000 !important;
+}
+
+body.easter-egg-active .app-container,
+body.easter-egg-active #app {
+  background-color: transparent !important;
+}
+
+body.easter-egg-active .bg-card,
+body.easter-egg-active [class*="bg-primary/5"],
+body.easter-egg-active [class*="bg-gradient-to-br"] {
+  background-color: hsla(var(--card), 0.2) !important;
+  background-image: none !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border-color: hsla(var(--border), 0.1) !important;
+}
+
+body.easter-egg-active .bg-popover {
+  background-color: hsla(var(--popover), 0.4) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+}
+
+body.easter-egg-active header {
+  background-color: hsla(var(--background), 0.05) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+}
+
+body.easter-egg-active aside,
+body.easter-egg-active main,
+body.easter-egg-active section {
+  background-color: transparent !important;
+}
+
+/* 侧边栏按钮适配 */
+body.easter-egg-active aside button[class*="bg-primary/5"] {
+  background-color: hsla(var(--primary), 0.15) !important;
+}
+
+/* 顶部导航按钮适配 */
+body.easter-egg-active header button[data-active="true"] {
+  background-color: hsla(var(--primary), 0.4) !important;
+  color: white !important;
+}
+body.easter-egg-active header button[class*="bg-primary/10"] {
+  background-color: hsla(var(--primary), 0.2) !important;
+}
+
+/* 添加书签按钮适配 */
+body.easter-egg-active button[class*="border-dashed"] {
+  background-color: hsla(var(--primary), 0.05) !important;
+}
+body.easter-egg-active button[class*="border-dashed"]:hover {
+  background-color: hsla(var(--primary), 0.1) !important;
+}
+
+/* 七天使用趋势条适配 */
+body.easter-egg-active .bg-primary\/20 {
+  background-color: hsla(var(--primary), 0.15) !important;
+}
+body.easter-egg-active .bg-primary:not(button),
+body.easter-egg-active .bg-primary\/50 {
+  background-color: hsla(var(--primary), 0.6) !important;
+}
+
+/* 统计卡片与热门书签适配 */
+body.easter-egg-active .bg-muted {
+  background-color: hsla(var(--muted), 0.2) !important;
+}
+body.easter-egg-active [class*="bg-amber-500/20"],
+body.easter-egg-active [class*="bg-zinc-400/20"],
+body.easter-egg-active [class*="bg-orange-400/20"] {
+  background-color: hsla(var(--muted), 0.3) !important;
+  backdrop-filter: blur(4px);
+}
+</style>
+
 <style scoped>
 .no-scrollbar::-webkit-scrollbar {
   display: none;
@@ -1078,12 +1177,5 @@ const handleLocate = async (bookmark: Bookmark) => {
 .fade-leave-to {
   opacity: 0;
 }
-
-/* 彩蛋：星空背景 */
-.easter-egg-bg {
-  background-image: url('https://source.unsplash.com/1741261498263-a5704667520d/1920x1080');
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
-}
+/* 彩蛋相关样式已移至全局 style */
 </style>

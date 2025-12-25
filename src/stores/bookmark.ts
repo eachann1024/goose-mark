@@ -1214,6 +1214,8 @@ export const useBookmarkStore = defineStore('bookmark', {
       subGroup.updatedAt = now
       group.updatedAt = now
       this.bookmarks.push(...newBookmarks)
+      // 异步触发图标获取
+      this.refreshMissingIcons()
       return { success: true, added: addedUrls.length, removed: removedUrls.length, addedItems: [], removedItems: [] }
     },
     updateFromShare(groupId: string, data: { groups: Group[]; bookmarks: Bookmark[] }) {
@@ -1260,6 +1262,8 @@ export const useBookmarkStore = defineStore('bookmark', {
           .map(sub => ({ groupId: group.id, subGroupId: sub.id }))
       })
       this.bookmarks.push(...newBookmarks)
+      // 异步触发图标获取
+      this.refreshMissingIcons()
       return { success: true, added: addedUrls.length, removed: removedUrls.length, addedItems: [], removedItems: [] }
     }
   },
