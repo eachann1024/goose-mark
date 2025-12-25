@@ -52,6 +52,7 @@
 - **回收站机制**：书签删除后进入 `TRASH_GROUP_ID` 分组，支持清空回收站。
 - **多分类管理**：书签可同时关联至多个子分组（`CategoryMultiSelect.vue`）。
 - **AI 辅助**：调用 `window.utools.askAI` 生成标题/描述，用户可在设置中关闭自动生成。
+- **右键菜单**：书签右键菜单通过 `useContextMenu.ts` 管理，必须在事件处理中调用 `e.stopPropagation()` 以防止冒泡导致菜单立即关闭。
 
 ## 分享、同步与导入
 - **数据同步**：

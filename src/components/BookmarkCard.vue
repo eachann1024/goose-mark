@@ -240,20 +240,8 @@ const copyUrl = async () => {
     notify('复制失败，请检查权限后重试')
   }
 }
-const deletePopoverOpen = ref(false)
-const editTooltipOpen = ref(false)
 
-const canEdit = computed(() => props.showEdit ?? !props.readonly)
-const canDelete = computed(() => props.showDelete ?? !props.readonly)
 const canLocate = computed(() => props.showLocate ?? false)
-
-const handleEdit = () => {
-  editTooltipOpen.value = false
-  // 使用 nextTick 确保 tooltip 先关闭
-  nextTick(() => {
-    emit('edit', props.bookmark, (cardEl.value?.$el ?? cardEl.value) as HTMLElement | undefined)
-  })
-}
 </script>
 
 <template>
@@ -347,12 +335,10 @@ const handleEdit = () => {
        </div>
     </div>
     
-    <!-- Action Buttons -->
-    <div v-if="canEdit || canDelete || canLocate" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
-        <!-- Copy button removed as per requirement -->
-        
+    <!-- Action Buttons (只保留定位按钮，编辑/删除改用右键菜单) -->
+    <div v-if="canLocate" class="absolute right-1 bottom-1 flex gap-0.5 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity bg-background/80 backdrop-blur rounded-lg p-0.5 border border-border shadow-sm z-10" @click.stop>
         <!-- Locate Button -->
-        <Tooltip v-if="canLocate" :disable-hoverable-content="true">
+        <Tooltip :disable-hoverable-content="true">
           <TooltipTrigger as-child>
             <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 group/locate-btn" @click.stop="emit('locate', bookmark)">
               <span class="i-mdi-target text-xs transition-colors group-hover/locate-btn:text-primary" />
@@ -360,39 +346,6 @@ const handleEdit = () => {
           </TooltipTrigger>
           <TooltipContent side="bottom"><p>定位到原分组</p></TooltipContent>
         </Tooltip>
-
-        <!-- Edit Button -->
-        <Tooltip v-if="canEdit" v-model:open="editTooltipOpen" :disable-hoverable-content="true">
-          <TooltipTrigger as-child>
-            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 group/edit-btn" @click.stop="handleEdit">
-              <span class="i-mdi-pencil text-xs transition-colors group-hover/edit-btn:text-primary" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom"><p>编辑</p></TooltipContent>
-        </Tooltip>
-
-        <!-- Delete Button -->
-        <Popover v-if="canDelete" v-model:open="deletePopoverOpen">
-          <PopoverTrigger asChild>
-             <div class="inline-block" @click.stop> <!-- 阻止点击事件冒泡到卡片 -->
-               <Tooltip>
-                 <TooltipTrigger as-child>
-                    <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 hover:text-destructive">
-                      <span class="i-mdi-delete-outline text-xs" />
-                    </Button>
-                 </TooltipTrigger>
-                 <TooltipContent side="bottom"><p>删除</p></TooltipContent>
-               </Tooltip>
-             </div>
-          </PopoverTrigger>
-          <PopoverContent class="w-48 p-2 bg-card border-border rounded-md shadow-md" @keydown.enter.prevent="emit('remove', bookmark); deletePopoverOpen = false">
-    <p class="text-sm mb-2">确认删除？</p>
-    <div class="flex justify-end gap-2">
-      <Button variant="outline" size="sm" @click.stop="deletePopoverOpen = false">取消</Button>
-      <Button size="sm" @click.stop="emit('remove', bookmark); deletePopoverOpen = false">确认</Button>
-    </div>
-  </PopoverContent>
-</Popover>
     </div>
   </Card>
 </template>

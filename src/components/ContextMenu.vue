@@ -42,19 +42,12 @@ onUnmounted(() => {
 <template>
   <div
     ref="menu"
-    class="fixed z-[10000] min-w-[160px] bg-white/90 dark:bg-[#1a1c20]/90 backdrop-blur-md rounded-xl shadow-xl border border-white/10 p-1.5 flex flex-col gap-1 text-sm animate-fade-in"
+    class="context-menu fixed z-[10000] min-w-[160px] bg-white/90 dark:bg-[#1a1c20]/90 backdrop-blur-md rounded-xl shadow-xl border border-white/10 p-1.5 flex flex-col gap-1 text-sm animate-fade-in"
     :style="{ top: `${y}px`, left: `${x}px` }"
     @click.stop
     @contextmenu.prevent
   >
     <template v-if="!isTrash">
-      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('open')">
-        <span class="i-mdi-rocket-launch text-muted" />
-        <span>网页快开</span>
-      </Button>
-      
-      <div class="h-px bg-white/10 my-0.5 mx-1" />
-
       <Button variant="ghost" class="menu-item justify-start" @click="handleAction('copy')">
         <span class="i-mdi-content-copy text-muted" />
         <span>复制链接</span>
@@ -103,5 +96,15 @@ onUnmounted(() => {
 @keyframes fadeIn {
   from { opacity: 0; transform: scale(0.98); }
   to { opacity: 1; transform: scale(1); }
+}
+</style>
+
+<style>
+/* 彩蛋模式下的透明背景 */
+body.easter-egg-active .context-menu {
+  background: hsla(var(--card), 0.3) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border-color: hsla(var(--border), 0.2) !important;
 }
 </style>
