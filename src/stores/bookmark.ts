@@ -21,13 +21,13 @@ const now = Date.now()
 const seedGroups: Group[] = [
   {
     id: 'g-default',
-    name: '默认分组',
+    name: '默认',
     createdAt: now,
     updatedAt: now,
     children: [
       {
         id: 'sg-default',
-        name: '未分组',
+        name: '子分组',
         bookmarkIds: [],
         createdAt: now,
         updatedAt: now
@@ -101,6 +101,45 @@ export const useBookmarkStore = defineStore('bookmark', {
     }
   },
   actions: {
+    // 自动清理回收站（超过30天）
+    autoCleanTrash() {
+      const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+      if (!trashGroup) return
+      
+      const now = Date.now()
+      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000
+      let changed = false
+      
+      trashGroup.children.forEach(sub => {
+        const originalLen = sub.bookmarkIds.length
+        const newIds: string[] = []
+        
+        sub.bookmarkIds.forEach(bid => {
+           const bookmark = this.bookmarks.find(b => b.id === bid)
+           // 如果书签不存在，或者已超过 30 天，则不保留
+           if (bookmark) {
+             if ((now - bookmark.updatedAt) <= THIRTY_DAYS) {
+               newIds.push(bid)
+             } else {
+               // 从 bookmarks 中移除
+               const bIdx = this.bookmarks.findIndex(b => b.id === bid)
+               if (bIdx !== -1) this.bookmarks.splice(bIdx, 1)
+             }
+           }
+        })
+
+        if (sub.bookmarkIds.length !== newIds.length) {
+          sub.bookmarkIds = newIds
+          sub.updatedAt = now
+          changed = true
+        }
+      })
+      
+      if (changed) {
+        trashGroup.updatedAt = now
+      }
+    },
+
     migrateFromLegacy() {
       const legacyGroups = this.groups as any[]
       const firstSub = legacyGroups[0]?.children?.[0]
@@ -167,6 +206,8 @@ export const useBookmarkStore = defineStore('bookmark', {
           ]
         })
       }
+
+      this.autoCleanTrash()
     },
 
     deleteSubGroup(groupId: string, subGroupId: string) {
@@ -175,25 +216,70 @@ export const useBookmarkStore = defineStore('bookmark', {
         const index = group.children.findIndex(c => c.id === subGroupId)
         if (index !== -1) {
           const subGroup = group.children[index]
-          this.bookmarks = this.bookmarks.filter(b => !subGroup.bookmarkIds.includes(b.id))
-          group.children.splice(index, 1)
-          group.updatedAt = Date.now()
+          const now = Date.now()
           
-          // 如果删除子分组后，主分组没有子分组了，且主分组是分享的分组（有 sourceShareId），则删除主分组
-          // 或者如果删除的是导入的子分组（有 sourceShareId），且删除后主分组没有子分组了，也删除主分组
+          // 1. 收集需要移动到回收站的书签
+          const toTrash: string[] = []
+          subGroup.bookmarkIds.forEach(bid => {
+            const bookmark = this.bookmarks.find(b => b.id === bid)
+            if (bookmark) {
+              bookmark.locations = bookmark.locations?.filter(loc => 
+                !(loc.groupId === groupId && loc.subGroupId === subGroupId)
+              ) || []
+              if (bookmark.locations.length === 0) {
+                bookmark.updatedAt = now
+                toTrash.push(bid)
+              }
+            }
+          })
+          
+          // 2. 删除子分组
+          group.children.splice(index, 1)
+          group.updatedAt = now
+          
+          // 3. 将书签添加到回收站（去重）
+          let trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+          if (!trashGroup) {
+            trashGroup = {
+              id: TRASH_GROUP_ID,
+              name: '回收站',
+              createdAt: now,
+              updatedAt: now,
+              children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
+            }
+            this.groups.push(trashGroup)
+          }
+          if (trashGroup.children.length === 0) {
+            trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
+          }
+          const trashSub = trashGroup.children[0]
+          
+          if (toTrash.length > 0) {
+            toTrash.forEach(bid => {
+              if (!trashSub.bookmarkIds.includes(bid)) {
+                trashSub.bookmarkIds.push(bid)
+              }
+              const bookmark = this.bookmarks.find(b => b.id === bid)
+              if (bookmark) {
+                bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
+              }
+            })
+            trashSub.updatedAt = now
+            trashGroup.updatedAt = now
+          }
+          
+          // 4. 如果删除子分组后，主分组没有子分组了，且是分享/导入的分组，则删除主分组
           const shouldDeleteGroup = group.children.length === 0 && 
             group.id !== TRASH_GROUP_ID && 
             (group.sourceShareId || subGroup.sourceShareId)
           
           if (shouldDeleteGroup) {
-            // 如果当前激活的是这个分组，需要切换到其他分组
             if (this.activeGroupId === groupId) {
               const otherGroup = this.groups.find(g => g.id !== groupId && g.id !== TRASH_GROUP_ID)
               if (otherGroup) {
                 this.activeGroupId = otherGroup.id
                 this.activeSubGroupId = otherGroup.children[0]?.id || ''
               } else {
-                // 如果没有其他分组，切换到默认分组
                 const defaultGroup = this.groups.find(g => g.id === 'g-default')
                 if (defaultGroup) {
                   this.activeGroupId = defaultGroup.id
@@ -201,19 +287,25 @@ export const useBookmarkStore = defineStore('bookmark', {
                 }
               }
             }
-            // 删除主分组
             const groupIndex = this.groups.findIndex(g => g.id === groupId)
             if (groupIndex !== -1) {
               this.groups.splice(groupIndex, 1)
             }
           } else {
-            // 如果还有子分组，更新 activeSubGroupId
+            if (group.children.length === 0) {
+              const newSub = { id: uid(), name: '默认', bookmarkIds: [], createdAt: now, updatedAt: now }
+              group.children.push(newSub)
+              group.updatedAt = now
+            }
+            // 无论是否新建，都尝试选中第一个（如果之前选中的是被删除的）
             if (this.activeSubGroupId === subGroupId) {
               this.activeSubGroupId = group.children[0]?.id || ''
             }
           }
+          return true
         }
       }
+      return false
     },
 
     addGroup(name: string) {
@@ -290,7 +382,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         const group = this.groups.find(g => g.id === loc.groupId)
         let sub = group?.children.find(c => c.id === loc.subGroupId)
         if (!sub && group) {
-          const created = this.addSubGroup('未分组', group.id)
+          const created = this.addSubGroup('子分组', group.id)
           if (created) sub = created
         }
         if (sub && !sub.bookmarkIds.includes(bookmark.id)) {
@@ -416,10 +508,25 @@ export const useBookmarkStore = defineStore('bookmark', {
       const missing = this.bookmarks.filter(b => !b.icon || b.icon.type === 'text')
       const result = await bulkMatchMissing(missing)
       result.forEach((icon, id) => this.assignIcon(id, icon))
+      
+      // 收集成功和失败的书签信息
+      const successList: string[] = []
+      const failList: { id: string; title: string }[] = []
+      
+      missing.forEach(bookmark => {
+        if (result.has(bookmark.id)) {
+          successList.push(bookmark.title || bookmark.url)
+        } else {
+          failList.push({ id: bookmark.id, title: bookmark.title || bookmark.url })
+        }
+      })
+      
       return {
         total: missing.length,
         matched: result.size,
-        remaining: this.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
+        remaining: this.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length,
+        successList,
+        failList
       }
     },
     assignIcon(id: string, icon: IconSource) {
@@ -455,18 +562,64 @@ export const useBookmarkStore = defineStore('bookmark', {
       const idx = this.groups.findIndex(g => g.id === id)
       if (idx === -1) return false
       const group = this.groups[idx]
+      const now = Date.now()
+      
+      // 1. 收集需要移动到回收站的书签 ID
+      const toTrash: string[] = []
       group.children.forEach(sub => {
-        [...sub.bookmarkIds].forEach(bid => {
+        sub.bookmarkIds.forEach(bid => {
           const bookmark = this.bookmarks.find(b => b.id === bid)
           if (bookmark) {
+            // 移除当前分组的位置
             bookmark.locations = bookmark.locations?.filter(loc => loc.groupId !== id) || []
+            // 如果书签没有其他位置了，标记为需要移动到回收站
             if (bookmark.locations.length === 0) {
-              this.removeBookmark(bid)
+              bookmark.updatedAt = now
+              toTrash.push(bid)
             }
           }
         })
       })
+      
+      // 2. 删除分组
       this.groups.splice(idx, 1)
+      
+      // 3. 将收集的书签添加到回收站（去重）
+      let trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+      // 确保回收站分组存在
+      if (!trashGroup) {
+        trashGroup = {
+          id: TRASH_GROUP_ID,
+          name: '回收站',
+          createdAt: now,
+          updatedAt: now,
+          children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
+        }
+        this.groups.push(trashGroup)
+      }
+      // 确保回收站有子分组
+      if (trashGroup.children.length === 0) {
+        trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
+      }
+      const trashSub = trashGroup.children[0]
+      
+      toTrash.forEach(bid => {
+        // 去重：只有不在回收站中才添加
+        if (!trashSub.bookmarkIds.includes(bid)) {
+          trashSub.bookmarkIds.push(bid)
+        }
+        // 更新书签的 locations
+        const bookmark = this.bookmarks.find(b => b.id === bid)
+        if (bookmark) {
+          bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
+        }
+      })
+      if (toTrash.length > 0) {
+        trashSub.updatedAt = now
+        trashGroup.updatedAt = now
+      }
+      
+      // 4. 更新 activeGroupId
       if (this.activeGroupId === id) {
         this.activeGroupId = this.groups[0]?.id ?? ''
         this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
@@ -478,18 +631,65 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (!group) return false
       const idx = group.children.findIndex(c => c.id === subId)
       if (idx === -1) return false
-      const sub = group.children[idx];
-      [...sub.bookmarkIds].forEach(bid => {
+      const sub = group.children[idx]
+      const now = Date.now()
+      
+      // 1. 收集需要移动到回收站的书签
+      const toTrash: string[] = []
+      sub.bookmarkIds.forEach(bid => {
         const bookmark = this.bookmarks.find(b => b.id === bid)
         if (bookmark) {
-           bookmark.locations = bookmark.locations?.filter(loc => !(loc.groupId === groupId && loc.subGroupId === subId)) || []
-           if (bookmark.locations.length === 0) {
-             this.removeBookmark(bid)
-           }
+          bookmark.locations = bookmark.locations?.filter(loc => 
+            !(loc.groupId === groupId && loc.subGroupId === subId)
+          ) || []
+          if (bookmark.locations.length === 0) {
+            bookmark.updatedAt = now
+            toTrash.push(bid)
+          }
         }
       })
+      
+      // 2. 删除子分组
       group.children.splice(idx, 1)
-      group.updatedAt = Date.now()
+      group.updatedAt = now
+      
+      // 3. 将书签添加到回收站（去重）
+      let trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+      if (!trashGroup) {
+        trashGroup = {
+          id: TRASH_GROUP_ID,
+          name: '回收站',
+          createdAt: now,
+          updatedAt: now,
+          children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
+        }
+        this.groups.push(trashGroup)
+      }
+      if (trashGroup.children.length === 0) {
+        trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
+      }
+      const trashSub = trashGroup.children[0]
+      
+      if (toTrash.length > 0) {
+        toTrash.forEach(bid => {
+          if (!trashSub.bookmarkIds.includes(bid)) {
+            trashSub.bookmarkIds.push(bid)
+          }
+          const bookmark = this.bookmarks.find(b => b.id === bid)
+          if (bookmark) {
+            bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
+          }
+        })
+        trashSub.updatedAt = now
+        trashGroup.updatedAt = now
+      }
+      
+      if (group.children.length === 0) {
+        const newSub = { id: uid(), name: '默认', bookmarkIds: [], createdAt: now, updatedAt: now }
+        group.children.push(newSub)
+        group.updatedAt = now
+      }
+
       if (this.activeSubGroupId === subId) {
         this.activeSubGroupId = group.children[0]?.id ?? ''
       }
@@ -574,7 +774,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         }
       })
       if (sourceGroup.children.length === 0) {
-        sourceGroup.children.push({ id: uid(), name: '未分组', bookmarkIds: [], createdAt: now, updatedAt: now })
+        sourceGroup.children.push({ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now })
       }
       return true
     },
@@ -608,7 +808,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         }
       })
       if (sourceGroup.children.length === 0) {
-        sourceGroup.children.push({ id: uid(), name: '未分组', bookmarkIds: [], createdAt: now, updatedAt: now })
+        sourceGroup.children.push({ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now })
       }
       this.activeGroupId = newGroup.id
       this.activeSubGroupId = sub.id
@@ -774,7 +974,7 @@ export const useBookmarkStore = defineStore('bookmark', {
       data.bookmarks.forEach(b => idMap.set(b.id, uid()))
       const newBookmarks = data.bookmarks.map(b => {
         const newId = idMap.get(b.id)!
-        return { ...b, id: newId, createdAt: now, updatedAt: now, locations: [] }
+        return { ...b, id: newId, createdAt: now, updatedAt: now, locations: [] as BookmarkLocation[] }
       })
       const sourceGroup = data.groups[0]
       const newGroupId = uid()

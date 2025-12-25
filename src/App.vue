@@ -2,6 +2,9 @@
 import { Loader2 } from 'lucide-vue-next'
 
 import type { Bookmark } from '@/types/bookmark'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
+import OnboardingBanner from '@/components/OnboardingBanner.vue'
+import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser'
 
 // Stores
 const store = useBookmarkStore()
@@ -60,7 +63,8 @@ const {
   buildShareUrl,
   validateAndCleanGroupShares,
   getShareData,
-  validateShareStatus
+  validateShareStatus,
+  checkForUpdate
 } = useShare()
 
 // Shared State
@@ -68,6 +72,8 @@ const selectedIndex = ref(-1)
 const showSharePanel = ref(false)
 const showNameConflict = ref(false)
 const showShareCanceledDialog = ref(false)
+const showConvertLocalDialog = ref(false)
+const showRemoveImportedDialog = ref(false)
 const shareCanceledInfo = ref<{ 
   type: 'group' | 'subGroup'
   groupId: string
@@ -323,6 +329,185 @@ const handleOpenShareUrl = (shareId: string) => {
 
 const handleCopyShareLink = async (shareId: string) => {
   await copyShareLink(shareId)
+}
+
+// 接收者分组管理
+
+const handleCheckImportedUpdate = async () => {
+  const sub = currentSubGroup.value
+  if (!sub?.sourceShareId) return
+  
+  showToast({ title: '正在检查更新...', variant: 'info', duration: 1500 })
+  try {
+    const hasUpdate = await checkForUpdate(sub.sourceShareId, sub.lastSyncedAt || 0)
+    if (hasUpdate) {
+      // 自动更新
+      const result = await getShareData(sub.sourceShareId)
+      if (result?.data) {
+        const shareData = result.data.data
+        if (shareData.subGroups?.length) {
+          const groups = shareData.group 
+            ? [{ id: shareData.group.id, name: shareData.group.name, children: shareData.subGroups }]
+            : [{ id: 'shared', name: '分享内容', children: shareData.subGroups }]
+          const dataToUpdate = { groups, bookmarks: shareData.bookmarks || [] } as any
+          const updateResult = store.updateSubGroupFromShare(store.activeGroupId, sub.id, sub.sourceShareId, dataToUpdate)
+          if (updateResult && typeof updateResult === 'object') {
+            const logs: string[] = []
+            if (updateResult.added > 0) logs.push(`新增 ${updateResult.added} 项`)
+            if (updateResult.removed > 0) logs.push(`移除 ${updateResult.removed} 项`)
+            showToast({ title: '已更新', description: logs.join('，') || '同步完成', variant: 'success' })
+          }
+        }
+      }
+    } else {
+      showToast({ title: '已是最新版本', variant: 'success', duration: 1500 })
+    }
+  } catch (e) {
+    showToast({ title: '检查更新失败', variant: 'error' })
+  }
+}
+
+const handleConvertToLocal = () => {
+  store.detachSubGroupFromShare(store.activeGroupId, store.activeSubGroupId)
+  showConvertLocalDialog.value = false
+  showToast({ title: '已转为本地分组', description: '此分组不再与分享源关联', variant: 'success' })
+}
+
+const handleRemoveImportedSubGroup = () => {
+  store.deleteSubGroup(store.activeGroupId, store.activeSubGroupId)
+  showRemoveImportedDialog.value = false
+  showToast({ title: '已移除分组', variant: 'success' })
+}
+
+// 引导导入书签
+const handleOnboardingImport = async (file: File) => {
+  try {
+    const text = await file.text()
+    
+    if (isHtmlBookmarkFile(text)) {
+      // HTML 格式：直接解析并导入
+      const result = parseHtmlBookmarks(text)
+      if (result.stats.totalBookmarks === 0) {
+        showToast({ title: '导入失败', description: '未在文件中找到有效书签', variant: 'error' })
+        return
+      }
+      
+      // 简化导入：所有顶级文件夹都导入
+      const now = Date.now()
+      const uid = () => crypto.randomUUID()
+      let addedGroups = 0
+      let addedBookmarks = 0
+      
+      // 1. 处理根层级的书签（不在任何文件夹中）
+      const rootBookmarks = result.flatBookmarks.filter(b => b.folderPath.length === 0)
+      if (rootBookmarks.length > 0) {
+        const newGroupId = uid()
+        const subId = uid()
+        const newBookmarks: Bookmark[] = rootBookmarks.map(b => ({
+          id: uid(), title: b.title, url: b.url, desc: '', tags: [],
+          createdAt: b.addDate || now, updatedAt: now,
+          locations: [{ groupId: newGroupId, subGroupId: subId }]
+        }))
+        
+        const newGroup = { 
+          id: newGroupId, 
+          name: '导入书签', 
+          createdAt: now, 
+          updatedAt: now, 
+          children: [{ id: subId, name: '未分类', bookmarkIds: newBookmarks.map(b => b.id), createdAt: now, updatedAt: now }]
+        }
+        
+        const trashIdx = store.groups.findIndex(g => g.id === TRASH_GROUP_ID)
+        if (trashIdx !== -1) {
+          store.groups.splice(trashIdx, 0, newGroup)
+        } else {
+          store.groups.push(newGroup)
+        }
+        store.bookmarks.push(...newBookmarks)
+        addedGroups++
+        addedBookmarks += newBookmarks.length
+      }
+
+      // 2. 处理文件夹结构
+      result.folders.forEach(folder => {
+        const newGroupId = uid()
+        const newBookmarks: Bookmark[] = []
+        const children: typeof store.groups[0]['children'] = []
+        
+        // 当前文件夹的书签放入默认子分组
+        if (folder.bookmarks.length > 0) {
+          const subId = uid()
+          folder.bookmarks.forEach(b => {
+            const bookmark: Bookmark = {
+              id: uid(), title: b.title, url: b.url, desc: '', tags: [],
+              createdAt: b.addDate || now, updatedAt: now,
+              locations: [{ groupId: newGroupId, subGroupId: subId }]
+            }
+            newBookmarks.push(bookmark)
+          })
+          children.push({ id: subId, name: '未分类', bookmarkIds: newBookmarks.map(b => b.id), createdAt: now, updatedAt: now })
+        }
+        
+        // 递归扁平化子文件夹
+        const flattenFolder = (f: typeof folder, prefix: string): void => {
+          const name = prefix ? `${prefix}/${f.name}` : f.name
+          if (f.bookmarks.length > 0) {
+            const subId = uid()
+            f.bookmarks.forEach(b => {
+              const bookmark: Bookmark = {
+                id: uid(), title: b.title, url: b.url, desc: '', tags: [],
+                createdAt: b.addDate || now, updatedAt: now,
+                locations: [{ groupId: newGroupId, subGroupId: subId }]
+              }
+              newBookmarks.push(bookmark)
+            })
+            children.push({ id: subId, name, bookmarkIds: newBookmarks.slice(-f.bookmarks.length).map(b => b.id), createdAt: now, updatedAt: now })
+          }
+          f.children.forEach(child => flattenFolder(child, name))
+        }
+        folder.children.forEach(child => flattenFolder(child, ''))
+        
+        if (children.length === 0) {
+          children.push({ id: uid(), name: '未分类', bookmarkIds: [], createdAt: now, updatedAt: now })
+        }
+        
+        const trashIdx = store.groups.findIndex(g => g.id === TRASH_GROUP_ID)
+        const newGroup = { id: newGroupId, name: folder.name, createdAt: now, updatedAt: now, children }
+        if (trashIdx !== -1) {
+          store.groups.splice(trashIdx, 0, newGroup)
+        } else {
+          store.groups.push(newGroup)
+        }
+        store.bookmarks.push(...newBookmarks)
+        addedGroups++
+        addedBookmarks += newBookmarks.length
+      })
+      
+      showToast({ title: '导入成功', description: `新增 ${addedGroups} 个分组、${addedBookmarks} 个书签`, variant: 'success' })
+      settingsStore.dismissOnboarding()
+      // 异步触发图标获取
+      store.refreshMissingIcons()
+    } else {
+      // JSON 格式
+      const data = JSON.parse(text)
+      if (data.groups && data.bookmarks) {
+        store.$patch({ groups: data.groups, bookmarks: data.bookmarks })
+        showToast({ 
+          title: '导入成功', 
+          description: `导入 ${data.groups.length} 个分组、${data.bookmarks.length} 个书签`,
+          variant: 'success' 
+        })
+        settingsStore.dismissOnboarding()
+        // 异步触发图标获取
+        store.refreshMissingIcons()
+      } else {
+        showToast({ title: '无效的备份文件格式', variant: 'error' })
+      }
+    }
+  } catch (e) {
+    console.error('[App] Import failed:', e)
+    showToast({ title: '文件解析失败', variant: 'error' })
+  }
 }
 
 
@@ -665,10 +850,17 @@ watch(() => store.bookmarks, () => {
         @reorder="handleReorder"
         @add="(el) => openAdd(el)"
         @emptyTrash="emptyTrash"
-      />
+      >
+        <template #header>
+          <OnboardingBanner 
+            v-if="!isTrashActive && !(activeGroup?.sourceShareId)"
+            @import="handleOnboardingImport"
+          />
+        </template>
+      </BookmarksGrid>
 
-      <section v-else class="max-w-4xl mx-auto w-full">
-        <SettingsPanel />
+      <section v-else class="flex-1 min-h-0">
+        <SettingsLayout />
       </section>
     </main>
     
@@ -681,6 +873,9 @@ watch(() => store.bookmarks, () => {
       @copy-share-link="handleCopyShareLink"
       @manage-share="showSharePanel = true"
       @delete-sub-group="store.deleteSubGroup(store.activeGroupId, store.activeSubGroupId)"
+      @check-update="handleCheckImportedUpdate"
+      @convert-to-local="showConvertLocalDialog = true"
+      @remove-imported-sub-group="showRemoveImportedDialog = true"
     />
 
     <!-- Bookmark Form Dialog -->
@@ -763,6 +958,38 @@ watch(() => store.bookmarks, () => {
       </DialogContent>
     </Dialog>
 
+    <!-- Convert to Local Dialog -->
+    <Dialog v-model:open="showConvertLocalDialog">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>转为本地分组</DialogTitle>
+          <DialogDescription>
+            转为本地后，此分组将不再与分享源关联，也不会收到后续更新。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" @click="showConvertLocalDialog = false">取消</Button>
+          <Button @click="handleConvertToLocal">确认转换</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <!-- Remove Imported SubGroup Dialog -->
+    <Dialog v-model:open="showRemoveImportedDialog">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>移除导入分组</DialogTitle>
+          <DialogDescription>
+            移除后，此分组及其书签将被删除。如果这是最后一个子分组，主分组也会被删除。
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" @click="showRemoveImportedDialog = false">取消</Button>
+          <Button variant="destructive" @click="handleRemoveImportedSubGroup">确认移除</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
     <ResultToast
       :open="toastState.visible"
       :title="toastState.title"
@@ -770,6 +997,7 @@ watch(() => store.bookmarks, () => {
       :variant="toastState.variant"
       :action-label="toastState.actionLabel"
       :position="toastState.position"
+      :origin="toastState.origin"
       @close="closeToast"
       @action="toastState.onAction?.()"
     />

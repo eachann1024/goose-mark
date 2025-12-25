@@ -23,7 +23,10 @@ function _useBookmarkForm() {
   const store = useBookmarkStore()
   const statsStore = useStatsStore()
   const settingsStore = useSettingsStore()
-  const { checkUrl, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata, checkAiAvailable } = useAI()
+  const { 
+    checkUrl, isUrlAccessible, isCheckingUrl, isGenerating, aiError, generateMetadata, checkAiAvailable,
+    suggestCategory, isSuggestingCategory 
+  } = useAI()
 
   // 状态定义 - 在函数内部，但由于 createSharedComposable 只会执行一次
   const showAdd = ref(false)
@@ -46,6 +49,7 @@ function _useBookmarkForm() {
   
   const formError = ref('')
   const isSaving = ref(false)
+  const showDeleteConfirmLocal = ref(false)
   
   const iconLoading = ref(false)
   const iconFetchFailed = ref(false)
@@ -65,6 +69,16 @@ function _useBookmarkForm() {
   let fetchTimer: ReturnType<typeof setTimeout> | null = null
   const { scheduleShareUpdate } = useShare()
   const { showToast } = useToast()
+
+  // AI 分类建议
+  const categorySuggestion = ref<{
+    groupId: string
+    groupName: string
+    subGroupId: string
+    subGroupName: string
+    confidence: number
+    reason: string
+  } | null>(null)
 
   // 通用的自动更新分享函数
   // 支持多个位置，会更新所有涉及的分享
@@ -212,6 +226,71 @@ function _useBookmarkForm() {
 
   const onDescInput = () => {
     isDescDirty.value = true
+  }
+
+  // AI 分类建议方法
+  const askCategorySuggestion = async () => {
+    if (!draft.url) return
+
+    const { available, reason } = checkAiAvailable()
+    if (!available) {
+      showToast({ title: reason, variant: 'warning' })
+      return
+    }
+
+    // 构建现有分组信息
+    const existingGroups = store.groups
+      .filter(g => g.id !== TRASH_GROUP_ID)
+      .map(g => ({
+        id: g.id,
+        name: g.name,
+        subGroups: g.children.map(c => ({ id: c.id, name: c.name }))
+      }))
+
+    if (existingGroups.length === 0) {
+      showToast({ title: '请先创建分组', variant: 'warning' })
+      return
+    }
+
+    addBehaviorLog('ask-category-suggestion', draft.url)
+    const result = await suggestCategory(draft.url, existingGroups)
+    
+    if (result) {
+      categorySuggestion.value = result
+    } else if (aiError.value) {
+      showToast({ title: aiError.value, variant: 'warning' })
+    } else {
+      showToast({ title: '未找到合适的分类建议', variant: 'info' })
+    }
+  }
+
+  const applyCategorySuggestion = () => {
+    if (!categorySuggestion.value) return
+    
+    draftLocations.value = [{
+      groupId: categorySuggestion.value.groupId,
+      subGroupId: categorySuggestion.value.subGroupId
+    }]
+    categorySuggestion.value = null
+    showToast({ title: '已应用分类建议', variant: 'success' })
+  }
+
+  const dismissCategorySuggestion = () => {
+    categorySuggestion.value = null
+  }
+
+  const requestDelete = () => {
+    if (!editingId.value) return
+    showDeleteConfirmLocal.value = true
+  }
+
+  const confirmDelete = () => {
+    if (editingId.value) {
+      addBehaviorLog('delete-bookmark', `id: ${editingId.value}`)
+      store.removeBookmark(editingId.value)
+      showAdd.value = false
+    }
+    showDeleteConfirmLocal.value = false
   }
 
   // Actions
@@ -416,6 +495,7 @@ function _useBookmarkForm() {
       formError.value = ''
       isSaving.value = false
       originalBeforeAI.value = null
+      categorySuggestion.value = null
     }
   })
 
@@ -457,8 +537,16 @@ function _useBookmarkForm() {
     isUrlAccessible,
     isCheckingUrl,
     isGenerating,
+    isSuggestingCategory,
+    categorySuggestion,
+    showDeleteConfirmLocal,
     onTitleInput,
-    onDescInput
+    onDescInput,
+    askCategorySuggestion,
+    applyCategorySuggestion,
+    dismissCategorySuggestion,
+    requestDelete,
+    confirmDelete
   }
 }
 

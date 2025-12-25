@@ -32,6 +32,13 @@ interface UToolsApi {
   setExpendHeight?(height: number): void
   showNotification?(text: string): void
   hideMainWindow?(): void
+  // 文件对话框 API
+  showOpenDialog?(options: {
+    title?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+    properties?: ('openFile' | 'openDirectory' | 'multiSelections')[]
+  }): Promise<string[] | undefined>
+  readFileSync?(path: string, encoding: 'utf-8'): string | undefined
 }
 
 declare global {
