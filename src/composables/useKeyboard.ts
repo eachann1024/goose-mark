@@ -22,6 +22,7 @@ export function useKeyboard(
   const showCmdHints = ref(false)
   let cmdHoldTimer: ReturnType<typeof setTimeout> | null = null
   let cmdHideTimer: ReturnType<typeof setTimeout> | null = null
+  let cmdAutoHideTimer: ReturnType<typeof setTimeout> | null = null
   
   const hintKeys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0']
   const hintKeyById = computed<Record<string, string>>(() => {
@@ -78,6 +79,10 @@ export function useKeyboard(
     if (cmdHideTimer) {
       clearTimeout(cmdHideTimer)
       cmdHideTimer = null
+    }
+    if (cmdAutoHideTimer) {
+      clearTimeout(cmdAutoHideTimer)
+      cmdAutoHideTimer = null
     }
     cmdPressed.value = false
     showCmdHints.value = false
@@ -165,8 +170,8 @@ export function useKeyboard(
   }
 
   const isHintHoldKey = (key: string) => {
-    if (isMac.value) return key === 'Alt' || key === 'Control'
-    return key === 'Alt'
+    // 仅使用 Control 触发数字快捷键，不再需要 Option/Alt
+    return key === 'Control'
   }
 
   // Setup Listeners
@@ -188,6 +193,11 @@ export function useKeyboard(
         clearCmdTimer()
         cmdHoldTimer = setTimeout(() => {
           showCmdHints.value = true
+          // 10 秒后自动隐藏
+          if (cmdAutoHideTimer) clearTimeout(cmdAutoHideTimer)
+          cmdAutoHideTimer = setTimeout(() => {
+            hideCmdHints()
+          }, 10000)
         }, 100)
       }
       return
