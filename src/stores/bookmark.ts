@@ -1022,14 +1022,29 @@ export const useBookmarkStore = defineStore('bookmark', {
       this.activeSubGroupId = newGroup.children[0]?.id || ''
       return newGroup
     },
-    importFromShareSmart(data: { groups: Group[]; bookmarks: Bookmark[] }, shareId: string, shareName?: string): any {
+    importFromShareSmart(data: { groups: Group[]; bookmarks: Bookmark[] }, shareId: string, shareName?: string): { 
+      success: boolean; 
+      conflict?: boolean; 
+      alreadyImported?: boolean;
+      group?: Group; 
+      merged?: boolean;
+      sourceGroup?: Group;
+    } | null {
       if (!data.groups.length) return null
       const sourceGroup = data.groups[0]
       const targetGroupName = shareName || sourceGroup.name || '来分来享'
       const existingGroup = this.findGroupByName(targetGroupName)
       const now = Date.now()
+
+      // 1. 如果已有关联相同 shareId 的在线分组，提示已导入
+      const groupWithSameShareId = this.findGroupBySourceShareId(shareId)
+      if (groupWithSameShareId && groupWithSameShareId.sourceShareId === shareId) {
+        return { success: false, alreadyImported: true, group: groupWithSameShareId }
+      }
+
       const idMap = new Map<string, string>()
       data.bookmarks.forEach(b => idMap.set(b.id, uid()))
+      
       const newBookmarks: Bookmark[] = data.bookmarks.map(b => ({
         ...b,
         id: idMap.get(b.id)!,
@@ -1037,16 +1052,24 @@ export const useBookmarkStore = defineStore('bookmark', {
         createdAt: now,
         updatedAt: now
       }))
+
       if (existingGroup) {
-        const conflictSub = sourceGroup.children.find(sub =>
-          existingGroup.children.some(c => c.name === sub.name && c.sourceShareId !== shareId)
-        )
-        if (conflictSub) return { conflict: true, targetGroup: existingGroup, sourceGroup }
+        // 检查是否存在同名且来自不同分享（或本地）的冲突
+        // 如果是本地分组（没有 sourceShareId），或者 sourceShareId 不同，都视为冲突
+        const isConflict = !existingGroup.sourceShareId || existingGroup.sourceShareId !== shareId
+        
+        if (isConflict) {
+          return { success: false, conflict: true, group: existingGroup, sourceGroup }
+        }
+
         const addedSubGroups: any[] = []
         const updatedSubGroups: any[] = []
+        
         sourceGroup.children.forEach(sub => {
-          const existingSub = existingGroup.children.find(c => c.name === sub.name && c.sourceShareId === shareId)
-          if (existingSub) {
+          const existingSub = existingGroup.children.find(c => c.name === sub.name && (c.sourceShareId === shareId || !c.sourceShareId))
+          
+          if (existingSub && existingSub.sourceShareId === shareId) {
+            // 更新已关联的子分组
             const oldBookmarkIds = new Set(existingSub.bookmarkIds)
             this.bookmarks = this.bookmarks.filter(b => {
               if (!oldBookmarkIds.has(b.id)) return true
@@ -1063,6 +1086,7 @@ export const useBookmarkStore = defineStore('bookmark', {
               }
             })
           } else {
+            // 新增子分组
             const newSubId = uid()
             const newSub = {
               id: newSubId,
@@ -1082,16 +1106,29 @@ export const useBookmarkStore = defineStore('bookmark', {
             })
           }
         })
+        
         existingGroup.children.push(...addedSubGroups)
         existingGroup.updatedAt = now
         const existingBookmarkIds = new Set(this.bookmarks.map(b => b.id))
         this.bookmarks.push(...newBookmarks.filter(b => !existingBookmarkIds.has(b.id)))
         this.activeGroupId = existingGroup.id
         this.activeSubGroupId = addedSubGroups[0]?.id || updatedSubGroups[0]?.id || existingGroup.children[0]?.id || ''
-        return { group: existingGroup, subGroupId: this.activeSubGroupId, merged: true }
+        return { success: true, group: existingGroup, merged: true }
       }
+
       const newGroup = this.importFromShare(data, shareId, shareName)
-      return newGroup ? { group: newGroup, subGroupId: newGroup.children[0]?.id || '', merged: false } : null
+      return newGroup ? { success: true, group: newGroup, merged: false } : null
+    },
+    forceImportToGroup(groupId: string, data: { groups: Group[]; bookmarks: Bookmark[] }, shareId: string) {
+      const group = this.groups.find(g => g.id === groupId)
+      if (!group) return false
+
+      // 1. 强行关联 ShareId
+      group.sourceShareId = shareId
+      group.updatedAt = Date.now()
+
+      // 2. 调用更新逻辑覆盖本地数据
+      return this.updateFromShare(groupId, data)
     },
     updateSubGroupFromShare(groupId: string, subGroupId: string, sourceShareId: string, data: { groups: Group[]; bookmarks: Bookmark[] }) {
       const group = this.groups.find(g => g.id === groupId)

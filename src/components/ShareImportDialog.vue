@@ -14,7 +14,6 @@ const store = useBookmarkStore()
 const { getShareData } = useShare()
 const { showToast } = useToast()
 const { tab } = useAppState()
-
 // 状态
 const shareInput = ref('')
 const isLoading = ref(false)
@@ -23,20 +22,9 @@ const sharePreview = ref<{ name: string; subGroups: string[]; bookmarkCount: num
 const shareData = ref<ShareData | null>(null)
 const shareId = ref<string | null>(null)
 
-// 导入选项
-const importMode = ref<'keep' | 'merge'>('keep')
-const targetGroupId = ref('')
-const showGroupSelect = ref(false)
-
-// 可选的目标分组
-const availableGroups = computed(() => 
-  store.groups.filter(g => g.id !== TRASH_GROUP_ID)
-)
-
-const targetGroupName = computed(() => {
-  const group = availableGroups.value.find(g => g.id === targetGroupId.value)
-  return group?.name || '选择分组'
-})
+// 冲突处理
+const conflictInfo = ref<{ group: any; sourceGroup: any } | null>(null)
+const showConflictDialog = ref(false)
 
 // 重置状态
 const reset = () => {
@@ -46,15 +34,13 @@ const reset = () => {
   sharePreview.value = null
   shareData.value = null
   shareId.value = null
-  importMode.value = 'keep'
-  targetGroupId.value = availableGroups.value[0]?.id || ''
-  showGroupSelect.value = false
+  conflictInfo.value = null
+  showConflictDialog.value = false
 }
 
 watch(() => props.open, (v) => {
   if (v) {
     reset()
-    targetGroupId.value = availableGroups.value[0]?.id || ''
   }
 })
 
@@ -110,61 +96,110 @@ const handleImport = () => {
     ? [{ 
         id: shareData.value.group.id, 
         name: shareData.value.group.name, 
-        children: shareData.value.subGroups 
+        children: shareData.value.subGroups,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
       }]
     : [{ 
         id: 'shared', 
         name: '来自分享', 
-        children: shareData.value.subGroups 
+        children: shareData.value.subGroups,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
       }]
   
   const dataToImport = { groups, bookmarks: shareData.value.bookmarks }
   
   let importSuccess = false
   
-  if (importMode.value === 'keep') {
-    // 智能导入：自动检测同名分组并合并
-    const result = store.importFromShareSmart(dataToImport, shareId.value, sharePreview.value?.name)
-    if (result) {
-      const subGroupNames = shareData.value.subGroups.map(s => s.name).join('、')
-      showToast({
-        title: '导入成功',
-        description: result.merged 
-          ? `已将「${subGroupNames}」合并到「${result.group.name}」`
-          : `已创建分组「${result.group.name}」`,
-        variant: 'success'
-      })
-      importSuccess = true
-    }
-  } else {
-    // 合并到指定分组
-    const success = store.importToExistingGroup(dataToImport, targetGroupId.value, shareId.value)
-    if (success) {
-      const targetGroup = store.groups.find(g => g.id === targetGroupId.value)
-      showToast({
-        title: '导入成功',
-        description: `已添加到「${targetGroup?.name || '目标分组'}」`,
-        variant: 'success'
-      })
-      importSuccess = true
-    }
+  // 执行智能导入
+  const result = store.importFromShareSmart(dataToImport, shareId.value, sharePreview.value?.name)
+  
+  if (result?.alreadyImported) {
+    showToast({
+      title: '无需重复导入',
+      description: `「${result.group?.name}」已作为在线分组存在并保持同步`,
+      variant: 'info'
+    })
+    emit('update:open', false)
+    return
   }
-  
-  emit('update:open', false)
-  
-  // 导入成功后切换到书签视图
-  if (importSuccess) {
+
+  if (result?.conflict) {
+    conflictInfo.value = { group: result.group, sourceGroup: result.sourceGroup }
+    showConflictDialog.value = true
+    return
+  }
+
+  if (result?.success) {
+    const subGroupNames = shareData.value.subGroups.map(s => s.name).join('、')
+    showToast({
+      title: '导入成功',
+      description: result.merged 
+        ? `已将「${subGroupNames}」合并到「${result.group?.name}」`
+        : `已创建分组「${result.group?.name}」`,
+      variant: 'success'
+    })
+    emit('update:open', false)
     tab.value = 'bookmarks'
   }
 }
 
-const handleClose = () => {
-  emit('update:open', false)
+// 强行同步（覆盖并转为在线）
+const handleForceSync = () => {
+  if (!conflictInfo.value || !shareData.value || !shareId.value) return
+  
+  const groups = [{ 
+    id: shareData.value.group?.id || 'shared', 
+    name: shareData.value.group?.name || '来自分享', 
+    children: shareData.value.subGroups,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  }]
+  const dataToImport = { groups, bookmarks: shareData.value.bookmarks }
+  
+  const success = store.forceImportToGroup(conflictInfo.value.group.id, dataToImport, shareId.value)
+  if (success) {
+    showToast({
+      title: '同步成功',
+      description: `已将「${conflictInfo.value.group.name}」恢复为在线分组并覆盖内容`,
+      variant: 'success'
+    })
+    emit('update:open', false)
+    tab.value = 'bookmarks'
+  }
+  showConflictDialog.value = false
 }
 
-const selectGroup = (groupId: string) => {
-  targetGroupId.value = groupId
-  showGroupSelect.value = false
+// 创建副本
+const handleCreateCopy = () => {
+  if (!shareData.value || !shareId.value) return
+  
+  // 使用 mergeFromShare 强制创建新分组，会自动处理重名后缀
+  const groups = [{ 
+    id: shareData.value.group?.id || 'shared', 
+    name: shareData.value.group?.name || '来自分享', 
+    children: shareData.value.subGroups,
+    createdAt: Date.now(),
+    updatedAt: Date.now()
+  }]
+  const dataToImport = { groups, bookmarks: shareData.value.bookmarks }
+  
+  const newGroup = store.mergeFromShare(dataToImport, shareId.value)
+  if (newGroup) {
+    showToast({
+      title: '创建成功',
+      description: `已创建副本分组「${newGroup.name}」`,
+      variant: 'success'
+    })
+    emit('update:open', false)
+    tab.value = 'bookmarks'
+  }
+  showConflictDialog.value = false
+}
+
+const handleClose = () => {
+  emit('update:open', false)
 }
 </script>
 
@@ -216,63 +251,6 @@ const selectGroup = (groupId: string) => {
               <p><span class="text-foreground font-medium">包含子分组：</span>{{ sharePreview.subGroups.join('、') }}</p>
               <p><span class="text-foreground font-medium">书签数量：</span>{{ sharePreview.bookmarkCount }} 个</p>
             </div>
-
-            <!-- 导入方式 -->
-            <div class="pt-3 border-t border-border space-y-3">
-              <label class="text-sm font-medium">导入方式</label>
-              <div class="flex gap-2">
-                <Button 
-                  :variant="importMode === 'keep' ? 'default' : 'outline'" 
-                  size="sm"
-                  class="flex-1"
-                  @click="importMode = 'keep'"
-                >
-                  <span class="i-mdi-folder-sync mr-1" />
-                  智能合并
-                </Button>
-                <Button 
-                  :variant="importMode === 'merge' ? 'default' : 'outline'" 
-                  size="sm"
-                  class="flex-1"
-                  @click="importMode = 'merge'"
-                >
-                  <span class="i-mdi-folder-arrow-right mr-1" />
-                  导入到指定
-                </Button>
-              </div>
-              <p v-if="importMode === 'keep'" class="text-xs text-muted-foreground">
-                同名主分组会自动合并，子分组追加到该分组下
-              </p>
-
-              <!-- 目标分组选择 -->
-              <Transition name="fade">
-                <div v-if="importMode === 'merge'">
-                  <Popover v-model:open="showGroupSelect">
-                    <PopoverTrigger as-child>
-                      <Button variant="outline" class="w-full justify-between">
-                        <span>{{ targetGroupName }}</span>
-                        <span class="i-mdi-chevron-down" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent class="w-[200px] p-2" align="start">
-                      <div class="space-y-1">
-                        <Button
-                          v-for="group in availableGroups"
-                          :key="group.id"
-                          variant="ghost"
-                          size="sm"
-                          class="w-full justify-start"
-                          :class="{ 'bg-muted': group.id === targetGroupId }"
-                          @click="selectGroup(group.id)"
-                        >
-                          {{ group.name }}
-                        </Button>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-              </Transition>
-            </div>
           </div>
         </Transition>
       </div>
@@ -286,6 +264,40 @@ const selectGroup = (groupId: string) => {
         >
           导入
         </Button>
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+
+  <!-- 冲突处理对话框 -->
+  <Dialog :open="showConflictDialog" @update:open="showConflictDialog = $event">
+    <DialogContent class="sm:max-w-[400px]">
+      <DialogHeader>
+        <DialogTitle>检测到命名冲突</DialogTitle>
+        <DialogDescription>
+          本地已存在名为「{{ conflictInfo?.group?.name }}」的分组，但它未关联到当前的分享。
+        </DialogDescription>
+      </DialogHeader>
+      
+      <div class="py-4 space-y-3">
+        <Button variant="default" class="w-full justify-start h-auto py-3 px-4 flex flex-col items-start gap-1" @click="handleForceSync">
+          <div class="flex items-center gap-2 font-semibold">
+            <span class="i-mdi-sync text-lg" />
+            覆盖并转为在线
+          </div>
+          <p class="text-xs opacity-80 font-normal">将该本地分组重新关联到该分享，并将内容覆盖为远程版本</p>
+        </Button>
+
+        <Button variant="outline" class="w-full justify-start h-auto py-3 px-4 flex flex-col items-start gap-1" @click="handleCreateCopy">
+          <div class="flex items-center gap-2 font-semibold">
+            <span class="i-mdi-content-copy text-lg" />
+            创建副本
+          </div>
+          <p class="text-xs text-muted-foreground font-normal">保留现有分组，创建一个新的在线分组（带数字后缀）</p>
+        </Button>
+      </div>
+
+      <DialogFooter>
+        <Button variant="ghost" @click="showConflictDialog = false">取消</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>
