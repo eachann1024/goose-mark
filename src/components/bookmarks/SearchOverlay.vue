@@ -13,7 +13,7 @@ const props = defineProps<{
   hintKeyById: Record<string, string>
   gridColumns: number
   setGridRef: (el: HTMLElement | null) => void
-}>() 
+}>()
 
 const emit = defineEmits<{
   'update:searchValue': [value: string]
@@ -24,7 +24,7 @@ const emit = defineEmits<{
   contextmenu: [e: MouseEvent, bookmark: Bookmark]
   reorder: [payload: { fromId: string; toId: string }]
   locate: [bookmark: Bookmark]
-}>() 
+}>()
 
 const localSearchInputComponentRef = ref<{ $el: HTMLElement } | null>(null)
 
@@ -61,14 +61,11 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
             <span class="i-mdi-arrow-left text-xl" />
           </Button>
           <template v-if="enableSubInput">
-            <div class="flex-1 h-12 rounded-xl border border-border bg-muted/50 px-4 flex items-center justify-between">
-              <div class="flex items-center gap-2 text-sm text-muted-foreground">
-                <span class="i-mdi-magnify text-base" />
-                <span>请在 uTools 输入框输入关键字进行搜索</span>
-              </div>
-              <div v-if="storeSearch" class="text-xs text-muted-foreground flex items-center gap-1">
-                <span class="i-mdi-ray-start-vertex" />
-                <span>当前：{{ storeSearch }}</span>
+            <div class="flex-1 h-12 flex items-center justify-center select-none">
+              <div class="flex items-center gap-2 text-base font-medium text-foreground/80 animate-pulse">
+                <span class="text-lg select-none">⬆️⬆️⬆️</span>
+                <span class="select-none"> 在上方搜索框输入 </span>
+                <span class="text-lg select-none">⬆️⬆️⬆️</span>
               </div>
             </div>
           </template>
