@@ -7,6 +7,12 @@ import { notify } from '@/lib/notify'
 import { Plus } from 'lucide-vue-next'
 import draggable from 'vuedraggable'
 
+// 检测环境：uTools vs Web
+const isUTools = typeof window !== 'undefined' && !!(window as any).utools
+
+// 添加按钮高度：Web 66px, uTools 60px
+const addButtonHeight = computed(() => isUTools ? '60px' : '66px')
+
 const props = defineProps<{
   bookmarks: Bookmark[]
   selectedIndex: number
@@ -46,7 +52,7 @@ const handleDragChange = (evt: { moved?: { oldIndex: number; newIndex: number } 
   if (!evt.moved || props.readonly) return
   const { oldIndex, newIndex } = evt.moved
   if (oldIndex === newIndex) return
-  
+
   const fromId = props.bookmarks[oldIndex]?.id
   const toId = props.bookmarks[newIndex]?.id
   if (fromId && toId) {
@@ -64,12 +70,12 @@ const handleDragStart = (evt: any) => {
   // vuedraggable 的 @start 事件直接传递 Sortable 事件对象
   const item = evt.item as HTMLElement
   const originalEvent = evt.originalEvent as DragEvent | undefined
-  
+
   if (!item || !originalEvent?.dataTransfer) {
     console.warn('[BookmarksGrid] Drag start: missing item or dataTransfer')
     return
   }
-  
+
   const index = item.dataset.bookmarkIndex
   if (index !== undefined) {
     const bookmark = props.bookmarks[parseInt(index)]
@@ -163,7 +169,7 @@ watch(() => props.highlightedId, (id) => {
   >
     <!-- Header Slot for Onboarding Banner -->
     <slot name="header" />
-    
+
     <draggable
       v-model="localBookmarks"
       item-key="id"
@@ -213,7 +219,8 @@ watch(() => props.highlightedId, (id) => {
             <TooltipTrigger as-child>
               <Button
                 variant="outline"
-                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-2.5 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-colors cursor-pointer min-h-[66px] w-full"
+                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-3 px-4 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-colors cursor-pointer w-full"
+                :style="{ height: addButtonHeight }"
                 @click="(e: MouseEvent) => emit('add', e.currentTarget as HTMLElement)"
               >
                 <div class="group-hover:scale-110 transition-transform">

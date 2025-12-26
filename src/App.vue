@@ -874,9 +874,8 @@ const handleLocate = async (bookmark: Bookmark) => {
     @contextmenu.prevent
   >
     <!-- Top Navigation for Groups -->
-    <header 
-      class="sticky top-0 z-30 flex flex-col gap-2 p-6 transition-all duration-500"
-      :class="isDark && settingsStore.easterEggEnabled ? 'bg-background/10 backdrop-blur-md' : 'bg-background/80 backdrop-blur-md'"
+    <header
+      class="sticky top-0 z-30 flex flex-col gap-2 p-6 transition-all duration-500 bg-background/80 backdrop-blur-md"
     >
        <GroupTabs
          :visible-groups="visibleGroups"
@@ -1122,91 +1121,20 @@ html.dark body.easter-egg-active {
   background-color: #000 !important;
 }
 
-body.easter-egg-active .app-container,
-body.easter-egg-active #app {
+/* 彩蛋模式：容器透明以显示背景图 */
+html.dark body.easter-egg-active .app-container,
+html.dark body.easter-egg-active #app {
   background-color: transparent !important;
 }
 
-body.easter-egg-active .bg-card,
-body.easter-egg-active [class*="bg-primary/5"],
-body.easter-egg-active [class*="bg-gradient-to-br"] {
-  background-color: hsla(var(--card), 0.2) !important;
-  background-image: none !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-  border-color: hsla(var(--border), 0.1) !important;
+/* 彩蛋模式：书签卡片背景参考子分组样式 */
+html.dark body.easter-egg-active .bookmark-card-wrapper > div {
+  background-color: hsl(var(--primary) / 0.05) !important;
 }
 
-body.easter-egg-active .bg-popover {
-  background-color: hsla(var(--popover), 0.4) !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-}
-
-body.easter-egg-active header {
-  background-color: hsla(var(--background), 0.05) !important;
-  backdrop-filter: blur(12px) !important;
-  -webkit-backdrop-filter: blur(12px) !important;
-}
-
-body.easter-egg-active aside,
-body.easter-egg-active main,
-body.easter-egg-active section {
-  background-color: transparent !important;
-}
-
-/* 侧边栏按钮适配 */
-body.easter-egg-active aside button[class*="bg-primary/5"] {
-  background-color: hsla(var(--primary), 0.15) !important;
-}
-
-/* 顶部导航按钮适配 */
-body.easter-egg-active header button[data-active="true"] {
-  background-color: hsla(var(--primary), 0.4) !important;
-  color: white !important;
-}
-body.easter-egg-active header button[class*="bg-primary/10"] {
-  background-color: hsla(var(--primary), 0.2) !important;
-}
-
-/* 添加书签按钮适配 */
-body.easter-egg-active button[class*="border-dashed"] {
-  background-color: hsla(var(--primary), 0.05) !important;
-}
-body.easter-egg-active button[class*="border-dashed"]:hover {
-  background-color: hsla(var(--primary), 0.1) !important;
-}
-
-/* 七天使用趋势条适配 */
-body.easter-egg-active .bg-primary\/20 {
-  background-color: hsla(var(--primary), 0.15) !important;
-}
-body.easter-egg-active .bg-primary:not(button),
-body.easter-egg-active .bg-primary\/50 {
-  background-color: hsla(var(--primary), 0.6) !important;
-}
-
-/* 统计卡片与热门书签适配 */
-body.easter-egg-active .bg-muted {
-  background-color: hsla(var(--muted), 0.2) !important;
-}
-body.easter-egg-active [class*="bg-amber-500/20"],
-body.easter-egg-active [class*="bg-zinc-400/20"],
-body.easter-egg-active [class*="bg-orange-400/20"] {
-  background-color: hsla(var(--muted), 0.3) !important;
-  backdrop-filter: blur(4px);
-}
-
-/* Tooltip 在透明模式下保持不透明 */
-body.easter-egg-active .tooltip-content,
-body.easter-egg-active [data-reka-tooltip-content],
-body.easter-egg-active [id*="reka-tooltip-content"],
-body.easter-egg-active [role="tooltip"] {
-  background-color: hsla(var(--primary), 0.95) !important;
-  backdrop-filter: blur(12px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(12px) saturate(180%) !important;
-  border: 1px solid hsla(var(--primary), 0.3) !important;
-  opacity: 1 !important;
+/* 彩蛋模式：主分组按钮背景参考子分组样式 */
+html.dark body.easter-egg-active button[data-active="true"] {
+  background-color: hsl(var(--primary) / 0.05) !important;
 }
 </style>
 

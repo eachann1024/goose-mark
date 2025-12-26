@@ -99,12 +99,3 @@ onUnmounted(() => {
 }
 </style>
 
-<style>
-/* 彩蛋模式下的透明背景 */
-body.easter-egg-active .context-menu {
-  background: hsla(var(--card), 0.3) !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-  border-color: hsla(var(--border), 0.2) !important;
-}
-</style>
