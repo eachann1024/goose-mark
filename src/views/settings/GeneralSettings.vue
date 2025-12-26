@@ -85,7 +85,7 @@ const handleGridColumnsChange = (val: string | number) => {
           <div class="flex items-center justify-between bg-muted/30 p-4 rounded-xl border border-border/50">
             <div class="flex flex-col gap-1">
               <span class="text-sm font-medium">星空背景模式 (Beta)</span>
-              <span class="text-xs text-muted-foreground text-balance">开启后界面将呈现星空背景与深度毛玻璃质感，由于背景图较大，加载可能需要 1-2 秒。</span>
+              <span class="text-xs text-muted-foreground text-balance">开启后界面将呈现星空背景，由于背景图较大，加载可能需要 1-2 秒。</span>
             </div>
             <Button 
               :variant="easterEggEnabled ? 'default' : 'outline'"
