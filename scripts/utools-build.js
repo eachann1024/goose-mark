@@ -10,8 +10,7 @@ if (!fs.existsSync(distDir)) {
 }
 
 try {
-  // 1. 复制 preload.js
-  // 检查源文件是否存在
+  // 1. 复制 preload.js（保持 .js 扩展名以兼容 uTools 编辑器）
   const preloadSrc = path.join(rootDir, 'preload/preload.cjs');
   if (fs.existsSync(preloadSrc)) {
       fs.copyFileSync(preloadSrc, path.join(distDir, 'preload.js'));
@@ -19,6 +18,11 @@ try {
   } else {
       console.warn('⚠️ 未找到 preload/preload.cjs');
   }
+
+  // 1.1 创建 dist/package.json 设置 type: commonjs
+  const distPackageJson = { type: 'commonjs' };
+  fs.writeFileSync(path.join(distDir, 'package.json'), JSON.stringify(distPackageJson, null, 2));
+  console.log('✅ dist/package.json 已创建（type: commonjs）');
 
   // 2. 复制 browser.html
   const browserSrc = path.join(rootDir, 'browser.html');
