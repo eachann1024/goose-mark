@@ -724,7 +724,7 @@ const clearAllBookmarks = () => {
 }
 .custom-scroll::-webkit-scrollbar-thumb {
   background-color: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .custom-scroll::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--muted-foreground) / 0.5);

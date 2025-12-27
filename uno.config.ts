@@ -25,8 +25,8 @@ export default defineConfig({
     }
   },
   shortcuts: {
-    'card-base': 'rounded-3xl border border-black/5 dark:border-white/8 bg-[var(--card)]/90 dark:bg-[var(--card)]/90 backdrop-blur shadow-sm hover:shadow-lg transition-all duration-200',
+    'card-base': 'rounded-[var(--radius-3xl)] border border-black/5 dark:border-white/8 bg-[var(--card)]/90 dark:bg-[var(--card)]/90 backdrop-blur shadow-sm hover:shadow-lg transition-all duration-200',
     'text-secondary': 'text-muted',
-    'btn-ghost': 'px-3 py-2 rounded-full hover:bg-white/60 dark:hover:bg-white/10 transition-colors'
+    'btn-ghost': 'px-3 py-2 rounded-[var(--radius-full)] hover:bg-white/60 dark:hover:bg-white/10 transition-colors'
   }
 })

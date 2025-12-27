@@ -76,7 +76,8 @@ const showFallbackToast = (title: string, desc: string, anchor?: HTMLElement) =>
 
   el.style.maxWidth = '420px'
   el.style.padding = '12px 16px'
-  el.style.borderRadius = '12px'
+  const radius = getCssVar('--radius-xl', '12px')
+  el.style.borderRadius = radius
   el.style.background = bg
   el.style.color = fg
   el.style.fontSize = '13px'
@@ -271,7 +272,7 @@ const canLocate = computed(() => props.showLocate ?? false)
           <rect
             width="100%"
             height="100%"
-            rx="12"
+            rx="var(--radius-xl)"
             fill="none"
             stroke="hsl(var(--primary))"
             stroke-width="3"

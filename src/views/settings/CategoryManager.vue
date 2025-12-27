@@ -553,7 +553,7 @@ const closeUndoToast = () => {
   opacity: 0.5;
   background: hsl(var(--primary) / 0.1);
   border: 2px dashed hsl(var(--primary) / 0.5) !important;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .drag-chosen {
@@ -561,7 +561,7 @@ const closeUndoToast = () => {
   background: hsl(var(--card));
   box-shadow: 0 8px 32px hsl(var(--primary) / 0.15);
   border: 1px solid hsl(var(--primary) / 0.3) !important;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   transform: scale(1.01);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
