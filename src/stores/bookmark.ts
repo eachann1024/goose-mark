@@ -452,22 +452,25 @@ export const useBookmarkStore = defineStore('bookmark', {
     updateBookmark(id: string, updater: Partial<Bookmark>) {
       const idx = this.bookmarks.findIndex(b => b.id === id)
       if (idx === -1) return
-      
-      const original = this.bookmarks[idx]
+
+      const bookmark = this.bookmarks[idx]
       const now = Date.now()
-      const updated = { ...original, ...updater, updatedAt: now }
-      this.bookmarks.splice(idx, 1, updated)
-      
-      if (updater.url && updater.url !== original.url && (!original.icon || original.icon.type === 'text')) {
-        this.refreshSingleIcon(updated)
+      const originalUrl = bookmark.url
+      const originalIcon = bookmark.icon
+
+      // 直接修改属性而非替换对象，保持响应式
+      Object.assign(bookmark, updater, { updatedAt: now })
+
+      if (updater.url && updater.url !== originalUrl && (!originalIcon || originalIcon.type === 'text')) {
+        this.refreshSingleIcon(bookmark)
       }
-      
+
       // Sync Hook
       const { schedulePush } = useSync()
       schedulePush({
-        itemId: updated.id,
+        itemId: bookmark.id,
         itemType: 'bookmark',
-        content: updated,
+        content: bookmark,
         isDeleted: false,
         updatedAt: now
       })

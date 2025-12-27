@@ -28,6 +28,7 @@ onMounted(() => {
 const getInitialTab = () => {
   if (!props.modelValue) return 'text'
   if (props.modelValue.type === 'text') return 'text'
+  // custom、file、remote 都使用 image 标签
   return 'image'
 }
 
@@ -37,11 +38,15 @@ const textColor = ref<string | undefined>(props.modelValue?.bgColor)
 const localColor = ref<string | undefined>(props.modelValue?.bgColor)
 const customText = ref(props.modelValue?.type === 'text' ? props.modelValue.value || '' : '')
 
-const localImageSrc = ref<string | null>(
-  props.modelValue && (props.modelValue.type === 'file' || props.modelValue.type === 'remote') 
-    ? (props.modelValue.type === 'file' ? props.modelValue.path : props.modelValue.src) 
-    : null
-)
+const resolveImageSrc = (icon?: IconSource | null) => {
+  if (!icon) return null
+  if (icon.type === 'file') return icon.path
+  if (icon.type === 'remote') return icon.src
+  if (icon.type === 'custom') return icon.data
+  return null
+}
+
+const localImageSrc = ref<string | null>(resolveImageSrc(props.modelValue))
 
 // Cropper State
 const showCropper = ref(false)
@@ -94,47 +99,26 @@ const selectColor = (c: string) => applyColor(c)
 const clearColor = () => applyColor(undefined)
 
 const emitChange = () => {
-  // 仅更新内部状态给父组件预览（如果有 need），实际确认靠 confirm
-  // 但目前逻辑是实时 update:modelValue
-  
   if (activeTab.value === 'text') {
     emit('update:modelValue', {
       type: 'text',
       value: letters.value,
       bgColor: localColor.value
     })
-  } else {
-    if (localImageSrc.value) {
-      if (localImageSrc.value.startsWith('data:')) {
-        // 用户上传/粘贴/裁剪的图片，使用 custom 类型
-        emit('update:modelValue', {
-          type: 'custom',
-          data: localImageSrc.value,
-          bgColor: localColor.value
-        })
-      } else if (localImageSrc.value.startsWith('http')) {
-        // 远程 URL
-        emit('update:modelValue', {
-          type: 'remote',
-          src: localImageSrc.value,
-          bgColor: localColor.value
-        })
-      } else if (localImageSrc.value.startsWith('file://')) {
-        emit('update:modelValue', {
-          type: 'file',
-          path: localImageSrc.value.replace('file://', ''),
-          bgColor: localColor.value
-        })
-      } else {
-        emit('update:modelValue', {
-          type: 'file',
-          path: localImageSrc.value,
-          bgColor: localColor.value
-        })
-      }
+  } else if (localImageSrc.value) {
+    let iconData: IconSource
+    if (localImageSrc.value.startsWith('data:')) {
+      iconData = { type: 'custom', data: localImageSrc.value, bgColor: localColor.value }
+    } else if (localImageSrc.value.startsWith('http')) {
+      iconData = { type: 'remote', src: localImageSrc.value, bgColor: localColor.value }
+    } else if (localImageSrc.value.startsWith('file://')) {
+      iconData = { type: 'file', path: localImageSrc.value.replace('file://', ''), bgColor: localColor.value }
     } else {
-      emit('update:modelValue', null)
+      iconData = { type: 'file', path: localImageSrc.value, bgColor: localColor.value }
     }
+    emit('update:modelValue', iconData)
+  } else {
+    emit('update:modelValue', null)
   }
 }
 
@@ -214,12 +198,18 @@ const openCropper = (imgSrc: string) => {
   showCropper.value = true
 }
 
-const handleCropConfirm = async () => {
+const handleCropConfirm = async (event?: Event) => {
+  event?.stopPropagation()
   if (!cropper) return
+
   const data = await cropper.getDataURL()
+  if (!data) return
+
   localImageSrc.value = data
   activeTab.value = 'image'
   showCropper.value = false
+
+  await nextTick()
   emitChange()
 }
 
@@ -242,6 +232,15 @@ watch(activeTab, (newTab) => {
 watch(
   () => props.modelValue,
   (val) => {
+    const nextSrc = resolveImageSrc(val)
+    if (nextSrc !== localImageSrc.value) {
+      localImageSrc.value = nextSrc
+    }
+    if (val?.type === 'text') {
+      customText.value = val.value || ''
+    } else if (val) {
+      customText.value = ''
+    }
     if (val?.bgColor) {
       localColor.value = val.bgColor
       imageColor.value = val.bgColor
@@ -430,7 +429,7 @@ watch(
         </div>
         <DialogFooter class="mt-4">
           <Button variant="outline" @click="showCropper = false">取消</Button>
-          <Button @click="handleCropConfirm">确认裁剪</Button>
+          <Button @click="handleCropConfirm($event)">确认裁剪</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -289,7 +289,7 @@ const onSave = async () => {
   <!-- Icon Selector -->
   <Dialog v-model:open="showIconSelector">
     <DialogContent class="w-auto p-0 bg-transparent border-0 shadow-none">
-      <IconSelector 
+      <IconSelector
         :modelValue="previewIcon ?? undefined"
         :title="draft.title"
         @update:modelValue="(val) => previewIcon = val"
