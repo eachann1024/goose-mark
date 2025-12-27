@@ -81,7 +81,7 @@ const handleRemoveImported = () => {
         <Button
           variant="outline"
           size="sm"
-          class="h-8 px-3 rounded-full relative gap-1.5 shadow-lg backdrop-blur-sm bg-card/90 border-dashed border-green-500/50 text-green-600"
+          class="h-8 px-3 rounded-full relative gap-1.5 shadow-lg backdrop-blur-md bg-card/95 border border-green-500/40 hover:border-green-500/60 hover:bg-green-500/10 text-green-500 dark:text-green-400 transition-all duration-200"
         >
           <span class="i-mdi-cloud-download-outline text-sm" />
           <span class="text-xs">管理导入</span>
@@ -138,7 +138,7 @@ const handleRemoveImported = () => {
         <Button
           variant="outline"
           size="sm"
-          class="h-8 px-3 rounded-full relative gap-1.5 shadow-lg backdrop-blur-sm bg-card/90 border-dashed border-blue-500/50 text-blue-600"
+          class="h-8 px-3 rounded-full relative gap-1.5 shadow-lg backdrop-blur-md bg-card/95 border border-blue-500/40 hover:border-blue-500/60 hover:bg-blue-500/10 text-blue-500 dark:text-blue-400 transition-all duration-200"
         >
           <span class="i-mdi-share-variant text-sm" />
           <span class="text-xs">分享</span>
@@ -182,7 +182,7 @@ const handleRemoveImported = () => {
         <Button
           variant="outline"
           size="sm"
-          class="h-8 px-3 rounded-full text-muted-foreground gap-1.5 shadow-lg backdrop-blur-sm bg-card/90"
+          class="h-8 px-3 rounded-full text-muted-foreground gap-1.5 shadow-lg backdrop-blur-md bg-card/95 border-border/50 hover:border-primary/50 hover:text-primary hover:bg-primary/5 transition-all duration-200"
           @click="$emit('manageShare')"
         >
           <span class="i-mdi-share-variant text-sm" />

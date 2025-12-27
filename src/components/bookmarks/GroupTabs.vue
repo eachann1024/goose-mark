@@ -77,7 +77,7 @@ const handleGroupMouseEnter = (group: Group) => {
           <Button
             variant="ghost"
             size="sm"
-            class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-md"
+            class="rounded-full px-4 h-9 font-normal transition-all data-[active=true]:bg-accent data-[active=true]:text-accent-foreground data-[active=true]:shadow-md data-[active=true]:border data-[active=true]:border-primary/30"
             :class="{
               'ring-2 ring-dashed ring-blue-500/50 dark:ring-blue-400/50': isGroupShared(group) && !isGroupImported(group),
               'ring-2 ring-dashed ring-green-500/50 dark:ring-green-400/50': isGroupImported(group)
