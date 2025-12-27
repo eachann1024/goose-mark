@@ -180,7 +180,7 @@ watch(() => props.highlightedId, (id) => {
       ghost-class="bookmark-drag-ghost"
       chosen-class="bookmark-drag-chosen"
       drag-class="bookmark-drag-active"
-      class="grid gap-4 content-start"
+      class="grid gap-4 content-start pt-2"
       :style="gridStyle"
       :disabled="readonly"
       @change="handleDragChange"
@@ -282,12 +282,18 @@ watch(() => props.highlightedId, (id) => {
   box-shadow: 0 12px 40px hsl(var(--primary) / 0.2);
   z-index: 100;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border-radius: 12px;
+  overflow: hidden;
+  background: hsl(var(--card));
 }
 
 /* 拖拽中的卡片 */
 .bookmark-drag-active {
   cursor: grabbing !important;
   opacity: 0.95;
+  border-radius: 12px;
+  overflow: hidden;
+  background: hsl(var(--card));
 }
 
 /* 卡片容器动画 */

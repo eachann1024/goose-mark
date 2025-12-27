@@ -262,6 +262,14 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 const currentSubGroup = computed(() => 
   activeSubGroups.value.find(s => s.id === store.activeSubGroupId)
 )
+const hasShareableBookmarks = computed(() => {
+  const sub = currentSubGroup.value
+  if (!sub?.bookmarkIds || sub.bookmarkIds.length === 0) return false
+  return sub.bookmarkIds.some(id => {
+    const bookmark = store.bookmarks.find(b => b.id === id)
+    return bookmark && !bookmark.isDeleted
+  })
+})
 
 // 更新页面标题
 const updatePageTitle = () => {
@@ -971,7 +979,7 @@ const handleLocate = async (bookmark: Bookmark) => {
     <!-- Share Float Button -->
     <ShareFloatButton
       v-if="settingsStore.enableShare"
-      :show="tab === 'bookmarks' && activeSubGroups.length > 0 && !isTrashActive"
+      :show="tab === 'bookmarks' && activeSubGroups.length > 0 && !isTrashActive && hasShareableBookmarks"
       :current-sub-group="currentSubGroup"
       @open-share-url="handleOpenShareUrl"
       @copy-share-link="handleCopyShareLink"
