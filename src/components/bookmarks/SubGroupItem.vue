@@ -61,7 +61,7 @@ const hasValidBookmarks = computed(() => {
             : 'text-muted-foreground hover:text-foreground hover:bg-primary/5',
           sub.shareId && 'border border-dashed border-blue-500/50',
           sub.sourceShareId && 'border border-dashed border-green-500/50',
-          isDragOver && 'ring-2 ring-primary ring-offset-1 bg-primary/10'
+          isDragOver && 'ring-2 ring-inset ring-primary bg-primary/10'
         ]"
         @click="emit('select', sub.id)"
         @dragover="emit('dragover', $event)"

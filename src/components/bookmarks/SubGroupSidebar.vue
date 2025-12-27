@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import draggable from 'vuedraggable'
 import SubGroupItem from './SubGroupItem.vue'
 
 const props = defineProps<{
@@ -168,6 +169,9 @@ const hasUpdate = (subId: string) => !!updatesMap.value[subId]
 const dragOverSubId = ref<string | null>(null)
 
 const handleDragOver = (e: DragEvent, subId: string, isReadonly: boolean) => {
+  const types = e.dataTransfer?.types
+  const isBookmarkDrag = !types || types.length === 0 || Array.from(types).includes('text/bookmark-id')
+  if (!isBookmarkDrag) return
   // 只读子分组不接受拖放
   if (isReadonly) return
   // 不能拖到当前激活的子分组
@@ -188,6 +192,9 @@ const handleDragLeave = (e: DragEvent) => {
 }
 
 const handleDrop = (e: DragEvent, toSubId: string, isReadonly: boolean) => {
+  const types = e.dataTransfer?.types
+  const isBookmarkDrag = !types || types.length === 0 || Array.from(types).includes('text/bookmark-id')
+  if (!isBookmarkDrag) return
   e.preventDefault()
   dragOverSubId.value = null
   
@@ -209,6 +216,19 @@ const handleDrop = (e: DragEvent, toSubId: string, isReadonly: boolean) => {
     console.warn('[SubGroupSidebar] No bookmark ID in dataTransfer')
   }
 }
+
+const localSubGroups = computed({
+  get: () => props.activeSubGroups,
+  set: (val) => {
+    if (!props.activeGroupId || props.activeGroupId === TRASH_GROUP_ID) return
+    store.reorderSubGroups(props.activeGroupId, val)
+  }
+})
+
+const checkSubMove = (evt: { draggedContext: { element: { shareId?: string; sourceShareId?: string } } }) => {
+  const sub = evt.draggedContext.element
+  return !(sub.shareId || sub.sourceShareId)
+}
 </script>
 
 <template>
@@ -216,18 +236,27 @@ const handleDrop = (e: DragEvent, toSubId: string, isReadonly: boolean) => {
     v-if="show"
     class="shrink-0 w-32 flex flex-col gap-1 relative overflow-y-auto no-scrollbar"
   >
-    <SubGroupItem
-      v-for="sub in activeSubGroups"
-      :key="sub.id"
-      :sub="sub"
-      :is-active="activeSubGroupId === sub.id"
-      :is-drag-over="dragOverSubId === sub.id"
-      :has-update="hasUpdate(sub.id)"
-      @select="emit('select', $event)"
-      @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
-      @dragleave="handleDragLeave"
-      @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
-    />
+    <draggable
+      v-model="localSubGroups"
+      item-key="id"
+      :animation="150"
+      :disabled="activeSubGroups.length <= 1"
+      :move="checkSubMove"
+      class="flex flex-col gap-1"
+    >
+      <template #item="{ element: sub }">
+        <SubGroupItem
+          :sub="sub"
+          :is-active="activeSubGroupId === sub.id"
+          :is-drag-over="dragOverSubId === sub.id"
+          :has-update="hasUpdate(sub.id)"
+          @select="emit('select', $event)"
+          @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
+          @dragleave="handleDragLeave"
+          @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
+        />
+      </template>
+    </draggable>
   </aside>
 </template>
 
