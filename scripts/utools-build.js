@@ -12,24 +12,15 @@ if (!fs.existsSync(distDir)) {
 try {
   // 1. 复制 preload.js
   // 检查源文件是否存在
-  const preloadSrc = path.join(rootDir, 'preload/preload.js');
+  const preloadSrc = path.join(rootDir, 'preload/preload.cjs');
   if (fs.existsSync(preloadSrc)) {
       fs.copyFileSync(preloadSrc, path.join(distDir, 'preload.js'));
       console.log('✅ preload.js 已复制');
   } else {
-      console.warn('⚠️ 未找到 preload/preload.js');
+      console.warn('⚠️ 未找到 preload/preload.cjs');
   }
 
-  // 2. 复制 logo.png
-  const logoSrc = path.join(rootDir, 'logo.png');
-  if (fs.existsSync(logoSrc)) {
-      fs.copyFileSync(logoSrc, path.join(distDir, 'logo.png'));
-      console.log('✅ logo.png 已复制');
-  } else {
-      console.warn('⚠️ 未找到 logo.png');
-  }
-
-  // 3. 复制 browser.html
+  // 2. 复制 browser.html
   const browserSrc = path.join(rootDir, 'browser.html');
   if (fs.existsSync(browserSrc)) {
       fs.copyFileSync(browserSrc, path.join(distDir, 'browser.html'));
@@ -38,7 +29,7 @@ try {
       console.warn('⚠️ 未找到 browser.html');
   }
 
-  // 4. 处理并复制 plugin.json
+  // 3. 处理并复制 plugin.json
   const pluginConfigPath = path.join(rootDir, 'plugin.json');
   if (fs.existsSync(pluginConfigPath)) {
       const pluginConfig = JSON.parse(fs.readFileSync(pluginConfigPath, 'utf-8'));

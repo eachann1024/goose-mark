@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "author": "eachann",
   "homepage": "",
-  "preload": "preload/preload.js",
+  "preload": "preload/preload.cjs",
   "main": "dist/index.html",
   "logo": "logo.png",
   "features": [

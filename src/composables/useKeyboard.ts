@@ -1,6 +1,7 @@
 
-import type { Bookmark } from '@/types/bookmark'
+import type { Bookmark, Group } from '@/types/bookmark'
 import type { Ref } from 'vue'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
 
 export function useKeyboard(
   selectedIndex: Ref<number>,
@@ -11,7 +12,10 @@ export function useKeyboard(
   showDeleteConfirm: Ref<boolean>,
   showIconSelector: Ref<boolean>,
   tab: Ref<string>,
-  openBookmarkLink: (b: Bookmark) => void
+  openBookmarkLink: (b: Bookmark) => void,
+  groups: Ref<Group[]>,
+  activeGroupId: Ref<string>,
+  selectGroup: (groupId: string) => void
 ) {
   const settingsStore = useSettingsStore()
   
@@ -173,7 +177,56 @@ export function useKeyboard(
     return key === 'Control'
   }
 
+  // 过滤有效的非回收站分组
+  const validGroups = computed(() =>
+    groups.value.filter(g => g.id !== TRASH_GROUP_ID)
+  )
+
   // Setup Listeners
+  // 主分组快捷键切换（Cmd/Alt + 1-9）
+  useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+    // 1. 有弹窗时直接返回
+    if (showAdd.value || showDeleteConfirm.value || showIconSelector.value) return
+
+    // 2. 焦点在输入框时不拦截
+    const active = document.activeElement as HTMLElement
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+      return
+    }
+
+    // 3. 检查修饰键：macOS 用 Cmd，Windows/Linux 用 Alt
+    const hasModifier = isMac.value ? e.metaKey : e.altKey
+    if (!hasModifier) return
+
+    // 4. 如果有其他修饰键（Ctrl/Shift），不拦截
+    if (e.ctrlKey || e.shiftKey) return
+
+    // 5. 检查数字键（Digit1-9 或 Numpad1-9）
+    const codeToNumber: Record<string, number> = {
+      'Digit1': 1, 'Digit2': 2, 'Digit3': 3, 'Digit4': 4, 'Digit5': 5,
+      'Digit6': 6, 'Digit7': 7, 'Digit8': 8, 'Digit9': 9,
+      'Numpad1': 1, 'Numpad2': 2, 'Numpad3': 3, 'Numpad4': 4, 'Numpad5': 5,
+      'Numpad6': 6, 'Numpad7': 7, 'Numpad8': 8, 'Numpad9': 9
+    }
+
+    const targetNumber = codeToNumber[e.code]
+    if (!targetNumber) return
+
+    // 6. 计算索引（按键 1 → 索引 0）
+    const targetIndex = targetNumber - 1
+
+    // 7. 检查索引是否有效
+    if (targetIndex >= validGroups.value.length) return
+
+    // 8. 执行切换
+    const targetGroup = validGroups.value[targetIndex]
+    if (targetGroup && targetGroup.id !== activeGroupId.value) {
+      e.preventDefault()
+      e.stopPropagation()
+      selectGroup(targetGroup.id)
+    }
+  })
+
   useEventListener(window, 'keydown', handleKeyNavigation)
   
   useEventListener(window, 'keydown', (e: KeyboardEvent) => {
