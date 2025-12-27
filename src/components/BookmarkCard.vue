@@ -245,11 +245,12 @@ const canLocate = computed(() => props.showLocate ?? false)
 </script>
 
 <template>
-  <Card 
+  <Card
     ref="cardEl"
-    class="relative group hover:shadow-lg transition-shadow dark:hover:border-primary/50 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
-    :class="{ 
-      'border-primary ring-1 ring-primary': selected
+    class="relative group hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
+    :class="{
+      'border-primary ring-2 ring-primary/50 shadow-lg bg-primary/5': selected,
+      'dark:hover:border-primary/60 dark:hover:bg-primary/5': !selected
     }"
     @click="openLink"
     @contextmenu.prevent="emit('contextmenu', $event)"
