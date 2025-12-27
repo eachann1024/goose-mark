@@ -3,7 +3,7 @@ import SubGroupItem from './SubGroupItem.vue'
 
 const props = defineProps<{
   show: boolean
-  activeSubGroups: Array<{ id: string; name: string; shareId?: string; sourceShareId?: string; lastSyncedAt?: number }>
+  activeSubGroups: Array<{ id: string; name: string; shareId?: string; sourceShareId?: string; lastSyncedAt?: number; bookmarkIds?: string[] }>
   activeSubGroupId: string
   activeGroupId: string
 }>()

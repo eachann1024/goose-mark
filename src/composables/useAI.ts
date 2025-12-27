@@ -135,10 +135,14 @@ export function useAI() {
 
   /**
    * 使用 AI 根据 URL 建议最合适的分类
+   * @param url 待分类的网址
+   * @param existingGroups 现有分组列表
+   * @param currentGroupId 当前选中的分组ID（可选，用于避免总是推荐当前分组）
    */
   const suggestCategory = async (
     url: string,
-    existingGroups: GroupInfo[]
+    existingGroups: GroupInfo[],
+    currentGroupId?: string
   ): Promise<CategorySuggestion | null> => {
     if (!url || existingGroups.length === 0) return null
 
@@ -154,30 +158,49 @@ export function useAI() {
 
     try {
       // 构建分组列表描述
+      const currentGroup = currentGroupId ? existingGroups.find(g => g.id === currentGroupId) : null
       const groupsDescription = existingGroups.map(g => {
         const subNames = g.subGroups.map(s => s.name).join('、')
-        return `- "${g.name}"（子分组：${subNames || '无'}）`
+        const isCurrent = currentGroup && g.id === currentGroupId ? ' [当前选中]' : ''
+        return `- "${g.name}"${isCurrent}（子分组：${subNames || '无'}）`
       }).join('\n')
 
-      const prompt = `你是一个书签分类助手。请根据用户的现有分组结构，为以下网址推荐最合适的分类。
+      const avoidCurrentTip = currentGroup
+        ? `\n注意：用户当前在"${currentGroup.name}"分组中。除非该网址与当前分组高度相关（置信度>0.8），否则优先推荐其他分组，帮助用户发现更好的分类选择。`
+        : ''
 
-网址: ${url}
+      const prompt = `你是一个专业的书签分类助手。请认真分析以下网址的内容和用途，从用户的分组结构中推荐最合适的分类。
 
-用户现有分组：
+【待分类网址】
+${url}
+
+【用户现有分组】
 ${groupsDescription}
+${avoidCurrentTip}
 
-请返回 JSON 格式：
+【分析要求】
+第一步：分析网址特征
+- 识别网址的主要领域（如：开发工具、设计资源、社交媒体、文档等）
+- 判断内容类型（如：工具网站、教程文档、娱乐视频等）
+
+第二步：匹配分组
+- 对比网址特征与各分组的用途
+- 综合考虑主分组和子分组的匹配度
+
+第三步：返回推荐结果（JSON格式）
 {
+  "analysis": "简述你对该网址的分析（如：这是一个前端开发工具网站）",
   "groupName": "推荐的主分组名称（必须是上面列表中存在的）",
-  "subGroupName": "推荐的子分组名称（必须是该主分组下存在的，如果没有合适的就填空字符串）",
-  "confidence": 0.8,
-  "reason": "简短说明推荐理由（不超过20字）"
+  "subGroupName": "推荐的子分组名称（必须是该主分组下存在的）",
+  "confidence": 0.85,
+  "reason": "推荐理由（10-15字，说明为什么这个分类合适）"
 }
 
-要求：
-1. 只能从现有分组中选择，不要创造新分组
-2. confidence 是 0-1 的置信度，越高表示越匹配
-3. 如果没有任何合适的分组，groupName 返回空字符串`
+【重要规则】
+1. 必须从现有分组中选择，不要创造新分组
+2. confidence 范围 0-1，0.7以下表示不太确定，0.85以上表示高度匹配
+3. 如果没有任何合适的分组，groupName 返回空字符串
+4. analysis 要简洁准确地描述网址特征，帮助用户理解你的判断依据`
 
       const model = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
         ? settingsStore.customAiModel.trim()

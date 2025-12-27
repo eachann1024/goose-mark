@@ -223,15 +223,22 @@ const {
   hideCmdHints,
   handleLocalSearchKey,
 } = useKeyboard(
-  selectedIndex, 
-  activeBookmarks, 
-  searchViewOpen, 
-  isMac, 
-  showAdd, 
-  showDeleteConfirm, 
-  ref(false), 
-  tab, 
-  openBookmarkLink
+  selectedIndex,
+  activeBookmarks,
+  searchViewOpen,
+  isMac,
+  showAdd,
+  showDeleteConfirm,
+  ref(false),
+  tab,
+  openBookmarkLink,
+  // 新增参数：分组快捷键切换
+  computed(() => store.groups),
+  computed(() => store.activeGroupId),
+  (groupId: string) => {
+    store.selectGroup(groupId)
+    tab.value = "bookmarks"
+  }
 )
 
 // hintKeyById 包装函数供模板使用
