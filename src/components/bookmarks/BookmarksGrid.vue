@@ -271,7 +271,7 @@ watch(() => props.highlightedId, (id) => {
 .bookmark-drag-ghost {
   opacity: 0.4;
   background: hsl(var(--primary) / 0.08);
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   border: 2px dashed hsl(var(--primary) / 0.4) !important;
 }
 
@@ -282,7 +282,7 @@ watch(() => props.highlightedId, (id) => {
   box-shadow: 0 12px 40px hsl(var(--primary) / 0.2);
   z-index: 100;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   overflow: hidden;
   background: hsl(var(--card));
 }
@@ -291,7 +291,7 @@ watch(() => props.highlightedId, (id) => {
 .bookmark-drag-active {
   cursor: grabbing !important;
   opacity: 0.95;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   overflow: hidden;
   background: hsl(var(--card));
 }

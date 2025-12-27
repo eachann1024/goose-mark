@@ -19,7 +19,7 @@ const tabs = [
 <template>
   <div class="flex h-full min-h-0">
     <!-- 左侧导航 -->
-    <nav class="w-44 shrink-0 border-r border-border bg-card/30 flex flex-col">
+    <nav class="w-44 shrink-0 bg-card/30 flex flex-col rounded-l-2xl overflow-hidden">
       <div class="flex-1 py-2">
         <button
           v-for="tab in tabs"
@@ -68,7 +68,7 @@ const tabs = [
 }
 .custom-scroll::-webkit-scrollbar-thumb {
   background-color: hsl(var(--muted-foreground) / 0.3);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 .custom-scroll::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--muted-foreground) / 0.5);

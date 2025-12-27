@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import draggable from 'vuedraggable'
 import SubGroupItem from './SubGroupItem.vue'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
 
 const props = defineProps<{
   show: boolean
@@ -245,16 +246,18 @@ const checkSubMove = (evt: { draggedContext: { element: { shareId?: string; sour
       class="flex flex-col gap-1"
     >
       <template #item="{ element: sub }">
-        <SubGroupItem
-          :sub="sub"
-          :is-active="activeSubGroupId === sub.id"
-          :is-drag-over="dragOverSubId === sub.id"
-          :has-update="hasUpdate(sub.id)"
-          @select="emit('select', $event)"
-          @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
-          @dragleave="handleDragLeave"
-          @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
-        />
+        <div class="subgroup-sort-item">
+          <SubGroupItem
+            :sub="sub"
+            :is-active="activeSubGroupId === sub.id"
+            :is-drag-over="dragOverSubId === sub.id"
+            :has-update="hasUpdate(sub.id)"
+            @select="emit('select', $event)"
+            @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
+            @dragleave="handleDragLeave"
+            @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
+          />
+        </div>
       </template>
     </draggable>
   </aside>
