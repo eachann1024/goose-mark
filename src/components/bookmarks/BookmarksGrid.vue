@@ -279,12 +279,11 @@ watch(() => props.highlightedId, (id) => {
 .bookmark-drag-chosen {
   opacity: 1;
   transform: scale(1.03) rotate(1deg);
-  box-shadow: 0 12px 40px hsl(var(--primary) / 0.2);
+  filter: drop-shadow(0 12px 40px hsl(var(--primary) / 0.2));
   z-index: 100;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   border-radius: var(--radius-xl);
-  overflow: hidden;
-  background: hsl(var(--card));
+  background: transparent;
 }
 
 /* 拖拽中的卡片 */
@@ -292,8 +291,7 @@ watch(() => props.highlightedId, (id) => {
   cursor: grabbing !important;
   opacity: 0.95;
   border-radius: var(--radius-xl);
-  overflow: hidden;
-  background: hsl(var(--card));
+  background: transparent;
 }
 
 /* 卡片容器动画 */

@@ -221,6 +221,37 @@ export function useBookmarkOperations() {
     window.open(url, '_blank')
   }
 
+  // 强制使用 uTools 内置浏览器打开链接
+  const openUrlInUtoolsBrowser = (url: string) => {
+    if (window.utools) {
+      const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+      if (typeof utoolsApi?.createBrowserWindow === 'function') {
+        try {
+          const path = window.location.pathname || ''
+          const base = path.includes('/dist/') ? 'dist/' : ''
+          const bridgeUrl = `${base}browser.html?target=${encodeURIComponent(url)}`
+          utoolsApi?.createBrowserWindow?.(bridgeUrl)
+        } catch (e) {
+          console.warn('[Bookmark] 内置浏览器打开失败', e)
+          utoolsApi?.shellOpenExternal?.(url)
+        }
+      } else {
+        utoolsApi?.shellOpenExternal?.(url)
+      }
+      if (settingsStore.autoCloseWindow) {
+        try {
+          if (isDetachedWindowNow()) {
+            window.utools.outPlugin()
+          }
+        } catch (e) {
+          console.warn('Failed to auto close window', e)
+        }
+      }
+      return
+    }
+    window.open(url, '_blank')
+  }
+
   const handleRemove = (bookmark: Bookmark) => {
     // 只从当前位置移除书签（如果还有其他位置则保留书签）
     const groupId = store.activeGroupId
@@ -276,6 +307,7 @@ export function useBookmarkOperations() {
     openBookmarkLink,
     copyBookmarkUrl,
     openUrl,
+    openUrlInUtoolsBrowser,
     handleRemove,
     requestDelete,
     confirmDelete,
