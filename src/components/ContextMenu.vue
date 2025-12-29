@@ -6,6 +6,7 @@ const props = defineProps<{
   y: number
   isTrash?: boolean
   readonly?: boolean
+  isUTools?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -48,20 +49,30 @@ onUnmounted(() => {
     @contextmenu.prevent
   >
     <template v-if="!isTrash">
+      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('open')">
+        <span class="i-mdi-open-in-new text-muted" />
+        <span>打开链接</span>
+      </Button>
+
+      <Button v-if="isUTools" variant="ghost" class="menu-item justify-start" @click="handleAction('openInUtoolsBrowser')">
+        <span class="i-mdi-web text-muted" />
+        <span>使用 uTools 浏览器打开</span>
+      </Button>
+
       <Button variant="ghost" class="menu-item justify-start" @click="handleAction('copy')">
         <span class="i-mdi-content-copy text-muted" />
         <span>复制链接</span>
       </Button>
   
       <template v-if="!readonly">
-        <div class="h-px bg-white/10 my-0.5 mx-1" />
-    
+        <div class="h-px bg-white/10 mx-1" />
+
         <Button variant="ghost" class="menu-item justify-start" @click="handleAction('edit')">
           <span class="i-mdi-pencil-outline text-muted" />
           <span>编辑</span>
         </Button>
 
-        <div class="h-px bg-white/10 my-0.5 mx-1" />
+        <div class="h-px bg-white/10 mx-1" />
         
         <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
           <span class="i-mdi-delete-outline" />
@@ -76,7 +87,7 @@ onUnmounted(() => {
         <span>还原</span>
       </Button>
 
-      <div class="h-px bg-white/10 my-0.5 mx-1" />
+      <div class="h-px bg-white/10 mx-1" />
 
       <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
         <span class="i-mdi-delete-forever-outline" />

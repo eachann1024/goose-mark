@@ -17,16 +17,17 @@ const { toastState, closeToast, showToast, tooltipProviderKey, onMainViewSwitch 
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
 const { isSyncing, syncError } = useSync()
 const { contextMenu, handleContextMenu, closeContextMenu } = useContextMenu()
-const { 
-  openBookmarkLink: originalOpenBookmarkLink, 
+const {
+  openBookmarkLink: originalOpenBookmarkLink,
   openUrl,
-  copyBookmarkUrl, 
-  handleRemove, 
-  confirmDelete, 
-  emptyTrash, 
+  openUrlInUtoolsBrowser,
+  copyBookmarkUrl,
+  handleRemove,
+  confirmDelete,
+  emptyTrash,
   handleReorder,
-  showDeleteConfirm, 
-  confirmDeleteId, 
+  showDeleteConfirm,
+  confirmDeleteId,
   getTemplateLabel
 } = useBookmarkOperations()
 
@@ -364,10 +365,41 @@ const handleBookmarkDrop = (bookmarkId: string, toSubId: string) => {
 const handleContextMenuAction = (action: string) => {
   const bookmark = contextMenu.target
   if (!bookmark) return
-  
+
   switch (action) {
     case 'open':
       openBookmarkLink(bookmark)
+      break
+    case 'openInUtoolsBrowser':
+      // 处理模板书签
+      const raw = bookmark.url
+      const hasTemplate = /{[^}]+}/.test(raw)
+      const queryFromUi = (typeof store.search === 'string' ? store.search : '').trim()
+      let url = raw
+      if (hasTemplate) {
+        if (queryFromUi) {
+          url = raw.replace(/{[^}]+}/g, encodeURIComponent(queryFromUi))
+        } else {
+          // 无搜索词时跳转到首页
+          try {
+            let tempRaw = raw
+            if (!/^https?:\/\//i.test(tempRaw)) tempRaw = 'https://' + tempRaw
+            const urlObj = new URL(tempRaw)
+            const qIndex = raw.indexOf('?')
+            const tIndex = raw.indexOf('{')
+            if (qIndex !== -1 && tIndex > qIndex) {
+              urlObj.search = ''
+              url = urlObj.toString()
+            } else {
+              url = urlObj.origin
+            }
+          } catch {
+            return
+          }
+        }
+      }
+      if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+      openUrlInUtoolsBrowser(url)
       break
     case 'copy':
       copyBookmarkUrl(bookmark)
@@ -991,12 +1023,13 @@ const handleLocate = async (bookmark: Bookmark) => {
     />
 
     <!-- Bookmark Context Menu -->
-    <ContextMenu 
-      v-if="contextMenu.show" 
-      :x="contextMenu.x" 
+    <ContextMenu
+      v-if="contextMenu.show"
+      :x="contextMenu.x"
       :y="contextMenu.y"
       :is-trash="isTrashActive"
       :readonly="!!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
+      :is-u-tools="isUTools"
       @close="closeContextMenu"
       @action="handleContextMenuAction"
     />
@@ -1150,6 +1183,11 @@ html.dark body.easter-egg-active .bookmark-card-wrapper > div {
 /* 彩蛋模式：主分组按钮背景参考子分组样式 */
 html.dark body.easter-egg-active button[data-active="true"] {
   background-color: hsl(var(--primary) / 0.05) !important;
+}
+
+/* 彩蛋模式：顶部导航栏透明 */
+html.dark body.easter-egg-active header {
+  background-color: transparent !important;
 }
 </style>
 
