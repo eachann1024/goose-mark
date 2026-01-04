@@ -1,11 +1,12 @@
 
 import type { Bookmark } from '@/types/bookmark'
 
-
 type UToolsExtendedApi = {
   copyText?: (text: string) => void
   shellOpenExternal?: (url: string) => void
-  createBrowserWindow?: (url: string, options?: Record<string, unknown>) => void
+  ubrowser?: {
+    goto(url: string): { run(options?: { width?: number; height?: number }): Promise<unknown[]> }
+  }
   outPlugin?: () => void
   getWindowType?: () => string
 }
@@ -193,14 +194,11 @@ export function useBookmarkOperations() {
   const openUrl = (url: string) => {
     if (window.utools) {
       const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-      const canUseInner = settingsStore.preferUtoolsBrowser && typeof utoolsApi?.createBrowserWindow === 'function'
+      const canUseInner = settingsStore.preferUtoolsBrowser && utoolsApi?.ubrowser
       let opened = false
       if (canUseInner) {
         try {
-          const path = window.location.pathname || ''
-          const base = path.includes('/dist/') ? 'dist/' : ''
-          const bridgeUrl = `${base}browser.html?target=${encodeURIComponent(url)}`
-          utoolsApi?.createBrowserWindow?.(bridgeUrl)
+          utoolsApi.ubrowser?.goto(url).run({ width: 1280, height: 800 })
           opened = true
         } catch (e) {
           console.warn('[Bookmark] 内置浏览器打开失败', e)
@@ -221,16 +219,12 @@ export function useBookmarkOperations() {
     window.open(url, '_blank')
   }
 
-  // 强制使用 uTools 内置浏览器打开链接
   const openUrlInUtoolsBrowser = (url: string) => {
     if (window.utools) {
       const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-      if (typeof utoolsApi?.createBrowserWindow === 'function') {
+      if (utoolsApi?.ubrowser) {
         try {
-          const path = window.location.pathname || ''
-          const base = path.includes('/dist/') ? 'dist/' : ''
-          const bridgeUrl = `${base}browser.html?target=${encodeURIComponent(url)}`
-          utoolsApi?.createBrowserWindow?.(bridgeUrl)
+          utoolsApi.ubrowser.goto(url).run({ width: 1280, height: 800 })
         } catch (e) {
           console.warn('[Bookmark] 内置浏览器打开失败', e)
           utoolsApi?.shellOpenExternal?.(url)

@@ -88,7 +88,7 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
           <div>输入关键字开始搜索</div>
           <div class="flex items-center gap-2 justify-center">
             <span class="i-mdi-information-outline" />
-            <span>按 ESC 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
+            <span>按 {{ enableSubInput ? 'Tab' : 'ESC' }} 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
           </div>
         </div>
         <div
@@ -99,7 +99,7 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
           <div class="space-y-1 text-[13px] text-muted-foreground flex flex-col gap-1 px-1 mt-3">
             <div class="flex items-center gap-2 justify-center">
               <span class="i-mdi-information-outline" />
-              <span>按 ESC 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
+              <span>按 {{ enableSubInput ? 'Tab' : 'ESC' }} 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
             </div>
           </div>
         </div>

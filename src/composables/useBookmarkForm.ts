@@ -313,6 +313,25 @@ function _useBookmarkForm() {
     showAdd.value = true
   }
 
+  // 新增：支持预填充 URL 且默认不选分类的方法（用于超级面板）
+  const openAddWithUrl = (url: string, eventOrEl?: MouseEvent | HTMLElement) => {
+    setDialogOrigin(eventOrEl)
+    editingId.value = ''
+    modalTitle.value = '新建书签'
+    draft.url = url
+    draft.title = ''
+    draft.allowUniversal = false
+    draft.desc = ''
+    draftLocations.value = [] // 关键：默认不选择分类
+    previewIcon.value = null
+    formError.value = ''
+    isTitleDirty.value = false
+    isDescDirty.value = false
+    lastAutoHostname.value = ''
+    originalUrl.value = ''
+    showAdd.value = true
+  }
+
   const openEdit = (bookmark: Bookmark, eventOrEl?: MouseEvent | HTMLElement) => {
     setDialogOrigin(eventOrEl)
     editingId.value = bookmark.id
@@ -541,6 +560,7 @@ function _useBookmarkForm() {
     isDraftTemplate,
     draftTemplateLabel,
     openAdd,
+    openAddWithUrl,
     openEdit,
     handleSave,
     askAI,

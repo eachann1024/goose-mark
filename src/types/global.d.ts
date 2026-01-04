@@ -1,3 +1,16 @@
+interface UToolsBrowserWindow {
+  show(): void
+  webContents?: {
+    executeJavaScript(code: string): Promise<unknown>
+    send(channel: string, ...args: unknown[]): void
+  }
+}
+
+interface UBrowserApi {
+  goto(url: string, headers?: Record<string, string>, timeout?: number): UBrowserApi
+  run(options?: { width?: number; height?: number; show?: boolean }): Promise<unknown[]>
+}
+
 interface UToolsAiOption {
   model?: string
   messages: UToolsAiMessage[]
@@ -23,10 +36,10 @@ interface UToolsApi {
   // uTools AI API - 需要用户在 uTools 中配置 AI 服务
   ai?(option: UToolsAiOption, streamCallback?: (chunk: { text?: string; content?: string }) => void): Promise<string | { text?: string; content?: string }>
   isDarkColors?(): boolean
-  // 窗口类型: main=主窗口, detach=分离窗口, browser=createBrowserWindow 创建的窗口
   getWindowType?(): 'main' | 'detach' | 'browser'
   outPlugin(isKill?: boolean): boolean
-  createBrowserWindow?(url: string, options?: Record<string, unknown>): void
+  createBrowserWindow?(url: string, options?: Record<string, unknown>, callback?: () => void): UToolsBrowserWindow | undefined
+  ubrowser?: UBrowserApi
   getVersion?(): string
   copyText?(text: string): void
   setExpendHeight?(height: number): void
