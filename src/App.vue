@@ -49,6 +49,7 @@ const isSyncPaused = ref(false)
 const {
   showAdd,
   openAdd,
+  openAddWithUrl,
   openEdit,
 } = useBookmarkForm()
 
@@ -813,10 +814,61 @@ onMounted(async () => {
       } catch {}
     }) as any)
 
+    // 验证 URL 是否有效（用于超级面板保存链接）
+    const isValidUrl = (text: string): boolean => {
+      if (!text || text.trim().length === 0) return false
+      try {
+        // 确保有协议前缀
+        let urlStr = text.trim()
+        if (!urlStr.match(/^https?:\/\//i)) {
+          urlStr = `https://${urlStr}`
+        }
+        const url = new URL(urlStr)
+        return url.protocol === 'http:' || url.protocol === 'https:'
+      } catch {
+        return false
+      }
+    }
+
     window.utools?.onPluginEnter?.((params) => {
       const code = params?.code
       const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
-      
+
+      // 处理保存链接（通过 match 匹配 URL）
+      if (code === 'save_link') {
+        // 直接使用 payload，因为 match 模式下 payload 就是用户输入的文本
+        let urlToSave = ''
+        const payload = params?.payload
+
+        if (typeof payload === 'string') {
+          urlToSave = payload
+        } else if (payload && typeof payload === 'object' && 'text' in payload) {
+          urlToSave = String(payload.text)
+        }
+
+        urlToSave = urlToSave.trim()
+
+        // 验证是否是有效 URL
+        if (urlToSave && isValidUrl(urlToSave)) {
+          // 切换到主视图
+          onMainViewSwitch()
+          activeTemplateBookmark.value = null
+          syncTheme()
+          syncFeatures(store.bookmarks)
+          syncSubInput()
+          store.setSearch('')
+
+          // 调用新的打开方法，预填充 URL 且不选分类
+          openAddWithUrl(urlToSave)
+          return
+        } else {
+          // 无效 URL，显示提示
+          console.warn('[save_link] 无效 URL:', { payload, urlToSave })
+          showToast({ title: '未检测到有效链接', variant: 'warning' })
+          return
+        }
+      }
+
       if (!isTemplateFeature) {
         onMainViewSwitch()
         activeTemplateBookmark.value = null

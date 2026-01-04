@@ -12,6 +12,18 @@
       "code": "bookmarks",
       "explain": "打开极简书签",
       "cmds": ["书签", "bookmark", "bookmarks"]
+    },
+    {
+      "code": "save_link",
+      "explain": "保存链接到书签",
+      "cmds": [
+        {
+          "type": "regex",
+          "label": "保存链接到书签",
+          "match": "/^https?:\\/\\/.*$/i"
+        }
+      ],
+      "platform": ["win32", "darwin", "linux"]
     }
   ]
 }

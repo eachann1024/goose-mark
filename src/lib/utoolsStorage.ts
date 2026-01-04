@@ -16,7 +16,7 @@ const getUtoolsApi = (): UToolsApi | undefined => {
   return typeof window !== 'undefined' ? (window as unknown as { utools?: UToolsApi }).utools : undefined
 }
 
-const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('better-marks-storage-sync') : null
+const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('goose-marks-storage-sync') : null
 const sessionCache = new Map<string, string | null>()
 
 if (bc) {

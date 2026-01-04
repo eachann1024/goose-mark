@@ -1,7 +1,7 @@
 {
-  "name": "better-marks-server",
+  "name": "goose-marks-server",
   "version": "1.0.0",
-  "description": "Simple backend for better-marks sharing",
+  "description": "Simple backend for goose-marks sharing",
   "main": "index.js",
   "type": "module",
   "scripts": {

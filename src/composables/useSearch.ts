@@ -209,6 +209,12 @@ export function useSearch(
       closeSearchView()
       return
     }
+    // uTools 吸附模式下 Tab 退出搜索，独立窗口模式用 Esc
+    if (e.key === 'Tab' && searchViewOpen.value && canUseSubInput()) {
+      e.preventDefault()
+      closeSearchView()
+      return
+    }
     // 直接输入字符触发搜索
     handleTypeToSearch(e)
   })
