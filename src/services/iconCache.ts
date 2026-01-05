@@ -66,12 +66,17 @@ const urlToBase64 = async (url: string): Promise<string | null> => {
 const fetchIconFromDuckDuckGo = async (host: string): Promise<string | null> => {
   if (!isUToolsEnv()) return null
 
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 5000)
+
   try {
     const ddgUrl = `https://icons.duckduckgo.com/ip3/${host}.ico`
-    const response = await fetch(ddgUrl, { method: 'HEAD' })
+    const response = await fetch(ddgUrl, { method: 'HEAD', signal: controller.signal })
+    clearTimeout(timer)
     if (response.ok) return ddgUrl
     return null
   } catch {
+    clearTimeout(timer)
     return null
   }
 }
@@ -83,7 +88,7 @@ const fetchIconAndMetadataFromPage = async (url: string): Promise<{ icon: string
   try {
     const result = await utoolsApi.ubrowser
       .goto(url)
-      .wait(1500)
+      .wait(4000)
       .evaluate(() => {
         const metadata = {
           icon: null as string | null,
@@ -169,7 +174,13 @@ const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; t
   }
 }
 
-export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(IconSource & { title?: string | null; description?: string | null }) | null> => {
+export type IconFetchStage = 'primary' | 'fallback' | 'done'
+
+export const fetchAndCacheIcon = async (
+  url: string, 
+  _force = false,
+  onProgress?: (stage: IconFetchStage) => void
+): Promise<(IconSource & { title?: string | null; description?: string | null }) | null> => {
   if (!url) return null
 
   let targetUrl = url
@@ -197,10 +208,12 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
   }
 
   if (isUToolsEnv()) {
+    onProgress?.('primary')
     const pageResult = await fetchIconAndMetadataFromPage(targetUrl)
     if (pageResult && pageResult.icon) {
       // 获取图标后立即转换为 base64 缓存
       const cache = await urlToBase64(pageResult.icon)
+      onProgress?.('done')
       return { 
         type: 'remote', 
         src: pageResult.icon, 
@@ -211,11 +224,14 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
       }
     }
 
+    onProgress?.('fallback')
     const ddgIcon = await fetchIconFromDuckDuckGo(host)
     if (ddgIcon) {
       const cache = await urlToBase64(ddgIcon)
+      onProgress?.('done')
       return { type: 'remote', src: ddgIcon, cache: cache || undefined, fetchedAt: Date.now() }
     }
+    onProgress?.('done')
   } else {
     const result = await fetchIconFromProxy(targetUrl)
     if (result && result.icon) {
