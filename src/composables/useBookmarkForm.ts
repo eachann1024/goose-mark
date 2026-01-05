@@ -1,7 +1,7 @@
 
 import { onClickOutside, createSharedComposable } from '@vueuse/core'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
-import { iconToDisplayUrl, fetchAndCacheIcon } from '@/services/iconCache'
+import { iconToDisplayUrl, fetchAndCacheIcon, type IconFetchStage } from '@/services/iconCache'
 import { useToast } from './useToast'
 
 
@@ -53,6 +53,7 @@ function _useBookmarkForm() {
   
   const iconLoading = ref(false)
   const iconFetchFailed = ref(false)
+  const iconFetchStage = ref<IconFetchStage | 'idle'>('idle')
   
   const isTitleDirty = ref(false)
   const isDescDirty = ref(false)
@@ -466,8 +467,11 @@ function _useBookmarkForm() {
     fetchTimer = setTimeout(async () => {
       iconLoading.value = true
       iconFetchFailed.value = false
+      iconFetchStage.value = 'idle'
       try {
-        const fetched = await fetchAndCacheIcon(val, true)
+        const fetched = await fetchAndCacheIcon(val, true, (stage) => {
+          iconFetchStage.value = stage
+        })
         if (fetched) {
           const newIcon: any = { type: fetched.type }
           if ('src' in fetched) newIcon.src = fetched.src
@@ -500,6 +504,7 @@ function _useBookmarkForm() {
         iconFetchFailed.value = true
       } finally {
         iconLoading.value = false
+        iconFetchStage.value = 'idle'
       }
     }, 1000)
   })
@@ -550,6 +555,7 @@ function _useBookmarkForm() {
     isSaving,
     iconLoading,
     iconFetchFailed,
+    iconFetchStage,
     dialogOrigin,
     isEditing,
     maxDescLen,

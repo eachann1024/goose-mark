@@ -14,6 +14,7 @@ const {
   isSaving,
   iconLoading,
   iconFetchFailed,
+  iconFetchStage,
   maxDescLen,
   selectedLocationsLabel,
   isDraftTemplate,
@@ -127,7 +128,13 @@ const onSave = async () => {
                 <span class="i-mdi-pencil text-white text-xl" />
               </div>
             </div>
-            <span class="text-[10px] text-muted-foreground font-medium">点击修改图标</span>
+            <span v-if="iconFetchStage === 'fallback'" class="text-[10px] text-amber-500 font-medium animate-pulse">
+              正在尝试备用服务...
+            </span>
+            <span v-else-if="iconFetchFailed && !iconLoading" class="text-[10px] text-muted-foreground">
+              自动识别失败，请手动设置
+            </span>
+            <span v-else class="text-[10px] text-muted-foreground font-medium">点击修改图标</span>
           </div>
 
           <!-- Right: Title & Desc -->
