@@ -10,7 +10,7 @@ export const useSettingsStore = defineStore('settings', {
     preferUtoolsBrowser: false,
     useCustomAiModel: false,
     customAiModel: '',
-    enableShare: true,
+    enableShare: false,
     windowHeight: 700,
     // 首次用户引导是否已关闭
     onboardingDismissed: false,
