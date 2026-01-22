@@ -10,7 +10,6 @@ export const useSettingsStore = defineStore('settings', {
     preferUtoolsBrowser: false,
     useCustomAiModel: false,
     customAiModel: '',
-    enableShare: false,
     windowHeight: 700,
     // 首次用户引导是否已关闭
     onboardingDismissed: false,
@@ -39,9 +38,6 @@ export const useSettingsStore = defineStore('settings', {
     },
     setCustomAiModel(value: string) {
       this.customAiModel = String(value || '')
-    },
-    setEnableShare(value: boolean) {
-      this.enableShare = !!value
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0

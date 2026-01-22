@@ -1,12 +1,8 @@
 <script setup lang="ts">
-import ShareImportDialog from '@/components/ShareImportDialog.vue'
-
 const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 
 const { isUTools, isDark } = useAppState()
-
-const showShareImportDialog = ref(false)
 
 // 彩蛋开关的 computed（用于 v-model 双向绑定）
 const easterEggEnabled = computed({
@@ -99,40 +95,6 @@ const handleGridColumnsChange = (val: string | number) => {
       </CardContent>
     </Card>
 
-    <!-- Share Card -->
-    <Card>
-      <CardHeader>
-        <CardTitle>在线分享</CardTitle>
-        <CardDescription>开启后可分享书签分组给他人，或导入他人的公开分享</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="space-y-0.5">
-              <div class="text-sm font-medium">开启分享功能</div>
-              <div class="text-xs text-muted-foreground">在书签页显示分享与管理按钮</div>
-            </div>
-            <Button 
-              :variant="settingsStore.enableShare ? 'default' : 'outline'"
-              size="sm"
-              @click="settingsStore.setEnableShare(!settingsStore.enableShare)"
-            >
-              {{ settingsStore.enableShare ? '已开启' : '点击开启' }}
-            </Button>
-          </div>
-          
-          <div v-if="settingsStore.enableShare" class="pt-2 animate-in fade-in slide-in-from-top-2">
-            <Button variant="outline" class="w-full h-9 border-dashed border-primary/30 text-primary/80 hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors" @click="showShareImportDialog = true">
-              <span class="i-mdi-share-variant mr-2 text-lg" />
-              导入分享链接
-            </Button>
-            <p class="text-xs text-muted-foreground mt-2 px-1">
-              提示：已导入的分组（绿色边框）和正在分享的分组（蓝色边框）将不受此开关影响，仍会保留。
-            </p>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
 
     <!-- Layout & Window -->
     <div class="grid md:grid-cols-2 gap-6">
@@ -308,8 +270,6 @@ const handleGridColumnsChange = (val: string | number) => {
       </Card>
     </div>
 
-    <!-- Share Import -->
-    <ShareImportDialog v-model:open="showShareImportDialog" />
   </div>
 </template>
 

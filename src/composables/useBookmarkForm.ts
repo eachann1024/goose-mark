@@ -1,7 +1,7 @@
 
 import { onClickOutside, createSharedComposable } from '@vueuse/core'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
-import { iconToDisplayUrl, fetchAndCacheIcon, type IconFetchStage } from '@/services/iconCache'
+import { iconToDisplayUrl, fetchAndCacheIcon } from '@/services/iconCache'
 import { useToast } from './useToast'
 
 
@@ -53,7 +53,6 @@ function _useBookmarkForm() {
   
   const iconLoading = ref(false)
   const iconFetchFailed = ref(false)
-  const iconFetchStage = ref<IconFetchStage | 'idle'>('idle')
   
   const isTitleDirty = ref(false)
   const isDescDirty = ref(false)
@@ -69,7 +68,6 @@ function _useBookmarkForm() {
   } | null>(null)
 
   let fetchTimer: ReturnType<typeof setTimeout> | null = null
-  const { scheduleShareUpdate } = useShare()
   const { showToast } = useToast()
 
   // AI 分类建议
@@ -81,38 +79,6 @@ function _useBookmarkForm() {
     confidence: number
     reason: string
   } | null>(null)
-
-  // 通用的自动更新分享函数
-  // 支持多个位置，会更新所有涉及的分享
-  const autoUpdateShareForLocations = (locations: BookmarkLocation[]) => {
-    // 已调度的 shareId 集合，避免重复调度
-    const scheduledKeys = new Set<string>()
-    
-    for (const loc of locations) {
-      const group = store.groups.find(g => g.id === loc.groupId)
-      if (!group) continue
-      
-      // 1. 优先检查主分组是否有 shareId
-      if (group.shareId) {
-        const key = `group:${group.id}`
-        if (!scheduledKeys.has(key)) {
-          scheduleShareUpdate('group', loc.groupId)
-          scheduledKeys.add(key)
-        }
-        continue
-      }
-      
-      // 2. 如果主分组没有 shareId，检查子分组是否有 shareId
-      const subGroup = group.children.find(c => c.id === loc.subGroupId)
-      if (subGroup?.shareId) {
-        const key = `subGroup:${group.id}:${subGroup.id}`
-        if (!scheduledKeys.has(key)) {
-          scheduleShareUpdate('subGroup', loc.groupId, loc.subGroupId)
-          scheduledKeys.add(key)
-        }
-      }
-    }
-  }
 
   // Computed
   const isEditing = computed(() => !!editingId.value)
@@ -382,13 +348,6 @@ function _useBookmarkForm() {
         })
         store.updateBookmarkLocations(editingId.value, draftLocations.value)
         
-        // 合并旧位置和新位置，确保所有相关分享都被更新
-        const allLocations = [...oldLocations, ...draftLocations.value]
-        // 去重
-        const uniqueLocations = Array.from(
-          new Map(allLocations.map(loc => [`${loc.groupId}:${loc.subGroupId}`, loc])).values()
-        )
-        autoUpdateShareForLocations(uniqueLocations)
       } else {
         const created = store.addBookmark(
           {
@@ -411,8 +370,6 @@ function _useBookmarkForm() {
              store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
         }
         
-        // 新增书签：检查新位置
-        autoUpdateShareForLocations(draftLocations.value)
       }
       
       showAdd.value = false
@@ -467,11 +424,8 @@ function _useBookmarkForm() {
     fetchTimer = setTimeout(async () => {
       iconLoading.value = true
       iconFetchFailed.value = false
-      iconFetchStage.value = 'idle'
       try {
-        const fetched = await fetchAndCacheIcon(val, true, (stage) => {
-          iconFetchStage.value = stage
-        })
+        const fetched = await fetchAndCacheIcon(val, true)
         if (fetched) {
           const newIcon: any = { type: fetched.type }
           if ('src' in fetched) newIcon.src = fetched.src
@@ -504,7 +458,6 @@ function _useBookmarkForm() {
         iconFetchFailed.value = true
       } finally {
         iconLoading.value = false
-        iconFetchStage.value = 'idle'
       }
     }, 1000)
   })
@@ -555,7 +508,6 @@ function _useBookmarkForm() {
     isSaving,
     iconLoading,
     iconFetchFailed,
-    iconFetchStage,
     dialogOrigin,
     isEditing,
     maxDescLen,

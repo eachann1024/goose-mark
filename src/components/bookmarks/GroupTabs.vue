@@ -5,16 +5,12 @@ import { useTextOverflow } from '@/composables/useTextOverflow'
 interface SubGroup {
   id: string
   name: string
-  shareId?: string
-  sourceShareId?: string
 }
 
 interface Group {
   id: string
   name: string
   children: SubGroup[]
-  shareId?: string
-  sourceShareId?: string
 }
 
 const props = defineProps<{
@@ -38,19 +34,6 @@ const emit = defineEmits<{
 const setTab = (value: 'bookmarks' | 'settings') => emit('update:tab', value)
 const formatName = (name: string) => (name.length > 8 ? `${name.slice(0, 8)}…` : name)
 
-// 判断分组是否完全分享
-const isGroupShared = (group: Group) => {
-  if (group.shareId) return true
-  if (group.children.length > 0 && group.children.every(sub => !!sub.shareId)) return true
-  return false
-}
-
-// 判断分组是否为导入
-const isGroupImported = (group: Group) => {
-  if (group.sourceShareId) return true
-  if (group.children.length > 0 && group.children.every(sub => !!sub.sourceShareId)) return true
-  return false
-}
 
 const groupContainerClass = computed(() => {
   if (props.groupLayout === 'scroll') {
@@ -78,19 +61,11 @@ const handleGroupMouseEnter = (group: Group) => {
             variant="ghost"
             size="sm"
             class="rounded-full px-4 h-9 font-normal transition-all border border-transparent data-[active=true]:bg-accent data-[active=true]:text-accent-foreground data-[active=true]:shadow-md data-[active=true]:border-primary/30"
-            :class="{
-              'ring-2 ring-dashed ring-blue-500/50 dark:ring-blue-400/50': isGroupShared(group) && !isGroupImported(group),
-              'ring-2 ring-dashed ring-green-500/50 dark:ring-green-400/50': isGroupImported(group)
-            }"
             :data-active="activeGroupId === group.id ? 'true' : undefined"
             @click="emit('select-group', group.id)"
             @mouseenter="handleGroupMouseEnter(group)"
           >
-            <span class="flex items-center gap-1">
-              {{ formatName(group.name) }}
-              <span v-if="isGroupShared(group) && !isGroupImported(group)" class="i-mdi-link-variant text-xs opacity-60 text-blue-500" />
-              <span v-if="isGroupImported(group)" class="i-mdi-cloud-download-outline text-xs opacity-60 text-green-500" />
-            </span>
+            {{ formatName(group.name) }}
           </Button>
         </TooltipTrigger>
         <TooltipContent>

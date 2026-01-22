@@ -1,27 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
-
-:root {
-  --bg: #f4f4f4;
-  --fg: #0f1115;
-  --muted: #5f6472;
-  --accent: #5c7cfa;
-  --card: #ffffff;
-  --surface: #eef0f5;
+/* DM Sans 字体 - 本地文件 */
+@font-face {
+  font-family: 'DM Sans';
+  src: url('./fonts/dm-sans-latin-400-normal.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #303133;
-    --fg: #f4f6fb;
-    --muted: #9aa0b5;
-    --accent: #8bb0ff;
-    --card: #0f1115;
-    --surface: #161920;
-  }
+@font-face {
+  font-family: 'DM Sans';
+  src: url('./fonts/dm-sans-latin-500-normal.woff2') format('woff2');
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'DM Sans';
+  src: url('./fonts/dm-sans-latin-700-normal.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
 }
 
 body {
-  font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
-  background: var(--bg);
-  color: var(--fg);
+  font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
 }
