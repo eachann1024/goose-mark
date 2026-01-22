@@ -15,7 +15,6 @@ const emit = defineEmits<{
   (e: 'drop', bookmarkId: string, toSubId: string): void
 }>()
 
-const { checkForUpdate, getShareData } = useShare()
 const store = useBookmarkStore()
 const { showToast, isTooltipEnabled } = useUIManager()
 

@@ -15,7 +15,7 @@ export default defineConfig({
   ],
   theme: {
     fontFamily: {
-      sans: '"DM Sans", "Inter", system-ui, -apple-system, sans-serif'
+      sans: '"DM Sans", system-ui, -apple-system, sans-serif'
     },
     colors: {
       bg: 'var(--bg)',

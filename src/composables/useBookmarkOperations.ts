@@ -14,41 +14,8 @@ type UToolsExtendedApi = {
 export function useBookmarkOperations() {
   const store = useBookmarkStore()
   const settingsStore = useSettingsStore()
-  const { scheduleShareUpdate } = useShare()
   const { showToast } = useUIManager()
   const isDevRuntime = import.meta.env.DEV
-
-  // 通用的自动更新分享函数
-  // 支持多个位置，会更新所有涉及的分享
-  const autoUpdateShareForLocations = (locations: Array<{ groupId: string; subGroupId: string }>) => {
-    // 已调度的 shareId 集合，避免重复调度（虽然 scheduleShareUpdate 也会去重）
-    const scheduledKeys = new Set<string>()
-    
-    for (const loc of locations) {
-      const group = store.groups.find(g => g.id === loc.groupId)
-      if (!group) continue
-      
-      // 1. 优先检查主分组是否有 shareId
-      if (group.shareId) {
-        const key = `group:${group.id}`
-        if (!scheduledKeys.has(key)) {
-          scheduleShareUpdate('group', loc.groupId)
-          scheduledKeys.add(key)
-        }
-        continue
-      }
-      
-      // 2. 如果主分组没有 shareId，检查子分组是否有 shareId
-      const subGroup = group.children.find(c => c.id === loc.subGroupId)
-      if (subGroup?.shareId) {
-        const key = `subGroup:${group.id}:${subGroup.id}`
-        if (!scheduledKeys.has(key)) {
-          scheduleShareUpdate('subGroup', loc.groupId, loc.subGroupId)
-          scheduledKeys.add(key)
-        }
-      }
-    }
-  }
 
   // Delete Confirmation State
   const showDeleteConfirm = ref(false)
@@ -253,10 +220,6 @@ export function useBookmarkOperations() {
     
     store.removeBookmarkFromLocation(bookmark.id, groupId, subGroupId)
     
-    // 更新当前位置的分享（如果有的话）
-    if (groupId !== TRASH_GROUP_ID) {
-      autoUpdateShareForLocations([{ groupId, subGroupId }])
-    }
   }
 
   // For context menu or other places that need confirmation
@@ -273,10 +236,6 @@ export function useBookmarkOperations() {
       
       store.removeBookmarkFromLocation(confirmDeleteId.value, groupId, subGroupId)
       
-      // 更新当前位置的分享
-      if (groupId !== TRASH_GROUP_ID) {
-        autoUpdateShareForLocations([{ groupId, subGroupId }])
-      }
     }
     showDeleteConfirm.value = false
   }
@@ -291,8 +250,6 @@ export function useBookmarkOperations() {
     const subId = store.activeSubGroupId
     if (!groupId || !subId || groupId === TRASH_GROUP_ID) return
     store.reorderInSub(groupId, subId, fromId, toId)
-    // 排序后也需要更新分享（因为顺序也是分享数据的一部分）
-    autoUpdateShareForLocations([{ groupId, subGroupId: subId }])
   }
 
   return {

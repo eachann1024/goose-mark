@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { Loader2 } from 'lucide-vue-next'
 import { useSync } from '@/composables/useSync'
+import { onUnmounted } from 'vue'
 
 import type { Bookmark } from '@/types/bookmark'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import OnboardingBanner from '@/components/OnboardingBanner.vue'
+import QuickSaveDialog from '@/components/QuickSaveDialog.vue'
 import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser'
+import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
 
 // Stores
 const store = useBookmarkStore()
@@ -16,6 +19,7 @@ const { toastState, closeToast, showToast, tooltipProviderKey, onMainViewSwitch 
 // Composables
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
 const { isSyncing, syncError } = useSync()
+const { generateMetadata } = useAI()
 const { contextMenu, handleContextMenu, closeContextMenu } = useContextMenu()
 const {
   openBookmarkLink: originalOpenBookmarkLink,
@@ -61,100 +65,18 @@ const {
   setExpendHeight
 } = useUTools()
 
-const {
-  loadShareData,
-  isLoadingShare,
-  copyShareLink,
-  buildShareUrl,
-  validateAndCleanGroupShares,
-  getShareData,
-  validateShareStatus,
-  checkForUpdate
-} = useShare()
+// 防抖定时器引用
+let syncTimeout: NodeJS.Timeout | null = null
 
 // Shared State
 const selectedIndex = ref(-1)
-const showSharePanel = ref(false)
-const showNameConflict = ref(false)
-const showShareCanceledDialog = ref(false)
-const showConvertLocalDialog = ref(false)
-const showRemoveImportedDialog = ref(false)
-const shareCanceledInfo = ref<{ 
-  type: 'group' | 'subGroup'
-  groupId: string
-  subGroupId?: string
-  name: string 
-} | null>(null)
 
-const checkCurrentShareStatus = async (groupId: string, subGroupId?: string) => {
-  const group = store.groups.find(g => g.id === groupId)
-  if (!group) return false
-
-  // 1. 如果指定了子分组，只检查该子分组
-  if (subGroupId) {
-    const sub = group.children.find(c => c.id === subGroupId)
-    if (sub?.sourceShareId) {
-      const status = await validateShareStatus(sub.sourceShareId)
-      if (status === "canceled" || status === "not_found") {
-        shareCanceledInfo.value = {
-          type: 'subGroup',
-          groupId: group.id,
-          subGroupId: sub.id,
-          name: sub.name
-        }
-        showShareCanceledDialog.value = true
-        return true
-      }
-    }
-    return false
-  }
-
-  // 2. 检查分组本身的分享状态
-  if (group.sourceShareId) {
-    const status = await validateShareStatus(group.sourceShareId)
-    if (status === "canceled" || status === "not_found") {
-      shareCanceledInfo.value = {
-        type: 'group',
-        groupId: group.id,
-        name: group.name
-      }
-      showShareCanceledDialog.value = true
-      return true
-    }
-  }
-
-  // 3. 检查当前活跃的子分组状态
-  if (store.activeSubGroupId) {
-     const sub = group.children.find(c => c.id === store.activeSubGroupId)
-     if (sub?.sourceShareId) {
-        const status = await validateShareStatus(sub.sourceShareId)
-        if (status === "canceled" || status === "not_found") {
-          shareCanceledInfo.value = {
-            type: 'subGroup',
-            groupId: group.id,
-            subGroupId: sub.id,
-            name: sub.name
-          }
-          showShareCanceledDialog.value = true
-          return true
-        }
-     }
-  }
-
-  return false
-}
 
 const handleSelectGroup = async (groupId: string) => {
   store.selectGroup(groupId)
   tab.value = "bookmarks"
 }
 
-const nameConflictInfo = ref<{
-  targetGroup: { id: string; name: string }
-  sourceGroup: { id: string; name: string }
-  shareId: string
-  data: any
-} | null>(null)
 
 // Window Height Watcher
 watch(() => settingsStore.windowHeight, (h) => {
@@ -264,27 +186,13 @@ const isTrashActive = computed(() => store.activeGroupId === TRASH_GROUP_ID)
 const currentSubGroup = computed(() => 
   activeSubGroups.value.find(s => s.id === store.activeSubGroupId)
 )
-const hasShareableBookmarks = computed(() => {
-  const sub = currentSubGroup.value
-  if (!sub?.bookmarkIds || sub.bookmarkIds.length === 0) return false
-  return sub.bookmarkIds.some(id => {
-    const bookmark = store.bookmarks.find(b => b.id === id)
-    return bookmark && !bookmark.isDeleted
-  })
-})
 
 // 更新页面标题
 const updatePageTitle = () => {
   const baseTitle = '鹅的书签'
   const parts: string[] = []
-  
-  // 检查是否在分享页面
-  const pathMatch = window.location.pathname.match(/^\/s\/([a-zA-Z0-9_-]+)$/)
-  const shareId = pathMatch?.[1] || new URLSearchParams(window.location.search).get('shareId')
-  
-  if (shareId) {
-    parts.push('分享')
-  } else if (tab.value === 'settings') {
+
+  if (tab.value === 'settings') {
     parts.push('设置')
   } else if (isTrashActive.value) {
     parts.push('回收站')
@@ -298,7 +206,7 @@ const updatePageTitle = () => {
       parts.push(activeGroup.value.name)
     }
   }
-  
+
   // 如果有部分，则组合标题；否则使用基础标题
   document.title = parts.length > 0 ? `${parts.join(' - ')} - ${baseTitle}` : baseTitle
 }
@@ -317,20 +225,6 @@ watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
   updatePageTitle()
 })
 
-// 使用防抖避免切换分组/子分组时重复请求 check 接口
-const debouncedShareCheck = useDebounceFn(async (groupId: string, subId?: string) => {
-  // validateAndCleanGroupShares 内部会调用 validateShareStatus 并使用缓存
-  // 所以只需要调用一次即可
-  await validateAndCleanGroupShares(groupId)
-  // 验证后检查当前子分组的状态（利用缓存，不会重复请求）
-  checkCurrentShareStatus(groupId, subId)
-}, 300)
-
-watch([() => store.activeGroupId, () => store.activeSubGroupId], ([groupId, subId]) => {
-  if (groupId && groupId !== TRASH_GROUP_ID) {
-    debouncedShareCheck(groupId, subId || undefined)
-  }
-})
 
 // 书签点击逻辑：左键打开，右键复制
 const handleBookmarkClick = (bookmark: Bookmark) => {
@@ -411,69 +305,9 @@ const handleContextMenuAction = (action: string) => {
     case 'remove':
       handleRemove(bookmark)
       break
-    case 'restore':
-      store.restoreBookmark(bookmark.id)
-      showToast({ title: '已还原', variant: 'success', duration: 1500 })
-      break
   }
 }
 
-// Share Handlers
-const handleOpenShareUrl = (shareId: string) => {
-  openUrl(buildShareUrl(shareId))
-}
-
-const handleCopyShareLink = async (shareId: string) => {
-  await copyShareLink(shareId)
-}
-
-// 接收者分组管理
-
-const handleCheckImportedUpdate = async () => {
-  const sub = currentSubGroup.value
-  if (!sub?.sourceShareId) return
-  
-  showToast({ title: '正在检查更新...', variant: 'info', duration: 1500 })
-  try {
-    const hasUpdate = await checkForUpdate(sub.sourceShareId, sub.lastSyncedAt || 0)
-    if (hasUpdate) {
-      // 自动更新
-      const result = await getShareData(sub.sourceShareId)
-      if (result?.data) {
-        const shareData = result.data.data
-        if (shareData.subGroups?.length) {
-          const groups = shareData.group 
-            ? [{ id: shareData.group.id, name: shareData.group.name, children: shareData.subGroups }]
-            : [{ id: 'shared', name: '分享内容', children: shareData.subGroups }]
-          const dataToUpdate = { groups, bookmarks: shareData.bookmarks || [] } as any
-          const updateResult = store.updateSubGroupFromShare(store.activeGroupId, sub.id, sub.sourceShareId, dataToUpdate)
-          if (updateResult && typeof updateResult === 'object') {
-            const logs: string[] = []
-            if (updateResult.added > 0) logs.push(`新增 ${updateResult.added} 项`)
-            if (updateResult.removed > 0) logs.push(`移除 ${updateResult.removed} 项`)
-            showToast({ title: '已更新', description: logs.join('，') || '同步完成', variant: 'success' })
-          }
-        }
-      }
-    } else {
-      showToast({ title: '已是最新版本', variant: 'success', duration: 1500 })
-    }
-  } catch (e) {
-    showToast({ title: '检查更新失败', variant: 'error' })
-  }
-}
-
-const handleConvertToLocal = () => {
-  store.detachSubGroupFromShare(store.activeGroupId, store.activeSubGroupId)
-  showConvertLocalDialog.value = false
-  showToast({ title: '已转为本地分组', description: '此分组不再与分享源关联', variant: 'success' })
-}
-
-const handleRemoveImportedSubGroup = () => {
-  store.deleteSubGroup(store.activeGroupId, store.activeSubGroupId)
-  showRemoveImportedDialog.value = false
-  showToast({ title: '已移除分组', variant: 'success' })
-}
 
 // 引导导入书签
 const handleOnboardingImport = async (file: File) => {
@@ -607,49 +441,91 @@ const handleOnboardingImport = async (file: File) => {
 }
 
 
-const handleNameConflictAction = async (action: 'merge' | 'new') => {
-  if (!nameConflictInfo.value) return
-
-  const { targetGroup, shareId, data } = nameConflictInfo.value
-
-  if (action === 'merge') {
-    await store.importToExistingGroup(data, targetGroup.id, shareId)
-    showToast({ title: '合并成功', variant: 'success' })
-  } else {
-    const existingGroup = store.findGroupByName(nameConflictInfo.value.sourceGroup.name)
-    let suffix = 1
-    let finalName = nameConflictInfo.value.sourceGroup.name
-    while (store.groups.some(g => g.name === finalName && g.id !== TRASH_GROUP_ID)) {
-      finalName = `${nameConflictInfo.value.sourceGroup.name} (${suffix++})`
-    }
-
-    const newData = { ...data, groups: [{ ...data.groups[0], name: finalName }] }
-    const result = store.importFromShare(newData, shareId, finalName)
-    if (result) showToast({ title: '导入成功', variant: 'success' })
-  }
-
-  // 异步触发图标获取
-  store.refreshMissingIcons()
-  nameConflictInfo.value = null
-  clearShareIdFromUrl()
-}
-
-const clearShareIdFromUrl = () => {
-  const url = new URL(window.location.href)
-  if (url.searchParams.has('shareId') || /^\/s\/[a-zA-Z0-9_-]+$/.test(url.pathname)) {
-    try {
-      url.searchParams.delete('shareId')
-      url.pathname = url.pathname.replace(/^\/s\/[a-zA-Z0-9_-]+$/, '/')
-      history.replaceState({}, '', url.pathname + url.search)
-      updatePageTitle()
-    } catch (e) {
-      console.warn('[App] URL 清理失败', e)
-    }
-  }
-}
 
 const activeTemplateBookmark = ref<Bookmark | null>(null)
 const templateQuery = ref('')
+const showQuickSaveDialog = ref(false)
+
+// 验证 URL 是否有效（用于快速保存）
+const isValidUrl = (text: string): boolean => {
+  if (!text || text.trim().length === 0) return false
+  try {
+    // 确保有协议前缀
+    let urlStr = text.trim()
+    if (!urlStr.match(/^https?:\/\//i)) {
+      urlStr = `https://${urlStr}`
+    }
+    const url = new URL(urlStr)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+// 处理快速保存（超级面板 / 当前浏览器 / 弹窗）
+const handleQuickSave = async (from: string, payload: any) => {
+  let urlToSave = ''
+
+  // 1. 从 payload 获取 URL
+  if (typeof payload === 'string') {
+    urlToSave = payload
+  } else if (payload && typeof payload === 'object' && 'text' in payload) {
+    urlToSave = String(payload.text)
+  }
+
+  // 2. 如果 payload 没有 URL，尝试从浏览器获取
+  if (!urlToSave) {
+    try {
+      const utoolsApi = window.utools as any
+      if (typeof utoolsApi?.readCurrentBrowserUrl === 'function') {
+        urlToSave = await utoolsApi.readCurrentBrowserUrl()
+      }
+    } catch (e) {
+      console.warn('[quick_save] 获取浏览器 URL 失败:', e)
+    }
+  }
+
+  urlToSave = urlToSave.trim()
+
+  // 验证是否是有效 URL
+  if (urlToSave && isValidUrl(urlToSave)) {
+    // 通过 proxy API 获取页面元信息
+    const meta = await fetchPageMeta(urlToSave)
+    let pageTitle = meta.title || ''
+    let pageDesc = meta.description || ''
+
+    // 如果仍然没有标题，使用域名作为fallback
+    if (!pageTitle) {
+      try {
+        const url = new URL(urlToSave)
+        pageTitle = url.hostname.replace(/^www\./, '')
+      } catch {
+        pageTitle = '未命名书签'
+      }
+    }
+
+    // 快速保存到"快速收集"分组（含去重逻辑）
+    const bookmark = store.quickSaveBookmark(urlToSave, pageTitle, pageDesc)
+    const isNew = bookmark.title === urlToSave
+
+    showToast({
+      title: isNew ? '已保存' : '已添加到快速收集',
+      description: bookmark.title,
+      variant: 'success'
+    })
+
+    // 退出插件
+    window.utools?.outPlugin()
+    return
+  } else {
+    console.warn('[quick_save] 无效 URL:', { payload, urlToSave, from })
+    showToast({ title: '未检测到有效链接', variant: 'warning' })
+    return
+  }
+}
+
+// 快速保存书签（弹窗入口）
+const quickSaveBookmark = async (url: string) => handleQuickSave('dialog', url)
 
 // Template Mode - Execute Search
 const executeTemplateSearch = () => {
@@ -690,7 +566,6 @@ const enterTemplateMode = (bookmark: Bookmark) => {
   
   // Clean UI
   searchViewOpen.value = false
-  showSharePanel.value = false
   showAdd.value = false
   showDeleteConfirm.value = false
   
@@ -737,37 +612,7 @@ onMounted(async () => {
   // 初始化标题
   updatePageTitle()
 
-  let shareId: string | null = null
-  
-  const pathMatch = window.location.pathname.match(/^\/s\/([a-zA-Z0-9_-]+)$/)
-  if (pathMatch) shareId = pathMatch[1]
-  
-  if (!shareId) {
-    shareId = new URLSearchParams(window.location.search).get('shareId')
-  }
-  
-  if (shareId) {
-    const result = await loadShareData(shareId)
-    if ('conflict' in result && result.conflict && result.isNameConflict) {
-      nameConflictInfo.value = {
-        targetGroup: result.targetGroup!,
-        sourceGroup: result.sourceGroup!,
-        shareId: result.shareId,
-        data: result.data
-      }
-      showNameConflict.value = true
-    } else if ('success' in result && result.success) {
-      clearShareIdFromUrl()
-    }
-    updatePageTitle()
-  } else {
-    store.migrateFromLegacy()
-  }
-
-  // 进入应用时检查当前活跃分组的分享状态
-  if (store.activeGroupId) {
-    checkCurrentShareStatus(store.activeGroupId)
-  }
+  store.migrateFromLegacy()
 
   statsStore.recordUse('open')
   
@@ -814,22 +659,6 @@ onMounted(async () => {
       } catch {}
     }) as any)
 
-    // 验证 URL 是否有效（用于超级面板保存链接）
-    const isValidUrl = (text: string): boolean => {
-      if (!text || text.trim().length === 0) return false
-      try {
-        // 确保有协议前缀
-        let urlStr = text.trim()
-        if (!urlStr.match(/^https?:\/\//i)) {
-          urlStr = `https://${urlStr}`
-        }
-        const url = new URL(urlStr)
-        return url.protocol === 'http:' || url.protocol === 'https:'
-      } catch {
-        return false
-      }
-    }
-
     window.utools?.onPluginEnter?.((params) => {
       const code = params?.code
       const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
@@ -867,6 +696,19 @@ onMounted(async () => {
           showToast({ title: '未检测到有效链接', variant: 'warning' })
           return
         }
+      }
+
+      // 处理快速保存（超级面板 / 当前浏览器）
+      if (code === 'quick_save') {
+        const from = (params as any)?.from || 'main'
+        const payload = params?.payload
+        handleQuickSave(from, payload)
+      }
+
+      // 处理快速保存弹窗
+      if (code === 'quick_save_dialog') {
+        onMainViewSwitch()
+        showQuickSaveDialog.value = true
       }
 
       if (!isTemplateFeature) {
@@ -922,6 +764,15 @@ watch(() => store.bookmarks, () => {
   if (isSyncPaused.value) return // 暂停时跳过同步
   syncFeatures(store.bookmarks)
 }, { deep: true })
+
+// 组件卸载时清理定时器
+onUnmounted(() => {
+  if (syncTimeout) {
+    clearTimeout(syncTimeout)
+    syncTimeout = null
+  }
+})
+
 // Highlight State
 const highlightedBookmarkId = ref<string | null>(null)
 
@@ -1036,10 +887,9 @@ const handleLocate = async (bookmark: Bookmark) => {
         :set-grid-ref="setBookmarkGridRef"
         :show-command-hints="showCmdHints"
         :hint-key-by-id="hintKeyById"
-        :readonly="!!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
         :highlighted-id="highlightedBookmarkId"
-        @remove="(b) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && handleRemove(b)"
-        @edit="(b, el) => !(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId) && openEdit(b, el)"
+        @remove="handleRemove"
+        @edit="openEdit"
         @open="openBookmarkLink"
         @contextmenu="handleContextMenuWrapper"
         @reorder="handleReorder"
@@ -1048,8 +898,8 @@ const handleLocate = async (bookmark: Bookmark) => {
         @locate="handleLocate"
       >
         <template #header>
-          <OnboardingBanner 
-            v-if="!isTrashActive && !(activeGroup?.sourceShareId)"
+          <OnboardingBanner
+            v-if="!isTrashActive"
             @import="handleOnboardingImport"
           />
         </template>
@@ -1060,19 +910,6 @@ const handleLocate = async (bookmark: Bookmark) => {
       </section>
     </main>
     
-    <!-- Share Float Button -->
-    <ShareFloatButton
-      v-if="settingsStore.enableShare"
-      :show="tab === 'bookmarks' && activeSubGroups.length > 0 && !isTrashActive && hasShareableBookmarks"
-      :current-sub-group="currentSubGroup"
-      @open-share-url="handleOpenShareUrl"
-      @copy-share-link="handleCopyShareLink"
-      @manage-share="showSharePanel = true"
-      @delete-sub-group="store.deleteSubGroup(store.activeGroupId, store.activeSubGroupId)"
-      @check-update="handleCheckImportedUpdate"
-      @convert-to-local="showConvertLocalDialog = true"
-      @remove-imported-sub-group="showRemoveImportedDialog = true"
-    />
 
     <!-- Bookmark Context Menu -->
     <ContextMenu
@@ -1080,10 +917,15 @@ const handleLocate = async (bookmark: Bookmark) => {
       :x="contextMenu.x"
       :y="contextMenu.y"
       :is-trash="isTrashActive"
-      :readonly="!!(activeGroup?.sourceShareId || activeSubGroups.find(s => s.id === store.activeSubGroupId)?.sourceShareId)"
       :is-u-tools="isUTools"
       @close="closeContextMenu"
       @action="handleContextMenuAction"
+    />
+
+    <!-- Quick Save Dialog -->
+    <QuickSaveDialog
+      v-model:open="showQuickSaveDialog"
+      @save="quickSaveBookmark"
     />
 
     <!-- Bookmark Form Dialog -->
@@ -1099,104 +941,11 @@ const handleLocate = async (bookmark: Bookmark) => {
       @confirm="confirmDelete"
     />
 
-    <!-- Share Manage Panel -->
-    <ShareManagePanel
-      v-model:open="showSharePanel"
-      :group-id="store.activeGroupId"
-      :sub-group-id="store.activeSubGroupId"
-      @shared="() => {}"
-      @update-from-share="(id: string, data: any) => store.updateFromShare(id, data)"
-      @share-canceled="(info) => {
-        shareCanceledInfo = info;
-        showShareCanceledDialog = true;
-      }"
-    />
 
-    <!-- Name Conflict Dialog -->
-    <NameConflictDialog
-      v-model:open="showNameConflict"
-      :target-group-name="nameConflictInfo?.targetGroup.name || ''"
-      :source-group-name="nameConflictInfo?.sourceGroup.name || ''"
-      @action="handleNameConflictAction"
-    />
   </div>
   
-  <div v-if="isLoadingShare" class="fixed inset-0 z-[99999] bg-background flex flex-col items-center justify-center gap-4">
-    <Loader2 class="w-10 h-10 animate-spin text-primary" />
-    <p class="text-muted-foreground font-medium">正在加载分享数据...</p>
-  </div>
   
-    <!-- Share Canceled Dialog -->
-    <Dialog v-model:open="showShareCanceledDialog">
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>分享已失效</DialogTitle>
-          <DialogDescription>
-            分享者已经移除该分享... 你是否需要保留该本组到本地...
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="destructive" @click="() => {
-            if (shareCanceledInfo) {
-              if (shareCanceledInfo.type === 'group') {
-                store.removeGroup(shareCanceledInfo.groupId)
-              } else if (shareCanceledInfo.type === 'subGroup' && shareCanceledInfo.subGroupId) {
-                store.deleteSubGroup(shareCanceledInfo.groupId, shareCanceledInfo.subGroupId)
-              }
-              showShareCanceledDialog = false
-              shareCanceledInfo = null
-            }
-          }">
-            不需要
-          </Button>
-          <Button variant="default" @click="() => {
-            if (shareCanceledInfo) {
-              if (shareCanceledInfo.type === 'group') {
-                store.detachGroupFromShare(shareCanceledInfo.groupId)
-              } else if (shareCanceledInfo.type === 'subGroup' && shareCanceledInfo.subGroupId) {
-                store.detachSubGroupFromShare(shareCanceledInfo.groupId, shareCanceledInfo.subGroupId)
-              }
-              showShareCanceledDialog = false
-              shareCanceledInfo = null
-            }
-          }">
-            保留为本地分组
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
 
-    <!-- Convert to Local Dialog -->
-    <Dialog v-model:open="showConvertLocalDialog">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>转为本地分组</DialogTitle>
-          <DialogDescription>
-            转为本地后，此分组将不再与分享源关联，也不会收到后续更新。
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" @click="showConvertLocalDialog = false">取消</Button>
-          <Button @click="handleConvertToLocal">确认转换</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    <!-- Remove Imported SubGroup Dialog -->
-    <Dialog v-model:open="showRemoveImportedDialog">
-      <DialogContent class="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>移除导入分组</DialogTitle>
-          <DialogDescription>
-            移除后，此分组及其书签将被删除。如果这是最后一个子分组，主分组也会被删除。
-          </DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" @click="showRemoveImportedDialog = false">取消</Button>
-          <Button variant="destructive" @click="handleRemoveImportedSubGroup">确认移除</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
 
     <ResultToast
       :open="toastState.visible"

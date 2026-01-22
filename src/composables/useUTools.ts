@@ -1,4 +1,3 @@
-
 import type { Bookmark } from '@/types/bookmark'
 
 const FEATURE_PREFIX = 'bm_tpl:'
@@ -6,74 +5,6 @@ const FEATURE_PREFIX = 'bm_tpl:'
 type OverCmd = { type: 'over'; label: string; minLength?: number; icon?: string }
 type FeatureCmd = string | OverCmd
 type UToolsFeature = { code: string; explain: string; cmds: FeatureCmd[]; icon?: string }
-
-type NativeImage = { isEmpty(): boolean; toPNG(): Buffer }
-type ElectronModule = { nativeImage?: { createFromBuffer(buffer: Buffer): NativeImage } }
-
-const getNodeRequire = () => (window as unknown as { require?: NodeRequire }).require
-
-const toPngBuffer = (buffer: Buffer): Buffer | null => {
-  try {
-    const req = getNodeRequire()
-    const electron = req?.('electron') as unknown as ElectronModule | undefined
-    const nativeImage = electron?.nativeImage
-    if (!nativeImage) return null
-    const image = nativeImage.createFromBuffer(buffer)
-    if (image.isEmpty()) return null
-    return image.toPNG()
-  } catch {
-    return null
-  }
-}
-
-const getFileExt = (pathOrUrl: string) => {
-  const lower = pathOrUrl.toLowerCase()
-  if (lower.endsWith('.png')) return '.png'
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return '.jpg'
-  if (lower.endsWith('.ico')) return '.ico'
-  if (lower.endsWith('.svg')) return '.svg'
-  return ''
-}
-
-const getMimeFromPath = (pathOrUrl: string) => {
-  const lower = pathOrUrl.toLowerCase()
-  if (lower.endsWith('.png')) return 'image/png'
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg'
-  if (lower.endsWith('.ico')) return 'image/x-icon'
-  if (lower.endsWith('.svg')) return 'image/svg+xml'
-  return 'image/png'
-}
-
-const bufferToDataUrl = (buffer: Buffer, mime: string) => {
-  return `data:${mime};base64,${buffer.toString('base64')}`
-}
-
-const toDataUrlFromRemote = async (url: string): Promise<string | null> => {
-  try {
-    const response = await fetch(url)
-    if (!response.ok) return null
-    const arrayBuffer = await response.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-    const contentType = response.headers.get('content-type')
-    const mime = contentType && contentType.includes('/') ? contentType : getMimeFromPath(url)
-    return bufferToDataUrl(buffer, mime)
-  } catch {
-    return null
-  }
-}
-
-const toDataUrlFromFile = async (filePath: string): Promise<string | null> => {
-  try {
-    const req = getNodeRequire()
-    const fs = req?.('fs')
-    if (!fs) return null
-    const buf: Buffer = fs.readFileSync(filePath)
-    const mime = getMimeFromPath(filePath)
-    return bufferToDataUrl(buf, mime)
-  } catch {
-    return null
-  }
-}
 
 const toDataUrlFromText = (text: string): string | null => {
   try {
@@ -102,8 +33,10 @@ const toDataUrlFromText = (text: string): string | null => {
   }
 }
 
-export function useUTools() {
+// 全局缓存已处理的书签ID，避免重复处理
+const processedBookmarks = new Set<string>()
 
+export function useUTools() {
   const getTemplateLabel = (url: string) => {
     const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
     return label || '搜索内容'
@@ -120,14 +53,11 @@ export function useUTools() {
     const ut = window.utools
     if (!ut?.setFeature || !ut?.getFeatures || !ut?.removeFeature) return
 
-    // 1. 先清理所有旧的 bm_tpl: 特性
-    const existingCodes = ut.getFeatures()
-      .map(f => f.code)
-      .filter(c => typeof c === 'string' && c.startsWith(FEATURE_PREFIX))
-    
-    existingCodes.forEach(code => ut.removeFeature!(code))
+    // 1. 获取现有特性
+    const existingFeatures = ut.getFeatures()
+      .filter(f => typeof f.code === 'string' && f.code.startsWith(FEATURE_PREFIX))
 
-    // 2. 筛选并去重
+    // 2. 筛选并去重当前需要的书签
     const desired = bookmarks.filter(b => isTemplateBookmark(b) || isUniversalBookmark(b))
     const seenCmd = new Set<string>()
     const unique = desired.filter(b => {
@@ -137,67 +67,53 @@ export function useUTools() {
       return true
     })
 
-    // 3. 串行注册所有特性
-    for (const b of unique) {
+    // 3. 计算需要删除的特性（存在但不再需要的）
+    const currentCodes = new Set(unique.map(b => `${FEATURE_PREFIX}${b.id}`))
+    const toRemove = existingFeatures.filter(f => !currentCodes.has(f.code))
+
+    // 4. 删除不再需要的特性，并清理对应的缓存
+    toRemove.forEach(f => {
+      ut.removeFeature!(f.code)
+      const bookmarkId = f.code.slice(FEATURE_PREFIX.length)
+      processedBookmarks.delete(bookmarkId)
+    })
+
+    // 5. 只处理新增的书签，避免重复处理
+    const toProcess = unique.filter(b => !processedBookmarks.has(b.id))
+
+    // 6. 串行注册新增的特性
+    for (const b of toProcess) {
       const cmd = b.title.trim()
       const code = `${FEATURE_PREFIX}${b.id}`
       const label = getTemplateLabel(b.url)
       const explain = `搜索：${b.title}${label ? `（${label}）` : ''}`
-      
+
       const cmds: FeatureCmd[] = []
       let overCmd: OverCmd | null = null
-      
+
       if (b.allowUniversal === true) {
         overCmd = { type: 'over', label: cmd, minLength: 1 }
         cmds.push(overCmd)
       } else {
         cmds.push(cmd)
       }
-      
-      const feature: UToolsFeature = { 
-        code, 
-        explain, 
-        cmds 
+
+      const feature: UToolsFeature = {
+        code,
+        explain,
+        cmds
       }
-      
-      // 优先使用书签设置的图标，否则 fallback 到文字图标
-      let iconDataUrl: string | null = null
-      
-      try {
-        if (b.icon?.type === 'remote') {
-          // 优先使用缓存的 base64，若无则从 URL 获取
-          if (b.icon.cache) {
-            iconDataUrl = b.icon.cache
-          } else if (b.icon.src) {
-            iconDataUrl = await toDataUrlFromRemote(b.icon.src)
-          }
-        } else if (b.icon?.type === 'custom' && b.icon.data) {
-          // 用户自定义图标，直接使用 data
-          iconDataUrl = b.icon.data
-        } else if (b.icon?.type === 'file' && b.icon.path) {
-          iconDataUrl = await toDataUrlFromFile(b.icon.path)
-        } else if (b.icon?.type === 'text') {
-          iconDataUrl = toDataUrlFromText(b.icon.value || b.title || b.url)
-        }
-      } catch (e) {
-        console.warn('[useUTools] 获取图标失败:', b.title, e)
-      }
-      
-      // fallback: 没有图标时生成文字图标
-      if (!iconDataUrl) {
-        iconDataUrl = toDataUrlFromText(b.title || b.url)
-        if (import.meta.env.DEV) {
-          console.log('[useUTools] 使用文字图标 fallback:', b.title)
-        }
-      }
+
+      // 统一使用文字图标
+      const iconDataUrl = toDataUrlFromText(b.title || b.url)
 
       if (iconDataUrl) {
         feature.icon = iconDataUrl
         if (overCmd) overCmd.icon = iconDataUrl
-      } else {
-        console.warn('[useUTools] 未能生成任何图标:', b.title)
+        // 标记为已处理
+        processedBookmarks.add(b.id)
       }
-      
+
       ut.setFeature(feature)
     }
   }

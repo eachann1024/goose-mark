@@ -32,8 +32,6 @@ export interface SubGroup {
   id: string
   name: string
   bookmarkIds: string[]
-  shareId?: string        // 作为分享者：分享 ID
-  sourceShareId?: string  // 作为接收者：来源分享 ID
   lastSyncedAt?: number   // 最后同步时间
   
   // 元数据字段
@@ -47,8 +45,6 @@ export interface Group {
   id: string
   name: string
   children: SubGroup[]
-  shareId?: string        // 作为分享者：分享 ID
-  sourceShareId?: string  // 作为接收者：来源分享 ID
   lastSyncedAt?: number   // 最后同步时间
   
   // 元数据字段

@@ -92,13 +92,14 @@ const applyColor = (c: string | undefined) => {
   } else {
     textColor.value = c
   }
-  emitChange() // 颜色改变不需要确认，实时生效预览
+  // 颜色改变实时生效预览，但不发送到父组件
 }
 
 const selectColor = (c: string) => applyColor(c)
 const clearColor = () => applyColor(undefined)
 
-const emitChange = () => {
+// 只有确认时才发送最终结果
+const emitFinalChange = () => {
   if (activeTab.value === 'text') {
     emit('update:modelValue', {
       type: 'text',
@@ -120,6 +121,11 @@ const emitChange = () => {
   } else {
     emit('update:modelValue', null)
   }
+}
+
+// 实时预览更新（不发送到父组件）
+const updatePreview = () => {
+  // 这个函数现在只用于更新本地预览，不发送事件
 }
 
 // 粘贴处理
@@ -210,7 +216,7 @@ const handleCropConfirm = async (event?: Event) => {
   showCropper.value = false
 
   await nextTick()
-  emitChange()
+  emitFinalChange()
 }
 
 // 编辑现有图片
@@ -226,8 +232,8 @@ watch(activeTab, (newTab) => {
   } else {
     localColor.value = imageColor.value
   }
-  emitChange()
-}, { immediate: true })
+  // 不再立即发送图标更新，只更新预览
+}, { immediate: false })
 
 watch(
   () => props.modelValue,
@@ -346,12 +352,11 @@ watch(
            <!-- Text Input -->
            <div v-if="activeTab === 'text'" class="flex flex-col gap-2">
               <label class="text-xs text-muted-foreground">文字内容</label>
-              <Input 
-                v-model="customText" 
+              <Input
+                v-model="customText"
                 placeholder="输入 1-4 个字符"
                 maxlength="4"
                 class="bg-muted/50"
-                @input="emitChange"
               />
            </div>
 
@@ -392,7 +397,7 @@ watch(
      <!-- Footer -->
      <div class="flex justify-end gap-2 mt-2 pt-4 border-t border-border">
          <Button variant="ghost" size="sm" @click="$emit('close')">取消</Button>
-         <Button size="sm" @click="emitChange(); $emit('confirm')">确定</Button>
+         <Button size="sm" @click="emitFinalChange(); $emit('confirm')">确定</Button>
      </div>
      
      <!-- Hidden Inputs -->
