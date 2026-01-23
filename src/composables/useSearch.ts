@@ -28,6 +28,7 @@ export function useSearch(
   const localSearchInputRef = ref<HTMLInputElement | { $el?: HTMLElement } | null>(null)
   const searchViewOpen = ref(false)
   let searchAutoExitTimer: ReturnType<typeof setTimeout> | null = null
+  const searchLastActiveAt = ref(0)
 
   const searchValue = computed({
     get: () => store.search,
@@ -67,10 +68,13 @@ export function useSearch(
     }
   }
 
+  const markSearchActive = () => {
+    searchLastActiveAt.value = Date.now()
+  }
+
   const closeSearchView = () => {
     searchViewOpen.value = false
     clearSearchAutoExit()
-    store.setSearch('')
     store.setSearch('')
     if (canUseSubInput()) {
       window.utools?.setSubInputValue?.('')
@@ -83,6 +87,7 @@ export function useSearch(
     if (!searchViewOpen.value) return
     const seconds = settingsStore.searchAutoExitSeconds
     if (!seconds || seconds <= 0) return
+    markSearchActive()
     searchAutoExitTimer = setTimeout(() => {
       closeSearchView()
     }, seconds * 1000)
@@ -129,6 +134,7 @@ export function useSearch(
     const { initialQuery, selectText = false } = options
     tab.value = 'bookmarks'
     searchViewOpen.value = true
+    markSearchActive()
     
     selectedIndex.value = -1
     if (typeof initialQuery === 'string') {
@@ -179,10 +185,27 @@ export function useSearch(
     store.setSearch(text)
   }
 
+  const syncSearchAutoExitOnReturn = () => {
+    if (!searchViewOpen.value) return
+    const seconds = settingsStore.searchAutoExitSeconds
+    if (!seconds || seconds <= 0) return
+    const last = searchLastActiveAt.value || Date.now()
+    const elapsed = Date.now() - last
+    if (elapsed >= seconds * 1000) {
+      closeSearchView()
+      return
+    }
+    clearSearchAutoExit()
+    searchAutoExitTimer = setTimeout(() => {
+      closeSearchView()
+    }, seconds * 1000 - elapsed)
+  }
+
   // Watchers
   watch(() => store.search, (val) => {
     if (searchViewOpen.value) {
       selectedIndex.value = -1
+      markSearchActive()
     } else {
       const list = activeBookmarks.value
       selectedIndex.value = list.length > 0 ? 0 : -1
@@ -234,6 +257,7 @@ export function useSearch(
     focusUToolsInput,
     handleSubInput,
     scheduleSearchAutoExit,
-    clearSearchAutoExit
+    clearSearchAutoExit,
+    syncSearchAutoExitOnReturn
   }
 }

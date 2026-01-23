@@ -20,6 +20,9 @@ export interface Bookmark {
   locations?: BookmarkLocation[]  // 支持多分组，可选以保持向后兼容
   prevLocations?: BookmarkLocation[] // 移入回收站前的原始位置，用于还原
   allowUniversal?: boolean // 是否注册为 uTools 全局搜索（主输入框任意内容匹配）
+  iconMatchedAt?: number
+  iconMatchFailedAt?: number
+  iconMatchFailedReason?: string
   
   // 元数据字段，用于增量同步与离线冲突解决
   createdAt: number

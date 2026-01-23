@@ -1,9 +1,7 @@
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "../../tailwind.config.js";
+@import "tailwindcss";
 
-@layer base {
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -150,7 +148,6 @@
     --input: 12 12% 32%;
     --ring: 28 66% 96%;
   }
-}
 
 /* Support system preference via media query if no class is present? 
    Tailwind 'class' mode disables media query support unless we handle it manually or simple @media (prefers-color-scheme: dark) { :root { ... } } 
@@ -159,89 +156,78 @@
    For now, let's add a script in index.html or App.vue to sync.
 */
 
-@layer base {
-  html, body, #app {
-    height: 100%;
-  }
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground transition-colors duration-150;
-    font-family: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    overflow: hidden;
-  }
-  /* 允许所有元素选中，特定 UI 组件除外 */
-  * {
-    -webkit-user-select: auto;
-    user-select: auto;
-  }
-  
-  /* 禁用 UI 元素的选中，提升原生感 */
-  button, 
-  [role="button"],
-  [role="tab"],
-  .no-select,
-  .bookmark-card-wrapper,
-  header {
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  
-  /* 确保输入框始终可选中 */
-  input, 
-  textarea, 
-  [contenteditable="true"], 
-  [contenteditable=""] {
-    -webkit-user-select: text !important;
-    user-select: text !important;
-  }
-  
-  /* 全局文字选中样式 */
-  ::selection {
-    background: hsl(var(--primary) / 0.2);
-  }
-  
-  /* 全局 placeholder 样式 - 确保优先级高于 color: inherit */
-  input::placeholder,
-  textarea::placeholder {
-    color: hsl(var(--muted-foreground) / 0.6) !important;
-    opacity: 1 !important; /* Firefox 默认会降低 placeholder 透明度 */
-  }
-
-  /* Prevent dragging of images and links */
-  img, a, [role="img"] {
-    -webkit-user-drag: none;
-    user-drag: none;
-  }
-  
-  /* 全局隐藏滚动条 */
-  * {
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
-  }
-  *::-webkit-scrollbar {
-    display: none; /* Chrome/Safari/Opera */
-  }
-  
-  /* 隐藏数字输入框步进器 */
-  input[type="number"]::-webkit-inner-spin-button,
-  input[type="number"]::-webkit-outer-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-  input[type="number"] {
-    -moz-appearance: textfield; /* Firefox */
-  }
+html, body, #app {
+  height: 100%;
+}
+* {
+  border-color: hsl(var(--border));
+}
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  transition: color 150ms, background-color 150ms;
+  font-family: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden;
+}
+/* 允许所有元素选中，特定 UI 组件除外 */
+* {
+  -webkit-user-select: auto;
+  user-select: auto;
 }
 
+/* 禁用 UI 元素的选中，提升原生感 */
+button, 
+[role="button"],
+[role="tab"],
+.no-select,
+.bookmark-card-wrapper,
+header {
+  -webkit-user-select: none;
+  user-select: none;
+}
 
+/* 确保输入框始终可选中 */
+input, 
+textarea, 
+[contenteditable="true"], 
+[contenteditable=""] {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
 
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
+/* 全局文字选中样式 */
+::selection {
+  background: hsl(var(--primary) / 0.2);
+}
+
+/* 全局 placeholder 样式 - 确保优先级高于 color: inherit */
+input::placeholder,
+textarea::placeholder {
+  color: hsl(var(--muted-foreground) / 0.6) !important;
+  opacity: 1 !important; /* Firefox 默认会降低 placeholder 透明度 */
+}
+
+/* Prevent dragging of images and links */
+img, a, [role="img"] {
+  -webkit-user-drag: none;
+  user-drag: none;
+}
+
+/* 全局隐藏滚动条 */
+* {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+*::-webkit-scrollbar {
+  display: none; /* Chrome/Safari/Opera */
+}
+
+/* 隐藏数字输入框步进器 */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield; /* Firefox */
 }

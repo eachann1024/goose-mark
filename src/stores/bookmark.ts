@@ -3,6 +3,7 @@ import type { Bookmark, Group, IconSource, BookmarkLocation, SubGroup } from '@/
 import { bulkMatchMissing, ensureIconForBookmark } from '@/services/iconCache'
 import { utoolsStorage } from '@/lib/utoolsStorage'
 import { useSync } from '@/composables/useSync'
+import { useSettingsStore } from '@/stores/settings'
 
 const uid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`)
 
@@ -23,49 +24,54 @@ export const parseUrlParams = (input: string): Record<string, string> => {
 
 export const TRASH_GROUP_ID = 'g-trash'
 
-const now = Date.now()
-const seedGroups: Group[] = [
-  {
-    id: 'g-default',
-    name: '默认',
-    createdAt: now,
-    updatedAt: now,
-    children: [
-      {
-        id: 'sg-default',
-        name: '子分组',
-        bookmarkIds: [],
-        createdAt: now,
-        updatedAt: now
-      }
-    ]
-  },
-  {
-    id: TRASH_GROUP_ID,
-    name: '回收站',
-    createdAt: now,
-    updatedAt: now,
-    children: [
-      {
-        id: 'sg-trash',
-        name: '已删除',
-        bookmarkIds: [],
-        createdAt: now,
-        updatedAt: now
-      }
-    ]
-  }
-]
+const createSeedGroups = (): Group[] => {
+  const now = Date.now()
+  return [
+    {
+      id: 'g-default',
+      name: '默认',
+      createdAt: now,
+      updatedAt: now,
+      children: [
+        {
+          id: 'sg-default',
+          name: '子分组',
+          bookmarkIds: [],
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    },
+    {
+      id: TRASH_GROUP_ID,
+      name: '回收站',
+      createdAt: now,
+      updatedAt: now,
+      children: [
+        {
+          id: 'sg-trash',
+          name: '已删除',
+          bookmarkIds: [],
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    }
+  ]
+}
 
 export const useBookmarkStore = defineStore('bookmark', {
-  state: () => ({
-    groups: seedGroups as Group[],
-    bookmarks: [] as Bookmark[],
-    search: '',
-    activeGroupId: seedGroups[0]?.id ?? '',
-    activeSubGroupId: seedGroups[0]?.children?.[0]?.id ?? '',
-    isReadOnly: false
-  }),
+  state: () => {
+    const groups = createSeedGroups()
+    return {
+      groups,
+      bookmarks: [] as Bookmark[],
+      search: '',
+      activeGroupId: groups[0]?.id ?? '',
+      activeSubGroupId: groups[0]?.children?.[0]?.id ?? '',
+      isReadOnly: false
+    }
+  },
   getters: {
     currentGroup(state) {
       return state.groups.find(g => g.id === state.activeGroupId)
@@ -313,6 +319,8 @@ export const useBookmarkStore = defineStore('bookmark', {
               this.activeSubGroupId = group.children[0]?.id || ''
             }
           }
+          // 强制立即持久化
+          ;(this as any).$persist?.()
           return true
         }
       }
@@ -597,8 +605,13 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (!icon) return
       this.assignIcon(bookmark.id, icon)
     },
-    async refreshMissingIcons() {
-      const missing = this.bookmarks.filter(b => !b.icon || b.icon.type === 'text')
+    async refreshMissingIcons(force = false) {
+      const settingsStore = useSettingsStore()
+      const shouldSkip = (b: Bookmark) => {
+        if (!settingsStore.skipFailedIconMatch) return false
+        return !!b.iconMatchFailedAt && !force
+      }
+      const missing = this.bookmarks.filter(b => (!b.icon || b.icon.type === 'text') && !shouldSkip(b))
       const result = await bulkMatchMissing(missing)
       result.forEach((icon, id) => this.assignIcon(id, icon))
       
@@ -606,11 +619,17 @@ export const useBookmarkStore = defineStore('bookmark', {
       const successList: string[] = []
       const failList: { id: string; title: string }[] = []
       
+      const now = Date.now()
       missing.forEach(bookmark => {
         if (result.has(bookmark.id)) {
           successList.push(bookmark.title || bookmark.url)
+          bookmark.iconMatchedAt = now
+          bookmark.iconMatchFailedAt = undefined
+          bookmark.iconMatchFailedReason = undefined
         } else {
           failList.push({ id: bookmark.id, title: bookmark.title || bookmark.url })
+          bookmark.iconMatchFailedAt = now
+          bookmark.iconMatchFailedReason = 'no_icon'
         }
       })
       
@@ -625,7 +644,81 @@ export const useBookmarkStore = defineStore('bookmark', {
     assignIcon(id: string, icon: IconSource) {
       const idx = this.bookmarks.findIndex(b => b.id === id)
       if (idx !== -1) {
-        this.bookmarks.splice(idx, 1, { ...this.bookmarks[idx], icon, updatedAt: Date.now() })
+        const prev = this.bookmarks[idx]
+        this.bookmarks.splice(idx, 1, {
+          ...prev,
+          icon,
+          iconMatchedAt: Date.now(),
+          iconMatchFailedAt: undefined,
+          iconMatchFailedReason: undefined,
+          updatedAt: Date.now()
+        })
+      }
+    },
+
+    // 静默生成全局搜索书签的 base64 图标缓存
+    async generateSearchIconCaches(silent = true) {
+      const settingsStore = useSettingsStore()
+      const isSearchBookmark = (bookmark: Bookmark) => {
+        if (bookmark.allowUniversal) return true
+        return /{[^}]+}/.test(bookmark.url)
+      }
+
+      const targets = this.bookmarks.filter(isSearchBookmark)
+      const pending = targets.filter(b => {
+        if (settingsStore.skipFailedIconMatch && b.iconMatchFailedAt) return false
+        if (!b.icon || b.icon.type === 'text') return true
+        return b.icon.type === 'remote' && b.icon.src && !b.icon.cache
+      })
+
+      if (pending.length === 0) {
+        if (!silent) console.log('[IconCache] 全局搜索图标已缓存，无需更新')
+        return null
+      }
+
+      if (!silent) console.log(`[IconCache] 开始为 ${pending.length} 个全局搜索书签生成图标缓存...`)
+
+      let successCount = 0
+      let failCount = 0
+      const failedTitles: string[] = []
+
+      for (const bookmark of pending) {
+        try {
+          const icon = await ensureIconForBookmark(bookmark, true)
+          if (icon && icon.type === 'remote' && icon.cache) {
+            this.assignIcon(bookmark.id, icon)
+            bookmark.iconMatchedAt = Date.now()
+            bookmark.iconMatchFailedAt = undefined
+            bookmark.iconMatchFailedReason = undefined
+            successCount++
+            if (!silent) console.log(`[IconCache] ✓ ${bookmark.title}`)
+          } else {
+            failCount++
+            bookmark.iconMatchFailedAt = Date.now()
+            bookmark.iconMatchFailedReason = 'no_icon'
+            failedTitles.push(bookmark.title || bookmark.url)
+            if (!silent) console.log(`[IconCache] ✗ ${bookmark.title} (获取失败)`)
+          }
+        } catch (e) {
+          failCount++
+          bookmark.iconMatchFailedAt = Date.now()
+          bookmark.iconMatchFailedReason = 'error'
+          failedTitles.push(bookmark.title || bookmark.url)
+          if (!silent) console.log(`[IconCache] ✗ ${bookmark.title} (错误)`)
+          if (!(e instanceof Error) || !e.message.includes('fetch')) {
+            console.warn(`[IconCache] 严重错误: ${bookmark.title}`, e)
+          }
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+
+      if (!silent) console.log(`[IconCache] 缓存生成完成: ${successCount} 成功, ${failCount} 失败`)
+      return {
+        total: pending.length,
+        success: successCount,
+        failed: failCount,
+        failedTitles
       }
     },
 
@@ -750,6 +843,8 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.activeGroupId = this.groups[0]?.id ?? ''
         this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
       }
+      // 强制立即持久化
+      ;(this as any).$persist?.()
       return true
     },
     removeSubGroup(groupId: string, subId: string) {
@@ -819,6 +914,8 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (this.activeSubGroupId === subId) {
         this.activeSubGroupId = group.children[0]?.id ?? ''
       }
+      // 强制立即持久化
+      ;(this as any).$persist?.()
       return true
     },
     reorderInSub(groupId: string, subId: string, fromId: string, toId: string) {

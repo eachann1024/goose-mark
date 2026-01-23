@@ -56,7 +56,6 @@ function _useBookmarkForm() {
   
   const isTitleDirty = ref(false)
   const isDescDirty = ref(false)
-  const lastAutoHostname = ref('')
   const originalUrl = ref('') // 编辑时的原始 URL，用于判断是否需要重新获取图标
 
   const dialogOrigin = ref<{ x: string; y: string } | null>(null)
@@ -275,7 +274,6 @@ function _useBookmarkForm() {
     formError.value = ''
     isTitleDirty.value = false
     isDescDirty.value = false
-    lastAutoHostname.value = ''
     originalUrl.value = ''
     showAdd.value = true
   }
@@ -294,7 +292,6 @@ function _useBookmarkForm() {
     formError.value = ''
     isTitleDirty.value = false
     isDescDirty.value = false
-    lastAutoHostname.value = ''
     originalUrl.value = ''
     showAdd.value = true
   }
@@ -311,7 +308,6 @@ function _useBookmarkForm() {
     formError.value = ''
     isTitleDirty.value = true // 编辑模式下默认认为已脏，不自动覆盖
     isDescDirty.value = true
-    lastAutoHostname.value = ''
     originalUrl.value = bookmark.url // 保存原始 URL，用于判断是否需要重新获取图标
     
     draftLocations.value = store.getBookmarkLocations(bookmark.id)
@@ -334,7 +330,16 @@ function _useBookmarkForm() {
 
     try {
       addBehaviorLog(editingId.value ? 'edit-bookmark' : 'add-bookmark', `${draft.title} ${draft.url}`.trim())
-      const iconToSave = previewIcon.value ?? buildTextIcon()
+      let iconToSave = previewIcon.value ?? buildTextIcon()
+
+      // 确保 remote 类型图标有 base64 缓存
+      if (iconToSave.type === 'remote' && !iconToSave.cache && iconToSave.src) {
+        const { fetchAsDataUrl } = await import('@/services/iconCache')
+        const base64 = await fetchAsDataUrl(iconToSave.src)
+        if (base64) {
+          iconToSave = { ...iconToSave, cache: base64, fetchedAt: Date.now() }
+        }
+      }
 
       if (editingId.value) {
         // 修改书签：获取旧位置和新位置，合并后检查分享
@@ -384,7 +389,7 @@ function _useBookmarkForm() {
   })
 
   // Smart Creation Logic
-  watch(() => draft.url, async (val) => {
+  watch(() => draft.url, async (val, oldVal) => {
     checkUrl(val)
     
     if (!val) {
@@ -396,28 +401,13 @@ function _useBookmarkForm() {
       return
     }
   
+    if (val !== oldVal && !isTitleDirty.value) {
+      draft.title = ''
+    }
+  
     // 编辑模式下：如果 URL 没有变化，跳过自动获取图标和标题
     if (editingId.value && val === originalUrl.value) {
       return
-    }
-  
-    const resolveHostname = () => {
-      try {
-        const cleanUrl = val.replace(/{[^}]+}/g, '')
-        const u = new URL(cleanUrl.includes('://') ? cleanUrl : 'https://' + cleanUrl)
-        return u.hostname
-      } catch {
-        return ''
-      }
-    }
-    
-    const hostname = resolveHostname()
-    // 只要用户没手动改过标题，或者当前标题就是我们自动生成的上一个 hostname，就跟随最新的 hostname 变
-    if (!isTitleDirty.value || draft.title === lastAutoHostname.value) {
-      if (hostname) {
-        draft.title = hostname
-        lastAutoHostname.value = hostname
-      }
     }
   
     if (fetchTimer) clearTimeout(fetchTimer)
@@ -438,7 +428,7 @@ function _useBookmarkForm() {
           iconFetchFailed.value = (fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src))
           
           // 自动填充标题和描述（如果用户没改过）
-          if (fetched.title && (!isTitleDirty.value || draft.title === lastAutoHostname.value)) {
+          if (fetched.title && !isTitleDirty.value) {
             draft.title = fetched.title
           }
           if (fetched.description && !isDescDirty.value) {
@@ -449,7 +439,7 @@ function _useBookmarkForm() {
           iconFetchFailed.value = true
           // 如果标题仍是 hostname，则提示
           const currentTitle = draft.title.trim()
-          if (!currentTitle || currentTitle === hostname) {
+          if (!currentTitle) {
             showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
           }
         }

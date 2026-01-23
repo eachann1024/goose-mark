@@ -3,7 +3,7 @@ import { Loader2 } from 'lucide-vue-next'
 import { useSync } from '@/composables/useSync'
 import { onUnmounted } from 'vue'
 
-import type { Bookmark } from '@/types/bookmark'
+import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import OnboardingBanner from '@/components/OnboardingBanner.vue'
 import QuickSaveDialog from '@/components/QuickSaveDialog.vue'
@@ -65,6 +65,22 @@ const {
   setExpendHeight
 } = useUTools()
 
+const getLatestUpdatedAt = (data: { groups?: Group[]; bookmarks?: Bookmark[] }) => {
+  let max = 0
+  const groups = data.groups || []
+  const bookmarks = data.bookmarks || []
+  groups.forEach((group) => {
+    max = Math.max(max, group.updatedAt || group.createdAt || 0)
+    group.children?.forEach((sub: SubGroup) => {
+      max = Math.max(max, sub.updatedAt || sub.createdAt || 0)
+    })
+  })
+  bookmarks.forEach((bookmark) => {
+    max = Math.max(max, bookmark.updatedAt || bookmark.createdAt || 0)
+  })
+  return max
+}
+
 // 防抖定时器引用
 let syncTimeout: NodeJS.Timeout | null = null
 
@@ -105,6 +121,7 @@ const {
   closeSearchView,
   handleSubInput,
   focusUToolsInput,
+  syncSearchAutoExitOnReturn,
 } = useSearch(tab, selectedIndex, isUTools)
 
 // SearchOverlay 组件 ref
@@ -655,7 +672,13 @@ onMounted(async () => {
       try {
         const data = JSON.parse(value)
         if (key === 'settings') settingsStore.$patch(data)
-        if (key === 'bookmark') store.$patch(data)
+        if (key === 'bookmark') {
+          const incomingStamp = getLatestUpdatedAt(data)
+          const localStamp = getLatestUpdatedAt({ groups: store.groups, bookmarks: store.bookmarks })
+          if (incomingStamp >= localStamp) {
+            store.$patch(data)
+          }
+        }
       } catch {}
     }) as any)
 
@@ -717,7 +740,11 @@ onMounted(async () => {
         syncTheme()
         syncFeatures(store.bookmarks)
         syncSubInput()
-        store.setSearch('')
+        if (searchViewOpen.value) {
+          syncSearchAutoExitOnReturn()
+        } else {
+          store.setSearch('')
+        }
         return
       }
       

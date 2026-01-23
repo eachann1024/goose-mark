@@ -20,9 +20,25 @@ setExpendHeight(settingsStore.windowHeight)
 initConsoleCapture()
 app.mount('#app')
 
-// 应用启动后异步生成图标缓存，提升后续搜索体验
+// 应用启动后异步生成全局搜索图标缓存，提升后续搜索体验
 setTimeout(() => {
-  bookmarkStore.generateIconCaches().catch(e => {
+  if (!settingsStore.autoMatchSearchIcons) return
+  bookmarkStore.generateSearchIconCaches().then(report => {
+    if (!report) return
+    const summary = `[IconCache] 搜索图标缓存完成: ${report.success}/${report.total} 成功, ${report.failed} 失败`
+    console.log(summary)
+    if (report.failedTitles.length > 0) {
+      console.log(`[IconCache] 失败: ${report.failedTitles.join('、')}`)
+    }
+    settingsStore.addIconMatchLog({
+      time: Date.now(),
+      scope: 'search',
+      total: report.total,
+      success: report.success,
+      failed: report.failed,
+      failedTitles: report.failedTitles
+    })
+  }).catch(e => {
     console.warn('[App] 图标缓存生成失败:', e)
   })
 }, 1000) // 提前到1秒启动，确保在syncFeatures前完成

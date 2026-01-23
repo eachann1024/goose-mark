@@ -8,6 +8,12 @@ const props = defineProps<{
   width?: string | number
   height?: string | number
   class?: HTMLAttributes['class']
+  fallback?: 'icon' | 'none'
+}>()
+
+const emit = defineEmits<{
+  (e: 'error'): void
+  (e: 'load'): void
 }>()
 
 const hasError = ref(false)
@@ -15,10 +21,12 @@ const hasLoaded = ref(false)
 
 const handleError = () => {
   hasError.value = true
+  emit('error')
 }
 
 const handleLoad = () => {
   hasLoaded.value = true
+  emit('load')
 }
 
 const showSkeleton = computed(() => !hasError.value && !hasLoaded.value && !!props.src)
@@ -41,7 +49,7 @@ const showSkeleton = computed(() => !hasError.value && !hasLoaded.value && !!pro
       @error="handleError"
       @load="handleLoad"
     />
-    <div v-else class="flex h-full w-full items-center justify-center text-muted-foreground">
+    <div v-else-if="props.fallback !== 'none'" class="flex h-full w-full items-center justify-center text-muted-foreground">
       <span class="i-mdi-image-off text-xl" />
     </div>
   </div>
