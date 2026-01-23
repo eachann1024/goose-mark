@@ -98,6 +98,8 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+@reference "../assets/index.css";
+
 .menu-item {
   @apply flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--fg)] transition-colors text-left w-full;
 }

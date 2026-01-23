@@ -3,6 +3,9 @@ import ResultToast from '@/components/ResultToast.vue'
 import { probeUrl, type ProbeResult } from '@/services/siteProbe'
 
 const store = useBookmarkStore()
+const settingsStore = useSettingsStore()
+const { isUTools } = useAppState()
+const { syncFeatures } = useUTools()
 
 const matching = ref(false)
 const probing = ref(false)
@@ -97,7 +100,7 @@ const matchMissing = async () => {
   matching.value = true
   const started = performance.now()
   try {
-    const res = await store.refreshMissingIcons()
+    const res = await store.refreshMissingIcons(!settingsStore.skipFailedIconMatch)
     const elapsed = Math.round(performance.now() - started)
     
     let description = ''
@@ -124,6 +127,14 @@ const matchMissing = async () => {
       },
       res.failList.length > 0 ? 8000 : 5000
     )
+    settingsStore.addIconMatchLog({
+      time: Date.now(),
+      scope: 'missing',
+      total: res.total,
+      success: res.matched,
+      failed: res.failList.length,
+      failedTitles: res.failList.map(item => item.title)
+    })
   } catch (e) {
     console.error('[Settings] refreshMissingIcons failed:', e)
     showResultToast({ variant: 'error', title: '图标匹配失败', description: '请稍后重试或检查网络/权限' }, 6500)
@@ -177,6 +188,28 @@ const checkInvalid = async () => {
     probing.value = false
   }
 }
+
+const rebuildFeatureIcons = async () => {
+  if (!isUTools.value) {
+    showResultToast({ variant: 'warning', title: '仅支持 uTools 环境' }, 3500)
+    return
+  }
+  try {
+    await syncFeatures(store.bookmarks, { force: true })
+    showResultToast({ variant: 'success', title: '全局搜索图标已刷新' }, 3500)
+  } catch (e) {
+    console.error('[Settings] syncFeatures failed:', e)
+    showResultToast({ variant: 'error', title: '刷新失败', description: '请稍后再试' }, 4500)
+  }
+}
+
+const formatLogTime = (time: number) => {
+  try {
+    return new Date(time).toLocaleString('zh-CN', { hour12: false })
+  } catch {
+    return String(time)
+  }
+}
 </script>
 
 <template>
@@ -193,6 +226,25 @@ const checkInvalid = async () => {
             <span v-if="matching" class="i-mdi-loading animate-spin mr-2" />
             {{ matching ? '匹配中...' : (missingCount === 0 ? '无需匹配' : '匹配缺失图标') }}
           </Button>
+          <div class="mt-4 space-y-3 text-sm">
+            <div class="flex items-center justify-between">
+              <div class="space-y-0.5">
+                <div class="font-medium">启动时匹配全局搜索图标</div>
+                <div class="text-xs text-muted-foreground">只对模板/万能匹配书签生效</div>
+              </div>
+              <Switch v-model:checked="settingsStore.autoMatchSearchIcons" />
+            </div>
+            <div class="flex items-center justify-between">
+              <div class="space-y-0.5">
+                <div class="font-medium">失败后忽略</div>
+                <div class="text-xs text-muted-foreground">失败标记后不再重复匹配</div>
+              </div>
+              <Switch v-model:checked="settingsStore.skipFailedIconMatch" />
+            </div>
+            <Button class="w-full" variant="outline" :disabled="!isUTools" @click="rebuildFeatureIcons">
+              刷新全局搜索图标
+            </Button>
+          </div>
         </CardContent>
       </Card>
       
@@ -210,6 +262,42 @@ const checkInvalid = async () => {
         </CardContent>
       </Card>
     </div>
+
+    <!-- Icon Match Logs -->
+    <Card>
+      <CardHeader class="pb-3 flex items-center justify-between">
+        <div>
+          <CardTitle class="text-base">图标匹配日志</CardTitle>
+          <CardDescription>最近 50 条</CardDescription>
+        </div>
+        <Button variant="ghost" size="sm" :disabled="settingsStore.iconMatchLogs.length === 0" @click="settingsStore.clearIconMatchLogs">
+          清空
+        </Button>
+      </CardHeader>
+      <CardContent>
+        <div v-if="settingsStore.iconMatchLogs.length === 0" class="text-xs text-muted-foreground">
+          暂无日志
+        </div>
+        <div v-else class="grid gap-2 max-h-56 overflow-y-auto custom-scroll">
+          <div
+            v-for="item in settingsStore.iconMatchLogs"
+            :key="item.time + item.scope"
+            class="rounded-md px-3 py-2 bg-muted/30 border border-border/50 text-xs"
+          >
+            <div class="flex items-center justify-between">
+              <span class="text-muted-foreground">{{ formatLogTime(item.time) }}</span>
+              <span class="font-mono">{{ item.scope === 'search' ? '全局搜索' : '缺失图标' }}</span>
+            </div>
+            <div class="mt-1">
+              成功 {{ item.success }}/{{ item.total }}，失败 {{ item.failed }}
+            </div>
+            <div v-if="item.failedTitles.length" class="mt-1 text-muted-foreground">
+              失败：{{ item.failedTitles.join('、') }}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
 
     <!-- Probe Results -->
     <Card v-if="probeResult.length" class="animate-in fade-in slide-in-from-bottom-4">

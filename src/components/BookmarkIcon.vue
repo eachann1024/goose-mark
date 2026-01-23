@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { IconSource } from '@/types/bookmark'
 import { iconToDisplayUrl } from '@/services/iconCache'
 
@@ -13,6 +13,7 @@ const props = defineProps<{
 }>()
 
 const iconUrl = computed(() => iconToDisplayUrl(props.icon ?? undefined))
+const hasImageError = ref(false)
 
 const sizeClasses = {
   sm: 'w-6 h-6 rounded-md',
@@ -39,6 +40,10 @@ const letters = computed(() => {
   const base = (props.fallbackText || '').trim()
   return (base || '•').slice(0, 4).toUpperCase()
 })
+
+watch(iconUrl, () => {
+  hasImageError.value = false
+})
 </script>
 
 <template>
@@ -54,9 +59,11 @@ const letters = computed(() => {
     <div v-if="loading" class="w-1/2 h-1/2 border-2 border-primary/60 border-t-transparent rounded-full animate-spin" />
     <template v-else>
       <Image 
-        v-if="iconUrl" 
+        v-if="iconUrl && !hasImageError" 
         :src="iconUrl" 
-        class="w-4/5 h-4/5 object-contain" 
+        class="w-4/5 h-4/5 object-contain"
+        fallback="none"
+        @error="hasImageError = true"
       />
       <span 
         v-else 

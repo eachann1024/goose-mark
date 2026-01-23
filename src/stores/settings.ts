@@ -14,7 +14,17 @@ export const useSettingsStore = defineStore('settings', {
     // 首次用户引导是否已关闭
     onboardingDismissed: false,
     // 彩蛋：深色模式使用星空背景图
-    easterEggEnabled: false
+    easterEggEnabled: false,
+    autoMatchSearchIcons: true,
+    skipFailedIconMatch: true,
+    iconMatchLogs: [] as Array<{
+      time: number
+      scope: 'search' | 'missing'
+      total: number
+      success: number
+      failed: number
+      failedTitles: string[]
+    }>
   }),
   actions: {
     setGridColumns(value: number) {
@@ -48,6 +58,26 @@ export const useSettingsStore = defineStore('settings', {
     },
     setEasterEggEnabled(value: boolean) {
       this.easterEggEnabled = !!value
+    },
+    setAutoMatchSearchIcons(value: boolean) {
+      this.autoMatchSearchIcons = !!value
+    },
+    setSkipFailedIconMatch(value: boolean) {
+      this.skipFailedIconMatch = !!value
+    },
+    addIconMatchLog(payload: {
+      time: number
+      scope: 'search' | 'missing'
+      total: number
+      success: number
+      failed: number
+      failedTitles: string[]
+    }) {
+      const next = [payload, ...this.iconMatchLogs]
+      this.iconMatchLogs = next.slice(0, 50)
+    },
+    clearIconMatchLogs() {
+      this.iconMatchLogs = []
     }
   },
   persist: {
