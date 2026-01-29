@@ -111,12 +111,12 @@ const onSave = async () => {
         <!-- 2. Split Layout: Icon + Info -->
         <div class="flex gap-4 items-start">
           <!-- Left: Icon Preview -->
-          <div class="shrink-0 flex flex-col items-center gap-2">
-            <div 
+          <div class="shrink-0 flex flex-col items-center gap-2 w-20">
+            <div
               class="relative group cursor-pointer"
               @click="showIconSelector = true"
             >
-              <BookmarkIcon 
+              <BookmarkIcon
                 :icon="previewIcon"
                 :fallback-text="draft.title || draft.url"
                 :loading="iconLoading"
@@ -128,13 +128,9 @@ const onSave = async () => {
                 <span class="i-mdi-pencil text-white text-xl" />
               </div>
             </div>
-            <span v-if="iconFetchStage === 'fallback'" class="text-[10px] text-amber-500 font-medium animate-pulse">
-              正在尝试备用服务...
+            <span class="text-[10px] text-center leading-tight h-6 flex items-center" :class="iconFetchStage === 'fallback' ? 'text-amber-500 font-medium animate-pulse' : iconFetchFailed && !iconLoading ? 'text-muted-foreground' : 'text-muted-foreground font-medium'">
+              {{ iconFetchStage === 'fallback' ? '正在尝试备用服务...' : iconFetchFailed && !iconLoading ? '识别失败，点击设置' : '点击修改图标' }}
             </span>
-            <span v-else-if="iconFetchFailed && !iconLoading" class="text-[10px] text-muted-foreground">
-              自动识别失败，请手动设置
-            </span>
-            <span v-else class="text-[10px] text-muted-foreground font-medium">点击修改图标</span>
           </div>
 
           <!-- Right: Title & Desc -->
