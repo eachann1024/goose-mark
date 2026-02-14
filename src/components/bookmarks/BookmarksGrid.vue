@@ -219,7 +219,7 @@ watch(() => props.highlightedId, (id) => {
             <TooltipTrigger as-child>
               <Button
                 variant="outline"
-                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-3 px-4 text-muted-foreground hover:border-primary hover:text-primary hover:bg-muted/30 transition-colors cursor-pointer w-full"
+                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-3 px-4 text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer w-full bg-transparent"
                 :style="{ height: addButtonHeight }"
                 @click="(e: MouseEvent) => emit('add', e.currentTarget as HTMLElement)"
               >

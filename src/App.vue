@@ -193,84 +193,91 @@ const shouldShowSubs = computed(() => activeSubGroups.value.length > 1)
 let starTimers: { dim?: number; light?: number; meteor?: number } = {}
 
 // 监听彩蛋状态，同步到 body 类名 + 创建/销毁星空
-watch([() => settingsStore.easterEggEnabled, isDark], ([enabled, dark]) => {
+watch([() => settingsStore.easterEggEnabled, () => settingsStore.useSolidBackground, isDark], ([enabled, useSolid, dark]) => {
   const existing = document.getElementById('stars-container')
-  if (enabled && dark) {
+
+  // 清理之前的状态
+  document.body.classList.remove('easter-egg-active', 'solid-background')
+  existing?.remove()
+  Object.values(starTimers).forEach(t => t && clearTimeout(t))
+  starTimers = {}
+
+  // 只在深色模式下应用背景设置
+  if (!dark) return
+
+  if (useSolid) {
+    // 使用纯色背景
+    document.body.classList.add('solid-background')
+  } else if (enabled) {
+    // 使用星空背景
     document.body.classList.add('easter-egg-active')
-    if (!existing) {
-      const container = document.createElement('div')
-      container.id = 'stars-container'
-      container.className = 'stars-container'
-      // 创建星星
-      for (let i = 0; i < 200; i++) {
-        const star = document.createElement('div')
-        star.className = 'star'
-        star.style.left = `${Math.random() * 100}%`
-        star.style.top = `${Math.random() * 100}%`
-        const size = Math.random() * 2 + 1
-        star.style.width = `${size}px`
-        star.style.height = `${size}px`
-        star.style.setProperty('--duration', `${Math.random() * 15 + 12}s`)
-        star.style.setProperty('--delay', `${Math.random() * 5}s`)
-        container.appendChild(star)
-      }
-      document.body.prepend(container)
-
-      // 每 3 秒随机熄灭 1-5 颗星星
-      starTimers.dim = window.setInterval(() => {
-        const stars = Array.from(container.querySelectorAll('.star:not(.dimmed)')) as HTMLElement[]
-        if (stars.length > 50) {
-          const count = Math.floor(Math.random() * 5) + 1
-          for (let i = 0; i < count && stars.length > 50; i++) {
-            const idx = Math.floor(Math.random() * stars.length)
-            const target = stars.splice(idx, 1)[0]
-            target.classList.add('dimming')
-            setTimeout(() => {
-              target.classList.remove('dimming')
-              target.classList.add('dimmed')
-            }, 2000)
-          }
-        }
-      }, 3000)
-
-      // 每 5 秒随机亮起 1-5 颗星星（重新随机位置）
-      starTimers.light = window.setInterval(() => {
-        const dimmed = Array.from(container.querySelectorAll('.star.dimmed')) as HTMLElement[]
-        if (dimmed.length > 0) {
-          const count = Math.min(Math.floor(Math.random() * 5) + 1, dimmed.length)
-          for (let i = 0; i < count; i++) {
-            const idx = Math.floor(Math.random() * dimmed.length)
-            const target = dimmed.splice(idx, 1)[0]
-            // 随机新位置
-            target.style.left = `${Math.random() * 100}%`
-            target.style.top = `${Math.random() * 100}%`
-            const size = Math.random() * 2 + 1
-            target.style.width = `${size}px`
-            target.style.height = `${size}px`
-            target.classList.remove('dimmed')
-            target.classList.add('lighting')
-            setTimeout(() => target.classList.remove('lighting'), 1500)
-          }
-        }
-      }, 5000)
-
-      // 每 10-30 秒创建一颗流星
-      const createMeteor = () => {
-        const meteor = document.createElement('div')
-        meteor.className = 'meteor'
-        meteor.style.left = `${Math.random() * 80 + 10}%`
-        meteor.style.top = `${Math.random() * 30}%`
-        container.appendChild(meteor)
-        setTimeout(() => meteor.remove(), 4000)
-        starTimers.meteor = window.setTimeout(createMeteor, (Math.random() * 20 + 10) * 1000)
-      }
-      starTimers.meteor = window.setTimeout(createMeteor, (Math.random() * 10 + 5) * 1000)
+    const container = document.createElement('div')
+    container.id = 'stars-container'
+    container.className = 'stars-container'
+    // 创建星星
+    for (let i = 0; i < 200; i++) {
+      const star = document.createElement('div')
+      star.className = 'star'
+      star.style.left = `${Math.random() * 100}%`
+      star.style.top = `${Math.random() * 100}%`
+      const size = Math.random() * 2 + 1
+      star.style.width = `${size}px`
+      star.style.height = `${size}px`
+      star.style.setProperty('--duration', `${Math.random() * 15 + 12}s`)
+      star.style.setProperty('--delay', `${Math.random() * 5}s`)
+      container.appendChild(star)
     }
-  } else {
-    document.body.classList.remove('easter-egg-active')
-    existing?.remove()
-    Object.values(starTimers).forEach(t => t && clearTimeout(t))
-    starTimers = {}
+    document.body.prepend(container)
+
+    // 每 3 秒随机熄灭 1-5 颗星星
+    starTimers.dim = window.setInterval(() => {
+      const stars = Array.from(container.querySelectorAll('.star:not(.dimmed)')) as HTMLElement[]
+      if (stars.length > 50) {
+        const count = Math.floor(Math.random() * 5) + 1
+        for (let i = 0; i < count && stars.length > 50; i++) {
+          const idx = Math.floor(Math.random() * stars.length)
+          const target = stars.splice(idx, 1)[0]
+          target.classList.add('dimming')
+          setTimeout(() => {
+            target.classList.remove('dimming')
+            target.classList.add('dimmed')
+          }, 2000)
+        }
+      }
+    }, 3000)
+
+    // 每 5 秒随机亮起 1-5 颗星星（重新随机位置）
+    starTimers.light = window.setInterval(() => {
+      const dimmed = Array.from(container.querySelectorAll('.star.dimmed')) as HTMLElement[]
+      if (dimmed.length > 0) {
+        const count = Math.min(Math.floor(Math.random() * 5) + 1, dimmed.length)
+        for (let i = 0; i < count; i++) {
+          const idx = Math.floor(Math.random() * dimmed.length)
+          const target = dimmed.splice(idx, 1)[0]
+          // 随机新位置
+          target.style.left = `${Math.random() * 100}%`
+          target.style.top = `${Math.random() * 100}%`
+          const size = Math.random() * 2 + 1
+          target.style.width = `${size}px`
+          target.style.height = `${size}px`
+          target.classList.remove('dimmed')
+          target.classList.add('lighting')
+          setTimeout(() => target.classList.remove('lighting'), 1500)
+        }
+      }
+    }, 5000)
+
+    // 每 10-30 秒创建一颗流星
+    const createMeteor = () => {
+      const meteor = document.createElement('div')
+      meteor.className = 'meteor'
+      meteor.style.left = `${Math.random() * 80 + 10}%`
+      meteor.style.top = `${Math.random() * 30}%`
+      container.appendChild(meteor)
+      setTimeout(() => meteor.remove(), 4000)
+      starTimers.meteor = window.setTimeout(createMeteor, (Math.random() * 20 + 10) * 1000)
+    }
+    starTimers.meteor = window.setTimeout(createMeteor, (Math.random() * 10 + 5) * 1000)
   }
 }, { immediate: true })
 
@@ -584,18 +591,8 @@ const handleQuickSave = async (from: string, payload: any) => {
   if (urlToSave && isValidUrl(urlToSave)) {
     // 通过 proxy API 获取页面元信息
     const meta = await fetchPageMeta(urlToSave)
-    let pageTitle = meta.title || ''
-    let pageDesc = meta.description || ''
-
-    // 如果仍然没有标题，使用域名作为fallback
-    if (!pageTitle) {
-      try {
-        const url = new URL(urlToSave)
-        pageTitle = url.hostname.replace(/^www\./, '')
-      } catch {
-        pageTitle = '未命名书签'
-      }
-    }
+    const pageTitle = meta.title || ''
+    const pageDesc = meta.description || ''
 
     // 快速保存到"快速收集"分组（含去重逻辑）
     const bookmark = store.quickSaveBookmark(urlToSave, pageTitle, pageDesc)
@@ -721,7 +718,15 @@ onMounted(async () => {
     const syncTheme = () => {
       try {
         const isdev = utoolsApi.isDarkColors?.()
-        if (typeof isdev === 'boolean') useAppState().isDark.value = isdev
+        if (typeof isdev === 'boolean') {
+          useAppState().isDark.value = isdev
+          // 在 uTools 环境下直接操作 DOM，确保 dark 类被正确添加/移除
+          if (isdev) {
+            document.documentElement.classList.add('dark')
+          } else {
+            document.documentElement.classList.remove('dark')
+          }
+        }
       } catch {}
     }
 
@@ -1064,10 +1069,20 @@ const handleLocate = async (bookmark: Bookmark) => {
 </template>
 
 <style>
-/* 全局彩蛋适配样式 */
+/* 全局彩蛋适配样式 - 星空背景 */
 html.dark body.easter-egg-active {
   background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a15 100%) !important;
   background-attachment: fixed !important;
+}
+
+/* 纯色背景样式 */
+html.dark body.solid-background {
+  background-color: #2F3133 !important;
+}
+
+html.dark body.solid-background .app-container,
+html.dark body.solid-background #app {
+  background-color: transparent !important;
 }
 
 /* 星空容器 */
@@ -1190,6 +1205,104 @@ html.dark body.easter-egg-active button[data-active="true"] {
 /* 彩蛋模式：顶部导航栏透明 */
 html.dark body.easter-egg-active header {
   background-color: transparent !important;
+}
+
+/* 彩蛋模式：子分组按钮透明背景 */
+html.dark body.easter-egg-active .subgroup-sort-item button {
+  background-color: transparent !important;
+}
+
+html.dark body.easter-egg-active .subgroup-sort-item button:hover,
+html.dark body.easter-egg-active .subgroup-sort-item button[class*="hover:bg-primary"] {
+  background-color: hsl(var(--primary) / 0.1) !important;
+}
+
+html.dark body.easter-egg-active .subgroup-sort-item button[class*="bg-primary/5"] {
+  background-color: hsl(var(--primary) / 0.08) !important;
+}
+
+/* 彩蛋模式：主分组按钮选中状态透明 */
+html.dark body.easter-egg-active button[data-active="true"] {
+  background-color: hsl(var(--primary) / 0.08) !important;
+}
+
+/* 修复：浅色模式下子分组按钮样式 - 非星空模式 */
+body:not(.easter-egg-active) .subgroup-sort-item button {
+  background-color: transparent !important;
+}
+
+body:not(.easter-egg-active) .subgroup-sort-item button:hover {
+  background-color: hsl(var(--primary) / 0.05) !important;
+}
+
+body:not(.easter-egg-active) .subgroup-sort-item button[class*="bg-primary/5"] {
+  background-color: hsl(var(--primary) / 0.05) !important;
+}
+
+body:not(.easter-egg-active) .subgroup-sort-item button[class*="hover:bg-primary/15"]:hover {
+  background-color: hsl(var(--primary) / 0.15) !important;
+}
+
+/* 彩蛋模式：Card 组件透明背景 */
+html.dark body.easter-egg-active .rounded-xl.border.bg-card,
+html.dark body.easter-egg-active [class*="rounded-xl"][class*="border"][class*="bg-card"] {
+  background-color: hsl(var(--primary) / 0.08) !important;
+  border-color: hsl(var(--primary) / 0.15) !important;
+}
+
+/* 彩蛋模式：Button default 变体透明背景 */
+html.dark body.easter-egg-active button[class*="bg-primary"][class*="text-primary-foreground"],
+html.dark body.easter-egg-active .button-default,
+html.dark body.easter-egg-active [role="button"][class*="bg-primary"] {
+  background-color: hsl(var(--primary) / 0.15) !important;
+  color: hsl(var(--primary)) !important;
+  border-color: hsl(var(--primary) / 0.2) !important;
+}
+
+/* 彩蛋模式：设置侧边栏透明 */
+html.dark body.easter-egg-active nav[class*="bg-card"],
+html.dark body.easter-egg-active nav[class*="bg-card/30"] {
+  background-color: hsl(var(--primary) / 0.05) !important;
+  border-color: hsl(var(--primary) / 0.1) !important;
+}
+
+/* 彩蛋模式：提示/通知类组件透明 */
+html.dark body.easter-egg-active [class*="bg-primary/5"],
+html.dark body.easter-egg-active [class*="bg-primary/10"],
+html.dark body.easter-egg-active .bg-primary\5,
+html.dark body.easter-egg-active .bg-primary\10 {
+  background-color: hsl(var(--primary) / 0.1) !important;
+}
+
+/* 彩蛋模式：FaqNotice 和 OnboardingBanner 背景 */
+html.dark body.easter-egg-active [class*="from-primary/5"][class*="to-primary/10"],
+html.dark body.easter-egg-active [class*="bg-gradient-to-br"][class*="from-primary"] {
+  background: linear-gradient(to bottom right, hsl(var(--primary) / 0.1), hsl(var(--primary) / 0.15)) !important;
+  border-color: hsl(var(--primary) / 0.15) !important;
+}
+
+/* 彩蛋模式：outline 按钮透明背景 */
+html.dark body.easter-egg-active button[class*="border-input"][class*="bg-background"],
+html.dark body.easter-egg-active button[class*="variant-outline"],
+html.dark body.easter-egg-active [class*="variant-outline"] {
+  background-color: hsl(var(--primary) / 0.05) !important;
+  border-color: hsl(var(--primary) / 0.2) !important;
+  color: hsl(var(--primary)) !important;
+}
+
+/* uTools 环境：强制 Card 使用深色背景 */
+body.easter-egg-active .rounded-xl.border.bg-card,
+body.easter-egg-active [class*="rounded-xl"][class*="bg-card"] {
+  background-color: #3A3C3E !important;
+  color: #ffffff !important;
+}
+
+/* uTools 环境：强制设置侧边栏使用深色背景 */
+body.easter-egg-active nav button[class*="bg-accent"],
+body.easter-egg-active nav button[class*="bg-primary"],
+body.easter-egg-active nav [class*="bg-accent"],
+body.easter-egg-active nav [class*="bg-primary"] {
+  background-color: #505357 !important;
 }
 </style>
 

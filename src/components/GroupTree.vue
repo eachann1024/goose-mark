@@ -17,8 +17,8 @@ const handleSubClick = (groupId: string, subId: string) => {
     <div v-for="group in store.groups" :key="group.id" class="space-y-2">
       <Button
         variant="ghost"
-        class="flex items-center justify-between w-full px-3 py-2 rounded-2xl text-left hover:bg-white/70 dark:hover:bg-white/10 transition-colors"
-        :class="group.id === store.activeGroupId ? 'bg-white/80 dark:bg-white/10 font-semibold' : 'bg-transparent'"
+        class="flex items-center justify-between w-full px-3 py-2 rounded-2xl text-left hover:bg-secondary/70 transition-colors"
+        :class="group.id === store.activeGroupId ? 'bg-secondary font-semibold' : 'bg-transparent'"
         @click="handleGroupClick(group.id)"
       >
         <span class="truncate">{{ group.name }}</span>
@@ -29,8 +29,8 @@ const handleSubClick = (groupId: string, subId: string) => {
           v-for="sub in group.children"
           :key="sub.id"
           variant="ghost"
-          class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm justify-start hover:bg-white/60 dark:hover:bg-white/10"
-          :class="sub.id === store.activeSubGroupId ? 'bg-white/70 dark:bg-white/10 text-accent' : 'bg-transparent'"
+          class="flex items-center gap-2 px-3 py-2 rounded-xl text-sm justify-start hover:bg-secondary/60"
+          :class="sub.id === store.activeSubGroupId ? 'bg-secondary text-accent-foreground' : 'bg-transparent'"
           @click="handleSubClick(group.id, sub.id)"
         >
           <span class="i-mdi-circle-medium text-xs" />

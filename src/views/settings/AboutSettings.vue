@@ -97,28 +97,28 @@ const topBookmarkName = computed(() => topBookmarks.value[0]?.title || '-')
 
     <!-- Dashboard Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="rounded-xl border border-border bg-gradient-to-br from-primary/5 to-primary/10 p-4">
+      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
         <div class="flex items-center gap-2 text-primary/60 mb-1">
           <span class="i-mdi-bookmark-multiple text-lg" />
           <span class="text-xs font-medium">书签总数</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ store.bookmarks.length }}</p>
       </div>
-      <div class="rounded-xl border border-border bg-gradient-to-br from-emerald-500/5 to-emerald-500/10 p-4">
+      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
         <div class="flex items-center gap-2 text-emerald-500/60 mb-1">
           <span class="i-mdi-folder-multiple text-lg" />
           <span class="text-xs font-medium">分组数量</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ store.groups.length }}</p>
       </div>
-      <div class="rounded-xl border border-border bg-gradient-to-br from-amber-500/5 to-amber-500/10 p-4">
+      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
         <div class="flex items-center gap-2 text-amber-500/60 mb-1">
           <span class="i-mdi-fire text-lg" />
           <span class="text-xs font-medium">今日使用</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ todayClicks }}</p>
       </div>
-      <div class="rounded-xl border border-border bg-gradient-to-br from-violet-500/5 to-violet-500/10 p-4">
+      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
         <div class="flex items-center gap-2 text-violet-500/60 mb-1">
           <span class="i-mdi-star text-lg" />
           <span class="text-xs font-medium">最常用</span>

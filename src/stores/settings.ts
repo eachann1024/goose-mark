@@ -13,8 +13,10 @@ export const useSettingsStore = defineStore('settings', {
     windowHeight: 700,
     // 首次用户引导是否已关闭
     onboardingDismissed: false,
-    // 彩蛋：深色模式使用星空背景图
-    easterEggEnabled: false,
+    // 彩蛋：深色模式使用星空背景图（默认开启）
+    easterEggEnabled: true,
+    // 使用纯色背景替代星空背景（默认关闭）
+    useSolidBackground: false,
     autoMatchSearchIcons: true,
     skipFailedIconMatch: true,
     iconMatchLogs: [] as Array<{
@@ -58,6 +60,9 @@ export const useSettingsStore = defineStore('settings', {
     },
     setEasterEggEnabled(value: boolean) {
       this.easterEggEnabled = !!value
+    },
+    setUseSolidBackground(value: boolean) {
+      this.useSolidBackground = !!value
     },
     setAutoMatchSearchIcons(value: boolean) {
       this.autoMatchSearchIcons = !!value
