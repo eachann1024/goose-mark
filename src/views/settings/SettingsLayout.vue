@@ -27,7 +27,7 @@ const tabs = [
           class="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors text-left"
           :class="[
             activeTab === tab.value
-              ? 'bg-primary/10 text-primary border-r-2 border-primary'
+              ? 'bg-primary/10 text-foreground border-r-2 border-primary'
               : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
           ]"
           @click="activeTab = tab.value"

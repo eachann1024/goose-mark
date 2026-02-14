@@ -76,22 +76,45 @@ const handleGridColumnsChange = (val: string | number) => {
           </div>
         </div>
 
-        <!-- 彩蛋开关：使用最简单的按钮，确保点击必生效 -->
-        <div v-if="isDark" class="mt-6 pt-6 border-t border-border/50 flex flex-col gap-3">
-          <div class="flex items-center justify-between bg-muted/30 p-4 rounded-xl border border-border/50">
+        <!-- 背景模式选择 -->
+        <div class="mt-6 pt-6 border-t border-border/50">
+          <div class="flex items-center justify-between mb-4">
             <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium">星空背景模式 (Beta)</span>
-              <span class="text-xs text-muted-foreground text-balance">开启后界面将呈现星空背景，由于背景图较大，加载可能需要 1-2 秒。</span>
+              <span class="text-sm font-medium">背景显示</span>
+              <span class="text-xs text-muted-foreground">选择深色模式下的背景样式</span>
             </div>
-            <Button 
-              :variant="easterEggEnabled ? 'default' : 'outline'"
-              class="shrink-0"
-              @click="easterEggEnabled = !easterEggEnabled"
+          </div>
+          <div class="flex gap-3">
+            <Button
+              :variant="!settingsStore.useSolidBackground ? 'default' : 'outline'"
+              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
+              @click="settingsStore.setUseSolidBackground(false)"
             >
-              {{ easterEggEnabled ? '已开启' : '点击开启' }}
+              <div class="sky-preview shrink-0" aria-hidden="true">
+                <span class="i-mdi-star-four-points sky-preview__main" />
+                <span class="sky-preview__dot sky-preview__dot--1" />
+                <span class="sky-preview__dot sky-preview__dot--2" />
+                <span class="sky-preview__dot sky-preview__dot--3" />
+              </div>
+              <div class="text-left">
+                <div class="text-sm font-medium">星空背景</div>
+                <div class="text-xs text-muted-foreground">动态星空特效</div>
+              </div>
+            </Button>
+            <Button
+              :variant="settingsStore.useSolidBackground ? 'default' : 'outline'"
+              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
+              @click="settingsStore.setUseSolidBackground(true)"
+            >
+              <div class="w-10 h-10 rounded-lg bg-[#2F3133] border border-white/10 shrink-0" />
+              <div class="text-left">
+                <div class="text-sm font-medium">纯色背景</div>
+                <div class="text-xs text-muted-foreground">简洁纯色 #2F3133</div>
+              </div>
             </Button>
           </div>
         </div>
+
       </CardContent>
     </Card>
 
@@ -274,6 +297,81 @@ const handleGridColumnsChange = (val: string | number) => {
 </template>
 
 <style scoped>
+.sky-preview {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  overflow: hidden;
+  background: radial-gradient(circle at 35% 25%, #27315f 0%, #13172d 48%, #090b16 100%);
+}
+
+.sky-preview::after {
+  content: '';
+  position: absolute;
+  inset: -40% auto auto -20%;
+  width: 65%;
+  height: 1px;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.85), rgb(255 255 255 / 0));
+  transform: rotate(-18deg);
+  animation: sky-meteor 2.8s ease-in-out infinite;
+}
+
+.sky-preview__main {
+  position: absolute;
+  top: 7px;
+  left: 9px;
+  font-size: 16px;
+  color: rgb(255 255 255 / 0.9);
+  filter: drop-shadow(0 0 5px rgb(255 255 255 / 0.45));
+  animation: sky-twinkle 1.8s ease-in-out infinite;
+}
+
+.sky-preview__dot {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 0.85);
+  box-shadow: 0 0 6px rgb(255 255 255 / 0.45);
+  animation: sky-dot 2.2s ease-in-out infinite;
+}
+
+.sky-preview__dot--1 {
+  top: 9px;
+  right: 8px;
+  animation-delay: 0.2s;
+}
+
+.sky-preview__dot--2 {
+  top: 19px;
+  left: 7px;
+  animation-delay: 0.6s;
+}
+
+.sky-preview__dot--3 {
+  top: 22px;
+  right: 12px;
+  animation-delay: 1s;
+}
+
+@keyframes sky-twinkle {
+  0%, 100% { opacity: 0.62; transform: scale(0.9) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1.08) rotate(8deg); }
+}
+
+@keyframes sky-dot {
+  0%, 100% { opacity: 0.35; transform: scale(0.9); }
+  50% { opacity: 0.95; transform: scale(1.15); }
+}
+
+@keyframes sky-meteor {
+  0%, 55%, 100% { opacity: 0; transform: translate(-18px, -8px) rotate(-18deg); }
+  68% { opacity: 0.85; }
+  82% { opacity: 0; transform: translate(28px, 20px) rotate(-18deg); }
+}
+
 /* 波纹动画 */
 @keyframes ripple {
   0% {

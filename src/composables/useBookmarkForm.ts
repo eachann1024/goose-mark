@@ -58,8 +58,6 @@ function _useBookmarkForm() {
   const isDescDirty = ref(false)
   const originalUrl = ref('') // 编辑时的原始 URL，用于判断是否需要重新获取图标
 
-  const dialogOrigin = ref<{ x: string; y: string } | null>(null)
-
   // 撤回功能：保存 AI 调用前的原始值
   const originalBeforeAI = ref<{
     title: string
@@ -114,36 +112,22 @@ function _useBookmarkForm() {
   const draftTemplateLabel = computed(() => getTemplateLabel(draft.url))
 
   // Helpers
+  const isHostLikeTitle = (title: string, rawUrl: string) => {
+    const normalizedTitle = title.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
+    if (!normalizedTitle) return false
+    try {
+      const safeUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`
+      const host = new URL(safeUrl).hostname.toLowerCase().replace(/^www\./, '')
+      return normalizedTitle === host
+    } catch {
+      return false
+    }
+  }
+
   const buildTextIcon = (): IconSource => {
     const base = (draft.title || draft.url).trim()
     const text = base ? base.slice(0, 4).toUpperCase() : '•'
     return { type: 'text', value: text }
-  }
-
-  const setDialogOrigin = (eventOrEl?: MouseEvent | HTMLElement) => {
-    if (!eventOrEl) {
-      dialogOrigin.value = null
-      return
-    }
-    
-    let rect: DOMRect | undefined
-    if (eventOrEl instanceof MouseEvent) {
-      const target = eventOrEl.currentTarget as HTMLElement
-      rect = target?.getBoundingClientRect?.()
-    } else if (eventOrEl instanceof HTMLElement) {
-      rect = eventOrEl.getBoundingClientRect()
-    }
-    
-    if (rect) {
-      const centerX = rect.left + rect.width / 2
-      const centerY = rect.top + rect.height / 2
-      dialogOrigin.value = {
-        x: `${(centerX / window.innerWidth) * 100}%`,
-        y: `${(centerY / window.innerHeight) * 100}%`
-      }
-    } else {
-      dialogOrigin.value = null
-    }
   }
 
   const askAI = async (showNotify = false) => {
@@ -261,8 +245,7 @@ function _useBookmarkForm() {
   }
 
   // Actions
-  const openAdd = (eventOrEl?: MouseEvent | HTMLElement) => {
-    setDialogOrigin(eventOrEl)
+  const openAdd = (_eventOrEl?: MouseEvent | HTMLElement) => {
     editingId.value = ''
     modalTitle.value = '新建书签'
     draft.title = ''
@@ -279,8 +262,7 @@ function _useBookmarkForm() {
   }
 
   // 新增：支持预填充 URL 且默认不选分类的方法（用于超级面板）
-  const openAddWithUrl = (url: string, eventOrEl?: MouseEvent | HTMLElement) => {
-    setDialogOrigin(eventOrEl)
+  const openAddWithUrl = (url: string, _eventOrEl?: MouseEvent | HTMLElement) => {
     editingId.value = ''
     modalTitle.value = '新建书签'
     draft.url = url
@@ -296,8 +278,7 @@ function _useBookmarkForm() {
     showAdd.value = true
   }
 
-  const openEdit = (bookmark: Bookmark, eventOrEl?: MouseEvent | HTMLElement) => {
-    setDialogOrigin(eventOrEl)
+  const openEdit = (bookmark: Bookmark, _eventOrEl?: MouseEvent | HTMLElement) => {
     editingId.value = bookmark.id
     modalTitle.value = '编辑书签'
     draft.title = bookmark.title || ''
@@ -427,9 +408,10 @@ function _useBookmarkForm() {
           previewIcon.value = newIcon as IconSource
           iconFetchFailed.value = (fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src))
           
-          // 自动填充标题和描述（如果用户没改过）
-          if (fetched.title && !isTitleDirty.value) {
-            draft.title = fetched.title
+          // 仅在拿到有效页面标题时自动填充，避免将域名塞进标题
+          const fetchedTitle = typeof fetched.title === 'string' ? fetched.title.trim() : ''
+          if (fetchedTitle && !isTitleDirty.value && !isHostLikeTitle(fetchedTitle, val)) {
+            draft.title = fetchedTitle
           }
           if (fetched.description && !isDescDirty.value) {
             draft.desc = fetched.description
@@ -498,7 +480,6 @@ function _useBookmarkForm() {
     isSaving,
     iconLoading,
     iconFetchFailed,
-    dialogOrigin,
     isEditing,
     maxDescLen,
     previewIconStyle,
@@ -534,4 +515,3 @@ function _useBookmarkForm() {
 // 使用 createSharedComposable 确保全局只有一个实例
 // 这样所有组件共享同一份状态，且 watchers 只注册一次
 export const useBookmarkForm = createSharedComposable(_useBookmarkForm)
-

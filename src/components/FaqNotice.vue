@@ -16,7 +16,7 @@ const iconClass = computed(() => props.icon ?? 'i-mdi-information-outline')
   <div
     :class="
       cn(
-        'rounded-xl border border-primary/15 bg-primary/5 p-4 text-sm text-muted-foreground shadow-sm',
+        'rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm dark:bg-[#3A3C3E] dark:border-[#505357]',
         props.class
       )
     "
