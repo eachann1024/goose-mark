@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 
+const DEFAULT_AI_MODEL = 'deepseek-v3.2'
+
 export interface CategorySuggestion {
   groupId: string
   groupName: string
@@ -91,7 +93,7 @@ export function useAI() {
   
       const model = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
         ? settingsStore.customAiModel.trim()
-        : undefined
+        : DEFAULT_AI_MODEL
       const res = await aiCaller({
         model,
         messages: [
@@ -204,7 +206,7 @@ ${avoidCurrentTip}
 
       const model = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
         ? settingsStore.customAiModel.trim()
-        : undefined
+        : DEFAULT_AI_MODEL
 
       const res = await aiCaller({
         model,
