@@ -12,6 +12,42 @@ const getIconApiBase = () => {
 
 const ICON_API_URL = getIconApiBase() ? `${getIconApiBase()}/api/icon` : ''
 const isDataUrl = (value: string) => value.startsWith('data:image/')
+const FAVICON_COOLDOWN_MS = 10 * 60 * 1000
+const faviconOriginCooldowns = new Map<string, number>()
+
+const shouldCooldownStatus = (status: number) => status >= 400 && status < 500
+
+const getUrlOrigin = (url: string): string | null => {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+const isOriginInCooldown = (url: string): boolean => {
+  const origin = getUrlOrigin(url)
+  if (!origin) return false
+  const until = faviconOriginCooldowns.get(origin)
+  if (!until) return false
+  if (until <= Date.now()) {
+    faviconOriginCooldowns.delete(origin)
+    return false
+  }
+  return true
+}
+
+const markOriginCooldown = (url: string) => {
+  const origin = getUrlOrigin(url)
+  if (!origin) return
+  faviconOriginCooldowns.set(origin, Date.now() + FAVICON_COOLDOWN_MS)
+}
+
+const clearOriginCooldown = (url: string) => {
+  const origin = getUrlOrigin(url)
+  if (!origin) return
+  faviconOriginCooldowns.delete(origin)
+}
 
 const blobToDataUrl = (blob: Blob): Promise<string | null> => new Promise((resolve) => {
   const reader = new FileReader()
@@ -22,15 +58,23 @@ const blobToDataUrl = (blob: Blob): Promise<string | null> => new Promise((resol
 
 export const fetchAsDataUrl = async (url: string): Promise<string | null> => {
   if (!url) return null
+  if (isOriginInCooldown(url)) return null
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 12000)
   try {
     const response = await fetch(url, { signal: controller.signal })
     clearTimeout(timer)
-    if (!response.ok) return null
+    if (!response.ok) {
+      if (shouldCooldownStatus(response.status)) {
+        markOriginCooldown(url)
+      }
+      return null
+    }
     const blob = await response.blob()
     if (!blob.type.startsWith('image/')) return null
-    return await blobToDataUrl(blob)
+    const dataUrl = await blobToDataUrl(blob)
+    if (dataUrl) clearOriginCooldown(url)
+    return dataUrl
   } catch {
     return null
   } finally {
@@ -115,6 +159,7 @@ const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; t
 }
 
 const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; cache: string } | null> => {
+  if (isOriginInCooldown(url)) return null
   const utoolsApi = window.utools as unknown as { ubrowser?: any; createBrowserWindow?: any } | undefined
   const ubrowser = utoolsApi?.ubrowser
 
@@ -152,8 +197,9 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; 
   const canOpenHtml = await isHtmlDocument(url)
   if (!canOpenHtml) return null
 
+  let browserWindow: { close?: () => void; destroy?: () => void; webContents?: { executeJavaScript?: (code: string) => Promise<unknown> } } | undefined
   try {
-    const browserWindow = utoolsApi?.createBrowserWindow?.(url, { show: false })
+    browserWindow = utoolsApi?.createBrowserWindow?.(url, { show: false })
     const exec = browserWindow?.webContents?.executeJavaScript
     if (exec) {
       const payload = await exec(`
@@ -177,28 +223,41 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; 
           if (!href) href = location.origin + "/favicon.ico"
           try {
             const res = await fetch(href)
-            if (!res.ok) return { href: "", dataUrl: "" }
+            if (!res.ok) return { href, status: res.status, dataUrl: "" }
             const blob = await res.blob()
-            if (!blob.type.startsWith("image/")) return { href: "", dataUrl: "" }
+            if (!blob.type.startsWith("image/")) return { href, status: 415, dataUrl: "" }
             const reader = new FileReader()
             const dataUrl = await new Promise(resolve => {
               reader.onload = () => resolve(reader.result || "")
               reader.onerror = () => resolve("")
               reader.readAsDataURL(blob)
             })
-            return { href, dataUrl }
+            return { href, status: res.status, dataUrl }
           } catch {
-            return { href: "", dataUrl: "" }
+            return { href, status: 0, dataUrl: "" }
           }
         })()
       `)
       const href = (payload as { href?: string })?.href
+      const status = (payload as { status?: number })?.status
       const dataUrl = (payload as { dataUrl?: string })?.dataUrl
+      if (href && typeof status === 'number' && shouldCooldownStatus(status)) {
+        markOriginCooldown(href)
+      }
       if (typeof href === 'string' && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
+        clearOriginCooldown(href)
         return { icon: href, cache: dataUrl }
       }
     }
   } catch {}
+  finally {
+    try {
+      browserWindow?.close?.()
+    } catch {}
+    try {
+      browserWindow?.destroy?.()
+    } catch {}
+  }
 
   return null
 }
@@ -255,7 +314,9 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
   if (typeof window !== 'undefined' && window.utools) {
     const utoolsResult = await fetchIconFromUToolsBrowser(targetUrl)
     if (utoolsResult) {
-      console.log('✅ [AG-Verify] uTools Icon Base64:', utoolsResult.cache.substring(0, 50) + '...', 'Len:', utoolsResult.cache.length)
+      if (import.meta.env.DEV) {
+        console.log('✅ [AG-Verify] uTools Icon Base64:', utoolsResult.cache.substring(0, 50) + '...', 'Len:', utoolsResult.cache.length)
+      }
       return {
         type: 'remote',
         src: utoolsResult.icon,
@@ -268,7 +329,9 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
   // Web 端直接兜底 favicon
   const direct = await fetchIconDirect(targetUrl)
   if (direct) {
-    console.log('✅ [AG-Verify] Web Icon Base64:', direct.cache?.substring(0, 50) + '...', 'Len:', direct.cache?.length)
+    if (import.meta.env.DEV) {
+      console.log('✅ [AG-Verify] Web Icon Base64:', direct.cache?.substring(0, 50) + '...', 'Len:', direct.cache?.length)
+    }
     return {
       type: 'remote',
       src: direct.icon,
