@@ -2,6 +2,7 @@
 import draggable from 'vuedraggable'
 import ResultToast from '@/components/ResultToast.vue'
 import type { Group } from '@/types/bookmark'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
 
 const store = useBookmarkStore()
 
