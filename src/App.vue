@@ -1071,7 +1071,7 @@ const handleLocate = async (bookmark: Bookmark) => {
 <style>
 /* 全局彩蛋适配样式 - 星空背景 */
 html.dark body.easter-egg-active {
-  background: radial-gradient(ellipse at center, #1a1a2e 0%, #0a0a15 100%) !important;
+  background: #050505 !important;
   background-attachment: fixed !important;
 }
 

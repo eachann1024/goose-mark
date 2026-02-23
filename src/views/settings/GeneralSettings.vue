@@ -268,7 +268,7 @@ const handleGridColumnsChange = (val: string | number) => {
             <div class="flex items-center justify-between">
               <div class="space-y-0.5">
                 <div class="text-sm font-medium">使用指定 AI 模型</div>
-                <div class="text-xs text-muted-foreground">默认使用 deepseek-v3</div>
+                <div class="text-xs text-muted-foreground">默认使用 deepseek-v3.2</div>
               </div>
               <Button 
                 :variant="settingsStore.useCustomAiModel ? 'default' : 'outline'"
@@ -283,7 +283,7 @@ const handleGridColumnsChange = (val: string | number) => {
               <label class="text-sm text-muted-foreground shrink-0">模型</label>
               <Input
                 class="h-9 flex-1"
-                placeholder="例如 deepseek-v3 自定义模型名"
+                placeholder="例如 deepseek-v3.2 自定义模型名"
                 :model-value="settingsStore.customAiModel"
                 @update:model-value="(val) => settingsStore.setCustomAiModel(String(val))"
               />
@@ -304,7 +304,7 @@ const handleGridColumnsChange = (val: string | number) => {
   border-radius: 0.625rem;
   border: 1px solid rgb(255 255 255 / 0.12);
   overflow: hidden;
-  background: radial-gradient(circle at 35% 25%, #27315f 0%, #13172d 48%, #090b16 100%);
+  background: #050505;
 }
 
 .sky-preview::after {
