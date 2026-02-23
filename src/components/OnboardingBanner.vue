@@ -13,27 +13,67 @@ const emit = defineEmits<{
 }>()
 
 const triggerImport = async () => {
+  const fallbackToInput = () => {
+    fileInputRef.value?.click()
+  }
+
   // uTools 环境优先使用原生文件选择器
   if (window.utools?.showOpenDialog) {
-    const paths = await window.utools.showOpenDialog({
-      title: '选择书签文件',
-      filters: [{ name: '书签文件', extensions: ['html', 'htm', 'json'] }],
-      properties: ['openFile']
-    })
-    if (paths?.[0]) {
-      // uTools 读取文件内容
-      const content = window.utools.readFileSync?.(paths[0], 'utf-8')
-      if (content) {
-        // 构造一个 File 对象传给父组件，保持接口一致
-        const fileName = paths[0].split('/').pop() || 'bookmarks.html'
-        const file = new File([content], fileName, { type: 'text/html' })
-        emit('import', file)
+    try {
+      const paths = await window.utools.showOpenDialog({
+        title: '选择书签文件',
+        filters: [{ name: '书签文件', extensions: ['html', 'htm', 'json'] }],
+        properties: ['openFile']
+      })
+
+      const selectedPath = paths?.[0]
+      if (!selectedPath) return
+
+      const fileName = selectedPath.split(/[\\/]/).pop() || 'bookmarks.html'
+      let content: string | undefined
+
+      try {
+        content = window.utools.readFileSync?.(selectedPath, 'utf-8')
+      } catch (e) {
+        console.warn('[Onboarding] uTools readFileSync failed:', e)
       }
+
+      // 部分环境 uTools 不暴露 readFileSync，尝试回退到 Node fs
+      if (typeof content !== 'string') {
+        try {
+          const fs = window.require?.('fs') as
+            | { readFileSync?: (path: string, encoding: string) => unknown }
+            | undefined
+          const raw = fs?.readFileSync?.(selectedPath, 'utf-8')
+          if (typeof raw === 'string') {
+            content = raw
+          } else if (raw && typeof (raw as { toString?: (encoding?: string) => string }).toString === 'function') {
+            content = (raw as { toString: (encoding?: string) => string }).toString('utf-8')
+          }
+        } catch (e) {
+          console.warn('[Onboarding] fs readFileSync fallback failed:', e)
+        }
+      }
+
+      if (typeof content === 'string') {
+        const file = new File([content], fileName, {
+          type: fileName.toLowerCase().endsWith('.json') ? 'application/json' : 'text/html'
+        })
+        emit('import', file)
+        return
+      }
+
+      window.utools?.showNotification?.('读取文件失败，请重新选择')
+      fallbackToInput()
+    } catch (e) {
+      console.error('[Onboarding] triggerImport failed:', e)
+      fallbackToInput()
     }
     return
   }
+
   // Web 环境回退到 input
-  fileInputRef.value?.click()
+  fallbackToInput()
 }
 
 const handleFileSelect = (e: Event) => {
