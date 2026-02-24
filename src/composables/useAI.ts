@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 
 const DEFAULT_AI_MODEL = 'deepseek-v3.2'
+const PRODUCT_LOCAL_MODE_CONTEXT = '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
 
 export interface CategorySuggestion {
   groupId: string
@@ -85,6 +86,7 @@ export function useAI() {
       const prompt = `你是一个专业的书签整理助手。请分析以下网址，提取核心信息并润色。
   
   网址: ${url}
+  产品上下文：${PRODUCT_LOCAL_MODE_CONTEXT}
   
   请返回 JSON 格式：{"title": "...", "desc": "..." }
   要求：
@@ -99,7 +101,7 @@ export function useAI() {
         messages: [
           {
             role: 'system',
-            content: '你是一个专业的书签整理助手。请分析网址内容并返回 JSON。'
+            content: `你是一个专业的书签整理助手。请分析网址内容并返回 JSON。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
           },
           {
             role: 'user',
@@ -176,6 +178,9 @@ export function useAI() {
 【待分类网址】
 ${url}
 
+【产品上下文】
+${PRODUCT_LOCAL_MODE_CONTEXT}
+
 【用户现有分组】
 ${groupsDescription}
 ${avoidCurrentTip}
@@ -213,7 +218,7 @@ ${avoidCurrentTip}
         messages: [
           {
             role: 'system',
-            content: '你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。'
+            content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
           },
           {
             role: 'user',
