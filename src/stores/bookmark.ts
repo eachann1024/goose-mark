@@ -605,13 +605,29 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (!icon) return
       this.assignIcon(bookmark.id, icon)
     },
-    async refreshMissingIcons(force = false) {
+    isBookmarkInTrash(bookmark: Bookmark) {
+      const inTrashByLocation = Array.isArray(bookmark.locations) && bookmark.locations.some(loc =>
+        loc.groupId === TRASH_GROUP_ID || loc.subGroupId === 'sg-trash'
+      )
+
+      const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+      const inTrashByGroupIndex = !!trashGroup && trashGroup.children.some(sub => sub.bookmarkIds.includes(bookmark.id))
+
+      return inTrashByLocation || inTrashByGroupIndex
+    },
+    getMissingIconCandidates(force = false) {
       const settingsStore = useSettingsStore()
-      const shouldSkip = (b: Bookmark) => {
-        if (!settingsStore.skipFailedIconMatch) return false
-        return !!b.iconMatchFailedAt && !force
-      }
-      const missing = this.bookmarks.filter(b => (!b.icon || b.icon.type === 'text') && !shouldSkip(b))
+      return this.bookmarks.filter(bookmark => {
+        if (this.isBookmarkInTrash(bookmark)) return false
+        if (settingsStore.skipFailedIconMatch && bookmark.iconMatchFailedAt && !force) return false
+        return !bookmark.icon || bookmark.icon.type === 'text'
+      })
+    },
+    countMissingIconCandidates(force = false) {
+      return this.getMissingIconCandidates(force).length
+    },
+    async refreshMissingIcons(force = false) {
+      const missing = this.getMissingIconCandidates(force)
       const result = await bulkMatchMissing(missing)
       result.forEach((icon, id) => this.assignIcon(id, icon))
       
@@ -636,7 +652,7 @@ export const useBookmarkStore = defineStore('bookmark', {
       return {
         total: missing.length,
         matched: result.size,
-        remaining: this.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length,
+        remaining: this.countMissingIconCandidates(force),
         successList,
         failList
       }

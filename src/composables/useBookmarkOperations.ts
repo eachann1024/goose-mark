@@ -1,5 +1,6 @@
 
 import type { Bookmark } from '@/types/bookmark'
+import { getTemplateLabel } from '@/lib/utils'
 
 type UToolsExtendedApi = {
   copyText?: (text: string) => void
@@ -34,11 +35,6 @@ export function useBookmarkOperations() {
   const isDetachedWindowNow = () => {
     const type = getWindowType()
     return type === 'detach' || type === 'browser'
-  }
-
-  const getTemplateLabel = (url: string) => {
-    const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
-    return label || '搜索内容'
   }
 
   // Actions
@@ -263,7 +259,6 @@ export function useBookmarkOperations() {
     requestDelete,
     confirmDelete,
     emptyTrash,
-    handleReorder,
-    getTemplateLabel
+    handleReorder
   }
 }

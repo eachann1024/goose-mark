@@ -1,16 +1,12 @@
 <script setup lang="ts">
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
+import { getTemplateLabel } from '@/lib/utils'
 
 const props = defineProps<{
   bookmark: Bookmark
   query: string
 }>()
-
-const getTemplateLabel = (url: string) => {
-  const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
-  return label || '搜索内容'
-}
 </script>
 
 <template>

@@ -3,6 +3,7 @@ import { onClickOutside, createSharedComposable } from '@vueuse/core'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { iconToDisplayUrl, fetchAndCacheIcon } from '@/services/iconCache'
 import { useToast } from './useToast'
+import { getTemplateLabel } from '@/lib/utils'
 
 
 type UBrowserApi = {
@@ -105,10 +106,6 @@ function _useBookmarkForm() {
   })
   
   const isDraftTemplate = computed(() => /{[^}]+}/.test(draft.url))
-  const getTemplateLabel = (url: string) => {
-      const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
-      return label || '搜索内容'
-  }
   const draftTemplateLabel = computed(() => getTemplateLabel(draft.url))
 
   // Helpers

@@ -1,17 +1,11 @@
 <script setup lang="ts">
 import ResultToast from '@/components/ResultToast.vue'
-import { probeUrl, type ProbeResult } from '@/services/siteProbe'
 
 const store = useBookmarkStore()
 const settingsStore = useSettingsStore()
-const { isUTools } = useAppState()
-const { syncFeatures } = useUTools()
 
 const matching = ref(false)
-const probing = ref(false)
-const probeResult = ref<ProbeResult[]>([])
-const probeTotal = ref(0)
-const probeDone = ref(0)
+const forceRematch = computed(() => !settingsStore.skipFailedIconMatch)
 
 // Result Toast
 type ResultToastVariant = 'success' | 'info' | 'warning' | 'error'
@@ -45,62 +39,19 @@ const showResultToast = (payload: Omit<ResultToastState, 'visible'>, timeoutMs =
 
 const handleResultToastAction = () => resultToast.value.onAction?.()
 
-const missingCount = computed(() =>
-  (Array.isArray(store.bookmarks) ? store.bookmarks : []).filter(b => !b.icon || b.icon.type === 'text').length
-)
-
-const copyText = async (text: string) => {
-  if (!navigator.clipboard) {
-    notify('当前环境不支持剪贴板复制')
-    return
-  }
-  try {
-    await navigator.clipboard.writeText(text)
-    notify('已复制到剪贴板')
-  } catch {
-    notify('复制失败，请检查权限后重试')
-  }
-}
-
-const probeReasonText = (reason?: ProbeResult['reason']) => {
-  if (!reason) return ''
-  const map: Record<NonNullable<ProbeResult['reason']>, string> = {
-    invalid_url: '格式错误',
-    unsupported_protocol: '不支持',
-    template: '模板地址',
-    timeout: '超时',
-    error: '错误'
-  }
-  return map[reason]
-}
-
-const mapWithConcurrency = async <T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) => {
-  if (items.length === 0) return [] as R[]
-  const results: R[] = new Array(items.length)
-  let nextIndex = 0
-
-  const runner = async () => {
-    while (nextIndex < items.length) {
-      const idx = nextIndex++
-      results[idx] = await fn(items[idx])
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => runner()))
-  return results
-}
+const missingCount = computed(() => store.countMissingIconCandidates(forceRematch.value))
 
 const matchMissing = async () => {
   if (matching.value) return
-  const missing = store.bookmarks.filter(b => !b.icon || b.icon.type === 'text').length
+  const missing = store.countMissingIconCandidates(forceRematch.value)
   if (missing === 0) {
-    showResultToast({ variant: 'info', title: '没有缺失图标', description: '当前书签图标已齐全' }, 4500)
+    showResultToast({ variant: 'info', title: '没有需要补全的图标', description: '当前书签图标已完整' }, 4500)
     return
   }
   matching.value = true
   const started = performance.now()
   try {
-    const res = await store.refreshMissingIcons(!settingsStore.skipFailedIconMatch)
+    const res = await store.refreshMissingIcons(forceRematch.value)
     const elapsed = Math.round(performance.now() - started)
     
     let description = ''
@@ -122,7 +73,7 @@ const matchMissing = async () => {
     showResultToast(
       {
         variant: res.remaining > 0 ? 'warning' : 'success',
-        title: `图标匹配完成：${res.matched}/${res.total}`,
+        title: `图标补全完成：${res.matched}/${res.total}`,
         description
       },
       res.failList.length > 0 ? 8000 : 5000
@@ -137,194 +88,30 @@ const matchMissing = async () => {
     })
   } catch (e) {
     console.error('[Settings] refreshMissingIcons failed:', e)
-    showResultToast({ variant: 'error', title: '图标匹配失败', description: '请稍后重试或检查网络/权限' }, 6500)
+    showResultToast({ variant: 'error', title: '图标补全失败', description: '请稍后重试，或检查网络和权限' }, 6500)
   } finally {
     matching.value = false
-  }
-}
-
-const checkInvalid = async () => {
-  if (probing.value) return
-  const bookmarks = Array.isArray(store.bookmarks) ? store.bookmarks : []
-  if (bookmarks.length === 0) {
-    showResultToast({ variant: 'info', title: '暂无可检测的书签', description: '先添加书签再进行无效地址分析' }, 4500)
-    return
-  }
-  probing.value = true
-  probeResult.value = []
-  probeTotal.value = bookmarks.length
-  probeDone.value = 0
-  const all = bookmarks
-  const started = performance.now()
-  try {
-    const results = await mapWithConcurrency(all, 6, async (bookmark) => {
-      try {
-        const r = await probeUrl(bookmark.url, 3000)
-        probeResult.value.push(r)
-        probeDone.value += 1
-        return r
-      } catch {
-        const r = { url: bookmark.url, ok: false, elapsed: 0, reason: 'error' } satisfies ProbeResult
-        probeResult.value.push(r)
-        probeDone.value += 1
-        return r
-      }
-    })
-    const okCount = results.filter(r => r.ok).length
-    const fail = results.filter(r => !r.ok)
-    const elapsed = Math.round(performance.now() - started)
-    const failList = fail.map(r => r.url).join('\n')
-    showResultToast(
-      {
-        variant: fail.length ? 'warning' : 'success',
-        title: `无效地址分析完成：${okCount}/${results.length} OK`,
-        description: fail.length ? `失败 ${fail.length} 条（耗时 ${elapsed}ms）` : `全部通过（耗时 ${elapsed}ms）`,
-        actionLabel: fail.length ? '复制失败列表' : undefined,
-        onAction: fail.length ? () => copyText(failList) : undefined
-      },
-      6500
-    )
-  } finally {
-    probing.value = false
-  }
-}
-
-const rebuildFeatureIcons = async () => {
-  if (!isUTools.value) {
-    showResultToast({ variant: 'warning', title: '仅支持 uTools 环境' }, 3500)
-    return
-  }
-  try {
-    await syncFeatures(store.bookmarks, { force: true })
-    showResultToast({ variant: 'success', title: '全局搜索图标已刷新' }, 3500)
-  } catch (e) {
-    console.error('[Settings] syncFeatures failed:', e)
-    showResultToast({ variant: 'error', title: '刷新失败', description: '请稍后再试' }, 4500)
-  }
-}
-
-const formatLogTime = (time: number) => {
-  try {
-    return new Date(time).toLocaleString('zh-CN', { hour12: false })
-  } catch {
-    return String(time)
   }
 }
 </script>
 
 <template>
   <div class="grid gap-6">
-    <div class="grid md:grid-cols-2 gap-6">
+    <div class="grid gap-6">
       <!-- Icon Match -->
       <Card>
         <CardHeader class="pb-3">
-          <CardTitle class="text-base">图标匹配</CardTitle>
-          <CardDescription>缺失图标: <span class="text-primary font-bold">{{ missingCount }}</span> 条</CardDescription>
+          <CardTitle class="text-base">图标补全</CardTitle>
+          <CardDescription>待补全图标：<span class="text-primary font-bold">{{ missingCount }}</span> 个</CardDescription>
         </CardHeader>
         <CardContent>
           <Button class="w-full" variant="secondary" :disabled="matching || missingCount === 0" @click="matchMissing">
             <span v-if="matching" class="i-mdi-loading animate-spin mr-2" />
-            {{ matching ? '匹配中...' : (missingCount === 0 ? '无需匹配' : '匹配缺失图标') }}
-          </Button>
-          <div class="mt-4 space-y-3 text-sm">
-            <div class="flex items-center justify-between">
-              <div class="space-y-0.5">
-                <div class="font-medium">启动时匹配全局搜索图标</div>
-                <div class="text-xs text-muted-foreground">只对模板/万能匹配书签生效</div>
-              </div>
-              <Switch v-model:checked="settingsStore.autoMatchSearchIcons" />
-            </div>
-            <div class="flex items-center justify-between">
-              <div class="space-y-0.5">
-                <div class="font-medium">失败后忽略</div>
-                <div class="text-xs text-muted-foreground">失败标记后不再重复匹配</div>
-              </div>
-              <Switch v-model:checked="settingsStore.skipFailedIconMatch" />
-            </div>
-            <Button class="w-full" variant="outline" :disabled="!isUTools" @click="rebuildFeatureIcons">
-              刷新全局搜索图标
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-      
-      <!-- Probe -->
-      <Card>
-        <CardHeader class="pb-3">
-          <CardTitle class="text-base">无效地址分析</CardTitle>
-          <CardDescription>通过 HEAD/GET 检测链接有效性</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button class="w-full" variant="outline" :disabled="probing" @click="checkInvalid">
-            <span v-if="probing" class="i-mdi-loading animate-spin mr-2" />
-            {{ probing ? `检测中... ${probeDone}/${probeTotal}` : '开始检测' }}
+            {{ matching ? '补全中...' : (missingCount === 0 ? '已全部补全' : '一键补全图标') }}
           </Button>
         </CardContent>
       </Card>
     </div>
-
-    <!-- Icon Match Logs -->
-    <Card>
-      <CardHeader class="pb-3 flex items-center justify-between">
-        <div>
-          <CardTitle class="text-base">图标匹配日志</CardTitle>
-          <CardDescription>最近 50 条</CardDescription>
-        </div>
-        <Button variant="ghost" size="sm" :disabled="settingsStore.iconMatchLogs.length === 0" @click="settingsStore.clearIconMatchLogs">
-          清空
-        </Button>
-      </CardHeader>
-      <CardContent>
-        <div v-if="settingsStore.iconMatchLogs.length === 0" class="text-xs text-muted-foreground">
-          暂无日志
-        </div>
-        <div v-else class="grid gap-2 max-h-56 overflow-y-auto custom-scroll">
-          <div
-            v-for="item in settingsStore.iconMatchLogs"
-            :key="item.time + item.scope"
-            class="rounded-md px-3 py-2 bg-muted/30 border border-border/50 text-xs"
-          >
-            <div class="flex items-center justify-between">
-              <span class="text-muted-foreground">{{ formatLogTime(item.time) }}</span>
-              <span class="font-mono">{{ item.scope === 'search' ? '全局搜索' : '缺失图标' }}</span>
-            </div>
-            <div class="mt-1">
-              成功 {{ item.success }}/{{ item.total }}，失败 {{ item.failed }}
-            </div>
-            <div v-if="item.failedTitles.length" class="mt-1 text-muted-foreground">
-              失败：{{ item.failedTitles.join('、') }}
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-
-    <!-- Probe Results -->
-    <Card v-if="probeResult.length" class="animate-in fade-in slide-in-from-bottom-4">
-      <CardHeader>
-        <CardTitle>检测结果</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div class="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto custom-scroll">
-          <div v-for="item in probeResult" :key="item.url" class="rounded-md px-3 py-2 bg-muted/30 flex items-center justify-between border border-border/50">
-            <span class="truncate text-sm text-foreground/80 flex-1 mr-4" :title="item.url">{{ item.url }}</span>
-            <div class="flex items-center gap-3 shrink-0">
-              <span v-if="item.status" class="text-[10px] text-muted-foreground font-mono">HTTP {{ item.status }}</span>
-              <span v-if="item.method" class="text-[10px] text-muted-foreground font-mono">{{ item.method }}</span>
-              <span class="text-xs text-muted-foreground font-mono">{{ Math.round(item.elapsed) }}ms</span>
-              <span
-                :class="[
-                  item.ok ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-                  'text-[10px] font-bold px-2 py-0.5 rounded border'
-                ]"
-              >
-                {{ item.ok ? 'OK' : (probeReasonText(item.reason) || 'FAIL') }}
-              </span>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
 
     <ResultToast
       :open="resultToast.visible"
@@ -337,19 +124,3 @@ const formatLogTime = (time: number) => {
     />
   </div>
 </template>
-
-<style scoped>
-.custom-scroll::-webkit-scrollbar {
-  width: 4px;
-}
-.custom-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-.custom-scroll::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.3);
-  border-radius: var(--radius-sm);
-}
-.custom-scroll::-webkit-scrollbar-thumb:hover {
-  background-color: hsl(var(--muted-foreground) / 0.5);
-}
-</style>
