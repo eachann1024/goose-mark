@@ -22,7 +22,6 @@ const triggerImport = async () => {
     try {
       const paths = await window.utools.showOpenDialog({
         title: '选择书签文件',
-        filters: [{ name: '书签文件', extensions: ['html', 'htm', 'json'] }],
         properties: ['openFile']
       })
 
@@ -103,16 +102,19 @@ const dismiss = () => {
         
         <div class="flex-1 min-w-0">
           <h3 class="font-semibold text-foreground mb-1">
-            👋 欢迎使用书签管理
+            欢迎使用《鹅的书签》✨
           </h3>
-          <p class="text-sm text-muted-foreground mb-3">
-            你可以从浏览器导入已有书签，快速开始整理。支持 Chrome、Edge、Firefox 导出的 HTML 文件。
+          <p class="text-sm text-muted-foreground mb-2">
+            导入已有数据可以直接开始使用：支持浏览器导出的 HTML、鹅的书签备份 JSON、网址精灵导出的 data.json。
+          </p>
+          <p class="text-xs text-muted-foreground mb-3">
+            导入浏览器 HTML，由于只支持两层文件夹结构，所以后续导入的书签会被合并到根文件夹下。
           </p>
           
           <div class="flex items-center gap-2">
             <Button size="sm" @click="triggerImport">
               <span class="i-mdi-import mr-1.5" />
-              导入浏览器书签
+              选择导入文件
             </Button>
             <Button variant="ghost" size="sm" @click="dismiss">
               以后再说
@@ -120,7 +122,6 @@ const dismiss = () => {
             <input
               ref="fileInputRef"
               type="file"
-              accept=".html,.htm,.json"
               class="hidden"
               @change="handleFileSelect"
             />
