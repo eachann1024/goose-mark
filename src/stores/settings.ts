@@ -17,10 +17,10 @@ export const useSettingsStore = defineStore('settings', {
     onboardingDismissed: false,
     // 彩蛋：深色模式使用星空背景图（默认开启）
     easterEggEnabled: true,
-    // 使用纯色背景替代星空背景（默认关闭）
+    // 使用纯色背景替代星空背景（默认关闭，即默认星空）
     useSolidBackground: false,
-    // 浅色模式背景风格（白色 / 贴近 uTools 灰）
-    lightBackgroundStyle: 'white' as 'white' | 'utools',
+    // 浅色模式背景风格（白色 / 贴近 uTools 灰，默认灰色）
+    lightBackgroundStyle: 'utools' as 'white' | 'utools',
     autoMatchSearchIcons: true,
     skipFailedIconMatch: true,
     iconMatchLogs: [] as Array<{
