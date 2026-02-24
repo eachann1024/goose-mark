@@ -175,6 +175,9 @@ body {
 *:focus-visible {
   outline: none !important;
   box-shadow: none !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-color: transparent !important;
 }
 /* 允许所有元素选中，特定 UI 组件除外 */
 * {

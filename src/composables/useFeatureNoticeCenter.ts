@@ -22,16 +22,16 @@ const localModeIntroStatus = ref<LocalModeIntroStatus>(readIntroStatus())
 
 const LOCAL_MODE_INTRO_NOTICE: FeatureNoticeItem = {
   id: 'local-mode-intro',
-  title: '新增本地模式',
-  description: '可配合扩展使用。支持启动时本地优先读取并覆盖当前数据。',
+  title: '新增本地备份',
+  description: '可配合扩展使用，支持启动时优先用本地备份恢复当前数据。',
   primaryLabel: '立即查看',
   secondaryLabel: '暂时忽略'
 }
 
 const LOCAL_MODE_DEVICE_PATH_NOTICE: FeatureNoticeItem = {
   id: 'local-mode-device-path',
-  title: '请为当前设备选择本地路径',
-  description: '检测到“本地优先”已同步开启，但本机尚未配置本地存储目录。',
+  title: '请为当前设备选择备份路径',
+  description: '检测到“本地优先”已开启，但当前设备还未设置本地存储目录。',
   primaryLabel: '立即选择',
   secondaryLabel: '稍后处理'
 }

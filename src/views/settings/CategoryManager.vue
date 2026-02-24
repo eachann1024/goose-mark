@@ -87,7 +87,7 @@ const handleSubDragEnd = (evt: { oldIndex: number; newIndex: number; from: HTMLE
   
   if (!fromGroupId || !subId) return
   
-  // 如果拖到了促销区域，升级为主分组
+  // 如果拖到了升级区域，升级为主分组
   if (toGroupId === 'promote-zone') {
     store.promoteSubToGroup(fromGroupId, subId)
     return
@@ -225,7 +225,7 @@ const handleConfirmDelete = () => {
   }
   
   if (!success) {
-    showResultToast({ variant: 'warning', title: '无法删除', description: '默认分组或最后一个子分类无法被删除' }, 4000)
+    showResultToast({ variant: 'warning', title: '无法删除', description: '默认分组或最后一个子分组不能删除' }, 4000)
     showDeleteConfirm.value = false
     deleteTarget.value = null
     return
@@ -238,7 +238,7 @@ const handleConfirmDelete = () => {
     visible: true,
     message: deleteTarget.value.type === 'group' 
       ? `分组 "${snapshot.name}" 已删除` 
-      : `子分类 "${snapshot.name}" 已删除`,
+      : `子分组 "${snapshot.name}" 已删除`,
     data: snapshot
   }
   
@@ -268,22 +268,22 @@ const closeUndoToast = () => {
   <div class="space-y-6">
     <Card>
       <CardHeader>
-        <CardTitle>分类管理</CardTitle>
-        <CardDescription>管理书签分组和子分组，拖拽可调整排序或移动分类</CardDescription>
+        <CardTitle>分组管理</CardTitle>
+        <CardDescription>管理分组和子分组，可拖拽调整顺序或移动位置</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <!-- Add Group -->
         <div class="pb-2">
           <div v-if="!isAddingGroup">
             <Button variant="outline" class="w-full h-9 border-dashed border-input hover:border-primary hover:text-primary transition-colors" :disabled="editingLocked" @click="startAddGroup">
-              <span class="i-mdi-plus mr-2" /> 新建主分组
+              <span class="i-mdi-plus mr-2" /> 新建分组
             </Button>
           </div>
           <div v-else class="flex gap-2 animate-in fade-in slide-in-from-top-2">
             <Input 
               ref="addGroupInput"
               v-model="newGroupName" 
-              placeholder="输入分组名称..." 
+              placeholder="输入分组名称" 
               class="flex-1 h-9"
               @keyup.enter="confirmAddGroup"
               autofocus
@@ -303,7 +303,7 @@ const closeUndoToast = () => {
           class="border-2 border-dashed border-primary/50 rounded-lg p-4 text-center text-sm text-primary/70 bg-primary/5 transition-all"
           data-group-id="promote-zone"
         >
-          <span class="i-mdi-arrow-up-bold mr-2" />拖拽子分类到此处升级为主分组
+          <span class="i-mdi-arrow-up-bold mr-2" />把子分组拖到这里，可升级为主分组
         </div>
         
         <!-- Group List -->
@@ -365,7 +365,7 @@ const closeUndoToast = () => {
                     variant="ghost" 
                     size="icon"
                     class="h-7 w-7 text-muted-foreground hover:text-primary"
-                    title="添加子分类"
+                    title="添加子分组"
                     :disabled="editingLocked"
                     @click="startAddSub(group.id)"
                   >
@@ -444,7 +444,7 @@ const closeUndoToast = () => {
                         size="icon"
                         class="h-6 w-6 text-muted-foreground hover:text-primary"
                         :disabled="editingLocked || !!sub.sourceShareId"
-                        :title="sub.sourceShareId ? '导入的分组不可编辑' : '重命名'"
+                        :title="sub.sourceShareId ? '导入的分组暂不支持重命名' : '重命名'"
                         @click="startEditSub(group.id, sub.id, sub.name)"
                       >
                         <span class="i-mdi-pencil text-xs" />
@@ -453,7 +453,7 @@ const closeUndoToast = () => {
                         variant="ghost"
                         size="icon"
                         class="h-6 w-6 text-muted-foreground hover:text-destructive"
-                        title="删除子分类"
+                        title="删除子分组"
                         :disabled="editingLocked"
                         @click="openDeleteConfirm('sub', group.id, sub.name, sub.id)"
                       >
@@ -471,7 +471,7 @@ const closeUndoToast = () => {
                   ref="addSubInput"
                   v-model="newSubName" 
                   class="flex-1 h-9 text-sm"
-                  placeholder="输入子分组名称..."
+                  placeholder="输入子分组名称"
                   @keyup.enter="confirmAddSub"
                   @blur="cancelAddSub"
                   autofocus
@@ -495,7 +495,7 @@ const closeUndoToast = () => {
         <DialogHeader>
           <DialogTitle>确认删除？</DialogTitle>
           <DialogDescription>
-            {{ deleteTarget?.type === 'group' ? '分组' : '子分类' }} "{{ deleteTarget?.name }}" 及其独有的书签将被永久删除。
+            {{ deleteTarget?.type === 'group' ? '分组' : '子分组' }} "{{ deleteTarget?.name }}" 及其独有书签将被永久删除。
           </DialogDescription>
         </DialogHeader>
         <DialogFooter class="gap-3">

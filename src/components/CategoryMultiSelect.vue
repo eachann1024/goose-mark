@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { BookmarkLocation } from '@/types/bookmark'
+import { TRASH_GROUP_ID } from '@/stores/bookmark'
 
 const props = defineProps<{
   modelValue: BookmarkLocation[]
@@ -87,7 +88,7 @@ const getLocationLabel = (loc: BookmarkLocation) => {
           <div class="flex items-center gap-2">
             <span 
               v-if="selectedLocations.some(loc => loc.groupId === group.id)"
-              class="w-2 h-2 rounded-full bg-primary shrink-0"
+              class="w-2 h-2 rounded-full bg-primary shrink-0 dark-selection-indicator"
             />
             <span class="text-sm font-medium">{{ group.name }}</span>
           </div>
@@ -100,11 +101,14 @@ const getLocationLabel = (loc: BookmarkLocation) => {
         <div
           v-for="sub in currentSubGroups"
           :key="sub.id"
-          class="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-muted/50 text-left"
+          class="subgroup-item flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-muted/50 text-left"
+          :class="{
+            'dark-selected': isSelected(expandedGroupId, sub.id)
+          }"
           @click="toggleLocation(expandedGroupId, sub.id)"
         >
           <span 
-            class="w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors"
+            class="w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors dark-checkbox"
             :class="{
               'bg-primary border-primary text-primary-foreground': isSelected(expandedGroupId, sub.id),
               'border-muted-foreground/50': !isSelected(expandedGroupId, sub.id)
@@ -127,7 +131,7 @@ const getLocationLabel = (loc: BookmarkLocation) => {
           <div
             v-for="loc in selectedLocations"
             :key="`${loc.groupId}-${loc.subGroupId}`"
-            class="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs"
+            class="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs dark-selected-tag"
           >
             <span>{{ getLocationLabel(loc) }}</span>
             <Button
@@ -150,3 +154,43 @@ const getLocationLabel = (loc: BookmarkLocation) => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 平滑过渡 */
+.subgroup-item,
+.dark-selected-tag,
+.dark-checkbox {
+  transition: all 0.2s ease;
+}
+</style>
+
+<style>
+/* 深色模式：选中状态显示清晰的视觉效果 */
+html.dark .subgroup-item.dark-selected {
+  background-color: hsl(var(--accent)) !important;
+  border: 1px solid hsl(var(--primary) / 0.4);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2);
+  margin: -1px;
+  padding-left: calc(0.75rem + 1px);
+  padding-right: calc(0.75rem + 1px);
+  padding-top: calc(0.5rem + 1px);
+  padding-bottom: calc(0.5rem + 1px);
+}
+
+/* 深色模式：选中标签高亮 */
+html.dark .dark-selected-tag {
+  background-color: hsl(var(--primary) / 0.3) !important;
+  border: 1px solid hsl(var(--primary) / 0.5);
+  color: hsl(var(--primary)) !important;
+}
+
+/* 深色模式：选中指示点更明显 */
+html.dark .dark-selection-indicator {
+  box-shadow: 0 0 4px hsl(var(--primary) / 0.6);
+}
+
+/* 深色模式：复选框更醒目 */
+html.dark .dark-checkbox.bg-primary {
+  box-shadow: 0 0 6px hsl(var(--primary) / 0.5);
+}
+</style>

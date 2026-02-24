@@ -33,8 +33,8 @@ const handleGridColumnsChange = (val: string | number) => {
     <!-- Theme Selection Card -->
     <Card>
       <CardHeader>
-        <CardTitle>主题风格</CardTitle>
-        <CardDescription>选择应用的主题色系</CardDescription>
+        <CardTitle>外观主题</CardTitle>
+        <CardDescription>选择你喜欢的界面风格</CardDescription>
       </CardHeader>
       <CardContent>
         <div class="flex gap-6">
@@ -81,10 +81,13 @@ const handleGridColumnsChange = (val: string | number) => {
           <div class="flex items-center justify-between mb-4">
             <div class="flex flex-col gap-1">
               <span class="text-sm font-medium">背景显示</span>
-              <span class="text-xs text-muted-foreground">选择深色模式下的背景样式</span>
+              <span class="text-xs text-muted-foreground">
+                {{ isDark ? '当前为深色模式，请选择背景样式' : '当前为浅色模式，请选择背景样式' }}
+              </span>
             </div>
           </div>
-          <div class="flex gap-3">
+
+          <div v-if="isDark" class="flex gap-3">
             <Button
               :variant="!settingsStore.useSolidBackground ? 'default' : 'outline'"
               class="flex-1 h-auto py-3 px-4 justify-start gap-3"
@@ -98,7 +101,7 @@ const handleGridColumnsChange = (val: string | number) => {
               </div>
               <div class="text-left">
                 <div class="text-sm font-medium">星空背景</div>
-                <div class="text-xs text-muted-foreground">动态星空特效</div>
+                <div class="text-xs text-muted-foreground">带动态效果</div>
               </div>
             </Button>
             <Button
@@ -109,7 +112,32 @@ const handleGridColumnsChange = (val: string | number) => {
               <div class="w-10 h-10 rounded-lg bg-[#2F3133] border border-white/10 shrink-0" />
               <div class="text-left">
                 <div class="text-sm font-medium">纯色背景</div>
-                <div class="text-xs text-muted-foreground">简洁纯色 #2F3133</div>
+                <div class="text-xs text-muted-foreground">深灰纯色 #2F3133</div>
+              </div>
+            </Button>
+          </div>
+
+          <div v-else class="flex gap-3">
+            <Button
+              :variant="settingsStore.lightBackgroundStyle === 'white' ? 'default' : 'outline'"
+              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
+              @click="settingsStore.setLightBackgroundStyle('white')"
+            >
+              <div class="w-10 h-10 rounded-lg bg-white border border-zinc-200 shrink-0" />
+              <div class="text-left">
+                <div class="text-sm font-medium">白色背景</div>
+                <div class="text-xs text-muted-foreground">清爽纯白 #FFFFFF</div>
+              </div>
+            </Button>
+            <Button
+              :variant="settingsStore.lightBackgroundStyle === 'utools' ? 'default' : 'outline'"
+              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
+              @click="settingsStore.setLightBackgroundStyle('utools')"
+            >
+              <div class="w-10 h-10 rounded-lg bg-[#F4F4F4] border border-zinc-300 shrink-0" />
+              <div class="text-left">
+                <div class="text-sm font-medium">浅灰背景</div>
+                <div class="text-xs text-muted-foreground">接近 uTools 默认 #F4F4F4</div>
               </div>
             </Button>
           </div>
@@ -124,12 +152,12 @@ const handleGridColumnsChange = (val: string | number) => {
       <Card>
         <CardHeader>
           <CardTitle>布局</CardTitle>
-          <CardDescription>设置主界面每行卡片数量（2-5）</CardDescription>
+          <CardDescription>设置主页每行显示多少张卡片（2-5）</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="flex items-center gap-4 flex-wrap">
             <div class="flex items-center gap-2 shrink-0">
-              <label class="text-sm text-muted-foreground shrink-0">每行数量</label>
+              <label class="text-sm text-muted-foreground shrink-0">每行卡片</label>
               <Input
                 type="number"
                 min="2"
@@ -155,7 +183,7 @@ const handleGridColumnsChange = (val: string | number) => {
           </div>
 
           <div class="flex items-center gap-3 max-w-md mt-4">
-            <label class="text-sm text-muted-foreground shrink-0">主分类展示</label>
+            <label class="text-sm text-muted-foreground shrink-0">主分组展示</label>
             <div class="flex gap-2">
               <Button
                 v-for="opt in groupLayoutOptions"
@@ -169,7 +197,7 @@ const handleGridColumnsChange = (val: string | number) => {
               </Button>
             </div>
           </div>
-          <p class="text-xs text-muted-foreground mt-2">默认换行显示，分类过多时可切换为横向滚动。</p>
+          <p class="text-xs text-muted-foreground mt-2">默认自动换行，分组较多时可改为横向滚动。</p>
         </CardContent>
       </Card>
 
@@ -177,7 +205,7 @@ const handleGridColumnsChange = (val: string | number) => {
       <Card v-if="isUTools">
         <CardHeader>
           <CardTitle>窗口行为</CardTitle>
-          <CardDescription>设置窗口的交互方式</CardDescription>
+          <CardDescription>控制窗口大小与打开方式</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="flex flex-col gap-4">
@@ -203,30 +231,31 @@ const handleGridColumnsChange = (val: string | number) => {
             <div class="flex items-center justify-between">
               <div class="space-y-0.5">
                 <div class="text-sm font-medium">独立窗口自动关闭</div>
-                <div class="text-xs text-muted-foreground">在独立窗口模式下，打开书签后自动关闭窗口</div>
+                <div class="text-xs text-muted-foreground">独立窗口打开书签后自动关闭当前窗口</div>
               </div>
               <Button 
                 :variant="settingsStore.autoCloseWindow ? 'default' : 'outline'"
                 size="sm"
                 @click="settingsStore.setAutoCloseWindow(!settingsStore.autoCloseWindow)"
               >
-                {{ settingsStore.autoCloseWindow ? '已开启' : '点击开启' }}
+                {{ settingsStore.autoCloseWindow ? '已开启' : '未开启' }}
               </Button>
             </div>
             
             <div class="flex items-center justify-between">
               <div class="space-y-0.5">
                 <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
-                <div class="text-xs text-muted-foreground">不支持时将回退到系统默认浏览器</div>
+                <div class="text-xs text-muted-foreground">不可用时会自动改用系统浏览器</div>
               </div>
               <Button 
                 :variant="settingsStore.preferUtoolsBrowser ? 'default' : 'outline'"
                 size="sm"
                 @click="settingsStore.setPreferUtoolsBrowser(!settingsStore.preferUtoolsBrowser)"
               >
-                {{ settingsStore.preferUtoolsBrowser ? '已开启' : '点击开启' }}
+                {{ settingsStore.preferUtoolsBrowser ? '已开启' : '未开启' }}
               </Button>
             </div>
+
           </div>
         </CardContent>
       </Card>
@@ -234,13 +263,13 @@ const handleGridColumnsChange = (val: string | number) => {
       <Card>
         <CardHeader>
           <CardTitle>搜索体验</CardTitle>
-          <CardDescription>控制搜索界面的自动退出行为与输入方式</CardDescription>
+          <CardDescription>控制搜索页在无操作时的自动关闭时间</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="flex flex-col gap-4 max-w-md">
 
             <div class="flex items-center gap-3">
-              <label class="text-sm text-muted-foreground shrink-0">自动退出搜索（秒）</label>
+              <label class="text-sm text-muted-foreground shrink-0">无操作后自动关闭（秒）</label>
               <Input
                 type="number"
                 min="0"
@@ -252,7 +281,7 @@ const handleGridColumnsChange = (val: string | number) => {
                 @update:model-value="(val) => settingsStore.setSearchAutoExitSeconds(Number(val))"
               />
             </div>
-            <p class="text-xs text-muted-foreground">设为 0 表示不自动关闭。</p>
+            <p class="text-xs text-muted-foreground">设为 0 表示保持常驻，不自动关闭。</p>
           </div>
         </CardContent>
       </Card>
@@ -261,13 +290,13 @@ const handleGridColumnsChange = (val: string | number) => {
       <Card v-if="isUTools">
         <CardHeader>
           <CardTitle>AI 功能</CardTitle>
-          <CardDescription>配置 AI 智能辅助功能（需在 uTools 中开启 AI）</CardDescription>
+          <CardDescription>配置 AI 助手（需先在 uTools 中开启 AI）</CardDescription>
         </CardHeader>
         <CardContent>
           <div class="flex flex-col gap-4">
             <div class="flex items-center justify-between">
               <div class="space-y-0.5">
-                <div class="text-sm font-medium">使用指定 AI 模型</div>
+                <div class="text-sm font-medium">使用自定义 AI 模型</div>
                 <div class="text-xs text-muted-foreground">默认使用 deepseek-v3.2</div>
               </div>
               <Button 
@@ -275,7 +304,7 @@ const handleGridColumnsChange = (val: string | number) => {
                 size="sm"
                 @click="settingsStore.setUseCustomAiModel(!settingsStore.useCustomAiModel)"
               >
-                {{ settingsStore.useCustomAiModel ? '已开启' : '点击开启' }}
+                {{ settingsStore.useCustomAiModel ? '已开启' : '未开启' }}
               </Button>
             </div>
             
@@ -283,7 +312,7 @@ const handleGridColumnsChange = (val: string | number) => {
               <label class="text-sm text-muted-foreground shrink-0">模型</label>
               <Input
                 class="h-9 flex-1"
-                placeholder="例如 deepseek-v3.2 自定义模型名"
+                placeholder="例如：deepseek-v3.2"
                 :model-value="settingsStore.customAiModel"
                 @update:model-value="(val) => settingsStore.setCustomAiModel(String(val))"
               />

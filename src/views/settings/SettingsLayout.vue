@@ -26,12 +26,12 @@ const currentTab = computed<SettingsTab>({
 const { localModeMenuDotVisible, markLocalModeSettingsVisited } = useFeatureNoticeCenter()
 
 const tabs = [
-  { value: 'general', label: '通用设置', icon: 'i-mdi-cog-outline' },
-  { value: 'categories', label: '分类管理', icon: 'i-mdi-folder-outline' },
-  { value: 'tools', label: '工具', icon: 'i-mdi-wrench-outline' },
-  { value: 'data', label: '数据管理', icon: 'i-mdi-database-outline' },
-  { value: 'local-mode', label: '本地模式', icon: 'i-mdi-database-sync-outline' },
-  { value: 'about', label: '关于', icon: 'i-mdi-information-outline' }
+  { value: 'general', label: '外观与使用', icon: 'i-mdi-cog-outline' },
+  { value: 'categories', label: '分组管理', icon: 'i-mdi-folder-outline' },
+  { value: 'tools', label: '常用工具', icon: 'i-mdi-wrench-outline' },
+  { value: 'data', label: '导入与备份', icon: 'i-mdi-database-outline' },
+  { value: 'local-mode', label: '本地备份', icon: 'i-mdi-database-sync-outline' },
+  { value: 'about', label: '帮助与统计', icon: 'i-mdi-information-outline' }
 ] as const
 
 watch(() => currentTab.value, (value) => {
@@ -46,7 +46,7 @@ watch(() => currentTab.value, (value) => {
     <!-- 左侧导航 -->
     <nav class="settings-nav w-56 shrink-0 flex flex-col rounded-2xl p-3">
       <div class="settings-nav__head px-2 pb-2 mb-2 text-[13px] font-semibold text-muted-foreground">
-        设置导航
+        设置菜单
       </div>
       <div class="flex-1 space-y-1">
         <button

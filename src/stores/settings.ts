@@ -19,6 +19,8 @@ export const useSettingsStore = defineStore('settings', {
     easterEggEnabled: true,
     // 使用纯色背景替代星空背景（默认关闭）
     useSolidBackground: false,
+    // 浅色模式背景风格（白色 / 贴近 uTools 灰）
+    lightBackgroundStyle: 'white' as 'white' | 'utools',
     autoMatchSearchIcons: true,
     skipFailedIconMatch: true,
     iconMatchLogs: [] as Array<{
@@ -71,6 +73,9 @@ export const useSettingsStore = defineStore('settings', {
     },
     setUseSolidBackground(value: boolean) {
       this.useSolidBackground = !!value
+    },
+    setLightBackgroundStyle(value: 'white' | 'utools') {
+      this.lightBackgroundStyle = value === 'utools' ? 'utools' : 'white'
     },
     setAutoMatchSearchIcons(value: boolean) {
       this.autoMatchSearchIcons = !!value

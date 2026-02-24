@@ -18,35 +18,35 @@ const emit = defineEmits<{
 
 const { isTooltipEnabled } = useUIManager()
 const { overflowMap, observeOverflow } = useTextOverflow()
-const store = useBookmarkStore()
 
 const nameRef = ref<HTMLElement | null>(null)
 
-// 监听名称变化，重新触发检查
+const refreshOverflow = () => {
+  if (!nameRef.value) return
+  observeOverflow('self', nameRef.value)
+}
+
 watch(() => props.sub.name, () => {
-  if (nameRef.value) {
-    observeOverflow('self', nameRef.value)
-  }
+  nextTick(refreshOverflow)
 })
 
 onMounted(() => {
-  nextTick(() => {
-    if (nameRef.value) {
-      observeOverflow('self', nameRef.value)
-    }
-  })
+  nextTick(refreshOverflow)
 })
 
 const isTruncated = computed(() => overflowMap.value['self'] ?? false)
 
-// 计算子分组中的有效书签数量
-const hasValidBookmarks = computed(() => {
-  if (!props.sub.bookmarkIds || props.sub.bookmarkIds.length === 0) return false
-  return props.sub.bookmarkIds.some(id => {
-    const bookmark = store.bookmarks.find(b => b.id === id)
-    return bookmark && !bookmark.isDeleted
-  })
-})
+const stateClass = computed(() => ({
+  'subgroup-btn--active': props.isActive,
+  'subgroup-btn--idle': !props.isActive,
+  'subgroup-btn--drag-over': props.isDragOver
+}))
+
+const handleSelect = (event: MouseEvent) => {
+  emit('select', props.sub.id)
+  const target = event.currentTarget as HTMLElement | null
+  target?.blur?.()
+}
 </script>
 
 <template>
@@ -54,14 +54,12 @@ const hasValidBookmarks = computed(() => {
     <TooltipTrigger as-child>
       <button
         type="button"
-        class="flex items-center justify-start w-full px-3 py-2 rounded-md text-sm transition-all text-left relative min-w-0 overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-        :class="[
-          isActive
-            ? 'text-primary font-medium border-l-2 border-primary bg-primary/5 hover:bg-primary/15'
-            : 'text-muted-foreground hover:text-foreground hover:bg-primary/5',
-          isDragOver && 'ring-2 ring-inset ring-primary bg-primary/10'
-        ]"
-        @click="emit('select', sub.id)"
+        class="subgroup-btn flex items-center justify-start w-full px-3 py-2 rounded-md text-sm transition-none text-left relative min-w-0 overflow-hidden outline-none disabled:pointer-events-none disabled:opacity-50"
+        :data-active="isActive ? 'true' : undefined"
+        :class="stateClass"
+        @pointerdown.prevent
+        @mousedown.prevent
+        @click="handleSelect"
         @dragover="emit('dragover', $event)"
         @dragleave="emit('dragleave', $event)"
         @drop="emit('drop', $event)"
@@ -77,3 +75,54 @@ const hasValidBookmarks = computed(() => {
     </TooltipContent>
   </Tooltip>
 </template>
+
+<style scoped>
+.subgroup-btn {
+  border-left: 2px solid transparent;
+  color: hsl(var(--muted-foreground));
+  background-color: transparent;
+}
+
+.subgroup-btn--idle:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.8);
+}
+
+.subgroup-btn--active {
+  color: hsl(var(--foreground));
+  font-weight: 500;
+  border-left-color: hsl(var(--primary));
+  background-color: hsl(var(--muted));
+}
+
+.dark .subgroup-btn--idle:hover {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+}
+
+.dark .subgroup-btn--active {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+}
+
+.subgroup-btn--drag-over {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--primary) / 0.1);
+  box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.55);
+}
+
+.dark .subgroup-btn--drag-over {
+  color: hsl(var(--primary));
+}
+
+.subgroup-btn:focus,
+.subgroup-btn:focus-visible,
+.subgroup-btn:focus-within,
+.subgroup-btn:active {
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-color: transparent !important;
+}
+</style>
