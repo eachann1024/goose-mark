@@ -8,6 +8,8 @@ export const useSettingsStore = defineStore('settings', {
     groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
     autoCloseWindow: true,
     preferUtoolsBrowser: false,
+    preferLocalSnapshotOnStartup: false,
+    localMirrorDirectory: '',
     useCustomAiModel: false,
     customAiModel: '',
     windowHeight: 700,
@@ -44,6 +46,12 @@ export const useSettingsStore = defineStore('settings', {
     },
     setPreferUtoolsBrowser(value: boolean) {
       this.preferUtoolsBrowser = !!value
+    },
+    setPreferLocalSnapshotOnStartup(value: boolean) {
+      this.preferLocalSnapshotOnStartup = !!value
+    },
+    setLocalMirrorDirectory(value: string) {
+      this.localMirrorDirectory = String(value || '').trim()
     },
     setUseCustomAiModel(value: boolean) {
       this.useCustomAiModel = !!value
@@ -87,6 +95,7 @@ export const useSettingsStore = defineStore('settings', {
   },
   persist: {
     storage: utoolsStorage,
+    omit: ['localMirrorDirectory'],
     // 移除 afterRestore，依靠 state() 的初始值
   }
 })

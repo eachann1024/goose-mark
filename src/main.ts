@@ -16,9 +16,23 @@ setActivePinia(pinia)
 const settingsStore = useSettingsStore()
 const bookmarkStore = useBookmarkStore()
 const { setExpendHeight } = useUTools()
-setExpendHeight(settingsStore.windowHeight)
-initConsoleCapture()
-app.mount('#app')
+const { start, bootstrapLocalFirstIfEnabled, hydrateMirrorDirectoryForDevice } = useLocalDataMirror()
+
+const bootstrapApp = async () => {
+  setExpendHeight(settingsStore.windowHeight)
+  bookmarkStore.migrateFromLegacy()
+  hydrateMirrorDirectoryForDevice()
+  try {
+    await bootstrapLocalFirstIfEnabled()
+  } catch (error) {
+    console.warn('[Main] 本地优先引导失败，回退到当前数据:', error)
+  }
+  start()
+  initConsoleCapture()
+  app.mount('#app')
+}
+
+bootstrapApp()
 
 // 应用启动后异步生成全局搜索图标缓存，提升后续搜索体验
 setTimeout(() => {

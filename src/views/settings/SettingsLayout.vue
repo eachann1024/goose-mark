@@ -3,17 +3,42 @@ import GeneralSettings from './GeneralSettings.vue'
 import CategoryManager from './CategoryManager.vue'
 import ToolsSettings from './ToolsSettings.vue'
 import DataSettings from './DataSettings.vue'
+import LocalModeSettings from './LocalModeSettings.vue'
 import AboutSettings from './AboutSettings.vue'
 
-const activeTab = ref('general')
+type SettingsTab = 'general' | 'categories' | 'tools' | 'data' | 'local-mode' | 'about'
+
+const props = withDefaults(defineProps<{
+  activeTab?: SettingsTab
+}>(), {
+  activeTab: 'general'
+})
+
+const emit = defineEmits<{
+  (e: 'update:activeTab', value: SettingsTab): void
+}>()
+
+const currentTab = computed<SettingsTab>({
+  get: () => props.activeTab,
+  set: (value) => emit('update:activeTab', value)
+})
+
+const { localModeMenuDotVisible, markLocalModeSettingsVisited } = useFeatureNoticeCenter()
 
 const tabs = [
   { value: 'general', label: '通用设置', icon: 'i-mdi-cog-outline' },
   { value: 'categories', label: '分类管理', icon: 'i-mdi-folder-outline' },
   { value: 'tools', label: '工具', icon: 'i-mdi-wrench-outline' },
   { value: 'data', label: '数据管理', icon: 'i-mdi-database-outline' },
+  { value: 'local-mode', label: '本地模式', icon: 'i-mdi-database-sync-outline' },
   { value: 'about', label: '关于', icon: 'i-mdi-information-outline' }
-]
+] as const
+
+watch(() => currentTab.value, (value) => {
+  if (value === 'local-mode') {
+    markLocalModeSettingsVisited()
+  }
+}, { immediate: true })
 </script>
 
 <template>
@@ -30,16 +55,22 @@ const tabs = [
           type="button"
           class="settings-nav-item w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-left"
           :class="[
-            activeTab === tab.value
+            currentTab === tab.value
               ? 'settings-nav-item--active'
               : 'settings-nav-item--idle'
           ]"
-          @click="activeTab = tab.value"
+          @click="currentTab = tab.value"
         >
           <span class="settings-nav-item__icon-wrap">
             <span :class="[tab.icon, 'text-lg settings-nav-item__icon']" />
           </span>
-          <span class="truncate">{{ tab.label }}</span>
+          <span class="min-w-0 flex items-center gap-2">
+            <span class="truncate">{{ tab.label }}</span>
+            <span
+              v-if="tab.value === 'local-mode' && localModeMenuDotVisible"
+              class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
+            />
+          </span>
         </button>
       </div>
     </nav>
@@ -55,11 +86,12 @@ const tabs = [
         leave-from-class="opacity-100"
         leave-to-class="opacity-0"
       >
-        <GeneralSettings v-if="activeTab === 'general'" key="general" />
-        <CategoryManager v-else-if="activeTab === 'categories'" key="categories" />
-        <ToolsSettings v-else-if="activeTab === 'tools'" key="tools" />
-        <DataSettings v-else-if="activeTab === 'data'" key="data" />
-        <AboutSettings v-else-if="activeTab === 'about'" key="about" />
+        <GeneralSettings v-if="currentTab === 'general'" key="general" />
+        <CategoryManager v-else-if="currentTab === 'categories'" key="categories" />
+        <ToolsSettings v-else-if="currentTab === 'tools'" key="tools" />
+        <DataSettings v-else-if="currentTab === 'data'" key="data" />
+        <LocalModeSettings v-else-if="currentTab === 'local-mode'" key="local-mode" />
+        <AboutSettings v-else-if="currentTab === 'about'" key="about" />
       </Transition>
     </main>
   </div>

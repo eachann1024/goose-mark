@@ -65,6 +65,96 @@ const {
   setExpendHeight
 } = useUTools()
 
+const {
+  start: startLocalMirror,
+  syncNow: syncMirrorNow,
+  canUseLocalMirror,
+  canPickMirrorDirectory,
+  pickMirrorDirectory,
+  setMirrorDirectoryForDevice,
+  hydrateMirrorDirectoryForDevice,
+  shouldPromptMirrorDirectorySelection
+} = useLocalDataMirror()
+
+const {
+  activeNotice: activeFeatureNotice,
+  ensureLocalModeIntroNotice,
+  ensureLocalModeDevicePathNotice,
+  markLocalModeIntroViewed,
+  markLocalModeIntroIgnored,
+  markDevicePathConfigured,
+  markDevicePathIgnored,
+  markLocalModeSettingsVisited
+} = useFeatureNoticeCenter()
+
+const settingsActiveTab = ref<'general' | 'categories' | 'tools' | 'data' | 'local-mode' | 'about'>('general')
+
+const openLocalModeSettings = () => {
+  tab.value = 'settings'
+  settingsActiveTab.value = 'local-mode'
+  markLocalModeSettingsVisited()
+}
+
+const refreshLocalModePathNotice = () => {
+  ensureLocalModeDevicePathNotice(shouldPromptMirrorDirectorySelection())
+}
+
+const handleFeatureNoticeView = async () => {
+  const notice = activeFeatureNotice.value
+  if (!notice) return
+
+  if (notice.id === 'local-mode-intro') {
+    markLocalModeIntroViewed()
+    openLocalModeSettings()
+    return
+  }
+
+  if (!canUseLocalMirror()) {
+    showToast({ title: '当前环境不支持本地模式', variant: 'warning' })
+    markDevicePathIgnored()
+    return
+  }
+
+  if (!canPickMirrorDirectory()) {
+    showToast({
+      title: '当前环境不支持直接选择目录',
+      description: '请在设置 > 本地模式中手动配置路径',
+      variant: 'warning'
+    })
+    markDevicePathIgnored()
+    openLocalModeSettings()
+    return
+  }
+
+  const selected = await pickMirrorDirectory()
+  if (!selected) {
+    markDevicePathIgnored()
+    return
+  }
+
+  setMirrorDirectoryForDevice(selected)
+  startLocalMirror()
+  syncMirrorNow()
+  markDevicePathConfigured()
+  showToast({
+    title: '已为当前设备设置本地路径',
+    description: selected,
+    variant: 'success'
+  })
+}
+
+const handleFeatureNoticeIgnore = () => {
+  const notice = activeFeatureNotice.value
+  if (!notice) return
+
+  if (notice.id === 'local-mode-intro') {
+    markLocalModeIntroIgnored()
+    return
+  }
+
+  markDevicePathIgnored()
+}
+
 const getLatestUpdatedAt = (data: { groups?: Group[]; bookmarks?: Bookmark[] }) => {
   let max = 0
   const groups = data.groups || []
@@ -98,6 +188,11 @@ const handleSelectGroup = async (groupId: string) => {
 watch(() => settingsStore.windowHeight, (h) => {
   setExpendHeight(h)
 })
+
+watch(
+  () => [settingsStore.preferLocalSnapshotOnStartup, settingsStore.localMirrorDirectory],
+  () => refreshLocalModePathNotice()
+)
 
 // Search
 const canUseSubInput = computed(() => {
@@ -688,6 +783,10 @@ const exitTemplateMode = () => {
 
 // Lifecycle
 onMounted(async () => {
+  hydrateMirrorDirectoryForDevice()
+  ensureLocalModeIntroNotice()
+  refreshLocalModePathNotice()
+
   window.addEventListener('contextmenu', (e) => {
     // 允许书签卡片触发自定义行为（已经在 handleContextMenuWrapper 中处理）
     // 但阻止所有默认浏览器菜单
@@ -701,8 +800,6 @@ onMounted(async () => {
 
   // 初始化标题
   updatePageTitle()
-
-  store.migrateFromLegacy()
 
   statsStore.recordUse('open')
   
@@ -752,7 +849,15 @@ onMounted(async () => {
       if (!value) return
       try {
         const data = JSON.parse(value)
-        if (key === 'settings') settingsStore.$patch(data)
+        if (key === 'settings' && data && typeof data === 'object') {
+          const localMirrorDirectory = settingsStore.localMirrorDirectory
+          const nextSettings = { ...(data as Record<string, unknown>) }
+          delete nextSettings.localMirrorDirectory
+          settingsStore.$patch(nextSettings)
+          settingsStore.setLocalMirrorDirectory(localMirrorDirectory)
+          hydrateMirrorDirectoryForDevice()
+          refreshLocalModePathNotice()
+        }
         if (key === 'bookmark') {
           const incomingStamp = getLatestUpdatedAt(data)
           const localStamp = getLatestUpdatedAt({ groups: store.groups, bookmarks: store.bookmarks })
@@ -1014,7 +1119,7 @@ const handleLocate = async (bookmark: Bookmark) => {
       </BookmarksGrid>
 
       <section v-else class="flex-1 min-h-0">
-        <SettingsLayout />
+        <SettingsLayout v-model:active-tab="settingsActiveTab" />
       </section>
     </main>
     
@@ -1052,6 +1157,12 @@ const handleLocate = async (bookmark: Bookmark) => {
 
   </div>
   
+    <FeatureNoticeCenter
+      :notice="activeFeatureNotice"
+      @view="handleFeatureNoticeView"
+      @ignore="handleFeatureNoticeIgnore"
+    />
+
   
 
 
@@ -1197,9 +1308,10 @@ html.dark body.easter-egg-active .bookmark-card-wrapper > div {
   background-color: hsl(var(--primary) / 0.05) !important;
 }
 
-/* 彩蛋模式：主分组按钮背景参考子分组样式 */
-html.dark body.easter-egg-active button[data-active="true"] {
-  background-color: hsl(var(--primary) / 0.05) !important;
+/* 深色模式：主分组选中背景与 hover 保持一致 */
+html.dark body.easter-egg-active .main-group-tab[data-active="true"] {
+  background-color: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
 }
 
 /* 彩蛋模式：顶部导航栏透明 */
@@ -1213,34 +1325,9 @@ html.dark body.easter-egg-active .subgroup-sort-item button {
 }
 
 html.dark body.easter-egg-active .subgroup-sort-item button:hover,
-html.dark body.easter-egg-active .subgroup-sort-item button[class*="hover:bg-primary"] {
-  background-color: hsl(var(--primary) / 0.1) !important;
-}
-
-html.dark body.easter-egg-active .subgroup-sort-item button[class*="bg-primary/5"] {
-  background-color: hsl(var(--primary) / 0.08) !important;
-}
-
-/* 彩蛋模式：主分组按钮选中状态透明 */
-html.dark body.easter-egg-active button[data-active="true"] {
-  background-color: hsl(var(--primary) / 0.08) !important;
-}
-
-/* 修复：浅色模式下子分组按钮样式 - 非星空模式 */
-body:not(.easter-egg-active) .subgroup-sort-item button {
-  background-color: transparent !important;
-}
-
-body:not(.easter-egg-active) .subgroup-sort-item button:hover {
-  background-color: hsl(var(--primary) / 0.05) !important;
-}
-
-body:not(.easter-egg-active) .subgroup-sort-item button[class*="bg-primary/5"] {
-  background-color: hsl(var(--primary) / 0.05) !important;
-}
-
-body:not(.easter-egg-active) .subgroup-sort-item button[class*="hover:bg-primary/15"]:hover {
-  background-color: hsl(var(--primary) / 0.15) !important;
+html.dark body.easter-egg-active .subgroup-sort-item button[data-active="true"] {
+  background-color: hsl(var(--accent)) !important;
+  color: hsl(var(--accent-foreground)) !important;
 }
 
 /* 彩蛋模式：Card 组件透明背景 */
