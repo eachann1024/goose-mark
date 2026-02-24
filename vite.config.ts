@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 import UnoCSS from 'unocss/vite'
 import Components from 'unplugin-vue-components/vite'
 import AutoImport from 'unplugin-auto-import/vite'
+import { codeInspectorPlugin } from 'code-inspector-plugin'
 import path from 'node:path'
 
 export default defineConfig({
@@ -18,6 +19,9 @@ export default defineConfig({
     vue(),
     tailwindcss(),
     UnoCSS(),
+    codeInspectorPlugin({
+      bundler: 'vite'
+    }),
     AutoImport({
       imports: [
         'vue',
