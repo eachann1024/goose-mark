@@ -14,3 +14,8 @@ export function valueUpdater<T extends Updater<any>>(updaterOrValue: T, ref: Ref
       ? updaterOrValue(ref.value)
       : updaterOrValue
 }
+
+export function getTemplateLabel(url: string): string {
+  const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
+  return label || '搜索内容'
+}

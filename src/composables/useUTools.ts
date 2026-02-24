@@ -1,4 +1,5 @@
 import type { Bookmark } from '@/types/bookmark'
+import { getTemplateLabel } from '@/lib/utils'
 
 const FEATURE_PREFIX = 'bm_tpl:'
 
@@ -117,11 +118,6 @@ type SyncFeatureOptions = {
 }
 
 export function useUTools() {
-  const getTemplateLabel = (url: string) => {
-    const label = (url.match(/{([^}]+)}/)?.[1] ?? '').trim()
-    return label || '搜索内容'
-  }
-
   const isTemplateBookmark = (b: Bookmark) => typeof b.title === 'string'
     && !!b.title.trim()
     && typeof b.url === 'string'
@@ -237,7 +233,6 @@ export function useUTools() {
     syncFeatures,
     getEnterText,
     isDetachedWindowNow,
-    getTemplateLabel,
     setExpendHeight
   }
 }
