@@ -41,6 +41,9 @@ const emit = defineEmits<{
   (e: 'update:bookmarks', bookmarks: Bookmark[]): void
 }>()
 
+// 记录一次拖拽开始时的顺序，用于稳定计算 fromId/toId
+let dragStartOrderIds: string[] = []
+
 // 本地书签列表，用于 v-model
 const localBookmarks = computed({
   get: () => props.bookmarks,
@@ -53,11 +56,13 @@ const handleDragChange = (evt: { moved?: { oldIndex: number; newIndex: number } 
   const { oldIndex, newIndex } = evt.moved
   if (oldIndex === newIndex) return
 
-  const fromId = props.bookmarks[oldIndex]?.id
-  const toId = props.bookmarks[newIndex]?.id
+  const fromId = dragStartOrderIds[oldIndex]
+  const toId = dragStartOrderIds[newIndex]
   if (fromId && toId) {
     emit('reorder', { fromId, toId })
   }
+
+  dragStartOrderIds = []
 }
 
 const gridStyle = computed(() => {
@@ -67,6 +72,8 @@ const gridStyle = computed(() => {
 
 // 拖拽开始时设置书签 ID
 const handleDragStart = (evt: any) => {
+  dragStartOrderIds = props.bookmarks.map(item => item.id)
+
   // vuedraggable 的 @start 事件直接传递 Sortable 事件对象
   const item = evt.item as HTMLElement
   const originalEvent = evt.originalEvent as DragEvent | undefined
