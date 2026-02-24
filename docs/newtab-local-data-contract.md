@@ -38,7 +38,9 @@
   },
   "meta": {
     "recordCount": 0,
-    "checksum": "f7c8a1..."
+    "checksum": "f7c8a1...",
+    "writerClientId": "gm-a1b2c3d4",
+    "writtenAt": 1761288225678
   }
 }
 ```
@@ -49,11 +51,13 @@
 
 - `schemaVersion`: `string`，固定为 `goose-marks.local-data.v1`
 - `generatedAt`: `string`，ISO 8601 时间
-- `revision`: `number`，毫秒时间戳，用于增量判断
+- `revision`: `number`，单调递增逻辑时钟。写入端必须按 `nextRevision = max(Date.now(), lastSeenRevision + 1)` 生成，禁止依赖文件 `mtime`
 - `data.groups`: `Group[]`
 - `data.bookmarks`: `Bookmark[]`
 - `meta.recordCount`: `number`，等于 `data.bookmarks.length`
 - `meta.checksum`: `string`，对核心内容计算的 SHA-256 摘要
+- `meta.writerClientId`: `string`，本次写入端客户端 ID（向后兼容，可选）
+- `meta.writtenAt`: `number`，本次写入时间戳（毫秒，向后兼容，可选）
 
 ### 4.2 Group
 
@@ -127,10 +131,17 @@ type Bookmark = {
 ## 5. 消费端读取规则（扩展侧）
 
 1. 启动时读取一次 `snapshot.json`。
-2. 轮询检测文件更新时间（建议 1s~2s），或使用文件监听。
-3. 仅当 `revision` 变大时才重新解析。
-4. `schemaVersion` 不匹配时走迁移或降级提示。
-5. 解析失败时保留上一次可用数据，避免页面空白。
+2. 运行期持续监听（`fs.watchFile` 或 1s 轮询）并重新读取。
+3. 读取后先校验：`schemaVersion`、`meta.recordCount`、`meta.checksum`。
+4. 快速丢弃规则：
+   - `incoming.revision < lastAppliedRevision`，直接丢弃。
+   - `incoming.revision === lastAppliedRevision && incoming.meta.writerClientId === selfClientId`，直接丢弃。
+5. 进入记录级合并（按 `id`）：
+   - 先比较 `updatedAt`，较大者胜；
+   - `updatedAt` 相同，比较 `revision`，较大者胜；
+   - 仍相同，比较 `writerClientId` 字典序，较大者胜。
+6. 合并完成后，必须重建 `bookmarkIds <-> locations` 关联，避免孤儿记录。
+7. 解析失败或校验失败时，保留上一次可用数据，不得清空页面。
 
 ## 6. 数据一致性规则
 
@@ -138,6 +149,8 @@ type Bookmark = {
 2. `bookmarks` 是实体池，`bookmarkIds` 通过 `id` 关联。
 3. `isDeleted=true` 的实体默认不展示。
 4. 回收站实体由 `locations` 指向回收站分组判定，不另建新结构。
+5. 合并期间需抑制本地写回（短时间静默窗口），避免“读后立即回写”循环。
+6. 若合并结果与读取到的快照不一致，写入端应在静默窗口后回写“合并结果”以收敛。
 
 ## 7. 兼容与升级
 

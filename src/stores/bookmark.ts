@@ -327,6 +327,149 @@ export const useBookmarkStore = defineStore('bookmark', {
       return false
     },
 
+    getShareIdsFromLocations(locations: BookmarkLocation[] = []) {
+      const shareIds = new Set<string>()
+
+      locations.forEach(loc => {
+        const group = this.groups.find(g => g.id === loc.groupId) as (Group & { shareId?: string; sourceShareId?: string }) | undefined
+        if (!group) return
+
+        if (group.shareId) shareIds.add(group.shareId)
+        if (group.sourceShareId) shareIds.add(group.sourceShareId)
+
+        const sub = group.children.find(c => c.id === loc.subGroupId) as (SubGroup & { shareId?: string; sourceShareId?: string }) | undefined
+        if (!sub) return
+
+        if (sub.shareId) shareIds.add(sub.shareId)
+        if (sub.sourceShareId) shareIds.add(sub.sourceShareId)
+      })
+
+      return Array.from(shareIds)
+    },
+
+    getShareIdsFromSubGroup(groupId: string, subId: string) {
+      const group = this.groups.find(g => g.id === groupId) as (Group & { shareId?: string; sourceShareId?: string }) | undefined
+      if (!group) return []
+
+      const sub = group.children.find(c => c.id === subId) as (SubGroup & { shareId?: string; sourceShareId?: string }) | undefined
+      const shareIds = new Set<string>()
+
+      if (group.shareId) shareIds.add(group.shareId)
+      if (group.sourceShareId) shareIds.add(group.sourceShareId)
+      if (sub?.shareId) shareIds.add(sub.shareId)
+      if (sub?.sourceShareId) shareIds.add(sub.sourceShareId)
+
+      return Array.from(shareIds)
+    },
+
+    getShareIdsFromGroup(groupId: string) {
+      const group = this.groups.find(g => g.id === groupId) as (Group & { shareId?: string; sourceShareId?: string }) | undefined
+      if (!group) return []
+
+      const shareIds = new Set<string>()
+      if (group.shareId) shareIds.add(group.shareId)
+      if (group.sourceShareId) shareIds.add(group.sourceShareId)
+
+      group.children.forEach(child => {
+        const sub = child as SubGroup & { shareId?: string; sourceShareId?: string }
+        if (sub.shareId) shareIds.add(sub.shareId)
+        if (sub.sourceShareId) shareIds.add(sub.sourceShareId)
+      })
+
+      return Array.from(shareIds)
+    },
+
+    scheduleBookmarkSync(bookmarkId: string, options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; content?: Bookmark | null }) {
+      const now = options?.updatedAt || Date.now()
+      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
+      const { schedulePush } = useSync()
+      const isDeleted = !!options?.isDeleted
+      const content = options?.content ?? bookmark ?? null
+
+      if (!isDeleted && !content) return
+
+      schedulePush({
+        itemId: bookmarkId,
+        itemType: 'bookmark',
+        content,
+        isDeleted,
+        updatedAt: now
+      }, {
+        previousShareIds: options?.previousShareIds
+      })
+    },
+
+    scheduleGroupSync(groupId: string, options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; orderIndex?: number }) {
+      const now = options?.updatedAt || Date.now()
+      const group = this.groups.find(g => g.id === groupId)
+      const { schedulePush } = useSync()
+
+      if (options?.isDeleted) {
+        schedulePush({
+          itemId: groupId,
+          itemType: 'group',
+          content: null,
+          isDeleted: true,
+          updatedAt: now
+        }, {
+          previousShareIds: options?.previousShareIds
+        })
+        return
+      }
+
+      if (!group) return
+
+      const content = JSON.parse(JSON.stringify(group)) as Group & { orderIndex?: number }
+      if (typeof options?.orderIndex === 'number') {
+        content.orderIndex = options.orderIndex
+      }
+
+      schedulePush({
+        itemId: group.id,
+        itemType: 'group',
+        content,
+        isDeleted: false,
+        updatedAt: now
+      }, {
+        previousShareIds: options?.previousShareIds
+      })
+    },
+
+    scheduleSubGroupSync(groupId: string, subId: string, options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[] }) {
+      const now = options?.updatedAt || Date.now()
+      const group = this.groups.find(g => g.id === groupId)
+      const sub = group?.children.find(c => c.id === subId)
+      const { schedulePush } = useSync()
+
+      if (options?.isDeleted) {
+        schedulePush({
+          itemId: subId,
+          itemType: 'subGroup',
+          content: null,
+          isDeleted: true,
+          updatedAt: now
+        }, {
+          previousShareIds: options?.previousShareIds
+        })
+        return
+      }
+
+      if (!group || !sub) return
+
+      schedulePush({
+        itemId: sub.id,
+        itemType: 'subGroup',
+        content: {
+          ...JSON.parse(JSON.stringify(sub)),
+          parentGroupId: group.id
+        },
+        isDeleted: false,
+        updatedAt: now
+      }, {
+        previousShareIds: options?.previousShareIds
+      })
+    },
+
     addGroup(name: string) {
       const now = Date.now()
       const group: Group = {
@@ -347,6 +490,7 @@ export const useBookmarkStore = defineStore('bookmark', {
       this.groups.push(group)
       this.activeGroupId = group.id
       this.activeSubGroupId = group.children[0].id
+      this.scheduleGroupSync(group.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === group.id) })
       return group
     },
     addSubGroup(name: string, groupId: string) {
@@ -357,22 +501,29 @@ export const useBookmarkStore = defineStore('bookmark', {
       group.children.push(sub)
       group.updatedAt = now
       this.activeSubGroupId = sub.id
+      this.scheduleSubGroupSync(groupId, sub.id, { updatedAt: now })
+      this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
       return sub
     },
     updateGroup(id: string, name: string) {
       const group = this.groups.find(g => g.id === id)
       if (group) {
+        const now = Date.now()
         group.name = name
-        group.updatedAt = Date.now()
+        group.updatedAt = now
+        this.scheduleGroupSync(id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === id) })
       }
     },
     updateSubGroup(groupId: string, subId: string, name: string) {
       const group = this.groups.find(g => g.id === groupId)
       const sub = group?.children.find(c => c.id === subId)
       if (sub) {
+        const now = Date.now()
         sub.name = name
-        sub.updatedAt = Date.now()
-        group!.updatedAt = Date.now()
+        sub.updatedAt = now
+        group!.updatedAt = now
+        this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
       }
     },
     setSearch(value: string) {
@@ -411,21 +562,32 @@ export const useBookmarkStore = defineStore('bookmark', {
         }
       })
 
-      
-      // Sync Hook
-      const { schedulePush } = useSync()
-      schedulePush({
-        itemId: bookmark.id,
-        itemType: 'bookmark',
-        content: bookmark,
-        isDeleted: false,
-        updatedAt: now
+      this.scheduleBookmarkSync(bookmark.id, { updatedAt: now })
+      const affectedSubKeys = new Set<string>()
+      locations.forEach(loc => {
+        affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`)
+      })
+      affectedSubKeys.forEach(key => {
+        const [groupId, subId] = key.split(':')
+        if (!groupId || !subId) return
+        this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+      })
+
+      const affectedGroupIds = new Set<string>()
+      locations.forEach(loc => affectedGroupIds.add(loc.groupId))
+      affectedGroupIds.forEach(groupId => {
+        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
       })
 
       return bookmark
     },
     updateBookmarkLocations(bookmarkId: string, newLocations: BookmarkLocation[]) {
       const now = Date.now()
+      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
+      const previousLocations = bookmark?.locations
+        ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+        : this.getBookmarkLocations(bookmarkId)
+      const previousShareIds = this.getShareIdsFromLocations(previousLocations)
       const newLocSet = new Set(newLocations.map(loc => `${loc.groupId}:${loc.subGroupId}`))
       
       this.groups.forEach(g => {
@@ -455,11 +617,29 @@ export const useBookmarkStore = defineStore('bookmark', {
         }
       })
       
-      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
       if (bookmark) {
         bookmark.locations = newLocations
         bookmark.updatedAt = now
       }
+
+      const affectedSubKeys = new Set<string>()
+      previousLocations.forEach(loc => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
+      newLocations.forEach(loc => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
+
+      affectedSubKeys.forEach(key => {
+        const [groupId, subId] = key.split(':')
+        if (!groupId || !subId) return
+        this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+      })
+
+      const affectedGroupIds = new Set<string>()
+      previousLocations.forEach(loc => affectedGroupIds.add(loc.groupId))
+      newLocations.forEach(loc => affectedGroupIds.add(loc.groupId))
+      affectedGroupIds.forEach(groupId => {
+        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
+      })
+
+      this.scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
     },
     updateBookmark(id: string, updater: Partial<Bookmark>) {
       const idx = this.bookmarks.findIndex(b => b.id === id)
@@ -477,21 +657,19 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.refreshSingleIcon(bookmark)
       }
 
-      // Sync Hook
-      const { schedulePush } = useSync()
-      schedulePush({
-        itemId: bookmark.id,
-        itemType: 'bookmark',
-        content: bookmark,
-        isDeleted: false,
-        updatedAt: now
-      })
+      this.scheduleBookmarkSync(bookmark.id, { updatedAt: now })
     },
     removeBookmark(id: string) {
       const now = Date.now()
       const inTrash = this.getBookmarkLocations(id).some(loc => loc.groupId === TRASH_GROUP_ID)
       
       if (inTrash) {
+        const bookmark = this.bookmarks.find(b => b.id === id)
+        const previousLocations = bookmark?.locations
+          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+          : this.getBookmarkLocations(id)
+        const previousShareIds = this.getShareIdsFromLocations(previousLocations)
+
         this.groups.forEach(g => {
           let groupChanged = false
           g.children.forEach(sub => {
@@ -505,6 +683,12 @@ export const useBookmarkStore = defineStore('bookmark', {
           if (groupChanged) g.updatedAt = now
         })
         this.bookmarks = this.bookmarks.filter(b => b.id !== id)
+        this.scheduleBookmarkSync(id, {
+          isDeleted: true,
+          updatedAt: now,
+          previousShareIds,
+          content: null
+        })
       } else {
         // 软删除预留：标记 isDeleted 并移入回收站
         const bookmark = this.bookmarks.find(b => b.id === id)
@@ -516,20 +700,6 @@ export const useBookmarkStore = defineStore('bookmark', {
           }
           // bookmark.isDeleted = true // 暂时不开启物理隐藏，先走回收站逻辑
           this.updateBookmarkLocations(id, [{ groupId: TRASH_GROUP_ID, subGroupId: 'sg-trash' }])
-          
-          // Sync Hook: Soft Delete (Tombstone)
-          // 注意：如果只是移动到回收站，本质上是 Update 操作（Location 变更）
-          // 但如果是"彻底删除"（emptyTrash），则需要发送 isDeleted=true
-          // 这里 removeBookmark 实际上是移入回收站，所以应该视为 update
-          // 只有 emptyTrash 才是真正的删除
-          const { schedulePush } = useSync()
-          schedulePush({
-             itemId: bookmark.id,
-             itemType: 'bookmark',
-             content: bookmark, // 发送最新状态（在回收站中）
-             isDeleted: false,
-             updatedAt: now
-          })
         }
       }
     },
@@ -581,6 +751,16 @@ export const useBookmarkStore = defineStore('bookmark', {
       
       const now = Date.now()
       const idsToRemove = [...trashSub.bookmarkIds]
+      const previousShareIdsMap = new Map<string, string[]>()
+
+      idsToRemove.forEach(id => {
+        const bookmark = this.bookmarks.find(b => b.id === id)
+        const previousLocations = bookmark?.locations
+          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+          : this.getBookmarkLocations(id)
+        previousShareIdsMap.set(id, this.getShareIdsFromLocations(previousLocations))
+      })
+
       idsToRemove.forEach(id => {
           trashSub.bookmarkIds = trashSub.bookmarkIds.filter(bid => bid !== id)
           this.bookmarks = this.bookmarks.filter(b => b.id !== id)
@@ -588,16 +768,13 @@ export const useBookmarkStore = defineStore('bookmark', {
       trashSub.updatedAt = now
       trashGroup!.updatedAt = now
       
-      // Sync Hook: 物理删除
-      const { schedulePush } = useSync()
       idsToRemove.forEach(id => {
-         schedulePush({
-            itemId: id,
-            itemType: 'bookmark',
-            content: null,
-            isDeleted: true,
-            updatedAt: now
-         })
+        this.scheduleBookmarkSync(id, {
+          isDeleted: true,
+          updatedAt: now,
+          previousShareIds: previousShareIdsMap.get(id) || [],
+          content: null
+        })
       })
     },
     async refreshSingleIcon(bookmark: Bookmark) {
@@ -793,6 +970,21 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (idx === -1) return false
       const group = this.groups[idx]
       const now = Date.now()
+      const previousGroupShareIds = this.getShareIdsFromGroup(id)
+      const previousSubShareIdsMap = new Map<string, string[]>()
+      const touchedBookmarkShareIdsMap = new Map<string, string[]>()
+
+      group.children.forEach(sub => {
+        previousSubShareIdsMap.set(sub.id, this.getShareIdsFromSubGroup(id, sub.id))
+        sub.bookmarkIds.forEach(bid => {
+          if (touchedBookmarkShareIdsMap.has(bid)) return
+          const bookmark = this.bookmarks.find(b => b.id === bid)
+          const previousLocations = bookmark?.locations
+            ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+            : this.getBookmarkLocations(bid)
+          touchedBookmarkShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
+        })
+      })
       
       // 1. 收集需要移动到回收站的书签 ID
       const toTrash: string[] = []
@@ -859,6 +1051,34 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.activeGroupId = this.groups[0]?.id ?? ''
         this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
       }
+
+      touchedBookmarkShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+        this.scheduleBookmarkSync(bookmarkId, {
+          updatedAt: now,
+          previousShareIds
+        })
+      })
+
+      previousSubShareIdsMap.forEach((previousShareIds, subId) => {
+        this.scheduleSubGroupSync(id, subId, {
+          isDeleted: true,
+          updatedAt: now,
+          previousShareIds
+        })
+      })
+
+      this.scheduleGroupSync(id, {
+        isDeleted: true,
+        updatedAt: now,
+        previousShareIds: previousGroupShareIds
+      })
+
+      this.groups
+        .filter(g => g.id !== TRASH_GROUP_ID)
+        .forEach((existingGroup, orderIndex) => {
+          this.scheduleGroupSync(existingGroup.id, { updatedAt: now, orderIndex })
+        })
+
       // 强制立即持久化
       ;(this as any).$persist?.()
       return true
@@ -870,6 +1090,15 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (idx === -1) return false
       const sub = group.children[idx]
       const now = Date.now()
+      const previousSubShareIds = this.getShareIdsFromSubGroup(groupId, subId)
+      const touchedBookmarkShareIdsMap = new Map<string, string[]>()
+      sub.bookmarkIds.forEach(bid => {
+        const bookmark = this.bookmarks.find(b => b.id === bid)
+        const previousLocations = bookmark?.locations
+          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+          : this.getBookmarkLocations(bid)
+        touchedBookmarkShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
+      })
       
       // 1. 收集需要移动到回收站的书签
       const toTrash: string[] = []
@@ -930,6 +1159,21 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (this.activeSubGroupId === subId) {
         this.activeSubGroupId = group.children[0]?.id ?? ''
       }
+
+      touchedBookmarkShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+        this.scheduleBookmarkSync(bookmarkId, {
+          updatedAt: now,
+          previousShareIds
+        })
+      })
+
+      this.scheduleSubGroupSync(groupId, subId, {
+        isDeleted: true,
+        updatedAt: now,
+        previousShareIds: previousSubShareIds
+      })
+      this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
+
       // 强制立即持久化
       ;(this as any).$persist?.()
       return true
@@ -945,8 +1189,11 @@ export const useBookmarkStore = defineStore('bookmark', {
       const [moved] = list.splice(fromIdx, 1)
       list.splice(toIdx, 0, moved)
       sub.bookmarkIds = list
-      sub.updatedAt = Date.now()
-      group!.updatedAt = Date.now()
+      const now = Date.now()
+      sub.updatedAt = now
+      group!.updatedAt = now
+      this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+      this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
     },
     moveBookmarkToSubGroup(bookmarkId: string, fromGroupId: string, fromSubId: string, toGroupId: string, toSubId: string) {
       if (fromGroupId === toGroupId && fromSubId === toSubId) return false
@@ -956,6 +1203,11 @@ export const useBookmarkStore = defineStore('bookmark', {
       const toSub = toGroup?.children.find(c => c.id === toSubId)
       if (!fromSub || !toSub) return false
       if (!fromSub.bookmarkIds.includes(bookmarkId)) return false
+      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
+      const previousLocations = bookmark?.locations
+        ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+        : this.getBookmarkLocations(bookmarkId)
+      const previousShareIds = this.getShareIdsFromLocations(previousLocations)
       const now = Date.now()
       fromSub.bookmarkIds = fromSub.bookmarkIds.filter(id => id !== bookmarkId)
       fromSub.updatedAt = now
@@ -965,7 +1217,6 @@ export const useBookmarkStore = defineStore('bookmark', {
         toSub.updatedAt = now
         toGroup!.updatedAt = now
       }
-      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
       if (bookmark?.locations) {
         bookmark.locations = bookmark.locations.filter(
           loc => !(loc.groupId === fromGroupId && loc.subGroupId === fromSubId)
@@ -975,19 +1226,45 @@ export const useBookmarkStore = defineStore('bookmark', {
         }
         bookmark.updatedAt = now
       }
+      if (bookmark) {
+        this.scheduleBookmarkSync(bookmarkId, {
+          updatedAt: now,
+          previousShareIds
+        })
+      }
+      this.scheduleSubGroupSync(fromGroupId, fromSubId, { updatedAt: now })
+      this.scheduleSubGroupSync(toGroupId, toSubId, { updatedAt: now })
+      this.scheduleGroupSync(fromGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === fromGroupId) })
+      if (fromGroupId !== toGroupId) {
+        this.scheduleGroupSync(toGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === toGroupId) })
+      }
       return true
     },
     reorderGroups(newOrder: Group[]) {
+      const now = Date.now()
       const trash = this.groups.find(g => g.id === TRASH_GROUP_ID)
       const filtered = newOrder.filter(g => g.id !== TRASH_GROUP_ID)
+      filtered.forEach((group, index) => {
+        group.updatedAt = now + index
+      })
       this.groups = trash ? [...filtered, trash] : filtered
-      // Reordering groups also counts as updating the overall state
+      filtered.forEach((group, orderIndex) => {
+        this.scheduleGroupSync(group.id, { updatedAt: group.updatedAt, orderIndex })
+      })
     },
     reorderSubGroups(groupId: string, newChildren: Group['children']) {
       const group = this.groups.find(g => g.id === groupId)
       if (group) {
+        const now = Date.now()
+        newChildren.forEach((child, index) => {
+          child.updatedAt = now + index
+        })
         group.children = newChildren
-        group.updatedAt = Date.now()
+        group.updatedAt = now
+        group.children.forEach(child => {
+          this.scheduleSubGroupSync(groupId, child.id, { updatedAt: child.updatedAt })
+        })
+        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
       }
     },
     moveSubToGroup(sourceGroupId: string, subId: string, targetGroupId: string) {
@@ -996,7 +1273,16 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (!sourceGroup || !targetGroup) return false
       const subIdx = sourceGroup.children.findIndex(c => c.id === subId)
       if (subIdx === -1) return false
+      const previousSubShareIds = this.getShareIdsFromSubGroup(sourceGroupId, subId)
       const [sub] = sourceGroup.children.splice(subIdx, 1)
+      const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
+      sub.bookmarkIds.forEach(bid => {
+        const bookmark = this.bookmarks.find(b => b.id === bid)
+        const previousLocations = bookmark?.locations
+          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+          : this.getBookmarkLocations(bid)
+        bookmarkPreviousShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
+      })
       targetGroup.children.push(sub)
       const now = Date.now()
       sourceGroup.updatedAt = now
@@ -1015,6 +1301,12 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (sourceGroup.children.length === 0) {
         sourceGroup.children.push({ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now })
       }
+      bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+        this.scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
+      })
+      this.scheduleSubGroupSync(targetGroupId, subId, { updatedAt: now, previousShareIds: previousSubShareIds })
+      this.scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === sourceGroupId) })
+      this.scheduleGroupSync(targetGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === targetGroupId) })
       return true
     },
     promoteSubToGroup(sourceGroupId: string, subId: string) {
@@ -1022,7 +1314,16 @@ export const useBookmarkStore = defineStore('bookmark', {
       if (!sourceGroup) return null
       const subIdx = sourceGroup.children.findIndex(c => c.id === subId)
       if (subIdx === -1) return null
+      const previousSubShareIds = this.getShareIdsFromSubGroup(sourceGroupId, subId)
       const [sub] = sourceGroup.children.splice(subIdx, 1)
+      const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
+      sub.bookmarkIds.forEach(bid => {
+        const bookmark = this.bookmarks.find(b => b.id === bid)
+        const previousLocations = bookmark?.locations
+          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+          : this.getBookmarkLocations(bid)
+        bookmarkPreviousShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
+      })
       const now = Date.now()
       const newGroup: Group = {
         id: uid(),
@@ -1051,6 +1352,15 @@ export const useBookmarkStore = defineStore('bookmark', {
       }
       this.activeGroupId = newGroup.id
       this.activeSubGroupId = sub.id
+
+      bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+        this.scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
+      })
+
+      this.scheduleSubGroupSync(newGroup.id, sub.id, { updatedAt: now, previousShareIds: previousSubShareIds })
+      this.scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === sourceGroupId) })
+      this.scheduleGroupSync(newGroup.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === newGroup.id) })
+
       return newGroup
     },
     loadFromSnapshot(data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly = false) {
@@ -1059,6 +1369,24 @@ export const useBookmarkStore = defineStore('bookmark', {
       this.isReadOnly = readOnly
       this.activeGroupId = this.groups[0]?.id ?? ''
       this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
+    },
+
+    syncAllSharedEntities(updatedAt = Date.now()) {
+      this.groups
+        .filter(group => group.id !== TRASH_GROUP_ID)
+        .forEach((group, orderIndex) => {
+          this.scheduleGroupSync(group.id, { updatedAt, orderIndex })
+        })
+
+      this.groups.forEach(group => {
+        group.children.forEach(sub => {
+          this.scheduleSubGroupSync(group.id, sub.id, { updatedAt })
+        })
+      })
+
+      this.bookmarks.forEach(bookmark => {
+        this.scheduleBookmarkSync(bookmark.id, { updatedAt })
+      })
     },
 
     findGroupByName(name: string): Group | null {
@@ -1128,6 +1456,11 @@ export const useBookmarkStore = defineStore('bookmark', {
         // 如果已存在，检查是否已在快速收集分组中
         const alreadyInQuickCollect = subGroup.bookmarkIds.includes(existingBookmark.id)
         if (!alreadyInQuickCollect) {
+          const previousLocations = existingBookmark.locations
+            ? JSON.parse(JSON.stringify(existingBookmark.locations)) as BookmarkLocation[]
+            : this.getBookmarkLocations(existingBookmark.id)
+          const previousShareIds = this.getShareIdsFromLocations(previousLocations)
+
           // 添加到快速收集分组
           subGroup.bookmarkIds.unshift(existingBookmark.id)
           subGroup.updatedAt = now
@@ -1139,6 +1472,10 @@ export const useBookmarkStore = defineStore('bookmark', {
           }
           existingBookmark.locations.push({ groupId: group.id, subGroupId: subGroup.id })
           existingBookmark.updatedAt = now
+
+          this.scheduleBookmarkSync(existingBookmark.id, { updatedAt: now, previousShareIds })
+          this.scheduleSubGroupSync(group.id, subGroup.id, { updatedAt: now })
+          this.scheduleGroupSync(group.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === group.id) })
         }
         return existingBookmark
       }
@@ -1171,15 +1508,9 @@ export const useBookmarkStore = defineStore('bookmark', {
         }
       })
       
-      // Sync Hook
-      const { schedulePush } = useSync()
-      schedulePush({
-        itemId: bookmark.id,
-        itemType: 'bookmark',
-        content: bookmark,
-        isDeleted: false,
-        updatedAt: now
-      })
+      this.scheduleBookmarkSync(bookmark.id, { updatedAt: now })
+      this.scheduleSubGroupSync(group.id, subGroup.id, { updatedAt: now })
+      this.scheduleGroupSync(group.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === group.id) })
       
       return bookmark
     },
