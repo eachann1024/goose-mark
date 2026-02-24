@@ -9,6 +9,7 @@ import OnboardingBanner from '@/components/OnboardingBanner.vue'
 import QuickSaveDialog from '@/components/QuickSaveDialog.vue'
 import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser'
 import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
+import { parseJsonImportText, applyImportDataToStore } from '@/composables/useImportExport'
 
 // Stores
 const store = useBookmarkStore()
@@ -110,7 +111,7 @@ const handleFeatureNoticeView = async () => {
   }
 
   if (!canUseLocalMirror()) {
-    showToast({ title: '当前环境不支持本地模式', variant: 'warning' })
+    showToast({ title: '当前环境不支持本地备份', variant: 'warning' })
     markDevicePathIgnored()
     return
   }
@@ -118,7 +119,7 @@ const handleFeatureNoticeView = async () => {
   if (!canPickMirrorDirectory()) {
     showToast({
       title: '当前环境不支持直接选择目录',
-      description: '请在设置 > 本地模式中手动配置路径',
+      description: '请在设置 > 本地备份中手动配置路径',
       variant: 'warning'
     })
     markDevicePathIgnored()
@@ -137,7 +138,7 @@ const handleFeatureNoticeView = async () => {
   syncMirrorNow()
   markDevicePathConfigured()
   showToast({
-    title: '已为当前设备设置本地路径',
+    title: '已为当前设备设置备份路径',
     description: selected,
     variant: 'success'
   })
@@ -287,18 +288,30 @@ const shouldShowSubs = computed(() => activeSubGroups.value.length > 1)
 // 星空定时器引用
 let starTimers: { dim?: number; light?: number; meteor?: number } = {}
 
-// 监听彩蛋状态，同步到 body 类名 + 创建/销毁星空
-watch([() => settingsStore.easterEggEnabled, () => settingsStore.useSolidBackground, isDark], ([enabled, useSolid, dark]) => {
+// 监听背景设置，同步到 body 类名 + 创建/销毁星空
+watch([
+  () => settingsStore.easterEggEnabled,
+  () => settingsStore.useSolidBackground,
+  () => settingsStore.lightBackgroundStyle,
+  isDark
+], ([enabled, useSolid, lightStyle, dark]) => {
   const existing = document.getElementById('stars-container')
 
   // 清理之前的状态
-  document.body.classList.remove('easter-egg-active', 'solid-background')
+  document.body.classList.remove(
+    'easter-egg-active',
+    'solid-background',
+    'light-white-background',
+    'light-utools-background'
+  )
   existing?.remove()
   Object.values(starTimers).forEach(t => t && clearTimeout(t))
   starTimers = {}
 
-  // 只在深色模式下应用背景设置
-  if (!dark) return
+  if (!dark) {
+    document.body.classList.add(lightStyle === 'utools' ? 'light-utools-background' : 'light-white-background')
+    return
+  }
 
   if (useSolid) {
     // 使用纯色背景
@@ -613,21 +626,37 @@ const handleOnboardingImport = async (file: File) => {
       // 异步触发图标获取
       store.refreshMissingIcons()
     } else {
-      // JSON 格式
-      const data = JSON.parse(text)
-      if (data.groups && data.bookmarks) {
-        store.$patch({ groups: data.groups, bookmarks: data.bookmarks })
-        showToast({ 
-          title: '导入成功', 
-          description: `导入 ${data.groups.length} 个分组、${data.bookmarks.length} 个书签`,
-          variant: 'success' 
-        })
-        settingsStore.dismissOnboarding()
-        // 异步触发图标获取
-        store.refreshMissingIcons()
-      } else {
-        showToast({ title: '无效的备份文件格式', variant: 'error' })
+      const parsed = parseJsonImportText(text)
+      if (!parsed.ok) {
+        showToast({ title: '导入失败', description: parsed.message, variant: 'error' })
+        return
       }
+
+      const mode = parsed.source === 'goose-marks' ? 'overwrite' : 'merge'
+      const summary = applyImportDataToStore(store, parsed.data, mode)
+      const skippedText = parsed.stats.skipped > 0 ? `，跳过 ${parsed.stats.skipped} 条无效数据` : ''
+
+      if (mode === 'overwrite') {
+        showToast({
+          title: '导入成功',
+          description: `${parsed.sourceLabel}：分组 ${summary.after.groups} / 书签 ${summary.after.bookmarks}${skippedText}`,
+          variant: 'success'
+        })
+      } else {
+        showToast({
+          title: '导入成功',
+          description: `${parsed.sourceLabel}：新增分组 ${summary.added.groups} / 新增书签 ${summary.added.bookmarks}${skippedText}`,
+          variant: 'success'
+        })
+      }
+
+      if (parsed.warnings.length > 0) {
+        console.warn('[App] Import warnings:', parsed.warnings)
+      }
+
+      settingsStore.dismissOnboarding()
+      // 异步触发图标获取
+      store.refreshMissingIcons()
     }
   } catch (e) {
     console.error('[App] Import failed:', e)
@@ -1194,6 +1223,17 @@ html.dark body.solid-background {
 html.dark body.solid-background .app-container,
 html.dark body.solid-background #app {
   background-color: transparent !important;
+}
+
+/* 浅色模式背景样式 */
+html:not(.dark) body.light-white-background {
+  --background: 0 0% 100%;
+  background-color: #FFFFFF !important;
+}
+
+html:not(.dark) body.light-utools-background {
+  --background: 0 0% 95.7%;
+  background-color: #F4F4F4 !important;
 }
 
 /* 星空容器 */

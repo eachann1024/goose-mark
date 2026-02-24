@@ -3,6 +3,7 @@ import ResultToast from '@/components/ResultToast.vue'
 import { parseHtmlBookmarks, isHtmlBookmarkFile, type ParseResult } from '@/lib/htmlBookmarkParser'
 import type { Group, Bookmark } from '@/types/bookmark'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
+import { parseJsonImportText, applyImportDataToStore } from '@/composables/useImportExport'
 
 const store = useBookmarkStore()
 
@@ -10,6 +11,9 @@ const importing = ref(false)
 const importMode = ref<'overwrite' | 'merge'>('merge')
 const showImportConfirm = ref(false)
 const pendingImportData = ref<{ groups: typeof store.groups; bookmarks: typeof store.bookmarks } | null>(null)
+const pendingImportSourceLabel = ref('')
+const pendingImportWarnings = ref<string[]>([])
+const pendingImportSkipped = ref(0)
 const showClearConfirm = ref(false)
 const clearConfirmText = ref('')
 const requiredClearText = '确认清空'
@@ -73,7 +77,7 @@ const exportData = () => {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
-  showResultToast({ variant: 'success', title: '已导出备份文件', description: '文件已开始下载（JSON）' })
+  showResultToast({ variant: 'success', title: '备份已导出', description: '文件已开始下载（JSON）' })
 }
 
 const triggerImport = () => {
@@ -91,23 +95,26 @@ const handleFileSelect = async (e: Event) => {
     if (isHtmlBookmarkFile(text)) {
       const result = parseHtmlBookmarks(text)
       if (result.stats.totalBookmarks === 0) {
-        showResultToast({ variant: 'error', title: '导入失败', description: '未在文件中找到有效书签' }, 6500)
+        showResultToast({ variant: 'error', title: '导入失败', description: '文件里没有可用书签' }, 6500)
         return
       }
       htmlParseResult.value = result
       selectedHtmlFolders.value = new Set() // 默认不选中任何文件夹
       showHtmlImportDialog.value = true
     } else {
-      const data = JSON.parse(text)
-      if (!data.groups || !Array.isArray(data.groups) || !data.bookmarks || !Array.isArray(data.bookmarks)) {
-        showResultToast({ variant: 'error', title: '导入失败', description: '无效的备份文件格式' }, 6500)
+      const parsed = parseJsonImportText(text)
+      if (!parsed.ok) {
+        showResultToast({ variant: 'error', title: '导入失败', description: parsed.message }, 6500)
         return
       }
-      pendingImportData.value = { groups: data.groups, bookmarks: data.bookmarks }
+      pendingImportData.value = { groups: parsed.data.groups, bookmarks: parsed.data.bookmarks }
+      pendingImportSourceLabel.value = parsed.sourceLabel
+      pendingImportWarnings.value = parsed.warnings
+      pendingImportSkipped.value = parsed.stats.skipped
       showImportConfirm.value = true
     }
   } catch {
-    showResultToast({ variant: 'error', title: '导入失败', description: '文件解析失败，请确保是有效的 JSON 或浏览器导出的 HTML' }, 6500)
+    showResultToast({ variant: 'error', title: '导入失败', description: '文件无法识别，请选择有效的 JSON（含 data.json）或浏览器导出的 HTML' }, 6500)
   } finally {
     input.value = ''
   }
@@ -117,84 +124,46 @@ const confirmImport = () => {
   if (!pendingImportData.value) return
   importing.value = true
 
-  const before = {
-    groups: store.groups.length,
-    bookmarks: store.bookmarks.length
-  }
-
   try {
-    if (importMode.value === 'overwrite') {
-      store.$patch({
-        groups: pendingImportData.value.groups,
-        bookmarks: pendingImportData.value.bookmarks
-      })
-    } else {
-      const existingBookmarkIds = new Set(store.bookmarks.map(b => b.id))
-      const existingGroupIds = new Set(store.groups.map(g => g.id))
-      
-      pendingImportData.value.bookmarks.forEach(b => {
-        if (!existingBookmarkIds.has(b.id)) {
-          store.bookmarks.push(b)
-        }
-      })
-      
-      pendingImportData.value.groups.forEach(g => {
-        if (!existingGroupIds.has(g.id)) {
-          store.groups.push(g)
-        } else {
-          const existingGroup = store.groups.find(eg => eg.id === g.id)
-          if (existingGroup) {
-            const existingSubIds = new Set(existingGroup.children.map(c => c.id))
-            g.children.forEach(sub => {
-              if (!existingSubIds.has(sub.id)) {
-                existingGroup.children.push(sub)
-              } else {
-                const existingSub = existingGroup.children.find(es => es.id === sub.id)
-                if (existingSub) {
-                  const existingBids = new Set(existingSub.bookmarkIds)
-                  sub.bookmarkIds.forEach(bid => {
-                    if (!existingBids.has(bid)) {
-                      existingSub.bookmarkIds.push(bid)
-                    }
-                  })
-                }
-              }
-            })
-          }
-        }
-      })
-    }
-    const after = {
-      groups: store.groups.length,
-      bookmarks: store.bookmarks.length
-    }
-    const addedGroups = Math.max(0, after.groups - before.groups)
-    const addedBookmarks = Math.max(0, after.bookmarks - before.bookmarks)
+    const summary = applyImportDataToStore(store, pendingImportData.value, importMode.value)
+    const skippedText = pendingImportSkipped.value > 0 ? `，忽略 ${pendingImportSkipped.value} 条无效数据` : ''
+
     showResultToast(
       {
         variant: 'success',
         title: '导入完成',
         description: importMode.value === 'overwrite'
-          ? `已覆盖：分组 ${after.groups} / 书签 ${after.bookmarks}`
-          : `已合并：新增分组 ${addedGroups} / 新增书签 ${addedBookmarks}`
+          ? `已按“完全替换”导入（${pendingImportSourceLabel.value || '导入文件'}）：当前分组 ${summary.after.groups} / 书签 ${summary.after.bookmarks}${skippedText}`
+          : `已按“仅新增”导入（${pendingImportSourceLabel.value || '导入文件'}）：新增分组 ${summary.added.groups} / 新增书签 ${summary.added.bookmarks}${skippedText}`
       },
       6500
     )
+
+    if (pendingImportWarnings.value.length > 0) {
+      console.warn('[Settings] import warnings:', pendingImportWarnings.value)
+    }
+
     // 异步触发图标获取
     store.refreshMissingIcons()
   } catch (e) {
     console.error('[Settings] import failed:', e)
-    showResultToast({ variant: 'error', title: '导入失败', description: '导入过程中发生错误，请更换备份文件后重试' }, 6500)
+    showResultToast({ variant: 'error', title: '导入失败', description: '导入过程中出错，请更换备份文件后重试' }, 6500)
   } finally {
     importing.value = false
     showImportConfirm.value = false
     pendingImportData.value = null
+    pendingImportSourceLabel.value = ''
+    pendingImportWarnings.value = []
+    pendingImportSkipped.value = 0
   }
 }
 
 const cancelImport = () => {
   showImportConfirm.value = false
   pendingImportData.value = null
+  pendingImportSourceLabel.value = ''
+  pendingImportWarnings.value = []
+  pendingImportSkipped.value = 0
 }
 
 // HTML 书签导入
@@ -388,7 +357,7 @@ const confirmHtmlImport = () => {
 
     showResultToast({
       variant: 'success',
-      title: 'HTML 书签导入完成',
+      title: '浏览器书签导入完成',
       description: `新增分组 ${addedGroups} / 新增书签 ${addedBookmarks}`
     }, 4000)
     
@@ -401,7 +370,7 @@ const confirmHtmlImport = () => {
     selectedHtmlFolders.value = new Set()
   } catch (e) {
     console.error('[Settings] HTML import failed:', e)
-    showResultToast({ variant: 'error', title: '导入失败', description: '导入过程中发生错误' }, 6500)
+    showResultToast({ variant: 'error', title: '导入失败', description: '导入过程中出错' }, 6500)
     htmlImporting.value = false
     showHtmlImportDialog.value = false
     htmlParseResult.value = null
@@ -464,7 +433,7 @@ const clearAllBookmarks = () => {
     {
       variant: 'warning',
       title: '已清空全部书签',
-      description: '可在短时间内撤回本次清空操作',
+      description: '可在短时间内撤销本次操作',
       actionLabel: '撤回',
       onAction: () => {
         store.groups.splice(0, store.groups.length, ...snapshot.groups)
@@ -482,30 +451,29 @@ const clearAllBookmarks = () => {
   <div class="grid gap-6">
     <Card>
       <CardHeader class="pb-3">
-        <CardTitle class="text-base">数据管理</CardTitle>
-        <CardDescription>导入导出书签数据，便于备份与迁移</CardDescription>
+        <CardTitle class="text-base">导入与备份</CardTitle>
+        <CardDescription>导出当前书签，或从备份文件恢复数据</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
         <div class="flex gap-3">
           <Button class="flex-1" variant="secondary" @click="exportData">
             <span class="i-mdi-export mr-2" />
-            导出数据
+            导出备份
           </Button>
           <Button class="flex-1" variant="outline" @click="triggerImport">
             <span class="i-mdi-import mr-2" />
-            导入数据
+            导入备份
           </Button>
           <input
             ref="fileInputRef"
             type="file"
-            accept=".json,.html,.htm"
             class="hidden"
             @change="handleFileSelect"
           />
         </div>
          
         <p class="text-xs text-muted-foreground">
-          支持导入 JSON 备份文件或浏览器导出的 HTML 书签文件（Chrome/Edge/Firefox）
+          导入已有数据可以直接开始使用：支持浏览器导出的 HTML、鹅的书签备份 JSON、网址精灵导出的 data.json。
         </p>
         
         <!-- Debug Tools -->
@@ -515,7 +483,7 @@ const clearAllBookmarks = () => {
             class="w-full h-auto py-0 px-0 flex items-center justify-between text-xs text-muted-foreground mb-2 hover:text-foreground hover:bg-transparent"
             @click="debugOpen = !debugOpen"
           >
-            <span>调试工具</span>
+            <span>高级操作（调试）</span>
             <span
               class="i-mdi-chevron-down text-base transition-transform"
               :class="debugOpen ? 'rotate-180' : ''"
@@ -524,11 +492,11 @@ const clearAllBookmarks = () => {
           <div v-if="debugOpen" class="flex gap-3">
             <Button class="flex-1" variant="outline" size="sm" @click="copyAllData">
               <span class="i-mdi-content-copy mr-2" />
-              复制全部数据
+              复制全部数据（JSON）
             </Button>
             <Button class="flex-1" variant="destructive" size="sm" @click="showClearConfirm = true">
               <span class="i-mdi-delete-forever mr-2" />
-              清空所有书签
+              清空全部书签
             </Button>
           </div>
         </div>
@@ -539,13 +507,17 @@ const clearAllBookmarks = () => {
     <Dialog :open="showImportConfirm" @update:open="v => !v && cancelImport()">
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>确认导入</DialogTitle>
+          <DialogTitle>导入前确认</DialogTitle>
           <DialogDescription>
-            将从备份文件中导入数据，请选择导入模式
+            请确认导入方式，系统将按下方规则写入数据
           </DialogDescription>
         </DialogHeader>
         
         <div class="space-y-4 py-4">
+          <div v-if="pendingImportSourceLabel" class="rounded-lg border border-border/80 bg-muted/40 p-3 text-sm">
+            <span class="text-muted-foreground">文件类型：</span>
+            <span class="font-medium">{{ pendingImportSourceLabel }}</span>
+          </div>
           <div v-if="pendingImportData" class="rounded-lg bg-muted/50 p-3 text-sm space-y-1">
             <div class="flex items-center justify-between">
               <span class="text-muted-foreground">分组数量</span>
@@ -555,10 +527,21 @@ const clearAllBookmarks = () => {
               <span class="text-muted-foreground">书签数量</span>
               <span class="font-medium">{{ pendingImportData.bookmarks.length }}</span>
             </div>
+            <div class="flex items-center justify-between" v-if="pendingImportSkipped > 0">
+              <span class="text-muted-foreground">将忽略</span>
+              <span class="font-medium text-amber-500">{{ pendingImportSkipped }} 条无效数据</span>
+            </div>
+          </div>
+
+          <div v-if="pendingImportWarnings.length > 0" class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+            <div class="font-medium mb-1">注意事项</div>
+            <div class="space-y-1 max-h-24 overflow-y-auto custom-scroll">
+              <p v-for="warning in pendingImportWarnings" :key="warning">{{ warning }}</p>
+            </div>
           </div>
           
           <div class="space-y-3">
-            <span class="text-sm font-medium">导入模式</span>
+            <span class="text-sm font-medium">导入方式</span>
             <RadioGroup v-model="importMode" class="grid gap-3">
               <label
                 class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left cursor-pointer"
@@ -566,8 +549,8 @@ const clearAllBookmarks = () => {
               >
                 <RadioGroupItem value="merge" />
                 <div class="space-y-1">
-                  <div class="font-medium text-sm">合并模式</div>
-                  <div class="text-xs text-muted-foreground">保留现有数据，仅添加新的书签和分组</div>
+                  <div class="font-medium text-sm">仅新增（推荐）</div>
+                  <div class="text-xs text-muted-foreground">保留现有数据，只补充新分组和新书签</div>
                 </div>
               </label>
               <label
@@ -576,8 +559,8 @@ const clearAllBookmarks = () => {
               >
                 <RadioGroupItem value="overwrite" />
                 <div class="space-y-1">
-                  <div class="font-medium text-sm">覆盖模式</div>
-                  <div class="text-xs text-muted-foreground text-amber-500">清空现有数据，完全使用备份内容替换</div>
+                  <div class="font-medium text-sm">完全替换</div>
+                  <div class="text-xs text-muted-foreground text-amber-500">清空现有数据，并使用备份内容替换</div>
                 </div>
               </label>
             </RadioGroup>
@@ -588,7 +571,7 @@ const clearAllBookmarks = () => {
           <Button variant="ghost" @click="cancelImport">取消</Button>
           <Button :disabled="importing" @click="confirmImport">
             <span v-if="importing" class="i-mdi-loading animate-spin mr-2" />
-            确认导入
+            开始导入
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -600,10 +583,10 @@ const clearAllBookmarks = () => {
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2">
             <span class="i-mdi-file-code text-primary" />
-            导入浏览器书签
+            导入浏览器书签（HTML）
           </DialogTitle>
           <DialogDescription>
-            已解析 HTML 书签文件，请选择要导入的文件夹
+            已解析 HTML 文件，请选择要导入的文件夹
           </DialogDescription>
         </DialogHeader>
         
@@ -648,13 +631,13 @@ const clearAllBookmarks = () => {
                 </div>
               </div>
               <p v-if="htmlParseResult.folders.length === 0" class="text-sm text-muted-foreground py-2 text-center">
-                未找到顶级文件夹，所有书签将导入到默认分组
+                未找到顶级文件夹，所有书签会导入到默认分组
               </p>
             </div>
           </div>
           
           <p class="text-xs text-muted-foreground">
-            文件夹将作为主分组导入，子文件夹作为子分组。同名分组将自动合并。
+            文件夹会作为主分组导入，子文件夹会作为子分组导入；同名分组会自动合并。
           </p>
         </div>
         
@@ -665,7 +648,7 @@ const clearAllBookmarks = () => {
             @click="confirmHtmlImport"
           >
             <span v-if="htmlImporting" class="i-mdi-loading animate-spin mr-2" />
-            导入 {{ selectedHtmlFolders.size }} 个分组
+            导入 {{ selectedHtmlFolders.size }} 个文件夹
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -675,9 +658,9 @@ const clearAllBookmarks = () => {
     <Dialog :open="showClearConfirm" @update:open="v => showClearConfirm = v">
       <DialogContent class="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>确认清空？</DialogTitle>
+          <DialogTitle>确认清空全部书签？</DialogTitle>
           <DialogDescription>
-            此操作将删除所有书签数据，无法恢复。请输入
+            此操作会删除全部书签数据，无法恢复。请输入
             <span class="font-medium text-foreground">"{{ requiredClearText }}"</span>
             确认。
           </DialogDescription>
@@ -685,10 +668,10 @@ const clearAllBookmarks = () => {
         <div class="space-y-3 py-2">
           <Input
             v-model="clearConfirmText"
-            placeholder="输入确认文案后才可清空"
+            placeholder="输入确认文字后才可清空"
             class="w-full"
           />
-          <p class="text-xs text-muted-foreground">可手动输入或粘贴确认文案，再点击确认。</p>
+          <p class="text-xs text-muted-foreground">可手动输入或粘贴确认文字，再点击确认。</p>
         </div>
         <DialogFooter class="gap-2 sm:gap-0">
           <Button variant="ghost" @click="showClearConfirm = false">取消</Button>
@@ -697,7 +680,7 @@ const clearAllBookmarks = () => {
             :disabled="clearConfirmText.trim() !== requiredClearText"
             @click="clearAllBookmarks"
           >
-            确认清空
+            立即清空
           </Button>
         </DialogFooter>
       </DialogContent>
