@@ -33,6 +33,7 @@
     "@vitejs/plugin-legacy": "^7.2.1",
     "@vitejs/plugin-vue": "^5.1.2",
     "autoprefixer": "^10.4.23",
+    "code-inspector-plugin": "^1.4.2",
     "postcss": "^8.5.6",
     "sharp": "^0.34.5",
     "tailwindcss": "^4.1.18",
