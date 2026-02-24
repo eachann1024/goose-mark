@@ -1,4 +1,5 @@
-import type { Bookmark, Group } from '@/types/bookmark'
+import { syncBookmarkLocations } from '@/composables/useImportExport'
+import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 
 type MirrorPayload = {
   schemaVersion: string
@@ -11,12 +12,31 @@ type MirrorPayload = {
   meta: {
     recordCount: number
     checksum: string
+    writerClientId?: string
+    writtenAt?: number
   }
+}
+
+type MirrorData = {
+  groups: Group[]
+  bookmarks: Bookmark[]
 }
 
 type MirrorValidationResult = {
   ok: boolean
   reason?: string
+}
+
+type MergeContext = {
+  incomingRevision: number
+  incomingWriterClientId: string
+  localRevision: number
+  localWriterClientId: string
+}
+
+type NodeLikeStats = {
+  mtimeMs?: number
+  size?: number
 }
 
 type NodeLikeFs = {
@@ -25,6 +45,8 @@ type NodeLikeFs = {
   readFileSync: (path: string, encoding: string) => string
   writeFileSync: (path: string, data: string, encoding?: string) => void
   renameSync: (oldPath: string, newPath: string) => void
+  watchFile?: (path: string, options: { interval: number }, listener: (curr: NodeLikeStats, prev: NodeLikeStats) => void) => void
+  unwatchFile?: (path: string, listener?: (curr: NodeLikeStats, prev: NodeLikeStats) => void) => void
   statSync?: (path: string) => { isDirectory?: () => boolean }
 }
 
@@ -45,17 +67,29 @@ type BrowserDirectoryHandleLike = {
   }>
 }
 
+type GroupLike = Group & Record<string, any>
+type SubGroupLike = SubGroup & Record<string, any>
+type BookmarkLike = Bookmark & Record<string, any>
+type FlatSubEntry = {
+  parentGroupId: string
+  sub: SubGroupLike
+}
+
 const MIRROR_SCHEMA_VERSION = 'goose-marks.local-data.v1'
 const MIRROR_DIR_NAME = 'goose-marks-sync'
 const MIRROR_FILE_NAME = 'snapshot.json'
 const MIRROR_TMP_FILE_NAME = 'snapshot.tmp'
 const MIRROR_FALLBACK_HOME_DIR = '.goose-marks'
 const WRITE_DEBOUNCE_MS = 500
+const EXTERNAL_WATCH_INTERVAL_MS = 1000
+const REMOTE_APPLY_SILENCE_MS = WRITE_DEBOUNCE_MS + 160
 const WEB_MIRROR_STORAGE_KEY = 'goose-marks.local-mirror.snapshot.v1'
 const WEB_MIRROR_DIR_PATH = 'browser://local-storage/goose-marks-sync'
 const WEB_MIRROR_FILE_PATH = `${WEB_MIRROR_DIR_PATH}/snapshot.json`
 const DEVICE_MIRROR_DIR_KEY = 'goose-marks.local-mirror.directory.device.v1'
 const DEVICE_DEFAULT_DIR_SENTINEL = '__default__'
+const MIRROR_CLIENT_ID_KEY = 'goose-marks.local-mirror.client-id.v1'
+const TRASH_GROUP_ID = 'g-trash'
 
 const getNodeModule = <T = unknown>(name: string): T | null => {
   if (typeof window === 'undefined' || !window.require) return null
@@ -122,10 +156,124 @@ const buildChecksum = (json: string): string => {
   }
 }
 
-const cloneState = (groups: Group[], bookmarks: Bookmark[]): { groups: Group[]; bookmarks: Bookmark[] } => ({
+const cloneState = (groups: Group[], bookmarks: Bookmark[]): MirrorData => ({
   groups: JSON.parse(JSON.stringify(groups)),
   bookmarks: JSON.parse(JSON.stringify(bookmarks))
 })
+
+const cloneAny = <T>(value: T): T => JSON.parse(JSON.stringify(value))
+
+const buildMirrorSyncSnapshot = (groups: Group[], bookmarks: Bookmark[]): MirrorData => {
+  const clonedGroups = cloneAny(groups) as Group[]
+  const clonedBookmarks = cloneAny(bookmarks) as Bookmark[]
+
+  const bookmarkMap = new Map<string, Bookmark>()
+  clonedBookmarks.forEach(item => {
+    const id = String(item?.id || '').trim()
+    if (!id || item?.isDeleted) return
+    item.id = id
+    bookmarkMap.set(id, item)
+  })
+
+  const locationsMap = new Map<string, Bookmark['locations']>()
+  const filteredGroups = clonedGroups
+    .filter(group => {
+      const groupId = String(group?.id || '').trim()
+      return !!groupId && groupId !== TRASH_GROUP_ID && !group?.isDeleted
+    })
+    .map(group => {
+      const groupId = String(group.id).trim()
+      const children = (Array.isArray(group.children) ? group.children : [])
+        .map(sub => {
+          const subId = String(sub?.id || '').trim()
+          if (!subId || sub?.isDeleted) return null
+
+          const ids: string[] = []
+          const seen = new Set<string>()
+          const rawIds = Array.isArray(sub.bookmarkIds) ? sub.bookmarkIds : []
+          rawIds.forEach(rawId => {
+            const id = String(rawId || '').trim()
+            if (!id || seen.has(id) || !bookmarkMap.has(id)) return
+            seen.add(id)
+            ids.push(id)
+
+            const prev = locationsMap.get(id) || []
+            prev.push({ groupId, subGroupId: subId })
+            locationsMap.set(id, prev)
+          })
+
+          return {
+            ...sub,
+            id: subId,
+            bookmarkIds: ids
+          }
+        })
+        .filter((sub): sub is SubGroup => !!sub)
+
+      return {
+        ...group,
+        id: groupId,
+        children
+      }
+    })
+
+  const referencedIds = new Set<string>()
+  filteredGroups.forEach(group => {
+    group.children.forEach(sub => {
+      sub.bookmarkIds.forEach(id => referencedIds.add(id))
+    })
+  })
+
+  const filteredBookmarks = clonedBookmarks
+    .filter(item => {
+      const id = String(item?.id || '').trim()
+      return !!id && !item?.isDeleted && referencedIds.has(id)
+    })
+    .map(item => {
+      const id = String(item.id || '').trim()
+      return {
+        ...item,
+        id,
+        locations: locationsMap.get(id) || [],
+        prevLocations: Array.isArray(item.prevLocations)
+          ? item.prevLocations.filter(loc => loc?.groupId && loc.groupId !== TRASH_GROUP_ID)
+          : item.prevLocations
+      }
+    })
+
+  const validBookmarkIds = new Set(filteredBookmarks.map(item => item.id))
+  filteredGroups.forEach(group => {
+    group.children.forEach(sub => {
+      sub.bookmarkIds = sub.bookmarkIds.filter(id => validBookmarkIds.has(id))
+    })
+  })
+
+  return {
+    groups: filteredGroups,
+    bookmarks: filteredBookmarks
+  }
+}
+
+const normalizeRevision = (value: unknown): number => {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.round(value)
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed) && parsed > 0) return Math.round(parsed)
+  }
+  return 0
+}
+
+const normalizeClientId = (value: unknown): string => {
+  if (typeof value !== 'string') return ''
+  const normalized = value.trim()
+  return normalized || ''
+}
+
+const getEntityUpdatedAt = (entity: { updatedAt?: number; createdAt?: number } | null | undefined): number => {
+  const updatedAt = normalizeRevision(entity?.updatedAt)
+  const createdAt = normalizeRevision(entity?.createdAt)
+  return Math.max(updatedAt, createdAt)
+}
 
 const toBasePayload = (payload: MirrorPayload | Omit<MirrorPayload, 'meta'>) => ({
   schemaVersion: payload.schemaVersion,
@@ -134,12 +282,354 @@ const toBasePayload = (payload: MirrorPayload | Omit<MirrorPayload, 'meta'>) => 
   data: payload.data
 })
 
+const toStableDataString = (data: MirrorData): string => buildStableString({ groups: data.groups, bookmarks: data.bookmarks })
+
+const mergeOrder = (left: string[], right: string[]): string[] => {
+  const seen = new Set<string>()
+  const result: string[] = []
+
+  for (const id of [...left, ...right]) {
+    const normalized = String(id || '').trim()
+    if (!normalized || seen.has(normalized)) continue
+    seen.add(normalized)
+    result.push(normalized)
+  }
+
+  return result
+}
+
+const createClientId = (): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `gm-${crypto.randomUUID()}`
+  }
+  return `gm-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
 let started = false
 let stopHandle: (() => void) | null = null
 let writeTimer: ReturnType<typeof setTimeout> | null = null
+let writeBackTimer: ReturnType<typeof setTimeout> | null = null
+let remoteApplyTimer: ReturnType<typeof setTimeout> | null = null
+let webPollTimer: ReturnType<typeof setInterval> | null = null
+let beforeUnloadHandler: (() => void) | null = null
 let pendingStore: ReturnType<typeof useBookmarkStore> | null = null
 let pendingFilePath = ''
 let webPickedDirectoryHandle: BrowserDirectoryHandleLike | null = null
+let watchFilePath = ''
+let watchFileListener: ((curr: NodeLikeStats, prev: NodeLikeStats) => void) | null = null
+let selfClientId = ''
+let lastSeenRevision = 0
+let lastAppliedRevision = 0
+let lastAppliedChecksum = ''
+let lastAppliedWriterClientId = ''
+let isApplyingRemote = false
+let suppressWritesUntil = 0
+let writeBackStore: ReturnType<typeof useBookmarkStore> | null = null
+
+const getSelfClientId = (): string => {
+  if (selfClientId) return selfClientId
+
+  const fallback = createClientId()
+  if (typeof window === 'undefined' || !window.localStorage) {
+    selfClientId = fallback
+    return selfClientId
+  }
+
+  try {
+    const existing = normalizeClientId(window.localStorage.getItem(MIRROR_CLIENT_ID_KEY))
+    if (existing) {
+      selfClientId = existing
+      return selfClientId
+    }
+
+    selfClientId = fallback
+    window.localStorage.setItem(MIRROR_CLIENT_ID_KEY, selfClientId)
+    return selfClientId
+  } catch {
+    selfClientId = fallback
+    return selfClientId
+  }
+}
+
+const rememberSeenRevision = (revision: number) => {
+  const normalized = normalizeRevision(revision)
+  if (normalized <= 0) return
+  if (normalized > lastSeenRevision) {
+    lastSeenRevision = normalized
+  }
+}
+
+const buildNextRevision = () => {
+  const now = Date.now()
+  const candidate = lastSeenRevision + 1
+  const next = Math.max(now, candidate)
+  lastSeenRevision = next
+  return next
+}
+
+const markAppliedSnapshot = (payload: MirrorPayload) => {
+  const revision = normalizeRevision(payload.revision)
+  const checksum = typeof payload.meta?.checksum === 'string' ? payload.meta.checksum : ''
+  const writerClientId = normalizeClientId(payload.meta?.writerClientId)
+
+  rememberSeenRevision(revision)
+  lastAppliedRevision = Math.max(lastAppliedRevision, revision)
+  lastAppliedChecksum = checksum
+  lastAppliedWriterClientId = writerClientId
+}
+
+const shouldSuppressWrite = () => {
+  if (isApplyingRemote) return true
+  if (Date.now() < suppressWritesUntil) return true
+  return false
+}
+
+const markRemoteApplying = () => {
+  isApplyingRemote = true
+  suppressWritesUntil = Date.now() + REMOTE_APPLY_SILENCE_MS
+  if (remoteApplyTimer) clearTimeout(remoteApplyTimer)
+  remoteApplyTimer = setTimeout(() => {
+    isApplyingRemote = false
+    remoteApplyTimer = null
+  }, REMOTE_APPLY_SILENCE_MS)
+}
+
+const pickWinner = (localUpdatedAt: number, incomingUpdatedAt: number, context: MergeContext): 'local' | 'incoming' => {
+  if (incomingUpdatedAt > localUpdatedAt) return 'incoming'
+  if (incomingUpdatedAt < localUpdatedAt) return 'local'
+
+  if (context.incomingRevision > context.localRevision) return 'incoming'
+  if (context.incomingRevision < context.localRevision) return 'local'
+
+  if (context.incomingWriterClientId.localeCompare(context.localWriterClientId) > 0) return 'incoming'
+  return 'local'
+}
+
+const selectEntity = <T extends { updatedAt?: number; createdAt?: number }>(
+  local: T | undefined,
+  incoming: T | undefined,
+  context: MergeContext
+): { winner: 'local' | 'incoming'; value?: T } => {
+  if (!local && !incoming) return { winner: 'local', value: undefined }
+  if (!local && incoming) return { winner: 'incoming', value: cloneAny(incoming) }
+  if (local && !incoming) return { winner: 'local', value: cloneAny(local) }
+
+  const localUpdatedAt = getEntityUpdatedAt(local)
+  const incomingUpdatedAt = getEntityUpdatedAt(incoming)
+  const winner = pickWinner(localUpdatedAt, incomingUpdatedAt, context)
+  return {
+    winner,
+    value: winner === 'incoming' ? cloneAny(incoming!) : cloneAny(local!)
+  }
+}
+
+const flattenGroups = (groups: GroupLike[]) => {
+  const groupMap = new Map<string, GroupLike>()
+  const groupOrder: string[] = []
+  const subMap = new Map<string, FlatSubEntry>()
+  const subOrderByGroup = new Map<string, string[]>()
+
+  groups.forEach(rawGroup => {
+    const groupId = String(rawGroup?.id || '').trim()
+    if (!groupId) return
+    if (!groupMap.has(groupId)) {
+      const groupCopy: GroupLike = {
+        ...(cloneAny(rawGroup) as GroupLike),
+        children: []
+      }
+      groupMap.set(groupId, groupCopy)
+      groupOrder.push(groupId)
+    }
+
+    const order: string[] = []
+    const children = Array.isArray(rawGroup.children) ? rawGroup.children : []
+    children.forEach(rawSub => {
+      const subId = String(rawSub?.id || '').trim()
+      if (!subId) return
+      if (subMap.has(subId)) return
+
+      const subCopy: SubGroupLike = {
+        ...(cloneAny(rawSub) as SubGroupLike),
+        bookmarkIds: Array.isArray(rawSub.bookmarkIds)
+          ? Array.from(new Set(rawSub.bookmarkIds.map(id => String(id || '').trim()).filter(Boolean)))
+          : []
+      }
+
+      subMap.set(subId, {
+        parentGroupId: groupId,
+        sub: subCopy
+      })
+      order.push(subId)
+    })
+
+    subOrderByGroup.set(groupId, order)
+  })
+
+  return {
+    groupMap,
+    groupOrder,
+    subMap,
+    subOrderByGroup
+  }
+}
+
+const resolveFallbackGroupId = (groupOrder: string[], groupMap: Map<string, GroupLike>): string => {
+  for (const groupId of groupOrder) {
+    if (groupId !== TRASH_GROUP_ID && groupMap.has(groupId)) return groupId
+  }
+  for (const groupId of groupOrder) {
+    if (groupMap.has(groupId)) return groupId
+  }
+  const first = groupMap.keys().next().value
+  return typeof first === 'string' ? first : ''
+}
+
+const mergeGroupsByEntity = (localGroups: GroupLike[], incomingGroups: GroupLike[], context: MergeContext): GroupLike[] => {
+  const localFlat = flattenGroups(localGroups)
+  const incomingFlat = flattenGroups(incomingGroups)
+
+  const mergedGroupOrder = mergeOrder(localFlat.groupOrder, incomingFlat.groupOrder)
+  const mergedGroupMap = new Map<string, GroupLike>()
+
+  mergedGroupOrder.forEach(groupId => {
+    const localGroup = localFlat.groupMap.get(groupId)
+    const incomingGroup = incomingFlat.groupMap.get(groupId)
+    const selected = selectEntity(localGroup, incomingGroup, context)
+    if (!selected.value) return
+
+    mergedGroupMap.set(groupId, {
+      ...(selected.value as GroupLike),
+      children: []
+    })
+  })
+
+  const fallbackGroupId = resolveFallbackGroupId(mergedGroupOrder, mergedGroupMap)
+  const mergedSubIds = mergeOrder(Array.from(localFlat.subMap.keys()), Array.from(incomingFlat.subMap.keys()))
+  const mergedSubMap = new Map<string, FlatSubEntry>()
+
+  mergedSubIds.forEach(subId => {
+    const localEntry = localFlat.subMap.get(subId)
+    const incomingEntry = incomingFlat.subMap.get(subId)
+    const selected = selectEntity(localEntry?.sub, incomingEntry?.sub, context)
+    if (!selected.value) return
+
+    let parentGroupId = ''
+    if (selected.winner === 'incoming') {
+      parentGroupId = incomingEntry?.parentGroupId || localEntry?.parentGroupId || ''
+    } else {
+      parentGroupId = localEntry?.parentGroupId || incomingEntry?.parentGroupId || ''
+    }
+
+    if (!parentGroupId || !mergedGroupMap.has(parentGroupId)) {
+      parentGroupId = fallbackGroupId
+    }
+    if (!parentGroupId || !mergedGroupMap.has(parentGroupId)) {
+      return
+    }
+
+    mergedSubMap.set(subId, {
+      parentGroupId,
+      sub: selected.value as SubGroupLike
+    })
+  })
+
+  const result: GroupLike[] = []
+  mergedGroupOrder.forEach(groupId => {
+    const group = mergedGroupMap.get(groupId)
+    if (!group) return
+
+    const children: SubGroupLike[] = []
+    const addedSubIds = new Set<string>()
+
+    const appendByOrder = (order?: string[]) => {
+      if (!Array.isArray(order)) return
+      order.forEach(subId => {
+        if (addedSubIds.has(subId)) return
+        const mergedSub = mergedSubMap.get(subId)
+        if (!mergedSub) return
+        if (mergedSub.parentGroupId !== groupId) return
+        children.push(mergedSub.sub)
+        addedSubIds.add(subId)
+      })
+    }
+
+    appendByOrder(localFlat.subOrderByGroup.get(groupId))
+    appendByOrder(incomingFlat.subOrderByGroup.get(groupId))
+
+    mergedSubMap.forEach((entry, subId) => {
+      if (addedSubIds.has(subId)) return
+      if (entry.parentGroupId !== groupId) return
+      children.push(entry.sub)
+      addedSubIds.add(subId)
+    })
+
+    group.children = children
+    result.push(group)
+  })
+
+  return result
+}
+
+const mergeBookmarksByEntity = (localBookmarks: BookmarkLike[], incomingBookmarks: BookmarkLike[], context: MergeContext): BookmarkLike[] => {
+  const localMap = new Map(localBookmarks.map(item => [String(item.id), item]))
+  const incomingMap = new Map(incomingBookmarks.map(item => [String(item.id), item]))
+  const mergedOrder = mergeOrder(localBookmarks.map(item => String(item.id)), incomingBookmarks.map(item => String(item.id)))
+
+  const result: BookmarkLike[] = []
+  mergedOrder.forEach(bookmarkId => {
+    const localItem = localMap.get(bookmarkId)
+    const incomingItem = incomingMap.get(bookmarkId)
+    const selected = selectEntity(localItem, incomingItem, context)
+    if (!selected.value) return
+    result.push(selected.value as BookmarkLike)
+  })
+
+  return result
+}
+
+const getLatestUpdatedAt = (data: MirrorData): number => {
+  let max = 0
+
+  data.groups.forEach(group => {
+    max = Math.max(max, getEntityUpdatedAt(group))
+    group.children?.forEach(sub => {
+      max = Math.max(max, getEntityUpdatedAt(sub))
+    })
+  })
+
+  data.bookmarks.forEach(bookmark => {
+    max = Math.max(max, getEntityUpdatedAt(bookmark))
+  })
+
+  return max
+}
+
+const mergeSnapshotData = (localData: MirrorData, incomingPayload: MirrorPayload): MirrorData => {
+  const selfWriter = getSelfClientId()
+  const incomingWriter = normalizeClientId(incomingPayload.meta?.writerClientId)
+
+  const context: MergeContext = {
+    incomingRevision: normalizeRevision(incomingPayload.revision),
+    incomingWriterClientId: incomingWriter,
+    localRevision: Math.max(lastSeenRevision, lastAppliedRevision, getLatestUpdatedAt(localData)),
+    localWriterClientId: selfWriter
+  }
+
+  const localGroups = cloneAny(localData.groups) as GroupLike[]
+  const localBookmarks = cloneAny(localData.bookmarks) as BookmarkLike[]
+  const incomingGroups = cloneAny(incomingPayload.data.groups) as GroupLike[]
+  const incomingBookmarks = cloneAny(incomingPayload.data.bookmarks) as BookmarkLike[]
+
+  const groups = mergeGroupsByEntity(localGroups, incomingGroups, context)
+  const bookmarks = mergeBookmarksByEntity(localBookmarks, incomingBookmarks, context)
+
+  syncBookmarkLocations(groups as Group[], bookmarks as Bookmark[])
+
+  return {
+    groups: groups as Group[],
+    bookmarks: bookmarks as Bookmark[]
+  }
+}
 
 const getDeviceMirrorDirectoryPreference = (): string | null => {
   if (typeof window === 'undefined') return null
@@ -263,28 +753,37 @@ const writeToPickedWebDirectory = async (json: string) => {
   }
 }
 
+const buildPayloadFromData = (data: MirrorData): MirrorPayload => {
+  const revision = buildNextRevision()
+  const writerClientId = getSelfClientId()
+  const writtenAt = Date.now()
+
+  const basePayload: Omit<MirrorPayload, 'meta'> = {
+    schemaVersion: MIRROR_SCHEMA_VERSION,
+    generatedAt: new Date(writtenAt).toISOString(),
+    revision,
+    data
+  }
+
+  const checksum = buildChecksum(buildStableString(toBasePayload(basePayload)))
+
+  return {
+    ...basePayload,
+    meta: {
+      recordCount: data.bookmarks.length,
+      checksum,
+      writerClientId,
+      writtenAt
+    }
+  }
+}
+
 const writeMirrorNow = (store: ReturnType<typeof useBookmarkStore>) => {
   const fs = getNodeModule<NodeLikeFs>('fs')
   const pathModule = getNodeModule<NodeLikePath>('path')
 
-  const snapshot = cloneState(store.groups, store.bookmarks)
-  const basePayload: Omit<MirrorPayload, 'meta'> = {
-    schemaVersion: MIRROR_SCHEMA_VERSION,
-    generatedAt: new Date().toISOString(),
-    revision: Date.now(),
-    data: snapshot
-  }
-  const baseJson = buildStableString(toBasePayload(basePayload))
-  const checksum = buildChecksum(baseJson)
-
-  const payload: MirrorPayload = {
-    ...basePayload,
-    meta: {
-      recordCount: snapshot.bookmarks.length,
-      checksum
-    }
-  }
-
+  const snapshot = buildMirrorSyncSnapshot(store.groups, store.bookmarks)
+  const payload = buildPayloadFromData(snapshot)
   const json = `${JSON.stringify(payload, null, 2)}\n`
 
   if (fs && pathModule) {
@@ -298,6 +797,7 @@ const writeMirrorNow = (store: ReturnType<typeof useBookmarkStore>) => {
       fs.writeFileSync(paths.tmpPath, json, 'utf-8')
       fs.renameSync(paths.tmpPath, paths.filePath)
       pendingFilePath = paths.filePath
+      markAppliedSnapshot(payload)
       return
     } catch (error) {
       console.warn('[LocalDataMirror] 写入失败:', error)
@@ -309,6 +809,7 @@ const writeMirrorNow = (store: ReturnType<typeof useBookmarkStore>) => {
     const settingsStore = useSettingsStore()
     const customDir = String(settingsStore.localMirrorDirectory || '').trim()
     pendingFilePath = customDir ? joinPathLike(customDir, MIRROR_FILE_NAME) : WEB_MIRROR_FILE_PATH
+    markAppliedSnapshot(payload)
     void writeToPickedWebDirectory(json)
   } catch (error) {
     console.warn('[LocalDataMirror] 浏览器本地写入失败:', error)
@@ -359,14 +860,23 @@ const validateMirrorSnapshot = (payload: MirrorPayload | null): MirrorValidation
   if (payload.meta.recordCount !== bookmarks.length) return { ok: false, reason: 'record_count_mismatch' }
 
   if (typeof payload.meta.checksum !== 'string') return { ok: false, reason: 'invalid_checksum' }
+  if (payload.meta.writerClientId != null && typeof payload.meta.writerClientId !== 'string') {
+    return { ok: false, reason: 'invalid_writer_client_id' }
+  }
+  if (payload.meta.writtenAt != null && !Number.isFinite(payload.meta.writtenAt)) {
+    return { ok: false, reason: 'invalid_written_at' }
+  }
+
   const checksum = buildChecksum(buildStableString(toBasePayload(payload)))
   if (payload.meta.checksum !== checksum) return { ok: false, reason: 'checksum_mismatch' }
 
   return { ok: true }
 }
 
-const applyMirrorToStore = (store: ReturnType<typeof useBookmarkStore>, payload: MirrorPayload) => {
-  const snapshot = cloneState(payload.data.groups, payload.data.bookmarks)
+const applyDataToStore = (store: ReturnType<typeof useBookmarkStore>, data: MirrorData) => {
+  const snapshot = cloneState(data.groups, data.bookmarks)
+  markRemoteApplying()
+
   if (typeof store.loadFromSnapshot === 'function') {
     store.loadFromSnapshot({
       groups: snapshot.groups,
@@ -374,17 +884,172 @@ const applyMirrorToStore = (store: ReturnType<typeof useBookmarkStore>, payload:
     }, false)
     return
   }
+
   store.$patch({
     groups: snapshot.groups,
     bookmarks: snapshot.bookmarks
   })
 }
 
+const applyMirrorToStore = (store: ReturnType<typeof useBookmarkStore>, payload: MirrorPayload) => {
+  applyDataToStore(store, {
+    groups: payload.data.groups,
+    bookmarks: payload.data.bookmarks
+  })
+}
+
+const queueWriteBack = (store: ReturnType<typeof useBookmarkStore>) => {
+  writeBackStore = store
+  if (writeBackTimer) {
+    clearTimeout(writeBackTimer)
+    writeBackTimer = null
+  }
+
+  const delay = Math.max(WRITE_DEBOUNCE_MS, suppressWritesUntil - Date.now() + 24)
+  writeBackTimer = setTimeout(() => {
+    if (!writeBackStore) return
+    writeMirrorNow(writeBackStore)
+    writeBackTimer = null
+  }, Math.max(delay, WRITE_DEBOUNCE_MS))
+}
+
+const shouldQuickDiscardIncoming = (payload: MirrorPayload): boolean => {
+  const incomingRevision = normalizeRevision(payload.revision)
+  const incomingWriterClientId = normalizeClientId(payload.meta?.writerClientId)
+  const incomingChecksum = typeof payload.meta?.checksum === 'string' ? payload.meta.checksum : ''
+  const selfId = getSelfClientId()
+
+  if (incomingRevision < lastAppliedRevision) return true
+
+  if (incomingRevision === lastAppliedRevision) {
+    if (incomingWriterClientId && incomingWriterClientId === selfId) return true
+    if (incomingChecksum && incomingChecksum === lastAppliedChecksum) return true
+    if (incomingWriterClientId && incomingWriterClientId === lastAppliedWriterClientId && incomingChecksum === lastAppliedChecksum) {
+      return true
+    }
+  }
+
+  return false
+}
+
+const processIncomingSnapshot = (store: ReturnType<typeof useBookmarkStore>, payload: MirrorPayload) => {
+  rememberSeenRevision(payload.revision)
+
+  if (shouldQuickDiscardIncoming(payload)) {
+    return
+  }
+
+  const localData = cloneState(store.groups, store.bookmarks)
+  const incomingData = buildMirrorSyncSnapshot(payload.data.groups, payload.data.bookmarks)
+  const mergedData = mergeSnapshotData(localData, {
+    ...payload,
+    data: incomingData
+  })
+
+  const localDataString = toStableDataString(localData)
+  const mergedDataString = toStableDataString(mergedData)
+  const mergedMirrorDataString = toStableDataString(buildMirrorSyncSnapshot(mergedData.groups, mergedData.bookmarks))
+  const incomingDataString = toStableDataString(incomingData)
+
+  const shouldApplyToLocal = mergedDataString !== localDataString
+  const shouldWriteBack = mergedMirrorDataString !== incomingDataString
+
+  if (shouldApplyToLocal) {
+    applyDataToStore(store, mergedData)
+  }
+
+  markAppliedSnapshot(payload)
+
+  if (shouldWriteBack) {
+    queueWriteBack(store)
+  }
+}
+
+const primeSeenRevisionFromSnapshot = () => {
+  const payload = readMirrorSnapshot()
+  const validation = validateMirrorSnapshot(payload)
+  if (!payload || !validation.ok) return
+  rememberSeenRevision(payload.revision)
+}
+
+const handleExternalSnapshotRefresh = () => {
+  const store = pendingStore
+  if (!store) return
+
+  const payload = readMirrorSnapshot()
+  const validation = validateMirrorSnapshot(payload)
+  if (!payload || !validation.ok) return
+
+  processIncomingSnapshot(store, payload)
+}
+
+const clearExternalWatcher = () => {
+  const fs = getNodeModule<NodeLikeFs>('fs')
+
+  if (watchFilePath && watchFileListener && fs?.unwatchFile) {
+    try {
+      fs.unwatchFile(watchFilePath, watchFileListener)
+    } catch {
+      // ignore
+    }
+  }
+
+  watchFilePath = ''
+  watchFileListener = null
+
+  if (webPollTimer) {
+    clearInterval(webPollTimer)
+    webPollTimer = null
+  }
+}
+
+const bindExternalWatcher = () => {
+  clearExternalWatcher()
+
+  const fs = getNodeModule<NodeLikeFs>('fs')
+  const pathModule = getNodeModule<NodeLikePath>('path')
+
+  if (fs?.watchFile && fs?.unwatchFile && pathModule) {
+    const paths = resolveMirrorPaths(pathModule)
+    if (paths?.filePath) {
+      watchFilePath = paths.filePath
+      pendingFilePath = paths.filePath
+
+      watchFileListener = (curr, prev) => {
+        const currMtime = Number(curr?.mtimeMs || 0)
+        const prevMtime = Number(prev?.mtimeMs || 0)
+        const currSize = Number(curr?.size || 0)
+        const prevSize = Number(prev?.size || 0)
+
+        if (currMtime === prevMtime && currSize === prevSize) return
+        handleExternalSnapshotRefresh()
+      }
+
+      try {
+        fs.watchFile(watchFilePath, { interval: EXTERNAL_WATCH_INTERVAL_MS }, watchFileListener)
+      } catch (error) {
+        console.warn('[LocalDataMirror] 文件监听失败，回退轮询:', error)
+      }
+
+      return
+    }
+  }
+
+  if (typeof window !== 'undefined' && window.localStorage) {
+    webPollTimer = setInterval(() => {
+      handleExternalSnapshotRefresh()
+    }, EXTERNAL_WATCH_INTERVAL_MS)
+  }
+}
+
 const scheduleWrite = () => {
   if (!pendingStore) return
+  if (shouldSuppressWrite()) return
+
   if (writeTimer) clearTimeout(writeTimer)
   writeTimer = setTimeout(() => {
     if (!pendingStore) return
+    if (shouldSuppressWrite()) return
     writeMirrorNow(pendingStore)
     writeTimer = null
   }, WRITE_DEBOUNCE_MS)
@@ -479,15 +1144,22 @@ export function useLocalDataMirror() {
       return
     }
 
-    applyMirrorToStore(store, payload)
+    processIncomingSnapshot(store, payload)
   }
 
   const start = () => {
-    if (started) return
     if (!canUseLocalMirror()) return
 
     const store = useBookmarkStore()
     pendingStore = store
+
+    primeSeenRevisionFromSnapshot()
+    if (!shouldPromptMirrorDirectorySelection()) {
+      handleExternalSnapshotRefresh()
+    }
+    bindExternalWatcher()
+
+    if (started) return
 
     stopHandle = watch(
       () => [store.groups, store.bookmarks],
@@ -495,11 +1167,14 @@ export function useLocalDataMirror() {
       { deep: true, immediate: true }
     )
 
-    window.addEventListener('beforeunload', () => {
-      if (pendingStore) {
-        writeMirrorNow(pendingStore)
+    if (!beforeUnloadHandler) {
+      beforeUnloadHandler = () => {
+        if (pendingStore) {
+          writeMirrorNow(pendingStore)
+        }
       }
-    })
+      window.addEventListener('beforeunload', beforeUnloadHandler)
+    }
 
     started = true
   }
@@ -509,10 +1184,31 @@ export function useLocalDataMirror() {
       clearTimeout(writeTimer)
       writeTimer = null
     }
+
+    if (writeBackTimer) {
+      clearTimeout(writeBackTimer)
+      writeBackTimer = null
+    }
+
+    if (remoteApplyTimer) {
+      clearTimeout(remoteApplyTimer)
+      remoteApplyTimer = null
+    }
+
+    clearExternalWatcher()
+
+    if (beforeUnloadHandler) {
+      window.removeEventListener('beforeunload', beforeUnloadHandler)
+      beforeUnloadHandler = null
+    }
+
     stopHandle?.()
     stopHandle = null
     pendingStore = null
+    writeBackStore = null
     started = false
+    isApplyingRemote = false
+    suppressWritesUntil = 0
   }
 
   const getMirrorFilePath = () => pendingFilePath

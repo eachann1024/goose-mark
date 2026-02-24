@@ -254,6 +254,7 @@ const handleUndo = () => {
   if (!undoToast.value.data) return
   store.groups.splice(0, store.groups.length, ...undoToast.value.data.groups)
   store.bookmarks.splice(0, store.bookmarks.length, ...undoToast.value.data.bookmarks)
+  store.syncAllSharedEntities()
   if (undoTimer) clearTimeout(undoTimer)
   undoToast.value = { visible: false, message: '', data: null }
 }
