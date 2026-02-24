@@ -1,5 +1,12 @@
 # Todo
 
+- [x] 梳理“本地备份”相关界面文案与入口名称
+- [x] 统一替换为“浏览器拓展”语义并保持提示文案一致
+- [x] 调整设置页右侧菜单内容上边距，修复与左侧不平行
+- [x] 运行 `bun run build` 验证并更新 `dist`
+- [x] 根据截图反馈再次上移右侧内容区，改为顶边贴齐
+- [x] 运行 `bun run build` 验证二次修复并更新 `dist`
+
 - [x] 定位默认 Tab 与设置页导入实现差异
 - [x] 修复默认 Tab 导入在 uTools 读取失败时无反馈且不生效的问题
 - [x] 运行 `bun run build` 验证构建与类型
@@ -105,6 +112,23 @@
 - [x] 运行 `bun run build` 验证并更新 `dist`
 - [x] 补充本次 review 与 lessons 记录
 
+## 2026-02-24 磁盘 JSON 单一真相源双向同步
+
+- [x] 在 `useLocalDataMirror` 增加 `clientId` 持久化与单调 `revision` 生成
+- [x] 在 `useLocalDataMirror` 增加运行期外部快照监听（`fs.watchFile` + Web 轮询回退）
+- [x] 在 `useLocalDataMirror` 增加远端应用保护与冲突合并（`updatedAt -> revision -> clientId`）
+- [x] 调整启动本地优先逻辑为“加载 + 合并”并保留损坏回写安全策略
+- [x] 更新 `docs/newtab-local-data-contract.md` 契约字段与冲突/恢复规则
+- [x] 运行 `bun run build` 验证并更新 `dist`
+- [x] 追加本次 review 与 lessons 记录
+
+## 2026-02-24 浏览器拓展设置页精简
+
+- [x] 精简“浏览器拓展”设置卡片文案，仅保留关键信息
+- [x] 注释并隐藏“浏览器拓展操作”整块模块
+- [x] 清理对应未使用脚本逻辑，避免页面冗余
+- [x] 运行 `bun run build` 验证并更新 `dist`
+
 ## Review
 
 - 根因（本次）：导入链路分散在首页与设置页两套实现，只支持“浏览器 HTML + 本应用 JSON”，无法识别网址精灵 `data.json`，且边界数据缺少统一处理。
@@ -158,3 +182,13 @@
 - 根因（本次）：设置页多处沿用“快照/覆盖/模式”等技术词，普通用户难以快速理解操作后果，导航术语也存在不统一。
 - 修复（本次）：统一设置导航与 6 个设置子页文案，重点将“本地快照/覆盖”改为“本地备份/恢复”，并同步 App 通知与入口提示词，保持全链路一致。
 - 验证（本次）：`bun run build` 通过并更新 `dist`；设置页菜单与关键操作文案已统一为更易懂表述。
+- 根因（本次）：本地数据入口文案仍存在“本地备份”旧称，且设置页右侧内容顶部留白偏大，造成左右区块不平行。
+- 修复（本次）：统一 `SettingsLayout/LocalModeSettings/App/useFeatureNoticeCenter` 的可见文案为“浏览器拓展（数据）”，并把设置页右侧内容区上边距改为 `pt-3`。
+- 验证（本次）：`bun run build` 通过并更新 `dist`，构建无新增错误。
+- 根因（追加）：首次上移仅从 `pt-6` 调整到 `pt-3`，与左侧外框仍有可见顶边差，未达到“平行贴齐”。
+- 修复（追加）：设置页右侧内容区进一步改为 `pt-0`，消除顶部残余留白。
+- 验证（追加）：`bun run build` 通过并更新 `dist`，二次修复已产出可发布文件。
+- 根因（本次）：本地镜像仅支持“整包覆盖 + 时间戳写入”，缺少客户端标识、单调 revision、运行期外部变更监听与记录级冲突合并，导致双端并发编辑存在覆盖抖动风险。
+- 修复（本次）：重写 `useLocalDataMirror`：新增 `writerClientId/writtenAt` 写入、单调 revision（`max(Date.now(), lastSeenRevision + 1)`）、`fs.watchFile`/轮询监听、远端应用静默窗、防循环回写、以及 `updatedAt -> revision -> clientId` 的记录级合并并回写收敛。
+- 修复（本次）：更新 `docs/newtab-local-data-contract.md`，补充元字段、冲突判定、快速丢弃规则和异常恢复约束，形成可供独立扩展仓库直接对接的契约。
+- 验证（本次）：`bun run build` 通过并更新 `dist`，无新增构建错误。
