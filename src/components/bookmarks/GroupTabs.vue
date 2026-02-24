@@ -60,7 +60,7 @@ const handleGroupMouseEnter = (group: Group) => {
           <Button
             variant="ghost"
             size="sm"
-            class="rounded-full px-4 h-9 font-normal transition-all border border-transparent data-[active=true]:bg-accent data-[active=true]:text-accent-foreground data-[active=true]:shadow-md data-[active=true]:border-primary/30"
+            class="main-group-tab group-tab-btn rounded-full px-4 h-9 font-normal transition-all border border-transparent"
             :data-active="activeGroupId === group.id ? 'true' : undefined"
             @click="emit('select-group', group.id)"
             @mouseenter="handleGroupMouseEnter(group)"
@@ -146,3 +146,34 @@ const handleGroupMouseEnter = (group: Group) => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.group-tab-btn {
+  color: hsl(var(--muted-foreground));
+  background-color: transparent;
+}
+
+.group-tab-btn:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.8);
+}
+
+.group-tab-btn[data-active="true"] {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
+  border-color: hsl(var(--border));
+  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.08);
+}
+
+.dark .group-tab-btn:hover {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+}
+
+.dark .group-tab-btn[data-active="true"] {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 4px 10px hsl(var(--background) / 0.45);
+}
+</style>
