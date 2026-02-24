@@ -244,8 +244,8 @@ const onSave = async () => {
                 <label for="allowUniversal" class="cursor-pointer font-medium">万能匹配</label>
                 <Switch 
                   id="allowUniversal" 
-                  :checked="draft.allowUniversal"
-                  @update:checked="(v: boolean) => draft.allowUniversal = v"
+                  :model-value="draft.allowUniversal"
+                  @update:model-value="(v: boolean) => draft.allowUniversal = v"
                   class="scale-75 origin-right"
                 />
               </div>

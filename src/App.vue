@@ -79,6 +79,7 @@ const {
 
 const {
   activeNotice: activeFeatureNotice,
+  isLocalModeIntroPending,
   ensureLocalModeIntroNotice,
   ensureLocalModeDevicePathNotice,
   markLocalModeIntroViewed,
@@ -96,8 +97,13 @@ const openLocalModeSettings = () => {
   markLocalModeSettingsVisited()
 }
 
-const refreshLocalModePathNotice = () => {
-  ensureLocalModeDevicePathNotice(shouldPromptMirrorDirectorySelection())
+const refreshLocalModePathNotice = (firstOpenOnly = false) => {
+  const required = shouldPromptMirrorDirectorySelection()
+  if (firstOpenOnly) {
+    ensureLocalModeDevicePathNotice(required && isLocalModeIntroPending.value)
+    return
+  }
+  ensureLocalModeDevicePathNotice(required)
 }
 
 const handleFeatureNoticeView = async () => {
@@ -111,7 +117,7 @@ const handleFeatureNoticeView = async () => {
   }
 
   if (!canUseLocalMirror()) {
-    showToast({ title: '当前环境不支持本地备份', variant: 'warning' })
+    showToast({ title: '当前环境不支持浏览器拓展数据', variant: 'warning' })
     markDevicePathIgnored()
     return
   }
@@ -119,7 +125,7 @@ const handleFeatureNoticeView = async () => {
   if (!canPickMirrorDirectory()) {
     showToast({
       title: '当前环境不支持直接选择目录',
-      description: '请在设置 > 本地备份中手动配置路径',
+      description: '请在设置 > 浏览器拓展中手动配置路径',
       variant: 'warning'
     })
     markDevicePathIgnored()
@@ -138,7 +144,7 @@ const handleFeatureNoticeView = async () => {
   syncMirrorNow()
   markDevicePathConfigured()
   showToast({
-    title: '已为当前设备设置备份路径',
+    title: '已为当前设备设置浏览器拓展路径',
     description: selected,
     variant: 'success'
   })
@@ -189,11 +195,6 @@ const handleSelectGroup = async (groupId: string) => {
 watch(() => settingsStore.windowHeight, (h) => {
   setExpendHeight(h)
 })
-
-watch(
-  () => [settingsStore.preferLocalSnapshotOnStartup, settingsStore.localMirrorDirectory],
-  () => refreshLocalModePathNotice()
-)
 
 // Search
 const canUseSubInput = computed(() => {
@@ -814,7 +815,7 @@ const exitTemplateMode = () => {
 onMounted(async () => {
   hydrateMirrorDirectoryForDevice()
   ensureLocalModeIntroNotice()
-  refreshLocalModePathNotice()
+  refreshLocalModePathNotice(true)
 
   window.addEventListener('contextmenu', (e) => {
     // 允许书签卡片触发自定义行为（已经在 handleContextMenuWrapper 中处理）
@@ -885,7 +886,7 @@ onMounted(async () => {
           settingsStore.$patch(nextSettings)
           settingsStore.setLocalMirrorDirectory(localMirrorDirectory)
           hydrateMirrorDirectoryForDevice()
-          refreshLocalModePathNotice()
+          refreshLocalModePathNotice(true)
         }
         if (key === 'bookmark') {
           const incomingStamp = getLatestUpdatedAt(data)

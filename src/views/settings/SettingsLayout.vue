@@ -30,7 +30,7 @@ const tabs = [
   { value: 'categories', label: '分组管理', icon: 'i-mdi-folder-outline' },
   { value: 'tools', label: '常用工具', icon: 'i-mdi-wrench-outline' },
   { value: 'data', label: '导入与备份', icon: 'i-mdi-database-outline' },
-  { value: 'local-mode', label: '本地备份', icon: 'i-mdi-database-sync-outline' },
+  { value: 'local-mode', label: '浏览器拓展', icon: 'i-mdi-database-sync-outline' },
   { value: 'about', label: '帮助与统计', icon: 'i-mdi-information-outline' }
 ] as const
 
@@ -44,7 +44,7 @@ watch(() => currentTab.value, (value) => {
 <template>
   <div class="settings-layout flex h-full min-h-0 gap-5">
     <!-- 左侧导航 -->
-    <nav class="settings-nav w-56 shrink-0 flex flex-col rounded-2xl p-3">
+    <nav class="settings-nav w-48 shrink-0 flex flex-col rounded-2xl p-3">
       <div class="settings-nav__head px-2 pb-2 mb-2 text-[13px] font-semibold text-muted-foreground">
         设置菜单
       </div>
@@ -76,7 +76,7 @@ watch(() => currentTab.value, (value) => {
     </nav>
 
     <!-- 右侧内容区 -->
-    <main class="flex-1 overflow-y-auto p-6 custom-scroll">
+    <main class="flex-1 overflow-y-auto px-6 pb-6 pt-0 custom-scroll">
       <Transition
         mode="out-in"
         enter-active-class="transition-opacity duration-150"

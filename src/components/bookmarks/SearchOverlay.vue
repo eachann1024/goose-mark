@@ -79,7 +79,6 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
               class="flex-1 h-12 text-base bg-muted/50 border-border focus-visible:ring-2 focus-visible:ring-primary/40"
             />
           </template>
-          <Button variant="secondary" class="h-11 px-4" @click="handleClose">退出</Button>
         </div>
         <div
           v-if="!storeSearch"

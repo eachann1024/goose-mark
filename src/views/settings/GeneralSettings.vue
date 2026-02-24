@@ -233,13 +233,11 @@ const handleGridColumnsChange = (val: string | number) => {
                 <div class="text-sm font-medium">独立窗口自动关闭</div>
                 <div class="text-xs text-muted-foreground">独立窗口打开书签后自动关闭当前窗口</div>
               </div>
-              <Button 
-                :variant="settingsStore.autoCloseWindow ? 'default' : 'outline'"
-                size="sm"
-                @click="settingsStore.setAutoCloseWindow(!settingsStore.autoCloseWindow)"
-              >
-                {{ settingsStore.autoCloseWindow ? '已开启' : '未开启' }}
-              </Button>
+              <Switch
+                :model-value="settingsStore.autoCloseWindow"
+                aria-label="独立窗口自动关闭"
+                @update:model-value="(checked: boolean) => settingsStore.setAutoCloseWindow(checked)"
+              />
             </div>
             
             <div class="flex items-center justify-between">
@@ -247,13 +245,11 @@ const handleGridColumnsChange = (val: string | number) => {
                 <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
                 <div class="text-xs text-muted-foreground">不可用时会自动改用系统浏览器</div>
               </div>
-              <Button 
-                :variant="settingsStore.preferUtoolsBrowser ? 'default' : 'outline'"
-                size="sm"
-                @click="settingsStore.setPreferUtoolsBrowser(!settingsStore.preferUtoolsBrowser)"
-              >
-                {{ settingsStore.preferUtoolsBrowser ? '已开启' : '未开启' }}
-              </Button>
+              <Switch
+                :model-value="settingsStore.preferUtoolsBrowser"
+                aria-label="优先使用 uTools 内置浏览器"
+                @update:model-value="(checked: boolean) => settingsStore.setPreferUtoolsBrowser(checked)"
+              />
             </div>
 
           </div>
@@ -299,13 +295,11 @@ const handleGridColumnsChange = (val: string | number) => {
                 <div class="text-sm font-medium">使用自定义 AI 模型</div>
                 <div class="text-xs text-muted-foreground">默认使用 deepseek-v3.2</div>
               </div>
-              <Button 
-                :variant="settingsStore.useCustomAiModel ? 'default' : 'outline'"
-                size="sm"
-                @click="settingsStore.setUseCustomAiModel(!settingsStore.useCustomAiModel)"
-              >
-                {{ settingsStore.useCustomAiModel ? '已开启' : '未开启' }}
-              </Button>
+              <Switch
+                :model-value="settingsStore.useCustomAiModel"
+                aria-label="使用自定义 AI 模型"
+                @update:model-value="(checked: boolean) => settingsStore.setUseCustomAiModel(checked)"
+              />
             </div>
             
             <div v-if="settingsStore.useCustomAiModel" class="flex items-center gap-3">

@@ -22,16 +22,16 @@ const localModeIntroStatus = ref<LocalModeIntroStatus>(readIntroStatus())
 
 const LOCAL_MODE_INTRO_NOTICE: FeatureNoticeItem = {
   id: 'local-mode-intro',
-  title: '新增本地备份',
-  description: '可配合扩展使用，支持启动时优先用本地备份恢复当前数据。',
+  title: '新增浏览器拓展 🌈',
+  description: '配合浏览器拓展使用，功能更强大（支持chrome、360、QQ 浏览器等95%以上浏览器）',
   primaryLabel: '立即查看',
   secondaryLabel: '暂时忽略'
 }
 
 const LOCAL_MODE_DEVICE_PATH_NOTICE: FeatureNoticeItem = {
   id: 'local-mode-device-path',
-  title: '请为当前设备选择备份路径',
-  description: '检测到“本地优先”已开启，但当前设备还未设置本地存储目录。',
+  title: '请为当前设备选择浏览器拓展路径',
+  description: '检测到“浏览器拓展优先”已开启，但当前设备还未设置本地存储目录。',
   primaryLabel: '立即选择',
   secondaryLabel: '稍后处理'
 }
@@ -88,6 +88,7 @@ const removeNotice = (id: FeatureNoticeId) => {
 export function useFeatureNoticeCenter() {
   const activeNotice = computed(() => notices.value[0] || null)
   const localModeMenuDotVisible = computed(() => localModeMenuDot.value)
+  const isLocalModeIntroPending = computed(() => localModeIntroStatus.value === 'pending')
 
   const ensureLocalModeIntroNotice = () => {
     if (localModeIntroStatus.value !== 'pending') return
@@ -140,6 +141,7 @@ export function useFeatureNoticeCenter() {
   return {
     activeNotice,
     localModeMenuDotVisible,
+    isLocalModeIntroPending,
     ensureLocalModeIntroNotice,
     ensureLocalModeDevicePathNotice,
     markLocalModeIntroViewed,

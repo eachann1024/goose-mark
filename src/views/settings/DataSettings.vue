@@ -545,22 +545,28 @@ const clearAllBookmarks = () => {
             <RadioGroup v-model="importMode" class="grid gap-3">
               <label
                 class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left cursor-pointer"
-                :class="importMode === 'merge' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
+                :class="importMode === 'merge' ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-muted/50'"
               >
-                <RadioGroupItem value="merge" />
+                <RadioGroupItem
+                  value="merge"
+                  :class="importMode === 'merge' ? 'border-primary-foreground text-primary-foreground' : ''"
+                />
                 <div class="space-y-1">
                   <div class="font-medium text-sm">仅新增（推荐）</div>
-                  <div class="text-xs text-muted-foreground">保留现有数据，只补充新分组和新书签</div>
+                  <div class="text-xs" :class="importMode === 'merge' ? 'text-primary-foreground/80' : 'text-muted-foreground'">保留现有数据，只补充新分组和新书签</div>
                 </div>
               </label>
               <label
                 class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left cursor-pointer"
-                :class="importMode === 'overwrite' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'"
+                :class="importMode === 'overwrite' ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-muted/50'"
               >
-                <RadioGroupItem value="overwrite" />
+                <RadioGroupItem
+                  value="overwrite"
+                  :class="importMode === 'overwrite' ? 'border-primary-foreground text-primary-foreground' : ''"
+                />
                 <div class="space-y-1">
                   <div class="font-medium text-sm">完全替换</div>
-                  <div class="text-xs text-muted-foreground text-amber-500">清空现有数据，并使用备份内容替换</div>
+                  <div class="text-xs" :class="importMode === 'overwrite' ? 'text-primary-foreground/80' : 'text-amber-500'">清空现有数据，并使用备份内容替换</div>
                 </div>
               </label>
             </RadioGroup>
