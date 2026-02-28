@@ -2,6 +2,20 @@
 const settingsStore = useSettingsStore()
 const { showToast } = useUIManager()
 const { ensureLocalModeDevicePathNotice, markDevicePathConfigured } = useFeatureNoticeCenter()
+const extensionResourceUrl = 'https://my.feishu.cn/wiki/ZY1dwv0oBim9R8k5jTwc9Fjqn8f'
+
+const openExtensionResource = () => {
+  try {
+    if (window.utools?.shellOpenExternal) {
+      window.utools.shellOpenExternal(extensionResourceUrl)
+      return
+    }
+  } catch (error) {
+    console.warn('[LocalModeSettings] 打开拓展资源失败，尝试浏览器打开', error)
+  }
+  window.open(extensionResourceUrl, '_blank')
+}
+
 const {
   canUseLocalMirror,
   canPickMirrorDirectory,
@@ -75,6 +89,25 @@ const resetMirrorDirectory = () => {
         <CardDescription>书签每次改动会同步到本地，浏览器拓展自动读取数据，无需手动刷新。</CardDescription>
       </CardHeader>
       <CardContent class="space-y-4">
+        <button
+          type="button"
+          class="group w-full rounded-xl border border-amber-300/60 bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 p-4 text-left transition-all hover:shadow-md hover:border-amber-400 dark:border-amber-500/40 dark:from-amber-500/10 dark:via-orange-500/10 dark:to-rose-500/10"
+          @click="openExtensionResource"
+        >
+          <div class="flex items-start justify-between gap-3">
+            <div class="space-y-1">
+              <div class="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+                <span class="i-mdi-star-four-points-circle text-lg" />
+                <span class="text-sm font-semibold">浏览器拓展已上线（含说明视频）</span>
+              </div>
+              <div class="text-xs text-amber-800/90 dark:text-amber-200/90">
+                点击直达下载与使用说明页面
+              </div>
+            </div>
+            <span class="i-mdi-open-in-new text-lg text-amber-700 transition-transform group-hover:translate-x-0.5 dark:text-amber-300" />
+          </div>
+        </button>
+
         <div class="flex items-center justify-between">
           <div class="space-y-0.5">
             <div class="text-sm font-medium">本地浏览器拓展模式</div>

@@ -89,7 +89,7 @@ const onSave = async () => {
                     variant="ghost"
                     size="icon"
                     class="h-8 w-8 text-primary hover:bg-primary/10 transition-all"
-                    :disabled="!draft.url || !isUrlAccessible || isGenerating || !isUTools"
+                    :disabled="!draft.url || isGenerating || !isUTools"
                     @click="askAI()"
                   >
                     <span v-if="isGenerating" class="i-mdi-loading animate-spin text-lg" />
@@ -99,7 +99,7 @@ const onSave = async () => {
                 <TooltipContent side="left">
                   <p v-if="!isUTools">AI 功能仅在 uTools 环境可用</p>
                   <p v-else-if="!draft.url">请输入网址以使用 AI</p>
-                  <p v-else-if="!isUrlAccessible">网址无法访问</p>
+                  <p v-else-if="!isUrlAccessible">网址可能无法访问，仍可尝试 AI</p>
                   <p v-else>AI 优化标题和描述</p>
                 </TooltipContent>
               </Tooltip>

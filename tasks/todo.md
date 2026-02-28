@@ -1,5 +1,17 @@
 # Todo
 
+## 2026-02-28 星空模式遮挡全局提示修复
+
+- [x] 复核“右上角全局提示”与星空背景的样式命中链路，确认根因
+- [x] 收敛星空模式全局卡片样式作用域，避免误伤 Teleport 到 `body` 的提示层
+- [x] 运行 `bun run build` 验证并更新 `dist`
+- [x] 补充本次 review 记录（必要时更新 lessons）
+
+- [x] 排查浏览器拓展路径在 Win/Mac 同步后互相覆盖的根因
+- [x] 将设备路径配置升级为按系统字段存储（Windows/Mac 独立）
+- [x] 保留旧单字段配置迁移逻辑，避免已有用户路径丢失
+- [x] 运行 `bun run build` 验证并更新 `dist`
+
 - [x] 梳理“本地备份”相关界面文案与入口名称
 - [x] 统一替换为“浏览器拓展”语义并保持提示文案一致
 - [x] 调整设置页右侧菜单内容上边距，修复与左侧不平行
@@ -192,3 +204,6 @@
 - 修复（本次）：重写 `useLocalDataMirror`：新增 `writerClientId/writtenAt` 写入、单调 revision（`max(Date.now(), lastSeenRevision + 1)`）、`fs.watchFile`/轮询监听、远端应用静默窗、防循环回写、以及 `updatedAt -> revision -> clientId` 的记录级合并并回写收敛。
 - 修复（本次）：更新 `docs/newtab-local-data-contract.md`，补充元字段、冲突判定、快速丢弃规则和异常恢复约束，形成可供独立扩展仓库直接对接的契约。
 - 验证（本次）：`bun run build` 通过并更新 `dist`，无新增构建错误。
+- 根因（本次）：`App.vue` 彩蛋模式的 Card 全局覆盖选择器过宽（`body.easter-egg-active .rounded-xl...`），命中了 Teleport 到 `body` 的右上角全局提示，导致提示背景被星空透出、可读性变差。
+- 修复（本次）：将彩蛋模式 Card 覆盖规则收敛到 `.app-container` 作用域，仅影响主内容区，不再覆盖 Teleport 的全局提示层。
+- 验证（本次）：`bun run build` 通过并更新 `dist`，`FeatureNoticeCenter` 在星空模式下保持独立卡片背景，不再被星空视觉干扰。

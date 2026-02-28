@@ -4,6 +4,7 @@ import { useDebounceFn } from '@vueuse/core'
 
 const DEFAULT_AI_MODEL = 'deepseek-v3.2'
 const PRODUCT_LOCAL_MODE_CONTEXT = '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
+const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
 
 export interface CategorySuggestion {
   groupId: string
@@ -33,10 +34,46 @@ export function useAI() {
     if (!window.utools) {
       return { available: false, reason: '当前不在 uTools 环境中运行' }
     }
-    if (!window.utools.ai) {
+    if (!window.utools.ai || typeof window.utools.ai !== 'function') {
       return { available: false, reason: '请在 uTools 设置中开启 AI 功能' }
     }
     return { available: true, reason: '' }
+  }
+
+  const isModelError = (errMsg: string) => {
+    const lower = errMsg.toLowerCase()
+    return MODEL_ERROR_KEYWORDS.some(key => lower.includes(key.toLowerCase()))
+  }
+
+  const resolveErrorMessage = (error: unknown, action: '生成' | '分类') => {
+    const errMsg = error instanceof Error ? error.message : String(error)
+    if (errMsg.includes('余额') || errMsg.includes('balance') || errMsg.includes('quota')) {
+      return 'AI 余额不足，请在 uTools 中充值'
+    }
+    if (errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('连接')) {
+      return 'AI 服务连接失败，请检查网络'
+    }
+    if (isModelError(errMsg)) {
+      return '当前 AI 模型不可用，请在设置中切换自定义模型'
+    }
+    return `AI ${action}失败，请稍后重试`
+  }
+
+  const callAi = async (messages: Array<{ role: 'system' | 'user'; content: string }>) => {
+    const aiCaller = window.utools!.ai!
+    const hasCustomModel = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
+    const model = hasCustomModel ? settingsStore.customAiModel.trim() : DEFAULT_AI_MODEL
+    try {
+      return await aiCaller({ model, messages })
+    } catch (e) {
+      const errMsg = e instanceof Error ? e.message : String(e)
+      // 仅默认模型允许自动回退，避免覆盖用户显式设置的模型
+      if (!hasCustomModel && isModelError(errMsg)) {
+        console.warn(`[AI] 模型 ${model} 不可用，回退到 uTools 默认模型`)
+        return await aiCaller({ messages })
+      }
+      throw e
+    }
   }
 
   const checkUrl = useDebounceFn(async (url: string) => {
@@ -79,7 +116,6 @@ export function useAI() {
       return null
     }
 
-    const aiCaller = window.utools!.ai!
     isGenerating.value = true
     aiError.value = ''
     try {
@@ -93,22 +129,16 @@ export function useAI() {
   1. title: 极简且精准的名称（如 "GitHub"、"Bilibili"）。去除 "- 首页"、"Login" 等冗余后缀。优先中文（若常用）。不超过 15 字。
   2. desc: 用一句话概括核心功能与价值（如 "全球最大的代码托管与协作平台"）。语气专业、客观。不超过 40 字。`
   
-      const model = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
-        ? settingsStore.customAiModel.trim()
-        : DEFAULT_AI_MODEL
-      const res = await aiCaller({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: `你是一个专业的书签整理助手。请分析网址内容并返回 JSON。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-      })
+      const res = await callAi([
+        {
+          role: 'system',
+          content: `你是一个专业的书签整理助手。请分析网址内容并返回 JSON。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ])
       const payload = typeof res === 'string'
         ? res
         : typeof res?.content === 'string'
@@ -123,14 +153,7 @@ export function useAI() {
       }
     } catch (e) {
       console.error('[AI] 调用失败:', e)
-      const errMsg = e instanceof Error ? e.message : String(e)
-      if (errMsg.includes('余额') || errMsg.includes('balance') || errMsg.includes('quota')) {
-        aiError.value = 'AI 余额不足，请在 uTools 中充值'
-      } else if (errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('连接')) {
-        aiError.value = 'AI 服务连接失败，请检查网络'
-      } else {
-        aiError.value = 'AI 生成失败，请稍后重试'
-      }
+      aiError.value = resolveErrorMessage(e, '生成')
       return null
     } finally {
       isGenerating.value = false
@@ -156,7 +179,6 @@ export function useAI() {
       return null
     }
 
-    const aiCaller = window.utools!.ai!
     isSuggestingCategory.value = true
     aiError.value = ''
 
@@ -209,23 +231,16 @@ ${avoidCurrentTip}
 3. 如果没有任何合适的分组，groupName 返回空字符串
 4. analysis 要简洁准确地描述网址特征，帮助用户理解你的判断依据`
 
-      const model = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
-        ? settingsStore.customAiModel.trim()
-        : DEFAULT_AI_MODEL
-
-      const res = await aiCaller({
-        model,
-        messages: [
-          {
-            role: 'system',
-            content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
-          },
-          {
-            role: 'user',
-            content: prompt
-          }
-        ]
-      })
+      const res = await callAi([
+        {
+          role: 'system',
+          content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+        },
+        {
+          role: 'user',
+          content: prompt
+        }
+      ])
 
       const payload = typeof res === 'string'
         ? res
@@ -261,14 +276,7 @@ ${avoidCurrentTip}
       }
     } catch (e) {
       console.error('[AI] 分类建议失败:', e)
-      const errMsg = e instanceof Error ? e.message : String(e)
-      if (errMsg.includes('余额') || errMsg.includes('balance') || errMsg.includes('quota')) {
-        aiError.value = 'AI 余额不足，请在 uTools 中充值'
-      } else if (errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('连接')) {
-        aiError.value = 'AI 服务连接失败，请检查网络'
-      } else {
-        aiError.value = 'AI 分类失败，请稍后重试'
-      }
+      aiError.value = resolveErrorMessage(e, '分类')
       return null
     } finally {
       isSuggestingCategory.value = false

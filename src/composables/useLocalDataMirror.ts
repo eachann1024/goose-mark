@@ -60,6 +60,10 @@ type NodeLikeCrypto = {
   }
 }
 
+type NodeLikeOs = {
+  platform?: () => string
+}
+
 type BrowserDirectoryHandleLike = {
   name?: string
   getFileHandle?: (name: string, options?: { create?: boolean }) => Promise<{
@@ -75,6 +79,9 @@ type FlatSubEntry = {
   sub: SubGroupLike
 }
 
+type MirrorPlatformKey = 'mac' | 'windows' | 'linux' | 'unknown'
+type DeviceMirrorDirectoryPreferences = Partial<Record<MirrorPlatformKey, string>>
+
 const MIRROR_SCHEMA_VERSION = 'goose-marks.local-data.v1'
 const MIRROR_DIR_NAME = 'goose-marks-sync'
 const MIRROR_FILE_NAME = 'snapshot.json'
@@ -86,10 +93,12 @@ const REMOTE_APPLY_SILENCE_MS = WRITE_DEBOUNCE_MS + 160
 const WEB_MIRROR_STORAGE_KEY = 'goose-marks.local-mirror.snapshot.v1'
 const WEB_MIRROR_DIR_PATH = 'browser://local-storage/goose-marks-sync'
 const WEB_MIRROR_FILE_PATH = `${WEB_MIRROR_DIR_PATH}/snapshot.json`
-const DEVICE_MIRROR_DIR_KEY = 'goose-marks.local-mirror.directory.device.v1'
+const DEVICE_MIRROR_DIR_KEY = 'goose-marks.local-mirror.directory.device.v2'
+const DEVICE_MIRROR_DIR_LEGACY_KEY = 'goose-marks.local-mirror.directory.device.v1'
 const DEVICE_DEFAULT_DIR_SENTINEL = '__default__'
 const MIRROR_CLIENT_ID_KEY = 'goose-marks.local-mirror.client-id.v1'
 const TRASH_GROUP_ID = 'g-trash'
+const MIRROR_PLATFORM_KEYS: MirrorPlatformKey[] = ['mac', 'windows', 'linux', 'unknown']
 
 const getNodeModule = <T = unknown>(name: string): T | null => {
   if (typeof window === 'undefined' || !window.require) return null
@@ -631,30 +640,138 @@ const mergeSnapshotData = (localData: MirrorData, incomingPayload: MirrorPayload
   }
 }
 
-const getDeviceMirrorDirectoryPreference = (): string | null => {
-  if (typeof window === 'undefined') return null
+let cachedMirrorPlatform: MirrorPlatformKey | null = null
+
+const normalizeMirrorDirectoryValue = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return normalized || null
+}
+
+const normalizeMirrorPlatform = (value: string): MirrorPlatformKey => {
+  const lower = value.toLowerCase()
+  if (lower.includes('darwin') || lower.includes('mac')) return 'mac'
+  if (lower.includes('win')) return 'windows'
+  if (lower.includes('linux')) return 'linux'
+  return 'unknown'
+}
+
+const getCurrentMirrorPlatform = (): MirrorPlatformKey => {
+  if (cachedMirrorPlatform) return cachedMirrorPlatform
+
+  const os = getNodeModule<NodeLikeOs>('os')
+  const runtimePlatform = os?.platform?.()
+  if (typeof runtimePlatform === 'string' && runtimePlatform.trim()) {
+    cachedMirrorPlatform = normalizeMirrorPlatform(runtimePlatform)
+    return cachedMirrorPlatform
+  }
+
+  if (typeof navigator !== 'undefined') {
+    const userAgent = navigator.userAgent || ''
+    const platform = String((navigator as { platform?: unknown }).platform || '')
+    const userAgentDataPlatform = String((navigator as { userAgentData?: { platform?: string } }).userAgentData?.platform || '')
+    cachedMirrorPlatform = normalizeMirrorPlatform(`${userAgentDataPlatform} ${platform} ${userAgent}`)
+    return cachedMirrorPlatform
+  }
+
+  cachedMirrorPlatform = 'unknown'
+  return cachedMirrorPlatform
+}
+
+const normalizeDeviceMirrorDirectoryPreferences = (
+  source: Record<string, unknown>
+): DeviceMirrorDirectoryPreferences => {
+  const result: DeviceMirrorDirectoryPreferences = {}
+  MIRROR_PLATFORM_KEYS.forEach((platformKey) => {
+    const value = normalizeMirrorDirectoryValue(source[platformKey])
+    if (value) {
+      result[platformKey] = value
+    }
+  })
+  return result
+}
+
+const getDeviceMirrorDirectoryPreferences = (): DeviceMirrorDirectoryPreferences => {
+  if (typeof window === 'undefined') return {}
   try {
     const raw = window.localStorage.getItem(DEVICE_MIRROR_DIR_KEY)
-    if (typeof raw !== 'string') return null
-    const normalized = raw.trim()
-    return normalized || null
+    if (typeof raw !== 'string' || !raw.trim()) return {}
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return {}
+    return normalizeDeviceMirrorDirectoryPreferences(parsed as Record<string, unknown>)
+  } catch {
+    return {}
+  }
+}
+
+const setDeviceMirrorDirectoryPreferences = (preferences: DeviceMirrorDirectoryPreferences) => {
+  if (typeof window === 'undefined') return
+  const normalized = normalizeDeviceMirrorDirectoryPreferences(preferences as Record<string, unknown>)
+  try {
+    if (Object.keys(normalized).length === 0) {
+      window.localStorage.removeItem(DEVICE_MIRROR_DIR_KEY)
+      return
+    }
+    window.localStorage.setItem(DEVICE_MIRROR_DIR_KEY, JSON.stringify(normalized))
+  } catch {}
+}
+
+const getLegacyDeviceMirrorDirectoryPreference = (): string | null => {
+  if (typeof window === 'undefined') return null
+  try {
+    return normalizeMirrorDirectoryValue(window.localStorage.getItem(DEVICE_MIRROR_DIR_LEGACY_KEY))
   } catch {
     return null
   }
 }
 
-const setDeviceMirrorDirectoryPreference = (value: string) => {
+const clearLegacyDeviceMirrorDirectoryPreference = () => {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(DEVICE_MIRROR_DIR_KEY, value)
+    window.localStorage.removeItem(DEVICE_MIRROR_DIR_LEGACY_KEY)
   } catch {}
 }
 
+const getDeviceMirrorDirectoryPreference = (): string | null => {
+  const platformKey = getCurrentMirrorPlatform()
+  const preferences = getDeviceMirrorDirectoryPreferences()
+  const current = normalizeMirrorDirectoryValue(preferences[platformKey])
+  if (current) return current
+
+  if (platformKey !== 'unknown') {
+    const shared = normalizeMirrorDirectoryValue(preferences.unknown)
+    if (shared) return shared
+  }
+
+  const legacyValue = getLegacyDeviceMirrorDirectoryPreference()
+  if (legacyValue) {
+    const nextPreferences = getDeviceMirrorDirectoryPreferences()
+    nextPreferences[platformKey] = legacyValue
+    setDeviceMirrorDirectoryPreferences(nextPreferences)
+    clearLegacyDeviceMirrorDirectoryPreference()
+    return legacyValue
+  }
+
+  return null
+}
+
+const setDeviceMirrorDirectoryPreference = (value: string) => {
+  const normalized = normalizeMirrorDirectoryValue(value)
+  if (!normalized) return
+
+  const platformKey = getCurrentMirrorPlatform()
+  const preferences = getDeviceMirrorDirectoryPreferences()
+  preferences[platformKey] = normalized
+  setDeviceMirrorDirectoryPreferences(preferences)
+  clearLegacyDeviceMirrorDirectoryPreference()
+}
+
 const clearDeviceMirrorDirectoryPreference = () => {
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.removeItem(DEVICE_MIRROR_DIR_KEY)
-  } catch {}
+  const platformKey = getCurrentMirrorPlatform()
+  const preferences = getDeviceMirrorDirectoryPreferences()
+  delete preferences[platformKey]
+  setDeviceMirrorDirectoryPreferences(preferences)
+  clearLegacyDeviceMirrorDirectoryPreference()
 }
 
 const isDirectoryPathAvailable = (value: string): boolean => {

@@ -293,7 +293,7 @@ const handleGridColumnsChange = (val: string | number) => {
             <div class="flex items-center justify-between">
               <div class="space-y-0.5">
                 <div class="text-sm font-medium">使用自定义 AI 模型</div>
-                <div class="text-xs text-muted-foreground">默认使用 deepseek-v3.2</div>
+                <div class="text-xs text-muted-foreground">默认优先 deepseek-v3.2，不可用时自动回退</div>
               </div>
               <Switch
                 :model-value="settingsStore.useCustomAiModel"
