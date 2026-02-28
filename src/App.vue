@@ -1371,9 +1371,9 @@ html.dark body.easter-egg-active .subgroup-sort-item button[data-active="true"] 
   color: hsl(var(--accent-foreground)) !important;
 }
 
-/* 彩蛋模式：Card 组件透明背景 */
-html.dark body.easter-egg-active .rounded-xl.border.bg-card,
-html.dark body.easter-egg-active [class*="rounded-xl"][class*="border"][class*="bg-card"] {
+/* 彩蛋模式：仅主应用内 Card 组件透明背景（不影响 Teleport 全局提示层） */
+html.dark body.easter-egg-active .app-container .rounded-xl.border.bg-card,
+html.dark body.easter-egg-active .app-container [class*="rounded-xl"][class*="border"][class*="bg-card"] {
   background-color: hsl(var(--primary) / 0.08) !important;
   border-color: hsl(var(--primary) / 0.15) !important;
 }
@@ -1418,9 +1418,9 @@ html.dark body.easter-egg-active [class*="variant-outline"] {
   color: hsl(var(--primary)) !important;
 }
 
-/* uTools 环境：强制 Card 使用深色背景 */
-body.easter-egg-active .rounded-xl.border.bg-card,
-body.easter-egg-active [class*="rounded-xl"][class*="bg-card"] {
+/* uTools 环境：仅主应用内 Card 使用深色背景（不覆盖 Teleport 全局提示层） */
+body.easter-egg-active .app-container .rounded-xl.border.bg-card,
+body.easter-egg-active .app-container [class*="rounded-xl"][class*="bg-card"] {
   background-color: #3A3C3E !important;
   color: #ffffff !important;
 }

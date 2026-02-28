@@ -4,5 +4,6 @@
       "Bash(npx vue-tsc:*)",
       "Bash(pnpm build)"
     ]
-  }
+  },
+  "spinnerTipsEnabled": false
 }
