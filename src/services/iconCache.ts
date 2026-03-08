@@ -118,9 +118,14 @@ const fetchIconDirect = async (url: string): Promise<{ icon: string; cache: stri
   return { icon: faviconUrl, cache: dataUrl }
 }
 
+const buildTextIconValue = (text: string) => {
+  const base = text.trim()
+  return base ? base.slice(0, 4).toUpperCase() : '•'
+}
+
 const textIconFromBookmark = (bookmark: Bookmark): IconSource => {
   const base = bookmark.title.trim() || bookmark.url.trim()
-  const text = base ? base.slice(0, 4).toUpperCase() : '•'
+  const text = buildTextIconValue(base)
   return { type: 'text', value: text }
 }
 
@@ -158,7 +163,19 @@ const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; t
   }
 }
 
-const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; cache: string } | null> => {
+type UToolsBrowserFetchResult = {
+  icon: string | null
+  cache: string | null
+  title?: string | null
+  description?: string | null
+}
+
+const hasFetchedPageData = (result: UToolsBrowserFetchResult | null | undefined) => {
+  if (!result) return false
+  return Boolean(result.icon || result.cache || result.title || result.description)
+}
+
+const fetchIconFromUToolsBrowser = async (url: string): Promise<UToolsBrowserFetchResult | null> => {
   if (isOriginInCooldown(url)) return null
   const utoolsApi = window.utools as unknown as { ubrowser?: any; createBrowserWindow?: any } | undefined
   const ubrowser = utoolsApi?.ubrowser
@@ -168,6 +185,20 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; 
       const runner = ubrowser.goto(url)
       if (runner?.wait && runner?.evaluate && runner?.run) {
         const result = await runner.wait(1000).evaluate(() => {
+          const readDescription = () => {
+            const candidates = [
+              "meta[name='description']",
+              "meta[property='og:description']",
+              "meta[name='twitter:description']"
+            ]
+            for (const selector of candidates) {
+              const meta = document.querySelector(selector)
+              const content = meta?.getAttribute('content')?.trim()
+              if (content) return content
+            }
+            return null
+          }
+
           // 多选择器匹配，优先级从高到低
           const selectors = [
             "link[rel='icon']",
@@ -185,11 +216,22 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; 
               break
             }
           }
-          return { href: href || `${location.origin}/favicon.ico` }
+          return {
+            href: href || `${location.origin}/favicon.ico`,
+            title: document.title?.trim() || null,
+            description: readDescription()
+          }
         }).run({ width: 800, height: 600, show: false })
-        const href = Array.isArray(result) ? (result[0] as { href?: string })?.href : undefined
+        const payload = Array.isArray(result) ? (result[0] as { href?: string; title?: string | null; description?: string | null }) : undefined
+        const href = payload?.href || null
         const cache = href ? await fetchAsDataUrl(href) : null
-        if (href && cache) return { icon: href, cache }
+        const fetched = {
+          icon: href,
+          cache,
+          title: payload?.title || null,
+          description: payload?.description || null
+        }
+        if (hasFetchedPageData(fetched)) return fetched
       }
     } catch {}
   }
@@ -204,6 +246,20 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; 
     if (exec) {
       const payload = await exec(`
         (async () => {
+          const readDescription = () => {
+            const candidates = [
+              "meta[name='description']",
+              "meta[property='og:description']",
+              "meta[name='twitter:description']"
+            ]
+            for (const selector of candidates) {
+              const meta = document.querySelector(selector)
+              const content = meta?.getAttribute('content')?.trim()
+              if (content) return content
+            }
+            return null
+          }
+
           const selectors = [
             "link[rel='icon']",
             "link[rel='shortcut icon']",
@@ -223,31 +279,40 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<{ icon: string; 
           if (!href) href = location.origin + "/favicon.ico"
           try {
             const res = await fetch(href)
-            if (!res.ok) return { href, status: res.status, dataUrl: "" }
+            if (!res.ok) return { href, status: res.status, dataUrl: "", title: document.title?.trim() || null, description: readDescription() }
             const blob = await res.blob()
-            if (!blob.type.startsWith("image/")) return { href, status: 415, dataUrl: "" }
+            if (!blob.type.startsWith("image/")) return { href, status: 415, dataUrl: "", title: document.title?.trim() || null, description: readDescription() }
             const reader = new FileReader()
             const dataUrl = await new Promise(resolve => {
               reader.onload = () => resolve(reader.result || "")
               reader.onerror = () => resolve("")
               reader.readAsDataURL(blob)
             })
-            return { href, status: res.status, dataUrl }
+            return { href, status: res.status, dataUrl, title: document.title?.trim() || null, description: readDescription() }
           } catch {
-            return { href, status: 0, dataUrl: "" }
+            return { href, status: 0, dataUrl: "", title: document.title?.trim() || null, description: readDescription() }
           }
         })()
       `)
       const href = (payload as { href?: string })?.href
       const status = (payload as { status?: number })?.status
       const dataUrl = (payload as { dataUrl?: string })?.dataUrl
+      const title = (payload as { title?: string | null })?.title || null
+      const description = (payload as { description?: string | null })?.description || null
       if (href && typeof status === 'number' && shouldCooldownStatus(status)) {
         markOriginCooldown(href)
       }
       if (typeof href === 'string' && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/')) {
         clearOriginCooldown(href)
-        return { icon: href, cache: dataUrl }
+        return { icon: href, cache: dataUrl, title, description }
       }
+      const fetched = {
+        icon: typeof href === 'string' ? href : null,
+        cache: typeof dataUrl === 'string' && dataUrl ? dataUrl : null,
+        title,
+        description
+      }
+      if (hasFetchedPageData(fetched)) return fetched
     }
   } catch {}
   finally {
@@ -275,6 +340,16 @@ export const fetchPageMeta = async (url: string): Promise<{ title: string | null
     new URL(targetUrl)
   } catch {
     return { title: null, description: null }
+  }
+
+  if (typeof window !== 'undefined' && window.utools) {
+    const utoolsResult = await fetchIconFromUToolsBrowser(targetUrl)
+    if (utoolsResult?.title || utoolsResult?.description) {
+      return {
+        title: utoolsResult.title || null,
+        description: utoolsResult.description || null
+      }
+    }
   }
 
   const result = await fetchIconFromProxy(targetUrl)
@@ -310,18 +385,27 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
     return null
   }
 
+  let fetchedMeta: { title?: string | null; description?: string | null } = {}
+
   // uTools 环境优先用内置浏览器获取图标
   if (typeof window !== 'undefined' && window.utools) {
     const utoolsResult = await fetchIconFromUToolsBrowser(targetUrl)
     if (utoolsResult) {
-      if (import.meta.env.DEV) {
-        console.log('✅ [AG-Verify] uTools Icon Base64:', utoolsResult.cache.substring(0, 50) + '...', 'Len:', utoolsResult.cache.length)
+      fetchedMeta = {
+        title: utoolsResult.title || null,
+        description: utoolsResult.description || null
       }
-      return {
-        type: 'remote',
-        src: utoolsResult.icon,
-        cache: utoolsResult.cache,
-        fetchedAt: Date.now()
+      if (import.meta.env.DEV) {
+        console.log('✅ [AG-Verify] uTools Icon Base64:', utoolsResult.cache?.substring(0, 50) || 'none', 'Len:', utoolsResult.cache?.length || 0)
+      }
+      if (utoolsResult.icon && utoolsResult.cache) {
+        return {
+          type: 'remote',
+          src: utoolsResult.icon,
+          cache: utoolsResult.cache,
+          fetchedAt: Date.now(),
+          ...fetchedMeta
+        }
       }
     }
   }
@@ -336,7 +420,23 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
       type: 'remote',
       src: direct.icon,
       cache: direct.cache,
-      fetchedAt: Date.now()
+      fetchedAt: Date.now(),
+      ...fetchedMeta
+    }
+  }
+
+  if (fetchedMeta.title || fetchedMeta.description) {
+    const fallbackText = fetchedMeta.title || (() => {
+      try {
+        return new URL(targetUrl).hostname.replace(/^www\./i, '')
+      } catch {
+        return targetUrl
+      }
+    })()
+    return {
+      type: 'text',
+      value: buildTextIconValue(fallbackText),
+      ...fetchedMeta
     }
   }
 
