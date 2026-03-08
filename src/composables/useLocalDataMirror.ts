@@ -1,4 +1,5 @@
 import { syncBookmarkLocations } from '@/composables/useImportExport'
+import { getPersistentItem, removePersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 
 type MirrorPayload = {
@@ -339,20 +340,20 @@ const getSelfClientId = (): string => {
   if (selfClientId) return selfClientId
 
   const fallback = createClientId()
-  if (typeof window === 'undefined' || !window.localStorage) {
+  if (typeof window === 'undefined') {
     selfClientId = fallback
     return selfClientId
   }
 
   try {
-    const existing = normalizeClientId(window.localStorage.getItem(MIRROR_CLIENT_ID_KEY))
+    const existing = normalizeClientId(getPersistentItem(MIRROR_CLIENT_ID_KEY))
     if (existing) {
       selfClientId = existing
       return selfClientId
     }
 
     selfClientId = fallback
-    window.localStorage.setItem(MIRROR_CLIENT_ID_KEY, selfClientId)
+    utoolsStorage.setItem(MIRROR_CLIENT_ID_KEY, selfClientId)
     return selfClientId
   } catch {
     selfClientId = fallback
@@ -694,7 +695,7 @@ const normalizeDeviceMirrorDirectoryPreferences = (
 const getDeviceMirrorDirectoryPreferences = (): DeviceMirrorDirectoryPreferences => {
   if (typeof window === 'undefined') return {}
   try {
-    const raw = window.localStorage.getItem(DEVICE_MIRROR_DIR_KEY)
+    const raw = getPersistentItem(DEVICE_MIRROR_DIR_KEY)
     if (typeof raw !== 'string' || !raw.trim()) return {}
     const parsed = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object') return {}
@@ -709,17 +710,17 @@ const setDeviceMirrorDirectoryPreferences = (preferences: DeviceMirrorDirectoryP
   const normalized = normalizeDeviceMirrorDirectoryPreferences(preferences as Record<string, unknown>)
   try {
     if (Object.keys(normalized).length === 0) {
-      window.localStorage.removeItem(DEVICE_MIRROR_DIR_KEY)
+      removePersistentItem(DEVICE_MIRROR_DIR_KEY)
       return
     }
-    window.localStorage.setItem(DEVICE_MIRROR_DIR_KEY, JSON.stringify(normalized))
+    utoolsStorage.setItem(DEVICE_MIRROR_DIR_KEY, JSON.stringify(normalized))
   } catch {}
 }
 
 const getLegacyDeviceMirrorDirectoryPreference = (): string | null => {
   if (typeof window === 'undefined') return null
   try {
-    return normalizeMirrorDirectoryValue(window.localStorage.getItem(DEVICE_MIRROR_DIR_LEGACY_KEY))
+    return normalizeMirrorDirectoryValue(getPersistentItem(DEVICE_MIRROR_DIR_LEGACY_KEY))
   } catch {
     return null
   }
@@ -728,7 +729,7 @@ const getLegacyDeviceMirrorDirectoryPreference = (): string | null => {
 const clearLegacyDeviceMirrorDirectoryPreference = () => {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.removeItem(DEVICE_MIRROR_DIR_LEGACY_KEY)
+    removePersistentItem(DEVICE_MIRROR_DIR_LEGACY_KEY)
   } catch {}
 }
 
