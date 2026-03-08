@@ -1,4 +1,5 @@
 import { computed, ref, watch } from 'vue'
+import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 
 export type FeatureNoticeId = 'local-mode-intro' | 'local-mode-device-path'
 
@@ -11,24 +12,22 @@ export interface FeatureNoticeItem {
 }
 
 type LocalModeIntroStatus = 'pending' | 'ignored' | 'viewed'
-type NoticeDisplayStrategy = 'once' | 'conditional'
+type NoticeDisplayStrategy = 'once'
 
+const FEATURE_NOTICE_ENABLED = false
 const LOCAL_MODE_INTRO_STATUS_KEY = 'goose-marks.feature.local-mode.intro.status.v1'
 const LOCAL_MODE_MENU_DOT_KEY = 'goose-marks.feature.local-mode.menu-dot.v1'
 const GLOBAL_NOTICE_SEEN_KEY = 'goose-marks.feature.global-notice-seen.v1'
-const DEVICE_PATH_PROMPT_COOLDOWN_UNTIL_KEY = 'goose-marks.feature.local-mode.device-path.cooldown-until.v1'
-const DEVICE_PATH_PROMPT_COOLDOWN_MS = 12 * 60 * 60 * 1000
 
 const notices = ref<FeatureNoticeItem[]>([])
 const localModePathPromptSnoozed = ref(false)
 const localModeMenuDot = ref(readBoolean(LOCAL_MODE_MENU_DOT_KEY, false))
 const localModeIntroStatus = ref<LocalModeIntroStatus>(readIntroStatus())
 const globalNoticeSeenMap = ref<Record<FeatureNoticeId, boolean>>(readGlobalNoticeSeenMap())
-const devicePathPromptCooldownUntil = ref(readNumber(DEVICE_PATH_PROMPT_COOLDOWN_UNTIL_KEY, 0))
 
 const NOTICE_DISPLAY_STRATEGY: Record<FeatureNoticeId, NoticeDisplayStrategy> = {
   'local-mode-intro': 'once',
-  'local-mode-device-path': 'conditional'
+  'local-mode-device-path': 'once'
 }
 
 const LOCAL_MODE_INTRO_NOTICE: FeatureNoticeItem = {
@@ -48,9 +47,8 @@ const LOCAL_MODE_DEVICE_PATH_NOTICE: FeatureNoticeItem = {
 }
 
 function readIntroStatus(): LocalModeIntroStatus {
-  if (typeof window === 'undefined') return 'pending'
   try {
-    const raw = window.localStorage.getItem(LOCAL_MODE_INTRO_STATUS_KEY)
+    const raw = getPersistentItem(LOCAL_MODE_INTRO_STATUS_KEY)
     return raw === 'ignored' || raw === 'viewed' ? raw : 'pending'
   } catch {
     return 'pending'
@@ -58,9 +56,8 @@ function readIntroStatus(): LocalModeIntroStatus {
 }
 
 function readBoolean(key: string, fallback = false): boolean {
-  if (typeof window === 'undefined') return fallback
   try {
-    const raw = window.localStorage.getItem(key)
+    const raw = getPersistentItem(key)
     if (raw === '1') return true
     if (raw === '0') return false
     return fallback
@@ -74,9 +71,8 @@ function readGlobalNoticeSeenMap(): Record<FeatureNoticeId, boolean> {
     'local-mode-intro': false,
     'local-mode-device-path': false
   }
-  if (typeof window === 'undefined') return fallback
   try {
-    const raw = window.localStorage.getItem(GLOBAL_NOTICE_SEEN_KEY)
+    const raw = getPersistentItem(GLOBAL_NOTICE_SEEN_KEY)
     if (!raw) return fallback
     const parsed = JSON.parse(raw) as Partial<Record<FeatureNoticeId, boolean>>
     return {
@@ -88,52 +84,28 @@ function readGlobalNoticeSeenMap(): Record<FeatureNoticeId, boolean> {
   }
 }
 
-function readNumber(key: string, fallback = 0): number {
-  if (typeof window === 'undefined') return fallback
-  try {
-    const raw = window.localStorage.getItem(key)
-    if (!raw) return fallback
-    const num = Number(raw)
-    return Number.isFinite(num) ? num : fallback
-  } catch {
-    return fallback
-  }
-}
-
 const writeIntroStatus = (status: LocalModeIntroStatus) => {
   localModeIntroStatus.value = status
-  if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(LOCAL_MODE_INTRO_STATUS_KEY, status)
+    utoolsStorage.setItem(LOCAL_MODE_INTRO_STATUS_KEY, status)
   } catch {}
 }
 
 const writeLocalModeDot = (visible: boolean) => {
   localModeMenuDot.value = visible
-  if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(LOCAL_MODE_MENU_DOT_KEY, visible ? '1' : '0')
+    utoolsStorage.setItem(LOCAL_MODE_MENU_DOT_KEY, visible ? '1' : '0')
   } catch {}
 }
 
 const writeGlobalNoticeSeenMap = (next: Record<FeatureNoticeId, boolean>) => {
   globalNoticeSeenMap.value = next
-  if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(GLOBAL_NOTICE_SEEN_KEY, JSON.stringify(next))
-  } catch {}
-}
-
-const writeDevicePathPromptCooldownUntil = (timestamp: number) => {
-  devicePathPromptCooldownUntil.value = timestamp
-  if (typeof window === 'undefined') return
-  try {
-    window.localStorage.setItem(DEVICE_PATH_PROMPT_COOLDOWN_UNTIL_KEY, String(timestamp))
+    utoolsStorage.setItem(GLOBAL_NOTICE_SEEN_KEY, JSON.stringify(next))
   } catch {}
 }
 
 const isNoticeSeen = (id: FeatureNoticeId) => !!globalNoticeSeenMap.value[id]
-const isDevicePathPromptCoolingDown = () => Date.now() < devicePathPromptCooldownUntil.value
 
 const markNoticeSeen = (id: FeatureNoticeId) => {
   if (isNoticeSeen(id)) return
@@ -143,18 +115,9 @@ const markNoticeSeen = (id: FeatureNoticeId) => {
   })
 }
 
-const setDevicePathPromptCooldown = (duration = DEVICE_PATH_PROMPT_COOLDOWN_MS) => {
-  writeDevicePathPromptCooldownUntil(Date.now() + duration)
-}
-
-const clearDevicePathPromptCooldown = () => {
-  writeDevicePathPromptCooldownUntil(0)
-}
-
 const enqueueNotice = (notice: FeatureNoticeItem) => {
   const strategy = NOTICE_DISPLAY_STRATEGY[notice.id]
   if (strategy === 'once' && isNoticeSeen(notice.id)) return
-  if (notice.id === 'local-mode-device-path' && isDevicePathPromptCoolingDown()) return
   if (notices.value.some(item => item.id === notice.id)) return
   notices.value.push(notice)
 }
@@ -180,20 +143,27 @@ watch(
 )
 
 export function useFeatureNoticeCenter() {
-  const activeNotice = activeNoticeRef
-  const localModeMenuDotVisible = computed(() => localModeMenuDot.value)
-  const isLocalModeIntroPending = computed(() => localModeIntroStatus.value === 'pending')
+  const activeNotice = computed<FeatureNoticeItem | null>(() => (
+    FEATURE_NOTICE_ENABLED ? activeNoticeRef.value : null
+  ))
+  const localModeMenuDotVisible = computed(() => (
+    FEATURE_NOTICE_ENABLED ? localModeMenuDot.value : false
+  ))
+  const isLocalModeIntroPending = computed(() => (
+    FEATURE_NOTICE_ENABLED ? localModeIntroStatus.value === 'pending' : false
+  ))
 
   const ensureLocalModeIntroNotice = () => {
+    if (!FEATURE_NOTICE_ENABLED) return
     if (localModeIntroStatus.value !== 'pending') return
     enqueueNotice(LOCAL_MODE_INTRO_NOTICE)
   }
 
   const ensureLocalModeDevicePathNotice = (required: boolean) => {
+    if (!FEATURE_NOTICE_ENABLED) return
     if (!required) {
       removeNotice('local-mode-device-path')
       localModePathPromptSnoozed.value = false
-      clearDevicePathPromptCooldown()
       return
     }
     if (localModePathPromptSnoozed.value) return
@@ -201,32 +171,35 @@ export function useFeatureNoticeCenter() {
   }
 
   const markLocalModeIntroViewed = () => {
+    if (!FEATURE_NOTICE_ENABLED) return
     writeIntroStatus('viewed')
     writeLocalModeDot(false)
     removeNotice('local-mode-intro')
   }
 
   const markLocalModeIntroIgnored = () => {
+    if (!FEATURE_NOTICE_ENABLED) return
     writeIntroStatus('ignored')
     writeLocalModeDot(true)
     removeNotice('local-mode-intro')
   }
 
   const markDevicePathConfigured = () => {
+    if (!FEATURE_NOTICE_ENABLED) return
     localModePathPromptSnoozed.value = false
     writeLocalModeDot(false)
-    clearDevicePathPromptCooldown()
     removeNotice('local-mode-device-path')
   }
 
   const markDevicePathIgnored = () => {
+    if (!FEATURE_NOTICE_ENABLED) return
     localModePathPromptSnoozed.value = true
     writeLocalModeDot(true)
-    setDevicePathPromptCooldown()
     removeNotice('local-mode-device-path')
   }
 
   const markLocalModeSettingsVisited = () => {
+    if (!FEATURE_NOTICE_ENABLED) return
     writeLocalModeDot(false)
     if (localModeIntroStatus.value !== 'viewed') {
       writeIntroStatus('viewed')
