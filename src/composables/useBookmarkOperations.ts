@@ -1,6 +1,6 @@
 
 import type { Bookmark } from '@/types/bookmark'
-import { getTemplateLabel } from '@/lib/utils'
+import { getTemplateLabel, resolveBookmarkLaunchUrl } from '@/lib/utils'
 
 type UToolsExtendedApi = {
   copyText?: (text: string) => void
@@ -10,6 +10,11 @@ type UToolsExtendedApi = {
   }
   outPlugin?: () => void
   getWindowType?: () => string
+}
+
+type OpenBookmarkOptions = {
+  query?: string
+  useUiQuery?: boolean
 }
 
 export function useBookmarkOperations() {
@@ -98,7 +103,7 @@ export function useBookmarkOperations() {
     }
   }
 
-  const openBookmarkLink = (bookmark: Bookmark) => {
+  const openBookmarkLink = (bookmark: Bookmark, options: OpenBookmarkOptions = {}) => {
     // 记录书签点击统计
     const statsStore = useStatsStore()
     statsStore.recordClick(bookmark.id)
@@ -109,48 +114,21 @@ export function useBookmarkOperations() {
     addBehaviorLog('open', `${bookmark.title || ''} ${bookmark.url || ''}`.trim())
     const raw = typeof bookmark.url === 'string' ? bookmark.url : ''
     const hasTemplate = /{[^}]+}/.test(raw)
-    const queryFromUi = (typeof store.search === 'string' ? store.search : '').trim()
-    
-    let url = raw
+    const queryFromOptions = typeof options.query === 'string' ? options.query.trim() : undefined
+    const queryFromUi = options.useUiQuery === false
+      ? ''
+      : (typeof store.search === 'string' ? store.search : '').trim()
+    const query = queryFromOptions ?? queryFromUi
+    const url = resolveBookmarkLaunchUrl(raw, query)
 
-    if (hasTemplate) {
-      if (queryFromUi) {
-        // User provided keywords (search mode)
-        url = raw.replace(/{[^}]+}/g, encodeURIComponent(queryFromUi))
-      } else {
-        // Direct open (no keywords) -> Fallback to "Home"
-        try {
-          // Ensure protocol for parsing
-          let tempRaw = raw
-          if (!/^https?:\/\//i.test(tempRaw)) tempRaw = 'https://' + tempRaw
-          
-          const urlObj = new URL(tempRaw)
-          // Check if template is in query string
-          // Heuristic: check if raw string has ? and the first { appears after ?
-          const qIndex = raw.indexOf('?')
-          const tIndex = raw.indexOf('{')
-          
-          if (qIndex !== -1 && tIndex > qIndex) {
-            // Template is in query params -> Remove query params, keep path
-            urlObj.search = ''
-            url = urlObj.toString()
-          } else {
-            // Template is likely in path -> Fallback to origin (safest)
-            url = urlObj.origin
-          }
-        } catch (e) {
-          // Fallback if URL parsing fails
-          const label = getTemplateLabel(raw)
-          console.info(`[Bookmark] 模板书签需要输入${label}`)
-          return
-        }
+    if (!url) {
+      if (hasTemplate) {
+        const label = getTemplateLabel(raw)
+        console.info(`[Bookmark] 模板书签需要输入${label}`)
       }
+      return
     }
 
-    if (!/^https?:\/\//i.test(url)) {
-      url = 'https://' + url
-    }
-    
     openUrl(url)
   }
 
