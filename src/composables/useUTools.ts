@@ -1,5 +1,6 @@
 import type { Bookmark } from '@/types/bookmark'
 import { getTemplateLabel } from '@/lib/utils'
+import { useBookmarkStore } from '@/stores/bookmark'
 
 const FEATURE_PREFIX = 'bm_tpl:'
 
@@ -83,25 +84,57 @@ const fetchIconAsDataUrl = async (url: string): Promise<string | null> => {
   }
 }
 
+const ensurePngBase64 = async (dataUrl: string): Promise<string> => {
+  if (!dataUrl || dataUrl.startsWith('data:image/png') || dataUrl.startsWith('data:image/jpeg')) {
+    return dataUrl
+  }
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.naturalWidth || 32
+      canvas.height = img.naturalHeight || 32
+      const ctx = canvas.getContext('2d')
+      if (ctx) {
+        ctx.drawImage(img, 0, 0)
+        resolve(canvas.toDataURL('image/png'))
+      } else {
+        resolve(dataUrl)
+      }
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
 const getFeatureIcon = async (bookmark: Bookmark): Promise<string | null> => {
   const icon = bookmark.icon
   if (icon) {
-    if (icon.type === 'custom' && icon.data) return icon.data
+    if (icon.type === 'custom' && icon.data) return await ensurePngBase64(icon.data)
     if (icon.type === 'file' && icon.path) return `file://${icon.path}`
     if (icon.type === 'remote') {
-      if (icon.cache) return icon.cache
+      if (icon.cache) {
+        if (!icon.cache.startsWith('data:image/png') && !icon.cache.startsWith('data:image/jpeg')) {
+          icon.cache = await ensurePngBase64(icon.cache)
+        }
+        return icon.cache
+      }
       if (icon.src) {
         const dataUrl = await fetchIconAsDataUrl(icon.src)
         if (dataUrl) {
-          icon.cache = dataUrl
+          icon.cache = await ensurePngBase64(dataUrl)
           bookmark.iconMatchedAt = Date.now()
-          return dataUrl
+          return icon.cache
         }
       }
     }
-    if (icon.type === 'text' && icon.value) return toDataUrlFromText(icon.value)
+    if (icon.type === 'text' && icon.value) {
+      const textUrl = toDataUrlFromText(icon.value)
+      return textUrl ? await ensurePngBase64(textUrl) : null
+    }
   }
-  return toDataUrlFromText(bookmark.title || bookmark.url)
+  const fallbackUrl = toDataUrlFromText(bookmark.title || bookmark.url)
+  return fallbackUrl ? await ensurePngBase64(fallbackUrl) : null
 }
 
 const getBookmarkSignature = (bookmark: Bookmark) => {
@@ -138,8 +171,10 @@ export function useUTools() {
       processedBookmarks.clear()
     }
 
+    const store = useBookmarkStore()
+
     // 2. 筛选并去重当前需要的书签
-    const desired = bookmarks.filter(b => isTemplateBookmark(b) || isUniversalBookmark(b))
+    const desired = bookmarks.filter(b => (isTemplateBookmark(b) || isUniversalBookmark(b)) && !store.isBookmarkInTrash(b))
     const seenCmd = new Set<string>()
     const unique = desired.filter(b => {
       const cmd = b.title.trim()
