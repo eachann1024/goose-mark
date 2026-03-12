@@ -205,6 +205,7 @@ function _useBookmarkForm() {
     
     if (result) {
       categorySuggestion.value = result
+      applyCategorySuggestion({ silent: true, keepSuggestion: false })
     } else if (aiError.value) {
       showToast({ title: aiError.value, variant: 'warning' })
     } else {
@@ -212,15 +213,19 @@ function _useBookmarkForm() {
     }
   }
 
-  const applyCategorySuggestion = () => {
+  const applyCategorySuggestion = (options?: { silent?: boolean; keepSuggestion?: boolean }) => {
     if (!categorySuggestion.value) return
     
     draftLocations.value = [{
       groupId: categorySuggestion.value.groupId,
       subGroupId: categorySuggestion.value.subGroupId
     }]
-    categorySuggestion.value = null
-    showToast({ title: '已应用分类建议', variant: 'success' })
+    if (!options?.keepSuggestion) {
+      categorySuggestion.value = null
+    }
+    if (!options?.silent) {
+      showToast({ title: '已应用分类建议', variant: 'success' })
+    }
   }
 
   const dismissCategorySuggestion = () => {
