@@ -262,11 +262,11 @@ watch(
 <template>
   <div 
     ref="rootEl"
-    class="relative p-5 bg-popover rounded-xl border border-border w-[420px] shadow-xl outline-none" 
+    class="relative p-6 bg-popover rounded-2xl border-0 w-[420px] shadow-2xl outline-none" 
     tabindex="0"
   >
      <!-- Tabs -->
-     <div class="flex gap-3 border-b border-border pb-3 mb-5">
+     <div class="flex gap-3 border-b border-border/30 pb-3 mb-5">
         <Button 
           variant="ghost"
           size="sm"
@@ -395,7 +395,7 @@ watch(
      </div>
      
      <!-- Footer -->
-     <div class="flex justify-end gap-2 mt-2 pt-4 border-t border-border">
+     <div class="flex justify-end gap-2 mt-2 pt-4 border-t border-border/30">
          <Button variant="ghost" size="sm" @click="$emit('close')">取消</Button>
          <Button size="sm" @click="emitFinalChange(); $emit('confirm')">确定</Button>
      </div>

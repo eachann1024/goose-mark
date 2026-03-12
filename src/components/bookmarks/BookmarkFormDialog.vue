@@ -61,25 +61,25 @@ const onSave = async () => {
 <template>
   <Dialog :open="open" @update:open="emit('update:open', $event)">
     <DialogContent 
-      class="sm:max-w-[500px] max-h-[95vh] overflow-y-auto p-0 gap-0 bg-card border-border shadow-2xl"
+      class="sm:max-w-[480px] max-h-[88vh] overflow-hidden p-0 gap-0 bg-background border-0 shadow-2xl rounded-2xl flex flex-col"
     >
       <!-- Header -->
-      <div class="px-5 py-3 border-b border-border flex items-center justify-between bg-muted/20">
+      <div class="shrink-0 px-5 pt-5 pb-3 flex items-center justify-between border-b border-border/40 bg-background">
         <DialogTitle class="text-base font-semibold flex items-center gap-2">
           <span class="i-mdi-card-text-outline text-primary text-lg" />
           {{ modalTitle }}
         </DialogTitle>
       </div>
 
-      <div class="p-5 space-y-5">
+      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-3 space-y-3">
         <!-- 1. URL Input with Inline AI Button -->
-        <div class="space-y-1.5">
-          <label class="text-xs font-medium text-muted-foreground ml-1">链接 / 模板</label>
+        <div class="settings-block" style="padding: 0.75rem 1rem;">
+          <label class="text-xs font-medium text-muted-foreground">链接 / 模板</label>
           <div class="relative group">
             <Input 
               v-model="draft.url" 
               placeholder="https://example.com 或 {query} 模板" 
-              class="h-10 bg-muted/30 font-mono text-sm placeholder:text-muted-foreground/60 pr-10 focus:bg-background transition-colors shadow-none"
+              class="h-10 bg-transparent font-mono text-sm placeholder:text-muted-foreground/60 pr-10 focus:bg-muted/20 transition-colors shadow-none border-0"
               auto-focus
             />
             <div class="absolute right-1 top-1">
@@ -105,84 +105,86 @@ const onSave = async () => {
               </Tooltip>
             </div>
           </div>
-          <p v-if="formError" class="text-[11px] text-destructive ml-1">{{ formError }}</p>
+          <p v-if="formError" class="text-[11px] text-destructive">{{ formError }}</p>
         </div>
 
         <!-- 2. Split Layout: Icon + Info -->
-        <div class="flex gap-4 items-start">
-          <!-- Left: Icon Preview -->
-          <div class="shrink-0 flex flex-col items-center gap-2 w-20">
-            <div
-              class="relative group cursor-pointer"
-              @click="showIconSelector = true"
-            >
-              <BookmarkIcon
-                :icon="previewIcon"
-                :fallback-text="draft.title || draft.url"
-                :loading="iconLoading"
-                size="custom"
-                custom-size-class="w-20 h-20 rounded-xl"
-                class="shadow-sm border-2 border-transparent group-hover:border-primary/40 transition-all"
-              />
-              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center transition-opacity">
-                <span class="i-mdi-pencil text-white text-xl" />
+        <div class="settings-block" style="padding: 0.875rem 1rem;">
+          <div class="flex gap-3 items-start">
+            <!-- Left: Icon Preview -->
+            <div class="shrink-0 flex flex-col items-center gap-1.5 w-16">
+              <div
+                class="relative group cursor-pointer"
+                @click="showIconSelector = true"
+              >
+                <BookmarkIcon
+                  :icon="previewIcon"
+                  :fallback-text="draft.title || draft.url"
+                  :loading="iconLoading"
+                  size="custom"
+                  custom-size-class="w-16 h-16 rounded-xl"
+                  class="shadow-sm transition-all"
+                />
+                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center transition-opacity">
+                  <span class="i-mdi-pencil text-white text-xl" />
+                </div>
               </div>
+              <span class="text-[10px] text-center leading-tight min-h-5 flex items-center" :class="iconFetchStage === 'fallback' ? 'text-amber-500 font-medium animate-pulse' : iconFetchFailed && !iconLoading ? 'text-muted-foreground' : 'text-muted-foreground font-medium'">
+                {{ iconFetchStage === 'fallback' ? '正在尝试备用服务...' : iconFetchFailed && !iconLoading ? '识别失败，点击设置' : '点击修改图标' }}
+              </span>
             </div>
-            <span class="text-[10px] text-center leading-tight h-6 flex items-center" :class="iconFetchStage === 'fallback' ? 'text-amber-500 font-medium animate-pulse' : iconFetchFailed && !iconLoading ? 'text-muted-foreground' : 'text-muted-foreground font-medium'">
-              {{ iconFetchStage === 'fallback' ? '正在尝试备用服务...' : iconFetchFailed && !iconLoading ? '识别失败，点击设置' : '点击修改图标' }}
-            </span>
-          </div>
 
-          <!-- Right: Title & Desc -->
-          <div class="flex-1 space-y-3 min-w-0">
-            <div class="relative flex items-center gap-2">
-              <Input 
-                v-model="draft.title" 
-                placeholder="网站标题" 
-                class="h-9 border-border bg-background px-3 focus-visible:ring-1 focus-visible:ring-primary/40 shadow-none text-sm font-semibold flex-1"
-                @input="onTitleInput"
-              />
-              <Button
-                v-if="hasAIGenerated"
-                variant="ghost"
-                size="icon"
-                class="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                @click="undoTitle()"
-              >
-                <span class="i-mdi-undo text-sm" />
-              </Button>
-            </div>
-            
-            <div class="relative">
-              <Textarea 
-                v-model="draft.desc" 
-                placeholder="请输入网站简介" 
-                :maxlength="maxDescLen"
-                class="h-20 min-h-[80px] text-xs resize-none bg-background border border-border px-3 py-2 focus-visible:ring-1 focus-visible:ring-primary/40 shadow-none pr-8"
-                @input="onDescInput"
-              />
-              <Button
-                v-if="hasAIGenerated"
-                variant="ghost"
-                size="icon"
-                class="absolute top-1.5 right-1.5 h-6 w-6 text-muted-foreground hover:text-foreground"
-                @click="undoDesc()"
-              >
-                <span class="i-mdi-undo text-xs" />
-              </Button>
+            <!-- Right: Title & Desc -->
+            <div class="flex-1 space-y-2 min-w-0">
+              <div class="relative flex items-center gap-2">
+                <Input 
+                  v-model="draft.title" 
+                  placeholder="网站标题" 
+                  class="h-9 bg-muted/20 px-3 focus-visible:ring-1 focus-visible:ring-primary/40 shadow-none text-sm font-semibold flex-1 border-0 rounded-lg"
+                  @input="onTitleInput"
+                />
+                <Button
+                  v-if="hasAIGenerated"
+                  variant="ghost"
+                  size="icon"
+                  class="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  @click="undoTitle()"
+                >
+                  <span class="i-mdi-undo text-sm" />
+                </Button>
+              </div>
+              
+              <div class="relative">
+                <Textarea 
+                  v-model="draft.desc" 
+                  placeholder="请输入网站简介" 
+                  :maxlength="maxDescLen"
+                  class="h-16 min-h-[64px] text-xs resize-none bg-muted/20 px-3 py-2 focus-visible:ring-1 focus-visible:ring-primary/40 shadow-none pr-8 border-0 rounded-lg"
+                  @input="onDescInput"
+                />
+                <Button
+                  v-if="hasAIGenerated"
+                  variant="ghost"
+                  size="icon"
+                  class="absolute top-1.5 right-1.5 h-6 w-6 text-muted-foreground hover:text-foreground"
+                  @click="undoDesc()"
+                >
+                  <span class="i-mdi-undo text-xs" />
+                </Button>
+              </div>
             </div>
           </div>
         </div>
 
         <!-- 3. Category & AI Suggestion -->
-        <div class="space-y-2">
-          <div class="flex items-center justify-between px-1">
+        <div class="settings-block" style="padding: 0.75rem 1rem;">
+          <div class="flex items-center justify-between">
             <label class="text-xs font-medium text-muted-foreground">分类</label>
             <Button
               v-if="isUTools"
               variant="ghost"
               size="sm"
-              class="h-6 text-[11px] gap-1 px-2 hover:bg-primary/5 text-primary/80"
+              class="h-6 text-[11px] gap-1 px-2 text-primary hover:text-primary hover:bg-primary/10 active:bg-primary/15"
               :disabled="!draft.url || isSuggestingCategory"
               @click="askCategorySuggestion"
             >
@@ -193,7 +195,7 @@ const onSave = async () => {
           </div>
           
           <Transition name="fade">
-            <div v-if="categorySuggestion" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5 border border-primary/10 mb-2">
+            <div v-if="categorySuggestion" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5">
               <span class="i-mdi-lightbulb-on-outline text-primary text-base shrink-0" />
               <div class="flex-1 min-w-0">
                 <p class="text-[11px] font-medium text-foreground truncate">
@@ -214,7 +216,7 @@ const onSave = async () => {
           <Popover v-model:open="showCategorySelector">
             <PopoverTrigger as-child>
               <div 
-                class="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                class="flex h-9 w-full items-center justify-between rounded-lg bg-muted/20 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
               >
                 <div v-if="selectedLocationsLabel" class="flex items-center gap-2 truncate text-primary font-medium text-xs">
                   {{ selectedLocationsLabel }}
@@ -223,7 +225,7 @@ const onSave = async () => {
                 <span class="i-mdi-chevron-down opacity-50 shrink-0 text-sm" />
               </div>
             </PopoverTrigger>
-            <PopoverContent class="w-auto p-0 bg-transparent border-0 shadow-none z-[9999]" align="start">
+            <PopoverContent class="w-auto p-0 bg-transparent border-0 shadow-none z-[9999]" align="start" side="bottom" :side-offset="8">
               <CategoryMultiSelect 
                 v-model="draftLocations"
                 @close="showCategorySelector = false"
@@ -234,7 +236,7 @@ const onSave = async () => {
 
         <!-- 4. Footer Context (Templates) -->
         <Transition name="fade">
-          <div v-if="isDraftTemplate && isUTools" class="p-3 rounded-lg bg-muted/30 border border-border/50 text-[11px] space-y-2">
+          <div v-if="isDraftTemplate && isUTools" class="settings-block text-[11px]" style="padding: 0.625rem 1rem; gap: 0.375rem;">
             <div class="flex items-center justify-between">
               <div class="flex items-center gap-1.5 text-muted-foreground">
                 <span class="i-mdi-rocket-launch text-primary text-sm" />
@@ -258,7 +260,7 @@ const onSave = async () => {
       </div>
 
       <!-- Footer Buttons -->
-      <DialogFooter class="px-5 py-3 bg-muted/20 border-t border-border flex flex-row items-center justify-between sm:justify-between gap-2">
+      <DialogFooter class="shrink-0 px-4 py-3 flex flex-row items-center justify-between sm:justify-between gap-2 border-t border-border/40 bg-background">
         <div class="flex-1">
           <Button 
             v-if="editingId"
@@ -272,7 +274,7 @@ const onSave = async () => {
           </Button>
         </div>
         <div class="flex items-center gap-2">
-          <Button variant="outline" size="sm" class="h-8 w-20" @click="emit('update:open', false)">取消</Button>
+          <Button variant="ghost" size="sm" class="h-8 w-20 text-muted-foreground" @click="emit('update:open', false)">取消</Button>
           <Button size="sm" class="h-8 w-20" :disabled="isSaving" @click="onSave">
             <span v-if="isSaving" class="i-mdi-loading animate-spin mr-1" />
             保存

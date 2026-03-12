@@ -96,21 +96,16 @@ const matchMissing = async () => {
 </script>
 
 <template>
-  <div class="grid gap-6">
-    <div class="grid gap-6">
-      <!-- Icon Match -->
-      <Card>
-        <CardHeader class="pb-3">
-          <CardTitle class="text-base">图标补全</CardTitle>
-          <CardDescription>待补全图标：<span class="text-primary font-bold">{{ missingCount }}</span> 个</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button class="w-full" variant="secondary" :disabled="matching || missingCount === 0" @click="matchMissing">
-            <span v-if="matching" class="i-mdi-loading animate-spin mr-2" />
-            {{ matching ? '补全中...' : (missingCount === 0 ? '已全部补全' : '一键补全图标') }}
-          </Button>
-        </CardContent>
-      </Card>
+  <div class="flex flex-col gap-3">
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">图标补全</h3>
+        <p class="settings-block__desc">待补全图标：<span class="text-foreground font-semibold">{{ missingCount }}</span> 个</p>
+      </div>
+      <Button class="w-full" variant="secondary" :disabled="matching || missingCount === 0" @click="matchMissing">
+        <span v-if="matching" class="i-mdi-loading animate-spin mr-2" />
+        {{ matching ? '补全中...' : (missingCount === 0 ? '已全部补全' : '一键补全图标') }}
+      </Button>
     </div>
 
     <ResultToast

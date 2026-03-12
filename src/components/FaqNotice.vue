@@ -16,16 +16,15 @@ const iconClass = computed(() => props.icon ?? 'i-mdi-information-outline')
   <div
     :class="
       cn(
-        'rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground shadow-sm dark:bg-[#3A3C3E] dark:border-[#505357]',
+        'rounded-xl bg-white p-4 text-sm text-muted-foreground dark:bg-[hsl(var(--card))]',
         props.class
       )
     "
-  >
+    >
     <div class="mb-1.5 flex items-center gap-2 font-medium text-foreground">
-      <span :class="cn('shrink-0 text-lg text-primary', iconClass)" />
+      <span :class="cn('shrink-0 text-lg text-muted-foreground', iconClass)" />
       <span>{{ title }}</span>
     </div>
     <p class="leading-relaxed whitespace-pre-line">{{ description }}</p>
   </div>
 </template>
-

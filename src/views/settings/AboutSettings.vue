@@ -23,7 +23,7 @@ const todayClicks = computed(() => {
 const weekTrend = computed(() => {
   const days: { date: string; label: string; clicks: number }[] = []
   const weekLabels = ['日', '一', '二', '三', '四', '五', '六']
-  
+
   for (let i = 6; i >= 0; i--) {
     const d = new Date()
     d.setDate(d.getDate() - i)
@@ -42,20 +42,20 @@ const maxClicks = computed(() => Math.max(...weekTrend.value.map(d => d.clicks),
 // 热门书签 Top 5
 const topBookmarks = computed(() => {
   const clickCount = new Map<string, number>()
-  
+
   statsStore.usageEvents
     .filter(e => e.type === 'click' && e.bookmarkId)
     .forEach(e => {
       const count = clickCount.get(e.bookmarkId!) || 0
       clickCount.set(e.bookmarkId!, count + 1)
     })
-  
+
   const sorted = [...clickCount.entries()]
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-  
+
   const maxCount = sorted[0]?.[1] || 1
-  
+
   return sorted.map(([id, count]) => {
     const bookmark = store.bookmarks.find(b => b.id === id)
     return {
@@ -73,53 +73,41 @@ const topBookmarkName = computed(() => topBookmarks.value[0]?.title || '-')
 </script>
 
 <template>
-  <div class="space-y-6">
-    <!-- FAQ & Tips -->
-    <FaqNotice
-      title="常见问题"
-      :description="`· 子分组不显示：当分组下只有 1 个子分组时，侧边栏将自动隐藏
- · 图标丢失：可在「常用工具」点击「一键补全图标」
- · 书签误删：删除后会进入回收站，可随时恢复
- · 分享失效：分享者取消分享后，可选择保留为本地分组或移除`"
-    />
+  <div class="flex flex-col gap-3">
 
     <FaqNotice
       title="使用技巧"
       :description="`· 直接输入即可搜索，无需点击搜索按钮
- · 按 ${isMac ? '⌘' : 'Ctrl'}+数字键 快速打开对应书签
- · 按住 ${isMac ? 'Option' : 'Alt'} 显示序号，配合数字键打开
- · 方向键 ↑↓←→ 导航，Enter 打开书签
- · 右键点击书签复制链接到剪贴板
+ · 按 ${isMac ? '⌘' : 'Ctrl'}+数字键 快速打开对应书签，按住 ${isMac ? 'Option' : 'Alt'} 显示序号，配合数字键快速打开书签
  · 拖拽书签到侧边栏可移动到其他子分组
- · 🚀 模板书签：URL 含 {query} 的书签可快捷搜索
- · 🎁 深色模式下，主题设置界面有惊喜~`"
+ · 🚀 模板书签：URL 含 {query} 的书签可快捷搜索`"
     />
 
     <!-- Dashboard Cards -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
-        <div class="flex items-center gap-2 text-primary/60 mb-1">
+      <div class="settings-block" style="gap: 0.5rem; padding: 0.875rem 1rem;">
+        <div class="flex items-center gap-2 text-muted-foreground">
           <span class="i-mdi-bookmark-multiple text-lg" />
           <span class="text-xs font-medium">书签总数</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ store.bookmarks.length }}</p>
       </div>
-      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
-        <div class="flex items-center gap-2 text-emerald-500/60 mb-1">
+      <div class="settings-block" style="gap: 0.5rem; padding: 0.875rem 1rem;">
+        <div class="flex items-center gap-2 text-muted-foreground">
           <span class="i-mdi-folder-multiple text-lg" />
           <span class="text-xs font-medium">分组数量</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ store.groups.length }}</p>
       </div>
-      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
-        <div class="flex items-center gap-2 text-amber-500/60 mb-1">
+      <div class="settings-block" style="gap: 0.5rem; padding: 0.875rem 1rem;">
+        <div class="flex items-center gap-2 text-muted-foreground">
           <span class="i-mdi-fire text-lg" />
           <span class="text-xs font-medium">今日使用</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ todayClicks }}</p>
       </div>
-      <div class="rounded-xl border border-border bg-card dark:bg-[#3A3C3E] p-4">
-        <div class="flex items-center gap-2 text-violet-500/60 mb-1">
+      <div class="settings-block" style="gap: 0.5rem; padding: 0.875rem 1rem;">
+        <div class="flex items-center gap-2 text-muted-foreground">
           <span class="i-mdi-star text-lg" />
           <span class="text-xs font-medium">最常用</span>
         </div>
@@ -127,47 +115,44 @@ const topBookmarkName = computed(() => topBookmarks.value[0]?.title || '-')
       </div>
     </div>
 
-    <!-- Week Trend Chart -->
-    <Card>
-      <CardHeader class="pb-2">
-        <CardTitle class="text-base">七天使用趋势</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div class="flex items-end justify-between gap-2 h-32">
+    <!-- 七天趋势 -->
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">七天使用趋势</h3>
+      </div>
+      <div class="flex items-end justify-between gap-2 h-32">
+        <div
+          v-for="day in weekTrend"
+          :key="day.date"
+          class="flex-1 flex flex-col items-center gap-1"
+        >
+          <span class="text-xs text-muted-foreground font-medium">{{ day.clicks }}</span>
           <div
-            v-for="day in weekTrend"
-            :key="day.date"
-            class="flex-1 flex flex-col items-center gap-1"
-          >
-            <span class="text-xs text-muted-foreground font-medium">{{ day.clicks }}</span>
-            <div
-              class="w-full rounded-t-md bg-primary/20 transition-all duration-300"
-              :style="{ height: `${Math.max((day.clicks / maxClicks) * 100, 4)}%` }"
-              :class="day.date === new Date().toISOString().slice(0, 10) ? 'bg-primary' : ''"
-            ></div>
-            <span class="text-xs text-muted-foreground">{{ day.label }}</span>
-          </div>
+            class="w-full rounded-t-md bg-foreground/18 transition-all duration-300"
+            :style="{ height: `${Math.max((day.clicks / maxClicks) * 100, 4)}%` }"
+            :class="day.date === new Date().toISOString().slice(0, 10) ? 'bg-foreground/55' : ''"
+          ></div>
+          <span class="text-xs text-muted-foreground">{{ day.label }}</span>
         </div>
-        <p v-if="maxClicks === 1 && weekTrend.every(d => d.clicks === 0)" class="text-sm text-muted-foreground text-center mt-4">
-          暂无点击数据，开始使用书签后将记录统计
-        </p>
-      </CardContent>
-    </Card>
+      </div>
+      <p v-if="maxClicks === 1 && weekTrend.every(d => d.clicks === 0)" class="text-sm text-muted-foreground text-center mt-2">
+        暂无点击数据，开始使用书签后将记录统计
+      </p>
+    </div>
 
-    <!-- Top Bookmarks -->
-    <Card v-if="topBookmarks.length > 0">
-      <CardHeader class="pb-2">
-        <CardTitle class="text-base">热门书签 TOP 5</CardTitle>
-      </CardHeader>
-      <CardContent class="space-y-2">
+    <!-- 热门书签 -->
+    <div v-if="topBookmarks.length > 0" class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">热门书签 TOP 5</h3>
+      </div>
+      <div class="space-y-2">
         <div
           v-for="(item, index) in topBookmarks"
           :key="item.id"
           class="flex items-center gap-3"
         >
-          <span 
-            class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-            :class="index === 0 ? 'bg-amber-500/20 text-amber-500' : index === 1 ? 'bg-zinc-400/20 text-zinc-500' : index === 2 ? 'bg-orange-400/20 text-orange-500' : 'bg-muted text-muted-foreground'"
+          <span
+            class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold shrink-0 bg-muted text-muted-foreground"
           >
             {{ index + 1 }}
           </span>
@@ -178,14 +163,13 @@ const topBookmarkName = computed(() => topBookmarks.value[0]?.title || '-')
             </div>
             <div class="h-1.5 rounded-full bg-muted overflow-hidden">
               <div
-                class="h-full rounded-full transition-all duration-300"
-                :class="index === 0 ? 'bg-amber-500' : index === 1 ? 'bg-zinc-400' : index === 2 ? 'bg-orange-400' : 'bg-primary/50'"
+                class="h-full rounded-full bg-foreground/55 transition-all duration-300"
                 :style="{ width: `${item.percent}%` }"
               ></div>
             </div>
           </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   </div>
 </template>

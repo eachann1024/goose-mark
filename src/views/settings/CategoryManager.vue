@@ -266,17 +266,16 @@ const closeUndoToast = () => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <Card>
-      <CardHeader>
-        <CardTitle>分组管理</CardTitle>
-        <CardDescription>管理分组和子分组，可拖拽调整顺序或移动位置</CardDescription>
-      </CardHeader>
-      <CardContent class="space-y-4">
+  <div class="flex flex-col gap-3">
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">分组管理</h3>
+        <p class="settings-block__desc">管理分组和子分组，可拖拽调整顺序或移动位置</p>
+      </div>
         <!-- Add Group -->
         <div class="pb-2">
           <div v-if="!isAddingGroup">
-            <Button variant="outline" class="w-full h-9 border-dashed border-input hover:border-primary hover:text-primary transition-colors" :disabled="editingLocked" @click="startAddGroup">
+            <Button variant="outline" class="w-full h-9 border-dashed border-input hover:border-foreground/20 hover:text-foreground transition-colors" :disabled="editingLocked" @click="startAddGroup">
               <span class="i-mdi-plus mr-2" /> 新建分组
             </Button>
           </div>
@@ -301,7 +300,7 @@ const closeUndoToast = () => {
         <!-- Promote zone -->
         <div
           v-if="isDragging"
-          class="border-2 border-dashed border-primary/50 rounded-lg p-4 text-center text-sm text-primary/70 bg-primary/5 transition-all"
+          class="rounded-lg border-2 border-dashed border-input bg-muted/35 p-4 text-center text-sm text-muted-foreground transition-all"
           data-group-id="promote-zone"
         >
           <span class="i-mdi-arrow-up-bold mr-2" />把子分组拖到这里，可升级为主分组
@@ -319,8 +318,8 @@ const closeUndoToast = () => {
         >
           <template #item="{ element: group }">
             <div
-              class="flex flex-col gap-2 group/row border rounded-lg p-2 bg-card/50 transition-all"
-              :class="{ 'ring-2 ring-primary/30': isDragging }"
+              class="flex flex-col gap-2 group/row rounded-lg p-2 bg-muted/30 transition-all"
+              :class="{ 'ring-2 ring-border': isDragging }"
               :ref="(el) => { groupRowRefs[group.id] = el as HTMLElement | null }"
             >
               <!-- Group Header -->
@@ -329,7 +328,7 @@ const closeUndoToast = () => {
                   class="i-mdi-drag-vertical text-muted-foreground/50 drag-handle shrink-0" 
                   :class="editingLocked ? 'cursor-not-allowed opacity-30' : 'cursor-grab active:cursor-grabbing'"
                 />
-                <span class="i-mdi-folder-outline text-xl text-primary shrink-0" />
+                <span class="i-mdi-folder-outline text-xl text-foreground shrink-0" />
                 
                 <div v-if="editingGroupId === group.id && !editingSubId" class="flex-1 flex gap-2 items-center">
                   <Input 
@@ -355,7 +354,7 @@ const closeUndoToast = () => {
                     v-if="editingGroupId !== group.id" 
                     variant="ghost" 
                     size="icon"
-                    class="h-7 w-7 text-muted-foreground hover:text-primary"
+                    class="h-7 w-7 text-muted-foreground hover:text-foreground"
                     title="重命名"
                     :disabled="editingLocked"
                     @click="startEditGroup(group.id, group.name)"
@@ -365,7 +364,7 @@ const closeUndoToast = () => {
                   <Button 
                     variant="ghost" 
                     size="icon"
-                    class="h-7 w-7 text-muted-foreground hover:text-primary"
+                    class="h-7 w-7 text-muted-foreground hover:text-foreground"
                     title="添加子分组"
                     :disabled="editingLocked"
                     @click="startAddSub(group.id)"
@@ -406,8 +405,7 @@ const closeUndoToast = () => {
                     :data-sub-id="sub.id"
                     class="flex items-center gap-3 text-sm px-3 py-1.5 rounded-md hover:bg-muted/50 transition-colors group/sub"
                     :class="{
-                      'border border-dashed border-blue-500/50': sub.shareId,
-                      'border border-dashed border-green-500/50': !sub.shareId && sub.sourceShareId
+                      'border border-dashed border-input bg-muted/15': sub.shareId || sub.sourceShareId
                     }"
                   >
                     <span 
@@ -434,8 +432,8 @@ const closeUndoToast = () => {
                     </div>
                     <span v-else class="flex-1 text-muted-foreground flex items-center gap-1.5">
                       {{ sub.name }}
-                      <span v-if="sub.shareId" class="i-mdi-share-variant text-xs text-blue-500/60" title="我分享的" />
-                      <span v-else-if="sub.sourceShareId" class="i-mdi-cloud-download text-xs text-green-500/60" title="我导入的" />
+                      <span v-if="sub.shareId" class="i-mdi-share-variant text-xs text-muted-foreground" title="我分享的" />
+                      <span v-else-if="sub.sourceShareId" class="i-mdi-cloud-download text-xs text-muted-foreground" title="我导入的" />
                     </span>
                     
                     <div class="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-opacity">
@@ -443,7 +441,7 @@ const closeUndoToast = () => {
                         v-if="editingSubId !== sub.id" 
                         variant="ghost"
                         size="icon"
-                        class="h-6 w-6 text-muted-foreground hover:text-primary"
+                        class="h-6 w-6 text-muted-foreground hover:text-foreground"
                         :disabled="editingLocked || !!sub.sourceShareId"
                         :title="sub.sourceShareId ? '导入的分组暂不支持重命名' : '重命名'"
                         @click="startEditSub(group.id, sub.id, sub.name)"
@@ -467,7 +465,7 @@ const closeUndoToast = () => {
 
               <!-- Add Sub Input -->
               <div v-if="addingSubGroupId === group.id" class="flex items-center gap-2 pl-8 mt-1 animate-in fade-in slide-in-from-left-2">
-                <span class="i-mdi-subdirectory-arrow-right text-primary shrink-0" />
+                <span class="i-mdi-subdirectory-arrow-right text-muted-foreground shrink-0" />
                 <Input 
                   ref="addSubInput"
                   v-model="newSubName" 
@@ -487,8 +485,7 @@ const closeUndoToast = () => {
             </div>
           </template>
         </draggable>
-      </CardContent>
-    </Card>
+    </div>
 
     <!-- Delete Confirmation Dialog -->
     <Dialog :open="showDeleteConfirm" @update:open="v => { if (!v) showDeleteConfirm = false }">
@@ -553,16 +550,16 @@ const closeUndoToast = () => {
 <style scoped>
 .drag-ghost {
   opacity: 0.5;
-  background: hsl(var(--primary) / 0.1);
-  border: 2px dashed hsl(var(--primary) / 0.5) !important;
+  background: hsl(var(--muted));
+  border: 2px dashed hsl(var(--border)) !important;
   border-radius: var(--radius-lg);
 }
 
 .drag-chosen {
   opacity: 1;
   background: hsl(var(--card));
-  box-shadow: 0 8px 32px hsl(var(--primary) / 0.15);
-  border: 1px solid hsl(var(--primary) / 0.3) !important;
+  box-shadow: 0 8px 32px hsl(var(--foreground) / 0.08);
+  border: 1px solid hsl(var(--border)) !important;
   border-radius: var(--radius-lg);
   transform: scale(1.01);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -573,7 +570,7 @@ const closeUndoToast = () => {
 }
 
 .drag-handle:hover {
-  color: hsl(var(--primary));
+  color: hsl(var(--foreground));
 }
 
 .drag-handle.cursor-grab[disabled="true"],

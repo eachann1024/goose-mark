@@ -7,6 +7,7 @@ import LocalModeSettings from './LocalModeSettings.vue'
 import AboutSettings from './AboutSettings.vue'
 
 type SettingsTab = 'general' | 'categories' | 'tools' | 'data' | 'local-mode' | 'about'
+const feedbackUrl = 'https://wj.qq.com/s2/25958391/c92b/'
 
 const props = withDefaults(defineProps<{
   activeTab?: SettingsTab
@@ -39,16 +40,25 @@ watch(() => currentTab.value, (value) => {
     markLocalModeSettingsVisited()
   }
 }, { immediate: true })
+
+const openFeedback = () => {
+  try {
+    if (window.utools?.shellOpenExternal) {
+      window.utools.shellOpenExternal(feedbackUrl)
+      return
+    }
+  } catch (error) {
+    console.warn('[SettingsLayout] 打开快速反馈失败，尝试浏览器打开', error)
+  }
+  window.open(feedbackUrl, '_blank')
+}
 </script>
 
 <template>
-  <div class="settings-layout flex h-full min-h-0 gap-5">
+  <div class="settings-layout flex h-full min-h-0 gap-2">
     <!-- 左侧导航 -->
-    <nav class="settings-nav w-48 shrink-0 flex flex-col rounded-2xl p-3">
-      <div class="settings-nav__head px-2 pb-2 mb-2 text-[13px] font-semibold text-muted-foreground">
-        设置菜单
-      </div>
-      <div class="flex-1 space-y-1">
+    <nav class="settings-nav w-44 shrink-0 flex flex-col p-2 rounded-xl">
+      <div class="flex-1 space-y-0.5">
         <button
           v-for="tab in tabs"
           :key="tab.value"
@@ -73,10 +83,18 @@ watch(() => currentTab.value, (value) => {
           </span>
         </button>
       </div>
+      <button
+        type="button"
+        class="settings-feedback mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold"
+        @click="openFeedback"
+      >
+        <span class="i-mdi-message-alert-outline text-lg" />
+        <span>快速反馈</span>
+      </button>
     </nav>
 
     <!-- 右侧内容区 -->
-    <main class="flex-1 overflow-y-auto px-6 pb-6 pt-0 custom-scroll">
+    <main class="flex-1 overflow-y-auto px-4 pb-6 pt-1 custom-scroll">
       <Transition
         mode="out-in"
         enter-active-class="transition-opacity duration-150"
@@ -98,19 +116,18 @@ watch(() => currentTab.value, (value) => {
 </template>
 
 <style scoped>
+/* 左侧导航：白色背景，圆角 */
 .settings-nav {
-  background: hsl(var(--card) / 0.8);
-  border: 1px solid hsl(var(--border) / 0.8);
+  background: #ffffff;
 }
 
-.settings-nav__head {
-  border-bottom: 1px dashed hsl(var(--border) / 0.8);
+.dark .settings-nav {
+  background: hsl(var(--card));
 }
 
 .settings-nav-item {
-  border-radius: 12px;
-  border: 1px solid transparent;
-  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+  border-radius: 10px;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .settings-nav-item__icon-wrap {
@@ -127,22 +144,34 @@ watch(() => currentTab.value, (value) => {
 
 .settings-nav-item--idle:hover {
   color: hsl(var(--foreground));
-  background: hsl(var(--muted) / 0.7);
-  border-color: hsl(var(--border) / 0.9);
+  background: hsl(var(--muted) / 0.6);
 }
 
 .settings-nav-item--active {
   color: hsl(var(--background));
   background: hsl(var(--foreground));
-  border-color: hsl(var(--foreground));
-  box-shadow: 0 2px 10px hsl(var(--foreground) / 0.12);
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.10);
 }
 
 .dark .settings-nav-item--active {
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
-  border-color: hsl(var(--primary) / 0.85);
-  box-shadow: 0 2px 12px hsl(var(--primary) / 0.18);
+  box-shadow: 0 2px 10px hsl(var(--primary) / 0.16);
+}
+
+.settings-feedback {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.5);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.settings-feedback:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.8);
+}
+
+.settings-feedback:active {
+  opacity: 0.8;
 }
 
 .custom-scroll::-webkit-scrollbar {
@@ -157,5 +186,41 @@ watch(() => currentTab.value, (value) => {
 }
 .custom-scroll::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--muted-foreground) / 0.5);
+}
+</style>
+
+<!-- 全局注入 settings-block 色块，让所有子设置页面共享 -->
+<style>
+.settings-block {
+  background: #ffffff;
+  border-radius: 1rem;
+  padding: 1.125rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.dark .settings-block {
+  background: hsl(var(--card));
+}
+
+.settings-block__head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 0.25rem;
+}
+
+.settings-block__title {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  line-height: 1.4;
+}
+
+.settings-block__desc {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  line-height: 1.4;
 }
 </style>
