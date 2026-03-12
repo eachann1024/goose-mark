@@ -854,7 +854,6 @@ onMounted(async () => {
   statsStore.recordUse('open')
   
   type UToolsApi = {
-    isDarkColors?: () => boolean
     setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
     removeSubInput?: () => void
     onPluginEnter?: (cb: (params: { code?: unknown; payload?: unknown } | undefined) => void) => void
@@ -862,21 +861,6 @@ onMounted(async () => {
   const utoolsApi = window.utools as unknown as UToolsApi | undefined
   
   if (utoolsApi) {
-    const syncTheme = () => {
-      try {
-        const isdev = utoolsApi.isDarkColors?.()
-        if (typeof isdev === 'boolean') {
-          useAppState().isDark.value = isdev
-          // 在 uTools 环境下直接操作 DOM，确保 dark 类被正确添加/移除
-          if (isdev) {
-            document.documentElement.classList.add('dark')
-          } else {
-            document.documentElement.classList.remove('dark')
-          }
-        }
-      } catch {}
-    }
-
     const syncSubInput = () => {
       if (canUseSubInput.value) {
         utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
@@ -885,7 +869,6 @@ onMounted(async () => {
       }
     }
     
-    syncTheme()
     syncFeatures(store.bookmarks)
     syncSubInput()
     // Watch canUseSubInput indirectly via isDetachedWindowNow changes if needed, 
@@ -1088,7 +1071,7 @@ const handleLocate = async (bookmark: Bookmark) => {
   >
     <!-- Top Navigation for Groups -->
     <header
-      class="sticky top-0 z-30 flex flex-col gap-2 p-6 transition-all duration-500 bg-background/80 backdrop-blur-md"
+      class="sticky top-0 z-30 flex flex-col gap-2 p-6 transition-colors duration-300"
     >
        <GroupTabs
          :visible-groups="visibleGroups"
@@ -1213,8 +1196,16 @@ const handleLocate = async (bookmark: Bookmark) => {
       @ignore="handleFeatureNoticeIgnore"
     />
 
-  
-
+    <MirrorDirectoryDecisionDialog
+      :open="showMirrorDecisionDialog"
+      :directory-path="pendingMirrorDecision?.directoryPath || ''"
+      :file-path="pendingMirrorDecision?.filePath || ''"
+      :can-read="pendingMirrorDecision?.canRead ?? false"
+      :loading="mirrorDecisionLoading"
+      @update:open="value => !value && closeMirrorDecisionDialog()"
+      @read="confirmMirrorDecision('read')"
+      @overwrite="confirmMirrorDecision('overwrite')"
+    />
 
     <ResultToast
       :open="toastState.visible"
