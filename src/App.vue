@@ -8,6 +8,7 @@ import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import OnboardingBanner from '@/components/OnboardingBanner.vue'
 import QuickSaveDialog from '@/components/QuickSaveDialog.vue'
 import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser'
+import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
 import { parseJsonImportText, applyImportDataToStore } from '@/composables/useImportExport'
 
@@ -37,14 +38,7 @@ const {
 } = useBookmarkOperations()
 
 const openBookmarkLink = (bookmark: Bookmark) => {
-  const hasTemplate = /{[^}]+}/.test(bookmark.url)
-  
-  if (hasTemplate) {
-    enterTemplateMode(bookmark)
-    return
-  }
-  
-  originalOpenBookmarkLink(bookmark)
+  originalOpenBookmarkLink(bookmark, { useUiQuery: false })
 }
 
 // 暂停/恢复 watcher 的标记
@@ -527,34 +521,8 @@ const handleContextMenuAction = (action: string) => {
       openBookmarkLink(bookmark)
       break
     case 'openInUtoolsBrowser':
-      // 处理模板书签
-      const raw = bookmark.url
-      const hasTemplate = /{[^}]+}/.test(raw)
-      const queryFromUi = (typeof store.search === 'string' ? store.search : '').trim()
-      let url = raw
-      if (hasTemplate) {
-        if (queryFromUi) {
-          url = raw.replace(/{[^}]+}/g, encodeURIComponent(queryFromUi))
-        } else {
-          // 无搜索词时跳转到首页
-          try {
-            let tempRaw = raw
-            if (!/^https?:\/\//i.test(tempRaw)) tempRaw = 'https://' + tempRaw
-            const urlObj = new URL(tempRaw)
-            const qIndex = raw.indexOf('?')
-            const tIndex = raw.indexOf('{')
-            if (qIndex !== -1 && tIndex > qIndex) {
-              urlObj.search = ''
-              url = urlObj.toString()
-            } else {
-              url = urlObj.origin
-            }
-          } catch {
-            return
-          }
-        }
-      }
-      if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+      const url = resolveBookmarkLaunchUrl(bookmark.url)
+      if (!url) return
       openUrlInUtoolsBrowser(url)
       break
     case 'copy':
