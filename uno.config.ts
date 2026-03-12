@@ -1,8 +1,8 @@
 import { defineConfig, presetUno, presetIcons, presetAttributify } from 'unocss'
 
 export default defineConfig({
-  // 自动跟随系统深浅色，避免需要手动添加 .dark 类导致深色模式失效
-  dark: 'media',
+  // 与 useDark 的 .dark class 保持一致，避免系统主题覆盖手动切换结果。
+  dark: 'class',
   presets: [
     presetUno(),
     presetAttributify(),

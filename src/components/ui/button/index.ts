@@ -4,18 +4,18 @@ import { cva } from "class-variance-authority"
 export { default as Button } from "./Button.vue"
 
 export const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md border border-transparent text-sm font-medium transition-colors disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 cursor-pointer",
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow hover:bg-primary/90",
+        default: "border-input bg-muted text-foreground shadow-sm hover:bg-muted/80",
         destructive:
-          "bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90",
+          "border-red-200 bg-red-50 text-red-600 shadow-sm hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/12 dark:text-red-200 dark:hover:bg-red-500/18",
         outline:
-          "border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground",
+          "border-input bg-muted/35 text-foreground shadow-sm hover:bg-muted/60",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
+          "border-input bg-muted/70 text-foreground shadow-sm hover:bg-muted",
+        ghost: "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {

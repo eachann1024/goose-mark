@@ -70,15 +70,15 @@ const getLocationLabel = (loc: BookmarkLocation) => {
 </script>
 
 <template>
-  <div class="w-[460px] rounded-xl border border-border bg-popover shadow-lg overflow-hidden" @click.stop>
+  <div class="w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border-0 bg-popover shadow-2xl overflow-hidden" @click.stop>
     <!-- 主体：左右分栏 -->
-    <div class="flex h-[280px]">
+    <div class="flex h-[220px]">
       <!-- 左侧：一级分组列表 -->
-      <div class="w-1/2 border-r border-border overflow-y-auto p-2">
+      <div class="w-1/2 border-r border-border/40 overflow-y-auto p-1.5">
         <div
           v-for="group in store.groups.filter(g => g.id !== TRASH_GROUP_ID)"
           :key="group.id"
-          class="flex items-center justify-between px-3 py-2 rounded-md cursor-pointer transition-colors"
+          class="flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer transition-colors"
           :class="{
             'bg-muted': expandedGroupId === group.id,
             'hover:bg-muted/50': expandedGroupId !== group.id
@@ -90,18 +90,18 @@ const getLocationLabel = (loc: BookmarkLocation) => {
               v-if="selectedLocations.some(loc => loc.groupId === group.id)"
               class="w-2 h-2 rounded-full bg-primary shrink-0 dark-selection-indicator"
             />
-            <span class="text-sm font-medium">{{ group.name }}</span>
+            <span class="text-[13px] font-medium">{{ group.name }}</span>
           </div>
           <span class="i-mdi-chevron-right text-muted-foreground" />
         </div>
       </div>
 
       <!-- 右侧：二级子分组列表（多选） -->
-      <div class="w-1/2 overflow-y-auto p-2">
+      <div class="w-1/2 overflow-y-auto p-1.5">
         <div
           v-for="sub in currentSubGroups"
           :key="sub.id"
-          class="subgroup-item flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-colors hover:bg-muted/50 text-left"
+          class="subgroup-item flex items-center gap-2 px-2.5 py-1.5 rounded-md cursor-pointer transition-colors hover:bg-muted/50 text-left"
           :class="{
             'dark-selected': isSelected(expandedGroupId, sub.id)
           }"
@@ -116,7 +116,7 @@ const getLocationLabel = (loc: BookmarkLocation) => {
           >
             <span v-if="isSelected(expandedGroupId, sub.id)" class="i-mdi-check text-xs" />
           </span>
-          <span class="text-sm text-left">{{ sub.name }}</span>
+          <span class="text-[13px] text-left">{{ sub.name }}</span>
         </div>
         <div v-if="currentSubGroups.length === 0" class="flex items-center justify-center h-full text-muted-foreground text-sm">
           暂无子分组
@@ -125,31 +125,33 @@ const getLocationLabel = (loc: BookmarkLocation) => {
     </div>
 
     <!-- 底部：已选显示 + 操作 -->
-    <div class="border-t border-border px-4 py-3 bg-muted/20">
-      <div class="flex items-center gap-2 flex-wrap min-h-[32px]">
-        <template v-if="selectedLocations.length > 0">
-          <div
-            v-for="loc in selectedLocations"
-            :key="`${loc.groupId}-${loc.subGroupId}`"
-            class="flex items-center gap-1 px-2 py-1 rounded-md bg-secondary text-secondary-foreground text-xs dark-selected-tag"
-          >
-            <span>{{ getLocationLabel(loc) }}</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              class="h-6 w-6 text-muted-foreground hover:text-destructive"
-              @click.stop="removeLocation(loc)"
+    <div class="border-t border-border/40 px-3.5 py-2.5">
+      <div class="flex items-center gap-3">
+        <div class="min-w-0 flex-1 overflow-x-auto no-scrollbar">
+          <div v-if="selectedLocations.length > 0" class="flex items-center gap-1.5 whitespace-nowrap pr-1">
+            <div
+              v-for="loc in selectedLocations"
+              :key="`${loc.groupId}-${loc.subGroupId}`"
+              class="flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-xs dark-selected-tag shrink-0"
             >
-              <span class="i-mdi-close text-sm" />
-            </Button>
+              <span>{{ getLocationLabel(loc) }}</span>
+              <Button
+                variant="ghost"
+                size="icon"
+                class="h-6 w-6 text-muted-foreground hover:text-destructive"
+                @click.stop="removeLocation(loc)"
+              >
+                <span class="i-mdi-close text-sm" />
+              </Button>
+            </div>
           </div>
-        </template>
-        <span v-else class="text-muted-foreground text-sm">请选择分类...</span>
-      </div>
-      
-      <div class="flex items-center justify-end gap-2 mt-3">
+          <span v-else class="text-muted-foreground text-sm">请选择分类...</span>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 shrink-0">
         <Button variant="ghost" size="sm" class="w-16" @click="emit('close')">取消</Button>
         <Button size="sm" class="w-16" @click="emit('close')">确定</Button>
+        </div>
       </div>
     </div>
   </div>
@@ -171,10 +173,10 @@ html.dark .subgroup-item.dark-selected {
   border: 1px solid hsl(var(--primary) / 0.4);
   box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2);
   margin: -1px;
-  padding-left: calc(0.75rem + 1px);
-  padding-right: calc(0.75rem + 1px);
-  padding-top: calc(0.5rem + 1px);
-  padding-bottom: calc(0.5rem + 1px);
+  padding-left: calc(0.625rem + 1px);
+  padding-right: calc(0.625rem + 1px);
+  padding-top: calc(0.375rem + 1px);
+  padding-bottom: calc(0.375rem + 1px);
 }
 
 /* 深色模式：选中标签高亮 */

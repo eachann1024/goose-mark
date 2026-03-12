@@ -1,5 +1,6 @@
 <script setup lang="ts">
-const themeStore = useThemeStore()
+import { DEFAULT_AI_MODEL } from '@/constants/ai'
+
 const settingsStore = useSettingsStore()
 
 const { isUTools, isDark } = useAppState()
@@ -18,6 +19,14 @@ const groupLayoutOptions: Array<{ value: 'wrap' | 'scroll'; label: string }> = [
   { value: 'scroll', label: '横向滚动' }
 ]
 
+const ensureCustomAiModel = () => {
+  if (settingsStore.useCustomAiModel && !settingsStore.customAiModel.trim()) {
+    settingsStore.setCustomAiModel(DEFAULT_AI_MODEL)
+  }
+}
+
+const customAiModelValue = computed(() => settingsStore.customAiModel.trim() || DEFAULT_AI_MODEL)
+
 const handleGridColumnsChange = (val: string | number) => {
   const num = typeof val === 'number' ? val : Number(val)
   if (Number.isFinite(num)) {
@@ -25,299 +34,245 @@ const handleGridColumnsChange = (val: string | number) => {
   }
 }
 
+watch(() => settingsStore.useCustomAiModel, ensureCustomAiModel, { immediate: true })
+onMounted(ensureCustomAiModel)
 
 </script>
 
 <template>
-  <div class="grid gap-6">
-    <!-- Theme Selection Card -->
-    <Card>
-      <CardHeader>
-        <CardTitle>外观主题</CardTitle>
-        <CardDescription>选择你喜欢的界面风格</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div class="flex gap-6">
-          <!-- Monochrome (Default) -->
-          <div 
-            class="flex flex-col items-center gap-2 cursor-pointer group"
-            @click="themeStore.setTheme('default')"
-          >
-            <div 
-              class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all relative z-10"
-              :class="themeStore.currentTheme === 'default' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
-            >
-              <div class="w-1/2 h-full bg-zinc-900"></div>
-              <div class="w-1/2 h-full bg-white"></div>
-            </div>
-            
-            <span 
-              class="text-sm font-medium transition-colors"
-              :class="themeStore.currentTheme === 'default' ? 'text-primary' : 'text-muted-foreground'"
-            >默认黑白</span>
-          </div>
+  <div class="flex flex-col gap-3">
 
-          <!-- Coffee -->
-          <div 
-            class="flex flex-col items-center gap-2 cursor-pointer group"
-            @click="themeStore.setTheme('coffee')"
+    <!-- 外观 -->
+    <div v-if="isDark" class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">外观</h3>
+        <p class="settings-block__desc">控制深色模式下的背景显示效果</p>
+      </div>
+      <div class="flex gap-3">
+        <Button
+          :variant="!settingsStore.useSolidBackground ? 'default' : 'ghost'"
+          class="flex-1 h-auto py-3 px-4 justify-start gap-3"
+          @click="settingsStore.setUseSolidBackground(false)"
+        >
+          <div class="sky-preview shrink-0" aria-hidden="true">
+            <span class="i-mdi-star-four-points sky-preview__main" />
+            <span class="sky-preview__dot sky-preview__dot--1" />
+            <span class="sky-preview__dot sky-preview__dot--2" />
+            <span class="sky-preview__dot sky-preview__dot--3" />
+          </div>
+          <div class="text-left">
+            <div class="text-sm font-medium">星空背景</div>
+            <div class="text-xs text-muted-foreground">带动态效果</div>
+          </div>
+        </Button>
+        <Button
+          :variant="settingsStore.useSolidBackground ? 'default' : 'ghost'"
+          class="flex-1 h-auto py-3 px-4 justify-start gap-3"
+          @click="settingsStore.setUseSolidBackground(true)"
+        >
+          <div class="background-preview background-preview--dark shrink-0" aria-hidden="true">
+            <span class="i-mdi-moon-waning-crescent text-lg text-white/85" />
+          </div>
+          <div class="text-left">
+            <div class="text-sm font-medium">纯色背景</div>
+            <div class="text-xs text-muted-foreground">沉浸纯净，更聚焦内容</div>
+          </div>
+        </Button>
+      </div>
+    </div>
+
+    <!-- 布局 -->
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">布局</h3>
+        <p class="settings-block__desc">设置主页每行显示多少张卡片（2-5）</p>
+      </div>
+      <div class="flex items-center gap-4 flex-wrap">
+        <div class="flex items-center gap-2 shrink-0">
+          <label class="text-sm text-muted-foreground shrink-0">每行卡片</label>
+          <Input
+            type="number"
+            min="2"
+            max="5"
+            step="1"
+            class="h-9 w-16"
+            :model-value="settingsStore.gridColumns"
+            @update:model-value="handleGridColumnsChange"
+          />
+        </div>
+        <div class="flex gap-1.5 shrink-0">
+          <Button
+            v-for="opt in gridColumnsOptions"
+            :key="opt"
+            size="sm"
+            :variant="settingsStore.gridColumns === opt ? 'default' : 'ghost'"
+            class="h-8 w-10 px-0 shrink-0"
+            @click="settingsStore.setGridColumns(opt)"
           >
-            <div 
-              class="w-16 h-16 rounded-full border-2 flex overflow-hidden transition-all"
-              :class="themeStore.currentTheme === 'coffee' ? 'border-primary ring-2 ring-primary/20 scale-105' : 'border-border group-hover:border-primary/50'"
-            >
-              <div class="w-1/2 h-full bg-[#392623]"></div>
-              <div class="w-1/2 h-full bg-[#FEE9DF]"></div>
-            </div>
-            <span 
-              class="text-sm font-medium transition-colors"
-              :class="themeStore.currentTheme === 'coffee' ? 'text-primary' : 'text-muted-foreground'"
-            >醇香拿铁</span>
+            {{ opt }}
+          </Button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3 mt-3">
+        <label class="text-sm text-muted-foreground shrink-0">主分组展示</label>
+        <div class="flex gap-2">
+          <Button
+            v-for="opt in groupLayoutOptions"
+            :key="opt.value"
+            size="sm"
+            :variant="settingsStore.groupTabsLayout === opt.value ? 'default' : 'ghost'"
+            class="h-8 px-3"
+            @click="settingsStore.setGroupTabsLayout(opt.value)"
+          >
+            {{ opt.label }}
+          </Button>
+        </div>
+      </div>
+      <p class="text-xs text-muted-foreground mt-2">默认自动换行，分组较多时可改为横向滚动。</p>
+    </div>
+
+    <!-- 窗口行为（uTools only） -->
+    <div v-if="isUTools" class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">窗口行为</h3>
+        <p class="settings-block__desc">控制窗口大小与打开方式</p>
+      </div>
+      <div class="space-y-4">
+        <div class="settings-row">
+          <label class="text-sm font-medium">窗口高度</label>
+          <div class="flex items-center gap-3 flex-1 max-w-[220px]">
+            <Slider
+              :model-value="[settingsStore.windowHeight]"
+              :min="460"
+              :max="900"
+              :step="10"
+              class="flex-1"
+              @update:model-value="(val: number[] | undefined) => {
+                if (val && val.length > 0) {
+                  settingsStore.setWindowHeight(val[0])
+                }
+              }"
+            />
+            <span class="text-sm w-10 text-right tabular-nums">{{ settingsStore.windowHeight }}</span>
           </div>
         </div>
-
-        <!-- 背景模式选择 -->
-        <div class="mt-6 pt-6 border-t border-border/50">
-          <div class="flex items-center justify-between mb-4">
-            <div class="flex flex-col gap-1">
-              <span class="text-sm font-medium">背景显示</span>
-              <span class="text-xs text-muted-foreground">
-                {{ isDark ? '当前为深色模式，请选择背景样式' : '当前为浅色模式，请选择背景样式' }}
-              </span>
-            </div>
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">独立窗口自动关闭</div>
+            <div class="text-xs text-muted-foreground">独立窗口打开书签后自动关闭当前窗口</div>
           </div>
-
-          <div v-if="isDark" class="flex gap-3">
-            <Button
-              :variant="!settingsStore.useSolidBackground ? 'default' : 'outline'"
-              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
-              @click="settingsStore.setUseSolidBackground(false)"
-            >
-              <div class="sky-preview shrink-0" aria-hidden="true">
-                <span class="i-mdi-star-four-points sky-preview__main" />
-                <span class="sky-preview__dot sky-preview__dot--1" />
-                <span class="sky-preview__dot sky-preview__dot--2" />
-                <span class="sky-preview__dot sky-preview__dot--3" />
-              </div>
-              <div class="text-left">
-                <div class="text-sm font-medium">星空背景</div>
-                <div class="text-xs text-muted-foreground">带动态效果</div>
-              </div>
-            </Button>
-            <Button
-              :variant="settingsStore.useSolidBackground ? 'default' : 'outline'"
-              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
-              @click="settingsStore.setUseSolidBackground(true)"
-            >
-              <div class="w-10 h-10 rounded-lg bg-[#2F3133] border border-white/10 shrink-0" />
-              <div class="text-left">
-                <div class="text-sm font-medium">纯色背景</div>
-                <div class="text-xs text-muted-foreground">深灰纯色 #2F3133</div>
-              </div>
-            </Button>
-          </div>
-
-          <div v-else class="flex gap-3">
-            <Button
-              :variant="settingsStore.lightBackgroundStyle === 'white' ? 'default' : 'outline'"
-              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
-              @click="settingsStore.setLightBackgroundStyle('white')"
-            >
-              <div class="w-10 h-10 rounded-lg bg-white border border-zinc-200 shrink-0" />
-              <div class="text-left">
-                <div class="text-sm font-medium">白色背景</div>
-                <div class="text-xs text-muted-foreground">清爽纯白 #FFFFFF</div>
-              </div>
-            </Button>
-            <Button
-              :variant="settingsStore.lightBackgroundStyle === 'utools' ? 'default' : 'outline'"
-              class="flex-1 h-auto py-3 px-4 justify-start gap-3"
-              @click="settingsStore.setLightBackgroundStyle('utools')"
-            >
-              <div class="w-10 h-10 rounded-lg bg-[#F4F4F4] border border-zinc-300 shrink-0" />
-              <div class="text-left">
-                <div class="text-sm font-medium">浅灰背景</div>
-                <div class="text-xs text-muted-foreground">接近 uTools 默认 #F4F4F4</div>
-              </div>
-            </Button>
-          </div>
+          <Switch
+            :model-value="settingsStore.autoCloseWindow"
+            aria-label="独立窗口自动关闭"
+            @update:model-value="(checked: boolean) => settingsStore.setAutoCloseWindow(checked)"
+          />
         </div>
-
-      </CardContent>
-    </Card>
-
-
-    <!-- Layout & Window -->
-    <div class="grid md:grid-cols-2 gap-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>布局</CardTitle>
-          <CardDescription>设置主页每行显示多少张卡片（2-5）</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div class="flex items-center gap-4 flex-wrap">
-            <div class="flex items-center gap-2 shrink-0">
-              <label class="text-sm text-muted-foreground shrink-0">每行卡片</label>
-              <Input
-                type="number"
-                min="2"
-                max="5"
-                step="1"
-                class="h-9 w-16"
-                :model-value="settingsStore.gridColumns"
-                @update:model-value="handleGridColumnsChange"
-              />
-            </div>
-            <div class="flex gap-1.5 shrink-0">
-              <Button
-                v-for="opt in gridColumnsOptions"
-                :key="opt"
-                size="sm"
-                :variant="settingsStore.gridColumns === opt ? 'default' : 'outline'"
-                class="h-8 w-10 px-0 shrink-0"
-                @click="settingsStore.setGridColumns(opt)"
-              >
-                {{ opt }}
-              </Button>
-            </div>
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
+            <div class="text-xs text-muted-foreground">不可用时会自动改用系统浏览器</div>
           </div>
+          <Switch
+            :model-value="settingsStore.preferUtoolsBrowser"
+            aria-label="优先使用 uTools 内置浏览器"
+            @update:model-value="(checked: boolean) => settingsStore.setPreferUtoolsBrowser(checked)"
+          />
+        </div>
+      </div>
+    </div>
 
-          <div class="flex items-center gap-3 max-w-md mt-4">
-            <label class="text-sm text-muted-foreground shrink-0">主分组展示</label>
-            <div class="flex gap-2">
-              <Button
-                v-for="opt in groupLayoutOptions"
-                :key="opt.value"
-                size="sm"
-                :variant="settingsStore.groupTabsLayout === opt.value ? 'default' : 'outline'"
-                class="h-8 px-3"
-                @click="settingsStore.setGroupTabsLayout(opt.value)"
-              >
-                {{ opt.label }}
-              </Button>
-            </div>
+    <!-- 搜索 -->
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">搜索</h3>
+        <p class="settings-block__desc">控制搜索页在无操作时的自动关闭时间</p>
+      </div>
+      <div class="flex items-center gap-3">
+        <label class="text-sm text-muted-foreground shrink-0">无操作后自动关闭（秒）</label>
+        <Input
+          type="number"
+          min="0"
+          step="1"
+          inputmode="numeric"
+          class="h-9 w-20"
+          placeholder="15"
+          :model-value="settingsStore.searchAutoExitSeconds"
+          @update:model-value="(val) => settingsStore.setSearchAutoExitSeconds(Number(val))"
+        />
+      </div>
+      <p class="text-xs text-muted-foreground mt-2">设为 0 表示保持常驻，不自动关闭。</p>
+    </div>
+
+    <!-- AI 功能（uTools only） -->
+    <div v-if="isUTools" class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">AI 功能</h3>
+        <p class="settings-block__desc">配置 AI 助手（需先在 uTools 中开启 AI）</p>
+      </div>
+      <div class="space-y-4">
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">使用自定义 AI 模型</div>
+            <div class="text-xs text-muted-foreground">默认优先 deepseek-v3.2，不可用时自动回退</div>
           </div>
-          <p class="text-xs text-muted-foreground mt-2">默认自动换行，分组较多时可改为横向滚动。</p>
-        </CardContent>
-      </Card>
-
-      <!-- Window Behavior Card (uTools only) -->
-      <Card v-if="isUTools">
-        <CardHeader>
-          <CardTitle>窗口行为</CardTitle>
-          <CardDescription>控制窗口大小与打开方式</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div class="flex flex-col gap-4">
-            <div class="flex items-center gap-3 justify-between">
-              <label class="text-sm font-medium">窗口高度</label>
-              <div class="flex items-center gap-2 flex-1 max-w-[200px]">
-                <Slider
-                  :model-value="[settingsStore.windowHeight]"
-                  :min="600"
-                  :max="1000"
-                  :step="10"
-                  class="flex-1"
-                  @update:model-value="(val: number[] | undefined) => {
-                    if (val && val.length > 0) {
-                      settingsStore.setWindowHeight(val[0])
-                    }
-                  }"
-                />
-                <span class="text-sm w-10 text-right">{{ settingsStore.windowHeight }}</span>
-              </div>
-            </div>
-            
-            <div class="flex items-center justify-between">
-              <div class="space-y-0.5">
-                <div class="text-sm font-medium">独立窗口自动关闭</div>
-                <div class="text-xs text-muted-foreground">独立窗口打开书签后自动关闭当前窗口</div>
-              </div>
-              <Switch
-                :model-value="settingsStore.autoCloseWindow"
-                aria-label="独立窗口自动关闭"
-                @update:model-value="(checked: boolean) => settingsStore.setAutoCloseWindow(checked)"
-              />
-            </div>
-            
-            <div class="flex items-center justify-between">
-              <div class="space-y-0.5">
-                <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
-                <div class="text-xs text-muted-foreground">不可用时会自动改用系统浏览器</div>
-              </div>
-              <Switch
-                :model-value="settingsStore.preferUtoolsBrowser"
-                aria-label="优先使用 uTools 内置浏览器"
-                @update:model-value="(checked: boolean) => settingsStore.setPreferUtoolsBrowser(checked)"
-              />
-            </div>
-
+          <Switch
+            :model-value="settingsStore.useCustomAiModel"
+            aria-label="使用自定义 AI 模型"
+            @update:model-value="(checked: boolean) => settingsStore.setUseCustomAiModel(checked)"
+          />
+        </div>
+        <div v-if="settingsStore.useCustomAiModel" class="space-y-2">
+          <div class="flex items-center gap-3">
+            <label class="text-sm text-muted-foreground shrink-0">模型</label>
+            <Input
+              class="h-9 flex-1"
+              :placeholder="DEFAULT_AI_MODEL"
+              :model-value="customAiModelValue"
+              @update:model-value="(val) => settingsStore.setCustomAiModel(String(val))"
+            />
           </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>搜索体验</CardTitle>
-          <CardDescription>控制搜索页在无操作时的自动关闭时间</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div class="flex flex-col gap-4 max-w-md">
-
-            <div class="flex items-center gap-3">
-              <label class="text-sm text-muted-foreground shrink-0">无操作后自动关闭（秒）</label>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                inputmode="numeric"
-                class="h-9 w-20"
-                placeholder="15"
-                :model-value="settingsStore.searchAutoExitSeconds"
-                @update:model-value="(val) => settingsStore.setSearchAutoExitSeconds(Number(val))"
-              />
-            </div>
-            <p class="text-xs text-muted-foreground">设为 0 表示保持常驻，不自动关闭。</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <!-- AI Settings Card (uTools only) -->
-      <Card v-if="isUTools">
-        <CardHeader>
-          <CardTitle>AI 功能</CardTitle>
-          <CardDescription>配置 AI 助手（需先在 uTools 中开启 AI）</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div class="flex flex-col gap-4">
-            <div class="flex items-center justify-between">
-              <div class="space-y-0.5">
-                <div class="text-sm font-medium">使用自定义 AI 模型</div>
-                <div class="text-xs text-muted-foreground">默认优先 deepseek-v3.2，不可用时自动回退</div>
-              </div>
-              <Switch
-                :model-value="settingsStore.useCustomAiModel"
-                aria-label="使用自定义 AI 模型"
-                @update:model-value="(checked: boolean) => settingsStore.setUseCustomAiModel(checked)"
-              />
-            </div>
-            
-            <div v-if="settingsStore.useCustomAiModel" class="flex items-center gap-3">
-              <label class="text-sm text-muted-foreground shrink-0">模型</label>
-              <Input
-                class="h-9 flex-1"
-                placeholder="例如：deepseek-v3.2"
-                :model-value="settingsStore.customAiModel"
-                @update:model-value="(val) => settingsStore.setCustomAiModel(String(val))"
-              />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          <p class="text-xs text-muted-foreground">
+            默认已填 {{ DEFAULT_AI_MODEL }}。如果提示模型不可用，请检查模型名是否正确，或关闭自定义模型改用默认配置。
+          </p>
+        </div>
+      </div>
     </div>
 
   </div>
 </template>
+
+<style scoped>
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.background-preview {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.background-preview--dark {
+  background: linear-gradient(180deg, #3a3d41 0%, #2f3133 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.background-preview--white {
+  background: linear-gradient(180deg, #ffffff 0%, #f6f7f8 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.8);
+}
+
+.background-preview--soft {
+  background: linear-gradient(180deg, #f4f4f4 0%, #ececec 100%);
+}
+</style>
 
 <style scoped>
 .sky-preview {
@@ -361,85 +316,21 @@ const handleGridColumnsChange = (val: string | number) => {
   animation: sky-dot 2.2s ease-in-out infinite;
 }
 
-.sky-preview__dot--1 {
-  top: 9px;
-  right: 8px;
-  animation-delay: 0.2s;
-}
-
-.sky-preview__dot--2 {
-  top: 19px;
-  left: 7px;
-  animation-delay: 0.6s;
-}
-
-.sky-preview__dot--3 {
-  top: 22px;
-  right: 12px;
-  animation-delay: 1s;
-}
+.sky-preview__dot--1 { top: 9px; right: 8px; animation-delay: 0.2s; }
+.sky-preview__dot--2 { top: 19px; left: 7px; animation-delay: 0.6s; }
+.sky-preview__dot--3 { top: 22px; right: 12px; animation-delay: 1s; }
 
 @keyframes sky-twinkle {
   0%, 100% { opacity: 0.62; transform: scale(0.9) rotate(0deg); }
   50% { opacity: 1; transform: scale(1.08) rotate(8deg); }
 }
-
 @keyframes sky-dot {
   0%, 100% { opacity: 0.35; transform: scale(0.9); }
   50% { opacity: 0.95; transform: scale(1.15); }
 }
-
 @keyframes sky-meteor {
   0%, 55%, 100% { opacity: 0; transform: translate(-18px, -8px) rotate(-18deg); }
   68% { opacity: 0.85; }
   82% { opacity: 0; transform: translate(28px, 20px) rotate(-18deg); }
-}
-
-/* 波纹动画 */
-@keyframes ripple {
-  0% {
-    box-shadow: 
-      0 0 0 0 rgba(255, 255, 255, 0.4),
-      0 0 0 0 rgba(255, 255, 255, 0.3),
-      0 0 0 0 rgba(255, 255, 255, 0.2);
-  }
-  100% {
-    box-shadow: 
-      0 0 0 10px rgba(255, 255, 255, 0),
-      0 0 0 20px rgba(255, 255, 255, 0),
-      0 0 0 30px rgba(255, 255, 255, 0);
-  }
-}
-
-.theme-ripple {
-  animation: ripple 3s ease-out infinite;
-}
-
-.theme-ripple.paused {
-  animation-play-state: paused;
-}
-
-/* Switch 淡入淡出 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-  transform: translateY(-50%) translateX(-8px);
-}
-
-/* 居中开关缩放动画 */
-.fade-center-enter-active,
-.fade-center-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.fade-center-enter-from,
-.fade-center-leave-to {
-  opacity: 0;
-  transform: scale(0.8);
 }
 </style>

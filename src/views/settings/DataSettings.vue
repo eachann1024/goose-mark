@@ -448,15 +448,14 @@ const clearAllBookmarks = () => {
 </script>
 
 <template>
-  <div class="grid gap-6">
-    <Card>
-      <CardHeader class="pb-3">
-        <CardTitle class="text-base">导入与备份</CardTitle>
-        <CardDescription>导出当前书签，或从备份文件恢复数据</CardDescription>
-      </CardHeader>
-      <CardContent class="space-y-4">
+  <div class="flex flex-col gap-3">
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">导入与备份</h3>
+        <p class="settings-block__desc">导出当前书签，或从备份文件恢复数据</p>
+      </div>
         <div class="flex gap-3">
-          <Button class="flex-1" variant="secondary" @click="exportData">
+          <Button class="flex-1" variant="outline" @click="exportData">
             <span class="i-mdi-export mr-2" />
             导出备份
           </Button>
@@ -477,7 +476,7 @@ const clearAllBookmarks = () => {
         </p>
         
         <!-- Debug Tools -->
-        <div class="border-t border-border pt-4 mt-4">
+        <div class="mt-3 pt-3" style="border-top: 1px solid hsl(var(--border) / 0.4);">
           <Button
             variant="ghost"
             class="w-full h-auto py-0 px-0 flex items-center justify-between text-xs text-muted-foreground mb-2 hover:text-foreground hover:bg-transparent"
@@ -500,8 +499,7 @@ const clearAllBookmarks = () => {
             </Button>
           </div>
         </div>
-      </CardContent>
-    </Card>
+    </div>
 
     <!-- Import Confirmation Dialog -->
     <Dialog :open="showImportConfirm" @update:open="v => !v && cancelImport()">
@@ -529,11 +527,11 @@ const clearAllBookmarks = () => {
             </div>
             <div class="flex items-center justify-between" v-if="pendingImportSkipped > 0">
               <span class="text-muted-foreground">将忽略</span>
-              <span class="font-medium text-amber-500">{{ pendingImportSkipped }} 条无效数据</span>
+              <span class="font-medium text-foreground">{{ pendingImportSkipped }} 条无效数据</span>
             </div>
           </div>
 
-          <div v-if="pendingImportWarnings.length > 0" class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-300">
+          <div v-if="pendingImportWarnings.length > 0" class="rounded-lg border border-input bg-muted/35 p-3 text-xs text-muted-foreground">
             <div class="font-medium mb-1">注意事项</div>
             <div class="space-y-1 max-h-24 overflow-y-auto custom-scroll">
               <p v-for="warning in pendingImportWarnings" :key="warning">{{ warning }}</p>
@@ -545,28 +543,28 @@ const clearAllBookmarks = () => {
             <RadioGroup v-model="importMode" class="grid gap-3">
               <label
                 class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left cursor-pointer"
-                :class="importMode === 'merge' ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-muted/50'"
+                :class="importMode === 'merge' ? 'border-foreground/10 bg-muted text-foreground' : 'border-border hover:bg-muted/50'"
               >
                 <RadioGroupItem
                   value="merge"
-                  :class="importMode === 'merge' ? 'border-primary-foreground text-primary-foreground' : ''"
+                  :class="importMode === 'merge' ? 'border-foreground bg-foreground text-background' : ''"
                 />
                 <div class="space-y-1">
                   <div class="font-medium text-sm">仅新增（推荐）</div>
-                  <div class="text-xs" :class="importMode === 'merge' ? 'text-primary-foreground/80' : 'text-muted-foreground'">保留现有数据，只补充新分组和新书签</div>
+                  <div class="text-xs text-muted-foreground">保留现有数据，只补充新分组和新书签</div>
                 </div>
               </label>
               <label
                 class="flex items-center gap-3 p-3 rounded-lg border transition-colors text-left cursor-pointer"
-                :class="importMode === 'overwrite' ? 'border-primary bg-primary text-primary-foreground' : 'border-border hover:bg-muted/50'"
+                :class="importMode === 'overwrite' ? 'border-foreground/10 bg-muted text-foreground' : 'border-border hover:bg-muted/50'"
               >
                 <RadioGroupItem
                   value="overwrite"
-                  :class="importMode === 'overwrite' ? 'border-primary-foreground text-primary-foreground' : ''"
+                  :class="importMode === 'overwrite' ? 'border-foreground bg-foreground text-background' : ''"
                 />
                 <div class="space-y-1">
                   <div class="font-medium text-sm">完全替换</div>
-                  <div class="text-xs" :class="importMode === 'overwrite' ? 'text-primary-foreground/80' : 'text-amber-500'">清空现有数据，并使用备份内容替换</div>
+                  <div class="text-xs text-muted-foreground">清空现有数据，并使用备份内容替换</div>
                 </div>
               </label>
             </RadioGroup>
@@ -588,7 +586,7 @@ const clearAllBookmarks = () => {
       <DialogContent class="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2">
-            <span class="i-mdi-file-code text-primary" />
+            <span class="i-mdi-file-code text-muted-foreground" />
             导入浏览器书签（HTML）
           </DialogTitle>
           <DialogDescription>
@@ -618,13 +616,13 @@ const clearAllBookmarks = () => {
                 v-for="folder in htmlParseResult.folders"
                 :key="folder.name"
                 class="flex items-center gap-3 p-2 rounded-lg border transition-all cursor-pointer hover:bg-muted/50"
-                :class="selectedHtmlFolders.has(folder.name) ? 'border-primary bg-primary/5' : 'border-border'"
+                :class="selectedHtmlFolders.has(folder.name) ? 'border-foreground/10 bg-muted/50' : 'border-border'"
                 @click="toggleHtmlFolder(folder.name)"
               >
                 <!-- 使用手动实现的 Checkbox 样式，确保在所有环境下状态同步且可靠 -->
                 <div 
-                  class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-primary transition-colors shadow-sm"
-                  :class="selectedHtmlFolders.has(folder.name) ? 'bg-primary text-primary-foreground' : 'bg-transparent'"
+                  class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-input bg-background transition-colors shadow-sm"
+                  :class="selectedHtmlFolders.has(folder.name) ? 'border-foreground bg-foreground text-background' : ''"
                 >
                   <span v-if="selectedHtmlFolders.has(folder.name)" class="i-mdi-check text-[12px] font-bold" />
                 </div>

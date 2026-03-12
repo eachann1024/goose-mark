@@ -124,7 +124,7 @@ const handleGroupMouseEnter = (group: Group) => {
             <span class="i-mdi-theme-light-dark text-lg" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent><p>切换主题</p></TooltipContent>
+        <TooltipContent><p>切换深浅模式</p></TooltipContent>
       </Tooltip>
 
       <div class="h-6 w-px bg-border mx-2"></div>
