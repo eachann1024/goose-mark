@@ -82,11 +82,26 @@ type FlatSubEntry = {
 
 type MirrorPlatformKey = 'mac' | 'windows' | 'linux' | 'unknown'
 type DeviceMirrorDirectoryPreferences = Partial<Record<MirrorPlatformKey, string>>
+type MirrorDirectoryAction = 'overwrite' | 'read'
+type MirrorDirectoryInspectionResult = {
+  directoryPath: string
+  filePath: string
+  hasExistingFile: boolean
+  canReadExistingFile: boolean
+  invalidReason?: string
+}
+type MirrorDirectoryActivationResult = {
+  ok: boolean
+  filePath: string
+  backupPath?: string
+  reason?: string
+}
 
 const MIRROR_SCHEMA_VERSION = 'goose-marks.local-data.v1'
 const MIRROR_DIR_NAME = 'goose-marks-sync'
 const MIRROR_FILE_NAME = 'snapshot.json'
 const MIRROR_TMP_FILE_NAME = 'snapshot.tmp'
+const MIRROR_BACKUP_SUFFIX = 'bak'
 const MIRROR_FALLBACK_HOME_DIR = '.goose-marks'
 const WRITE_DEBOUNCE_MS = 500
 const EXTERNAL_WATCH_INTERVAL_MS = 1000
@@ -858,6 +873,97 @@ const joinPathLike = (base: string, file: string): string => {
   return `${cleanBase}/${file}`
 }
 
+const buildBackupCandidatePath = (filePath: string, index: number) => {
+  const suffix = index <= 0 ? MIRROR_BACKUP_SUFFIX : `${MIRROR_BACKUP_SUFFIX}${index}`
+  return `${filePath}.${suffix}`
+}
+
+const resolveMirrorFilePathFromDirectory = (directoryPath: string) => {
+  const normalizedPath = String(directoryPath || '').trim()
+  if (!normalizedPath) return ''
+  return joinPathLike(normalizedPath, MIRROR_FILE_NAME)
+}
+
+const readMirrorSnapshotFromFilePath = (filePath: string): MirrorPayload | null => {
+  const fs = getNodeModule<NodeLikeFs>('fs')
+  const normalizedPath = String(filePath || '').trim()
+  if (!fs || !normalizedPath || !fs.existsSync(normalizedPath)) return null
+
+  try {
+    const raw = fs.readFileSync(normalizedPath, 'utf-8')
+    return JSON.parse(raw) as MirrorPayload
+  } catch (error) {
+    console.warn('[LocalDataMirror] 读取或解析指定快照失败:', error)
+    return null
+  }
+}
+
+const inspectMirrorDirectory = (directoryPath: string): MirrorDirectoryInspectionResult => {
+  const normalizedPath = String(directoryPath || '').trim()
+  const filePath = resolveMirrorFilePathFromDirectory(normalizedPath)
+  const fs = getNodeModule<NodeLikeFs>('fs')
+
+  if (!normalizedPath || !filePath || !fs || normalizedPath.startsWith('browser://')) {
+    return {
+      directoryPath: normalizedPath,
+      filePath,
+      hasExistingFile: false,
+      canReadExistingFile: false
+    }
+  }
+
+  if (!fs.existsSync(filePath)) {
+    return {
+      directoryPath: normalizedPath,
+      filePath,
+      hasExistingFile: false,
+      canReadExistingFile: false
+    }
+  }
+
+  const payload = readMirrorSnapshotFromFilePath(filePath)
+  const validation = validateMirrorSnapshot(payload)
+
+  return {
+    directoryPath: normalizedPath,
+    filePath,
+    hasExistingFile: true,
+    canReadExistingFile: !!payload && validation.ok,
+    invalidReason: validation.ok ? undefined : validation.reason
+  }
+}
+
+const backupExistingMirrorFile = (filePath: string): MirrorDirectoryActivationResult => {
+  const fs = getNodeModule<NodeLikeFs>('fs')
+  const normalizedPath = String(filePath || '').trim()
+
+  if (!normalizedPath) return { ok: false, filePath: '', reason: 'invalid_file_path' }
+  if (!fs || !fs.existsSync(normalizedPath)) return { ok: true, filePath: normalizedPath }
+
+  let nextBackupPath = buildBackupCandidatePath(normalizedPath, 0)
+  let backupIndex = 1
+  while (fs.existsSync(nextBackupPath)) {
+    nextBackupPath = buildBackupCandidatePath(normalizedPath, backupIndex)
+    backupIndex += 1
+  }
+
+  try {
+    fs.renameSync(normalizedPath, nextBackupPath)
+    return {
+      ok: true,
+      filePath: normalizedPath,
+      backupPath: nextBackupPath
+    }
+  } catch (error) {
+    console.warn('[LocalDataMirror] 备份旧快照失败，已取消本次覆盖:', error)
+    return {
+      ok: false,
+      filePath: normalizedPath,
+      reason: 'backup_failed'
+    }
+  }
+}
+
 const writeToPickedWebDirectory = async (json: string) => {
   if (!webPickedDirectoryHandle?.getFileHandle) return
   try {
@@ -1184,7 +1290,7 @@ export function useLocalDataMirror() {
     if (openDialog) {
       try {
         const paths = await openDialog({
-          title: '选择本地快照保存文件夹',
+          title: '选择同步文件夹',
           properties: ['openDirectory']
         })
         const first = Array.isArray(paths) ? paths[0] : undefined
@@ -1208,6 +1314,48 @@ export function useLocalDataMirror() {
     } catch (error) {
       console.warn('[LocalDataMirror] 选择目录失败:', error)
       return null
+    }
+  }
+
+  const activateMirrorDirectory = (directoryPath: string, action: MirrorDirectoryAction): MirrorDirectoryActivationResult => {
+    const normalizedPath = String(directoryPath || '').trim()
+    if (!normalizedPath) {
+      return {
+        ok: false,
+        filePath: '',
+        reason: 'invalid_directory_path'
+      }
+    }
+
+    const inspection = inspectMirrorDirectory(normalizedPath)
+    if (action === 'read' && inspection.hasExistingFile && !inspection.canReadExistingFile) {
+      return {
+        ok: false,
+        filePath: inspection.filePath,
+        reason: inspection.invalidReason || 'invalid_snapshot'
+      }
+    }
+
+    let backupPath = ''
+    if (action === 'overwrite' && inspection.hasExistingFile) {
+      const backupResult = backupExistingMirrorFile(inspection.filePath)
+      if (!backupResult.ok) {
+        return backupResult
+      }
+      backupPath = String(backupResult.backupPath || '')
+    }
+
+    setMirrorDirectoryForDevice(normalizedPath)
+    start()
+
+    if (action === 'overwrite' || !inspection.hasExistingFile) {
+      syncNow()
+    }
+
+    return {
+      ok: true,
+      filePath: inspection.filePath || resolveMirrorFilePathFromDirectory(normalizedPath),
+      backupPath
     }
   }
 
@@ -1341,6 +1489,8 @@ export function useLocalDataMirror() {
     canUseLocalMirror,
     canPickMirrorDirectory,
     pickMirrorDirectory,
+    inspectMirrorDirectory,
+    activateMirrorDirectory,
     hydrateMirrorDirectoryForDevice,
     isMirrorDirectoryConfiguredOnDevice,
     shouldPromptMirrorDirectorySelection,

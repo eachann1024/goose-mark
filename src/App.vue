@@ -67,15 +67,20 @@ const {
 } = useUTools()
 
 const {
-  start: startLocalMirror,
-  syncNow: syncMirrorNow,
   canUseLocalMirror,
   canPickMirrorDirectory,
   pickMirrorDirectory,
-  setMirrorDirectoryForDevice,
+  inspectMirrorDirectory,
+  activateMirrorDirectory,
   hydrateMirrorDirectoryForDevice,
   shouldPromptMirrorDirectorySelection
 } = useLocalDataMirror()
+
+type PendingMirrorDecision = {
+  directoryPath: string
+  filePath: string
+  canRead: boolean
+}
 
 const {
   activeNotice: activeFeatureNotice,
@@ -90,11 +95,55 @@ const {
 } = useFeatureNoticeCenter()
 
 const settingsActiveTab = ref<'general' | 'categories' | 'tools' | 'data' | 'local-mode' | 'about'>('general')
+const showMirrorDecisionDialog = ref(false)
+const mirrorDecisionLoading = ref(false)
+const pendingMirrorDecision = ref<PendingMirrorDecision | null>(null)
 
 const openLocalModeSettings = () => {
   tab.value = 'settings'
   settingsActiveTab.value = 'local-mode'
   markLocalModeSettingsVisited()
+}
+
+const closeMirrorDecisionDialog = (force = false) => {
+  if (mirrorDecisionLoading.value && !force) return
+  showMirrorDecisionDialog.value = false
+  pendingMirrorDecision.value = null
+}
+
+const handleMirrorDirectoryActivation = (directoryPath: string, action: 'overwrite' | 'read') => {
+  const result = activateMirrorDirectory(directoryPath, action)
+  if (!result.ok) {
+    showToast({
+      title: action === 'read' ? '读取失败' : '覆盖失败',
+      description: action === 'read' ? '现有 snapshot.json 无法读取，请改用覆盖。' : '旧文件备份失败，未覆盖原文件。',
+      variant: 'error'
+    })
+    return false
+  }
+
+  markDevicePathConfigured()
+  showToast({
+    title: action === 'read' ? '已读取现有快照' : '已设置同步文件夹',
+    description: action === 'overwrite' && result.backupPath
+      ? `已备份旧文件：${result.backupPath}`
+      : directoryPath,
+    variant: 'success'
+  })
+  return true
+}
+
+const confirmMirrorDecision = (action: 'overwrite' | 'read') => {
+  const pending = pendingMirrorDecision.value
+  if (!pending) return
+  mirrorDecisionLoading.value = true
+  try {
+    if (handleMirrorDirectoryActivation(pending.directoryPath, action)) {
+      closeMirrorDecisionDialog(true)
+    }
+  } finally {
+    mirrorDecisionLoading.value = false
+  }
 }
 
 const refreshLocalModePathNotice = (firstOpenOnly = false) => {
@@ -139,15 +188,18 @@ const handleFeatureNoticeView = async () => {
     return
   }
 
-  setMirrorDirectoryForDevice(selected)
-  startLocalMirror()
-  syncMirrorNow()
-  markDevicePathConfigured()
-  showToast({
-    title: '已为当前设备设置浏览器拓展路径',
-    description: selected,
-    variant: 'success'
-  })
+  const inspection = inspectMirrorDirectory(selected)
+  if (inspection.hasExistingFile) {
+    pendingMirrorDecision.value = {
+      directoryPath: selected,
+      filePath: inspection.filePath,
+      canRead: inspection.canReadExistingFile
+    }
+    showMirrorDecisionDialog.value = true
+    return
+  }
+
+  handleMirrorDirectoryActivation(selected, 'overwrite')
 }
 
 const handleFeatureNoticeIgnore = () => {
