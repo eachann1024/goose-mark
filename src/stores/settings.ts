@@ -1,5 +1,6 @@
 import { utoolsStorage } from '@/lib/utoolsStorage'
 import { defineStore } from 'pinia'
+import { DEFAULT_AI_MODEL } from '@/constants/ai'
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -11,8 +12,8 @@ export const useSettingsStore = defineStore('settings', {
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     useCustomAiModel: false,
-    customAiModel: '',
-    windowHeight: 700,
+    customAiModel: DEFAULT_AI_MODEL,
+    windowHeight: 560,
     // 首次用户引导是否已关闭
     onboardingDismissed: false,
     // 彩蛋：深色模式使用星空背景图（默认开启）
@@ -57,9 +58,12 @@ export const useSettingsStore = defineStore('settings', {
     },
     setUseCustomAiModel(value: boolean) {
       this.useCustomAiModel = !!value
+      if (this.useCustomAiModel && !this.customAiModel.trim()) {
+        this.customAiModel = DEFAULT_AI_MODEL
+      }
     },
     setCustomAiModel(value: string) {
-      this.customAiModel = String(value || '')
+      this.customAiModel = String(value || '').trim()
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0

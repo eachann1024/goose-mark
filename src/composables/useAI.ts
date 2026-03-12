@@ -1,10 +1,29 @@
 
 import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
+import { DEFAULT_AI_MODEL } from '@/constants/ai'
 
-const DEFAULT_AI_MODEL = 'deepseek-v3.2'
 const PRODUCT_LOCAL_MODE_CONTEXT = '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
+
+type ActiveModelInfo = {
+  model: string
+  isCustom: boolean
+}
+
+class AiRequestError extends Error {
+  override cause: unknown
+  modelInfo: ActiveModelInfo
+  fallbackAttempted: boolean
+
+  constructor(cause: unknown, modelInfo: ActiveModelInfo, fallbackAttempted = false) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.name = 'AiRequestError'
+    this.cause = cause
+    this.modelInfo = modelInfo
+    this.fallbackAttempted = fallbackAttempted
+  }
+}
 
 export interface CategorySuggestion {
   groupId: string
@@ -45,7 +64,20 @@ export function useAI() {
     return MODEL_ERROR_KEYWORDS.some(key => lower.includes(key.toLowerCase()))
   }
 
-  const resolveErrorMessage = (error: unknown, action: '生成' | '分类') => {
+  const getActiveModelInfo = (): ActiveModelInfo => {
+    const customModel = settingsStore.customAiModel.trim()
+    if (settingsStore.useCustomAiModel && customModel) {
+      return { model: customModel, isCustom: true }
+    }
+    return { model: DEFAULT_AI_MODEL, isCustom: false }
+  }
+
+  const resolveErrorMessage = (
+    error: unknown,
+    action: '生成' | '分类',
+    modelInfo: ActiveModelInfo,
+    fallbackAttempted = false
+  ) => {
     const errMsg = error instanceof Error ? error.message : String(error)
     if (errMsg.includes('余额') || errMsg.includes('balance') || errMsg.includes('quota')) {
       return 'AI 余额不足，请在 uTools 中充值'
@@ -54,25 +86,37 @@ export function useAI() {
       return 'AI 服务连接失败，请检查网络'
     }
     if (isModelError(errMsg)) {
-      return '当前 AI 模型不可用，请在设置中切换自定义模型'
+      if (modelInfo.isCustom) {
+        return `自定义模型“${modelInfo.model}”不可用，请检查模型名是否填写正确，或关闭“使用自定义 AI 模型”后重试`
+      }
+      if (fallbackAttempted) {
+        return `默认模型 ${DEFAULT_AI_MODEL} 当前不可用，自动回退后仍失败，请检查 uTools AI 配置后重试`
+      }
+      return `默认模型 ${DEFAULT_AI_MODEL} 当前不可用，请稍后重试`
+    }
+    if (modelInfo.isCustom) {
+      return `AI ${action}失败，请稍后重试；若持续失败，请检查自定义模型“${modelInfo.model}”是否可用`
     }
     return `AI ${action}失败，请稍后重试`
   }
 
   const callAi = async (messages: Array<{ role: 'system' | 'user'; content: string }>) => {
     const aiCaller = window.utools!.ai!
-    const hasCustomModel = settingsStore.useCustomAiModel && settingsStore.customAiModel.trim()
-    const model = hasCustomModel ? settingsStore.customAiModel.trim() : DEFAULT_AI_MODEL
+    const modelInfo = getActiveModelInfo()
     try {
-      return await aiCaller({ model, messages })
+      return await aiCaller({ model: modelInfo.model, messages })
     } catch (e) {
       const errMsg = e instanceof Error ? e.message : String(e)
       // 仅默认模型允许自动回退，避免覆盖用户显式设置的模型
-      if (!hasCustomModel && isModelError(errMsg)) {
-        console.warn(`[AI] 模型 ${model} 不可用，回退到 uTools 默认模型`)
-        return await aiCaller({ messages })
+      if (!modelInfo.isCustom && isModelError(errMsg)) {
+        console.warn(`[AI] 模型 ${modelInfo.model} 不可用，回退到 uTools 默认模型`)
+        try {
+          return await aiCaller({ messages })
+        } catch (fallbackError) {
+          throw new AiRequestError(fallbackError, modelInfo, true)
+        }
       }
-      throw e
+      throw new AiRequestError(e, modelInfo)
     }
   }
 
@@ -153,7 +197,10 @@ export function useAI() {
       }
     } catch (e) {
       console.error('[AI] 调用失败:', e)
-      aiError.value = resolveErrorMessage(e, '生成')
+      const sourceError = e instanceof AiRequestError ? e.cause : e
+      const modelInfo = e instanceof AiRequestError ? e.modelInfo : getActiveModelInfo()
+      const fallbackAttempted = e instanceof AiRequestError ? e.fallbackAttempted : false
+      aiError.value = resolveErrorMessage(sourceError, '生成', modelInfo, fallbackAttempted)
       return null
     } finally {
       isGenerating.value = false
@@ -276,7 +323,10 @@ ${avoidCurrentTip}
       }
     } catch (e) {
       console.error('[AI] 分类建议失败:', e)
-      aiError.value = resolveErrorMessage(e, '分类')
+      const sourceError = e instanceof AiRequestError ? e.cause : e
+      const modelInfo = e instanceof AiRequestError ? e.modelInfo : getActiveModelInfo()
+      const fallbackAttempted = e instanceof AiRequestError ? e.fallbackAttempted : false
+      aiError.value = resolveErrorMessage(sourceError, '分类', modelInfo, fallbackAttempted)
       return null
     } finally {
       isSuggestingCategory.value = false
