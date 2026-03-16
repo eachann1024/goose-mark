@@ -30,8 +30,14 @@ interface UToolsApi {
   removeSubInput(): boolean
   onPluginEnter(callback: (params: { code: string; type: string; payload: any }) => void): void
   shellOpenExternal(url: string): void
-  setFeature?(feature: { code: string; explain: string; cmds: Array<string | Record<string, unknown>> }): void
-  getFeatures?(): Array<{ code: string; explain?: string; cmds?: unknown[] }>
+  setFeature?(feature: {
+    code: string
+    explain: string
+    cmds: Array<string | Record<string, unknown>>
+    mainHide?: boolean
+    mainPush?: boolean
+  }): void
+  getFeatures?(): Array<{ code: string; explain?: string; cmds?: unknown[]; mainHide?: boolean; mainPush?: boolean }>
   removeFeature?(code: string): boolean
   // uTools AI API - 需要用户在 uTools 中配置 AI 服务
   ai?(option: UToolsAiOption, streamCallback?: (chunk: { text?: string; content?: string }) => void): Promise<string | { text?: string; content?: string }>

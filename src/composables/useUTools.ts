@@ -6,7 +6,13 @@ const FEATURE_PREFIX = 'bm_tpl:'
 
 type OverCmd = { type: 'over'; label: string; minLength?: number; icon?: string }
 type FeatureCmd = string | OverCmd
-type UToolsFeature = { code: string; explain: string; cmds: FeatureCmd[]; icon?: string }
+type UToolsFeature = {
+  code: string
+  explain: string
+  cmds: FeatureCmd[]
+  icon?: string
+  mainHide?: boolean
+}
 
 const toSvgDataUrlFromText = (text: string): string => {
   const display = text.trim() ? text.trim().slice(0, 2).toUpperCase() : '•'
@@ -219,7 +225,8 @@ export function useUTools() {
       const feature: UToolsFeature = {
         code,
         explain,
-        cmds
+        cmds,
+        mainHide: false
       }
 
       const iconDataUrl = await getFeatureIcon(b)
