@@ -64,7 +64,7 @@ const onSave = async () => {
       class="sm:max-w-[480px] max-h-[88vh] overflow-hidden p-0 gap-0 bg-background border-0 shadow-2xl rounded-2xl flex flex-col"
     >
       <!-- Header -->
-      <div class="shrink-0 px-5 pt-5 pb-3 flex items-center justify-between border-b border-border/40 bg-background">
+      <div class="shrink-0 px-5 pt-5 pb-3 flex items-center justify-between bg-background">
         <DialogTitle class="text-base font-semibold flex items-center gap-2">
           <span class="i-mdi-card-text-outline text-primary text-lg" />
           {{ modalTitle }}
@@ -79,7 +79,7 @@ const onSave = async () => {
             <Input 
               v-model="draft.url" 
               placeholder="https://example.com 或 {query} 模板" 
-              class="h-10 bg-transparent font-mono text-sm placeholder:text-muted-foreground/60 pr-10 focus:bg-muted/20 transition-colors shadow-none border-0"
+              class="h-10 bg-muted/20 font-mono text-sm placeholder:text-muted-foreground/60 pr-10 focus:bg-muted/30 transition-colors shadow-none border-0 rounded-lg"
               auto-focus
             />
             <div class="absolute right-1 top-1">
@@ -88,7 +88,7 @@ const onSave = async () => {
                   <Button
                     variant="ghost"
                     size="icon"
-                    class="h-8 w-8 text-primary hover:bg-primary/10 transition-all"
+                    class="bookmark-form__ai-trigger h-8 w-8 text-primary transition-all"
                     :disabled="!draft.url || isGenerating || !isUTools"
                     @click="askAI()"
                   >
@@ -184,7 +184,7 @@ const onSave = async () => {
               v-if="isUTools"
               variant="ghost"
               size="sm"
-              class="h-6 text-[11px] gap-1 px-2 text-primary hover:text-primary hover:bg-primary/10 active:bg-primary/15"
+              class="bookmark-form__suggest-trigger h-6 text-[11px] gap-1 px-2 text-primary hover:text-primary"
               :disabled="!draft.url || isSuggestingCategory"
               @click="askCategorySuggestion"
             >
@@ -195,7 +195,7 @@ const onSave = async () => {
           </div>
           
           <Transition name="fade">
-            <div v-if="categorySuggestion" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/5">
+            <div v-if="categorySuggestion" class="bookmark-form__suggestion flex items-center gap-2 px-3 py-1.5 rounded-lg">
               <span class="i-mdi-lightbulb-on-outline text-primary text-base shrink-0" />
               <div class="flex-1 min-w-0">
                 <p class="text-[11px] font-medium text-foreground truncate">
@@ -260,13 +260,13 @@ const onSave = async () => {
       </div>
 
       <!-- Footer Buttons -->
-      <DialogFooter class="shrink-0 px-4 py-3 flex flex-row items-center justify-between sm:justify-between gap-2 border-t border-border/40 bg-background">
+      <DialogFooter class="shrink-0 px-4 py-3 flex flex-row items-center justify-between sm:justify-between gap-2 bg-background">
         <div class="flex-1">
           <Button 
             v-if="editingId"
             variant="ghost" 
             size="sm"
-            class="text-destructive hover:text-destructive hover:bg-destructive/10 px-2 h-8"
+            class="bookmark-form__delete-trigger text-destructive hover:text-destructive px-2 h-8"
             @click="requestDelete"
           >
             <span class="i-mdi-trash-can-outline mr-1 text-base" />
@@ -306,6 +306,23 @@ const onSave = async () => {
 </template>
 
 <style scoped>
+.bookmark-form__ai-trigger:hover,
+.bookmark-form__suggest-trigger:hover {
+  background-color: hsl(var(--primary) / 0.1);
+}
+
+.bookmark-form__suggest-trigger:active {
+  background-color: hsl(var(--primary) / 0.15);
+}
+
+.bookmark-form__suggestion {
+  background-color: hsl(var(--primary) / 0.05);
+}
+
+.bookmark-form__delete-trigger:hover {
+  background-color: hsl(var(--destructive) / 0.1);
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease, transform 0.2s ease;
