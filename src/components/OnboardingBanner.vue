@@ -93,10 +93,10 @@ const dismiss = () => {
   <Transition name="fade">
     <div 
       v-if="showOnboarding"
-      class="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 to-primary/10 p-5 mb-4"
+      class="onboarding-banner rounded-xl border p-5 mb-4"
     >
       <div class="flex items-start gap-4">
-        <div class="shrink-0 w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+        <div class="onboarding-banner__icon shrink-0 w-12 h-12 rounded-xl flex items-center justify-center">
           <span class="i-mdi-bookmark-plus text-2xl text-primary" />
         </div>
         
@@ -142,6 +142,19 @@ const dismiss = () => {
 </template>
 
 <style scoped>
+.onboarding-banner {
+  border-color: hsl(var(--primary) / 0.2);
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.05),
+    hsl(var(--primary) / 0.1)
+  );
+}
+
+.onboarding-banner__icon {
+  background-color: hsl(var(--primary) / 0.1);
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.3s ease, transform 0.3s ease;

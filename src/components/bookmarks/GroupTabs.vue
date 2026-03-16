@@ -80,8 +80,8 @@ const handleGroupMouseEnter = (group: Group) => {
           <Button
             variant="outline"
             size="sm"
-            class="h-9 rounded-full px-3 flex items-center gap-1"
-            :class="{ 'border-primary text-primary bg-primary/10': searching }"
+            class="group-action-btn h-9 rounded-full px-3 flex items-center gap-1"
+            :class="{ 'group-action-btn--searching': searching }"
             @click="emit('open-search')"
           >
             <span class="i-mdi-magnify text-lg" />
@@ -135,7 +135,7 @@ const handleGroupMouseEnter = (group: Group) => {
             variant="ghost"
             size="icon"
             class="w-7 h-7 text-muted-foreground hover:text-destructive transition-colors"
-            :class="{ 'bg-destructive/10 text-destructive': isTrashActive }"
+            :class="{ 'group-action-btn--danger-active text-destructive': isTrashActive }"
             @click="emit('select-trash')"
           >
             <span class="i-mdi-trash-can-outline text-lg" />
@@ -175,5 +175,15 @@ const handleGroupMouseEnter = (group: Group) => {
   background-color: hsl(var(--accent));
   border-color: hsl(var(--primary) / 0.3);
   box-shadow: 0 4px 10px hsl(var(--background) / 0.45);
+}
+
+.group-action-btn--searching {
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
+}
+
+.group-action-btn--danger-active {
+  background-color: hsl(var(--destructive) / 0.1);
 }
 </style>

@@ -270,8 +270,8 @@ watch(
         <Button 
           variant="ghost"
           size="sm"
-          class="relative rounded-full"
-          :class="activeTab === 'image' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
+          class="icon-selector-tab relative rounded-full"
+          :class="activeTab === 'image' ? 'icon-selector-tab--active' : 'text-muted-foreground'"
           @click="activeTab = 'image'"
         >
            图片图标
@@ -279,8 +279,8 @@ watch(
         <Button 
           variant="ghost"
           size="sm"
-          class="relative rounded-full"
-          :class="activeTab === 'text' ? 'text-primary bg-primary/10' : 'text-muted-foreground'"
+          class="icon-selector-tab relative rounded-full"
+          :class="activeTab === 'text' ? 'icon-selector-tab--active' : 'text-muted-foreground'"
           @click="activeTab = 'text'"
         >
            文字图标
@@ -443,4 +443,8 @@ watch(
 </template>
 
 <style scoped>
+.icon-selector-tab--active {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
+}
 </style>
