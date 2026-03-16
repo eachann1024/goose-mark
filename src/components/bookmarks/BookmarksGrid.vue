@@ -27,6 +27,7 @@ const props = defineProps<{
   showLocate?: boolean
   highlightedId?: string | null
   readonly?: boolean
+  selectionVariant?: 'default' | 'search'
 }>()
 
 const emit = defineEmits<{
@@ -210,6 +211,7 @@ watch(() => props.highlightedId, (id) => {
             :show-delete="showDelete"
             :show-locate="showLocate"
             :highlighted="highlightedId === bookmark.id"
+            :selection-variant="selectionVariant"
             :index="index"
             :grid-columns="columns"
             @remove="emit('remove', bookmark)"
@@ -226,7 +228,7 @@ watch(() => props.highlightedId, (id) => {
             <TooltipTrigger as-child>
               <Button
                 variant="outline"
-                class="group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-3 px-4 text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/10 transition-colors cursor-pointer w-full bg-transparent"
+                class="bookmark-add-card group relative flex flex-row items-center justify-center gap-2 rounded-xl border-dashed py-3 px-4 text-muted-foreground hover:border-primary hover:text-primary transition-colors cursor-pointer w-full bg-transparent"
                 :style="{ height: addButtonHeight }"
                 @click="(e: MouseEvent) => emit('add', e.currentTarget as HTMLElement)"
               >
@@ -304,5 +306,9 @@ watch(() => props.highlightedId, (id) => {
 /* 卡片容器动画 */
 .bookmark-card-wrapper {
   transition: transform 0.2s ease;
+}
+
+.bookmark-add-card:hover {
+  background-color: hsl(var(--primary) / 0.1);
 }
 </style>

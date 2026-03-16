@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Bookmark } from '@/types/bookmark'
+import SearchHintLine from '@/components/bookmarks/SearchHintLine.vue'
 
 const props = defineProps<{
   open: boolean
@@ -46,6 +47,16 @@ const focus = () => {
 const handleClose = () => emit('close')
 const handleKeydown = (e: KeyboardEvent) => emit('keydown', e)
 
+const emptyStateTitle = computed(() => {
+  if (props.storeSearch) return '未找到匹配结果'
+  return props.enableSubInput ? '在上方搜索框输入关键字' : '输入关键字开始搜索'
+})
+
+const emptyStateIconClass = computed(() => {
+  if (props.storeSearch) return 'i-mdi-text-search'
+  return 'i-mdi-magnify'
+})
+
 defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以防万一，但主要推荐使用 focus
 </script>
 
@@ -53,7 +64,7 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
   <Transition name="fade">
     <section
       v-if="open"
-      class="fixed inset-0 z-[2000] bg-background/95 backdrop-blur-md px-6 py-8 overflow-y-auto"
+      class="search-overlay fixed inset-0 z-[2000] backdrop-blur-md px-6 py-8 overflow-y-auto"
     >
       <div class="max-w-5xl mx-auto space-y-4">
         <div class="flex items-center gap-3">
@@ -61,13 +72,7 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
             <span class="i-mdi-arrow-left text-xl" />
           </Button>
           <template v-if="enableSubInput">
-            <div class="flex-1 h-12 flex items-center justify-center select-none">
-              <div class="flex items-center gap-2 text-base font-medium text-foreground/80 animate-pulse">
-                <span class="text-lg select-none">⬆️⬆️⬆️</span>
-                <span class="select-none"> 在上方搜索框输入 </span>
-                <span class="text-lg select-none">⬆️⬆️⬆️</span>
-              </div>
-            </div>
+            <div class="flex-1 h-12" />
           </template>
           <template v-else>
             <Input
@@ -82,24 +87,30 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
         </div>
         <div
           v-if="!storeSearch"
-          class="rounded-lg border border-dashed border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground"
+          class="py-10 text-center text-sm text-muted-foreground"
         >
-          <div>输入关键字开始搜索</div>
-          <div class="flex items-center gap-2 justify-center">
-            <span class="i-mdi-information-outline" />
-            <span>按 {{ enableSubInput ? 'Tab' : 'ESC' }} 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
+          <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/35 text-foreground/55">
+            <span :class="[emptyStateIconClass, 'text-4xl']" />
           </div>
+          <div class="text-base font-medium text-foreground/60 mb-2">{{ emptyStateTitle }}</div>
+          <SearchHintLine
+            :enable-sub-input="enableSubInput"
+            :search-auto-exit-text="searchAutoExitText"
+          />
         </div>
         <div
           v-else-if="activeBookmarks.length === 0"
-          class="rounded-lg border border-border bg-muted/30 p-6 text-center text-sm text-muted-foreground"
+          class="py-10 text-center text-sm text-muted-foreground"
         >
-          <div>未找到匹配结果</div>
-          <div class="space-y-1 text-[13px] text-muted-foreground flex flex-col gap-1 px-1 mt-3">
-            <div class="flex items-center gap-2 justify-center">
-              <span class="i-mdi-information-outline" />
-              <span>按 {{ enableSubInput ? 'Tab' : 'ESC' }} 退出；按 ↑ ↓ ← → 选择，回车打开；{{ searchAutoExitText }}</span>
-            </div>
+          <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-muted/35 text-foreground/55">
+            <span :class="[emptyStateIconClass, 'text-4xl']" />
+          </div>
+          <div class="text-base font-medium text-foreground/60 mb-2">{{ emptyStateTitle }}</div>
+          <div class="text-[13px] text-muted-foreground">
+            <SearchHintLine
+              :enable-sub-input="enableSubInput"
+              :search-auto-exit-text="searchAutoExitText"
+            />
           </div>
         </div>
         <BookmarksGrid
@@ -116,6 +127,7 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
           :show-edit="false"
           :show-delete="false"
           :show-locate="true"
+          selection-variant="search"
           @edit="(b, el) => emit('edit', b, el)"
           @open="emit('open', $event)"
           @contextmenu="(e, b) => emit('contextmenu', e, b)"
@@ -128,6 +140,10 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
 </template>
 
 <style scoped>
+.search-overlay {
+  background-color: hsl(var(--background) / 0.95);
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.2s ease;

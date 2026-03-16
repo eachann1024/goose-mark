@@ -14,6 +14,7 @@ const props = defineProps<{
   showDelete?: boolean;
   showLocate?: boolean;
   highlighted?: boolean;
+  selectionVariant?: 'default' | 'search';
 }>()
 const emit = defineEmits<{
   edit: [Bookmark, HTMLElement | undefined]
@@ -243,16 +244,22 @@ const copyUrl = async () => {
 }
 
 const canLocate = computed(() => props.showLocate ?? false)
+const selectedCardClass = computed(() => {
+  if (!props.selected) return ''
+  if (props.selectionVariant === 'search') {
+    return 'bookmark-card--selected-search'
+  }
+  return 'bookmark-card--selected'
+})
 </script>
 
 <template>
   <Card
     ref="cardEl"
-    class="relative group hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
-    :class="{
-      'border-primary ring-2 ring-primary/50 shadow-lg bg-primary/5': selected,
-      'dark:hover:border-primary/60 dark:hover:bg-primary/5': !selected
-    }"
+    class="bookmark-card relative group hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
+    :class="[
+      selected ? selectedCardClass : 'bookmark-card--hoverable'
+    ]"
     @click="openLink"
     @contextmenu.prevent="emit('contextmenu', $event)"
     @mouseenter="onCardEnter"
@@ -342,7 +349,7 @@ const canLocate = computed(() => props.showLocate ?? false)
         <!-- Locate Button -->
         <Tooltip :disable-hoverable-content="true">
           <TooltipTrigger as-child>
-            <Button size="icon" variant="ghost" class="h-7 w-7 rounded-lg hover:!bg-foreground/10 group/locate-btn" @click.stop="emit('locate', bookmark)">
+            <Button size="icon" variant="ghost" class="bookmark-card__locate-btn h-7 w-7 rounded-lg group/locate-btn" @click.stop="emit('locate', bookmark)">
               <span class="i-mdi-target text-xs transition-colors group-hover/locate-btn:text-primary" />
             </Button>
           </TooltipTrigger>
@@ -351,6 +358,33 @@ const canLocate = computed(() => props.showLocate ?? false)
     </div>
   </Card>
 </template>
+
+<style scoped>
+.bookmark-card--selected {
+  border-color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.05);
+  box-shadow:
+    0 12px 24px hsl(var(--foreground) / 0.08),
+    0 0 0 2px hsl(var(--primary) / 0.5);
+}
+
+.bookmark-card--selected-search {
+  border-color: hsl(var(--primary) / 0.25);
+  background-color: hsl(var(--card));
+  box-shadow:
+    0 12px 24px hsl(var(--foreground) / 0.08),
+    0 0 0 2px hsl(var(--primary) / 0.3);
+}
+
+.dark .bookmark-card--hoverable:hover {
+  border-color: hsl(var(--primary) / 0.6);
+  background-color: hsl(var(--primary) / 0.05);
+}
+
+.bookmark-card__locate-btn:hover {
+  background-color: hsl(var(--foreground) / 0.1) !important;
+}
+</style>
 
 <style scoped>
 @keyframes snake-border {
