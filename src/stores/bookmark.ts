@@ -529,6 +529,28 @@ export const useBookmarkStore = defineStore('bookmark', {
     setSearch(value: string) {
       this.search = typeof value === 'string' ? value : ''
     },
+    ensureValidSelection(preferredGroupId = this.activeGroupId, preferredSubGroupId = this.activeSubGroupId) {
+      if (!this.groups.length) {
+        this.activeGroupId = ''
+        this.activeSubGroupId = ''
+        return
+      }
+
+      const preferredGroup = this.groups.find(g => g.id === preferredGroupId)
+      const fallbackGroup = preferredGroup || this.groups.find(g => g.id !== TRASH_GROUP_ID) || this.groups[0]
+
+      if (!fallbackGroup) {
+        this.activeGroupId = ''
+        this.activeSubGroupId = ''
+        return
+      }
+
+      const preferredSub = fallbackGroup.children.find(c => c.id === preferredSubGroupId)
+      const fallbackSub = preferredSub || fallbackGroup.children[0]
+
+      this.activeGroupId = fallbackGroup.id
+      this.activeSubGroupId = fallbackSub?.id || ''
+    },
     selectGroup(groupId: string, subId?: string) {
       this.activeGroupId = groupId
       const group = this.groups.find(g => g.id === groupId)
@@ -1364,11 +1386,12 @@ export const useBookmarkStore = defineStore('bookmark', {
       return newGroup
     },
     loadFromSnapshot(data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly = false) {
+      const preferredGroupId = this.activeGroupId
+      const preferredSubGroupId = this.activeSubGroupId
       this.groups = data.groups
       this.bookmarks = data.bookmarks
       this.isReadOnly = readOnly
-      this.activeGroupId = this.groups[0]?.id ?? ''
-      this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
+      this.ensureValidSelection(preferredGroupId, preferredSubGroupId)
     },
 
     syncAllSharedEntities(updatedAt = Date.now()) {
@@ -1517,5 +1540,6 @@ export const useBookmarkStore = defineStore('bookmark', {
   },
   persist: {
     storage: utoolsStorage,
+    pick: ['groups', 'bookmarks'],
   },
 })

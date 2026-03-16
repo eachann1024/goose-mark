@@ -793,6 +793,41 @@ const handleTemplateKeydown = (e: KeyboardEvent) => {
   }
 }
 
+type SubInputMode = 'none' | 'default' | 'template'
+const subInputMode = ref<SubInputMode>('none')
+let subInputSyncToken = 0
+
+const clearSubInput = () => {
+  subInputSyncToken += 1
+  if (subInputMode.value === 'none') return
+  window.utools?.removeSubInput?.()
+  subInputMode.value = 'none'
+}
+
+const restoreDefaultSubInput = (selectAll = true) => {
+  if (!canUseSubInput.value) {
+    clearSubInput()
+    return
+  }
+
+  const token = ++subInputSyncToken
+  const run = () => {
+    if (token !== subInputSyncToken || !canUseSubInput.value || activeTemplateBookmark.value) return
+    window.utools?.setSubInput?.(handleSubInput, '搜索书签...', selectAll)
+    if (typeof store.search === 'string' && store.search) {
+      window.utools?.setSubInputValue?.(store.search)
+    }
+    subInputMode.value = 'default'
+  }
+
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      run()
+      window.setTimeout(run, 120)
+    })
+  })
+}
+
 // Template Mode Actions
 const enterTemplateMode = (bookmark: Bookmark) => {
   activeTemplateBookmark.value = bookmark
@@ -806,6 +841,8 @@ const enterTemplateMode = (bookmark: Bookmark) => {
   
   // Set uTools sub input
   const label = getTemplateLabel(bookmark.url)
+  subInputSyncToken += 1
+  subInputMode.value = 'template'
   window.utools?.setSubInput?.(({ text }) => {
     templateQuery.value = text
   }, `搜索 ${bookmark.title}${label ? ` (${label})` : ''}，回车打开`)
@@ -823,12 +860,7 @@ const exitTemplateMode = () => {
   isSyncPaused.value = false // 退出模式时恢复同步
   
   // Restore default sub input
-  const shouldUse = !isDetachedWindowNow()
-  if (shouldUse) {
-    window.utools?.setSubInput?.(handleSubInput, '搜索书签...', true)
-  } else {
-    window.utools?.removeSubInput?.()
-  }
+  restoreDefaultSubInput()
 }
 
 // Lifecycle
@@ -855,18 +887,17 @@ onMounted(async () => {
   
   type UToolsApi = {
     setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
+    setSubInputValue?: (text: string) => void
     removeSubInput?: () => void
     onPluginEnter?: (cb: (params: { code?: unknown; payload?: unknown } | undefined) => void) => void
+    onPluginOut?: (cb: (isKill: boolean) => void) => void
   }
   const utoolsApi = window.utools as unknown as UToolsApi | undefined
   
   if (utoolsApi) {
-    const syncSubInput = () => {
-      if (canUseSubInput.value) {
-        utoolsApi.setSubInput?.(handleSubInput, '搜索书签...', true)
-      } else {
-        utoolsApi.removeSubInput?.()
-      }
+    const syncSubInput = (selectAll = true) => {
+      if (activeTemplateBookmark.value) return
+      restoreDefaultSubInput(selectAll)
     }
     
     syncFeatures(store.bookmarks)
@@ -895,7 +926,15 @@ onMounted(async () => {
           const incomingStamp = getLatestUpdatedAt(data)
           const localStamp = getLatestUpdatedAt({ groups: store.groups, bookmarks: store.bookmarks })
           if (incomingStamp >= localStamp) {
-            store.$patch(data)
+            const preferredGroupId = store.activeGroupId
+            const preferredSubGroupId = store.activeSubGroupId
+            const nextGroups = Array.isArray((data as { groups?: unknown }).groups) ? (data as { groups: Group[] }).groups : store.groups
+            const nextBookmarks = Array.isArray((data as { bookmarks?: unknown }).bookmarks) ? (data as { bookmarks: Bookmark[] }).bookmarks : store.bookmarks
+            store.$patch({
+              groups: nextGroups,
+              bookmarks: nextBookmarks
+            })
+            store.ensureValidSelection(preferredGroupId, preferredSubGroupId)
           }
         }
       } catch {}
@@ -958,7 +997,7 @@ onMounted(async () => {
         activeTemplateBookmark.value = null
         syncTheme()
         syncFeatures(store.bookmarks)
-        syncSubInput()
+        syncSubInput(false)
         if (searchViewOpen.value) {
           syncSearchAutoExitOnReturn()
         } else {
@@ -1002,6 +1041,11 @@ onMounted(async () => {
           exitTemplateMode()
         }
       }
+    })
+
+    utoolsApi.onPluginOut?.(() => {
+      subInputSyncToken += 1
+      subInputMode.value = 'none'
     })
   }
 })
