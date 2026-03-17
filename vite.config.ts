@@ -1,11 +1,16 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import tailwindcss from '@tailwindcss/vite'
 import UnoCSS from 'unocss/vite'
 import Components from 'unplugin-vue-components/vite'
 import AutoImport from 'unplugin-auto-import/vite'
 import { codeInspectorPlugin } from 'code-inspector-plugin'
 import path from 'node:path'
+
+const packageGroupMatcher = (packages: string[]) => {
+  const packagePatterns = packages.map((name) => new RegExp(`/${name.replace('/', '\\/')}/`))
+
+  return (moduleId: string) => moduleId.includes('/node_modules/') && packagePatterns.some((pattern) => pattern.test(moduleId))
+}
 
 export default defineConfig({
   base: './',
@@ -17,7 +22,6 @@ export default defineConfig({
   },
   plugins: [
     vue(),
-    tailwindcss(),
     UnoCSS(),
     codeInspectorPlugin({
       bundler: 'vite'
@@ -55,12 +59,26 @@ export default defineConfig({
   build: {
     // 禁用 modulePreload 避免 uTools 环境中的警告
     modulePreload: false,
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          'vendor-vue': ['vue', 'pinia'],
-          'vendor-ui': ['reka-ui', '@vueuse/core'],
-          'vendor-icons': ['lucide-vue-next']
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-vue',
+              test: packageGroupMatcher(['vue', 'pinia']),
+              minSize: 0
+            },
+            {
+              name: 'vendor-ui',
+              test: packageGroupMatcher(['reka-ui', '@vueuse/core']),
+              minSize: 0
+            },
+            {
+              name: 'vendor-icons',
+              test: packageGroupMatcher(['lucide-vue-next']),
+              minSize: 0
+            }
+          ]
         }
       }
     },
