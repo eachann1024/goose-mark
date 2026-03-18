@@ -145,6 +145,11 @@ textarea,
   user-select: text !important;
 }
 
+input,
+textarea {
+  caret-color: hsl(var(--foreground));
+}
+
 /* 全局文字选中样式 */
 ::selection {
   background: hsl(var(--primary) / 0.2);
