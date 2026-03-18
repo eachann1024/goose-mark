@@ -28,7 +28,15 @@ interface UToolsApi {
   setSubInputValue?(text: string): boolean
   subInputFocus?(): void
   removeSubInput(): boolean
-  onPluginEnter(callback: (params: { code: string; type: string; payload: any }) => void): void
+  onPluginEnter(callback: (params: {
+    code: string
+    type: 'text' | 'img' | 'file' | 'regex' | 'over' | 'window'
+    payload: any
+    from: 'main' | 'panel' | 'hotkey' | 'reirect'
+    option?: {
+      mainPush: boolean
+    }
+  }) => void): void
   shellOpenExternal(url: string): void
   setFeature?(feature: {
     code: string
