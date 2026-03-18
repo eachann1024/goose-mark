@@ -44,6 +44,12 @@ const openBookmarkLink = (bookmark: Bookmark) => {
 // 暂停/恢复 watcher 的标记
 const isSyncPaused = ref(false)
 
+const UTOOLS_PLUGIN_ENTER_EVENT = 'goose-marks:plugin-enter'
+const UTOOLS_PLUGIN_OUT_EVENT = 'goose-marks:plugin-out'
+const UTOOLS_SEARCH_INPUT_EVENT = 'goose-marks:utools-search'
+const UTOOLS_SEARCH_SYNC_EVENT = 'goose-marks:utools-search-sync'
+const UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT = 'goose-marks:restore-default-search-input'
+
 
 const {
   showAdd,
@@ -242,7 +248,6 @@ watch(() => settingsStore.windowHeight, (h) => {
   setExpendHeight(h)
 })
 
-// Search
 const canUseSubInput = computed(() => {
   if (!isUTools.value) return false
   try {
@@ -252,7 +257,22 @@ const canUseSubInput = computed(() => {
   }
 })
 
-// Search
+const handleSearchSubInput = ({ text }: { text: string }) => {
+  store.setSearch(text)
+}
+
+const {
+  clearSubInput,
+  activateTemplateSubInput,
+} = useUToolsSubInputController({
+  isUTools,
+  canUseSubInput,
+  getDefaultValue: () => store.search,
+  onDefaultInput: handleSearchSubInput,
+})
+
+const suppressSearchOverlay = ref(false)
+
 const {
   localSearchInputRef,
   searchViewOpen,
@@ -262,10 +282,12 @@ const {
   searchAutoExitText,
   openSearchView,
   closeSearchView,
-  handleSubInput,
-  focusUToolsInput,
-  syncSearchAutoExitOnReturn,
-} = useSearch(tab, selectedIndex, isUTools)
+} = useSearch(tab, selectedIndex, {
+  canUseSubInputRef: canUseSubInput,
+  focusSubInput: focusDefaultSearchInput,
+  syncSubInputValue: syncDefaultSearchInputValue,
+  suppressAutoOpenOverlayRef: suppressSearchOverlay,
+})
 
 // SearchOverlay 组件 ref
 const searchOverlayRef = ref<{ 
@@ -273,29 +295,134 @@ const searchOverlayRef = ref<{
   localSearchInputRef?: HTMLInputElement | null 
 } | null>(null)
 
-// 当搜索视图打开时，同步并聚焦输入框
-watch(searchViewOpen, (isOpen) => {
-  if (isOpen && !canUseSubInput.value) {
-    nextTick(() => {
-      requestAnimationFrame(() => {
-        const overlay = searchOverlayRef.value
-        if (overlay && typeof overlay.focus === 'function') {
-          // 1. 调用组件的 focus 方法确保聚焦
-          overlay.focus()
-          
-          // 2. 同步 DOM 元素给 useSearch (用于其他逻辑)
-          // 注意：被 expose 的 ref 会自动解包，所以这里直接获取即可
-          const inputEl = overlay.localSearchInputRef
-          if (inputEl instanceof HTMLInputElement) {
-            localSearchInputRef.value = inputEl
-            // 确保光标在末尾 (focus 可能已经做了，但双重保险)
-            const len = inputEl.value?.length ?? 0
-            try { inputEl.setSelectionRange(len, len) } catch {}
-          }
-        }
-      })
+const focusUToolsNativeInput = () => {
+  if (!isUTools.value) return
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      window.utools?.subInputFocus?.()
+      window.setTimeout(() => window.utools?.subInputFocus?.(), 80)
+      window.setTimeout(() => window.utools?.subInputFocus?.(), 220)
     })
+  })
+}
+
+function syncDefaultSearchInputValue(text: string) {
+  if (!canUseSubInput.value || activeTemplateBookmark.value) return false
+  window.dispatchEvent(new CustomEvent(UTOOLS_SEARCH_SYNC_EVENT, {
+    detail: { text: typeof text === 'string' ? text : '' }
+  }))
+  return true
+}
+
+function restoreDefaultSearchInput() {
+  if (!canUseSubInput.value || activeTemplateBookmark.value) return false
+  window.dispatchEvent(new CustomEvent(UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT))
+  syncDefaultSearchInputValue(store.search)
+  return true
+}
+
+function focusDefaultSearchInput(forceRemount = false) {
+  if (!canUseSubInput.value) return false
+  if (forceRemount) {
+    restoreDefaultSearchInput()
   }
+  focusUToolsNativeInput()
+  return true
+}
+
+const activateHomeSearch = ({ openSearch = false, forceRemount = false } = {}) => {
+  if (activeTemplateBookmark.value) return
+  if (tab.value !== 'bookmarks') {
+    tab.value = 'bookmarks'
+  }
+
+  if (forceRemount) {
+    restoreDefaultSearchInput()
+  }
+
+  if (openSearch) {
+    openSearchView()
+    return
+  }
+
+  if (canUseSubInput.value) {
+    focusDefaultSearchInput()
+  }
+}
+
+const openSearchOverlay = (forceRemount = false) => {
+  suppressSearchOverlay.value = false
+  openSearchView({ focusInput: true })
+  if (forceRemount && canUseSubInput.value) {
+    focusDefaultSearchInput(true)
+  }
+}
+
+const activateSearchInputOnly = (forceRemount = false) => {
+  if (activeTemplateBookmark.value) return
+  suppressSearchOverlay.value = true
+  if (forceRemount && canUseSubInput.value) {
+    focusDefaultSearchInput(true)
+  }
+}
+
+const focusMainSearchInput = (forceRemount = false) => {
+  if (tab.value !== 'bookmarks') return
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (canUseSubInput.value) {
+        activateHomeSearch({ forceRemount })
+        return
+      }
+
+      if (isUTools.value) {
+        focusUToolsNativeInput()
+      }
+    })
+  })
+}
+
+// 当搜索视图打开时，同步并聚焦输入框
+watch(searchViewOpen, (isOpen, wasOpen) => {
+  if (!isOpen) {
+    suppressSearchOverlay.value = false
+    if (wasOpen) {
+      focusMainSearchInput(true)
+    }
+    return
+  }
+
+  if (canUseSubInput.value) {
+    focusMainSearchInput(true)
+    return
+  }
+
+  if (isUTools.value) {
+    focusMainSearchInput(true)
+    return
+  }
+
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      const overlay = searchOverlayRef.value
+      if (overlay && typeof overlay.focus === 'function') {
+        // 1. 调用组件的 focus 方法确保聚焦
+        overlay.focus()
+
+        // 2. 同步 DOM 元素给 useSearch (用于其他逻辑)
+        // 注意：被 expose 的 ref 会自动解包，所以这里直接获取即可
+        const inputEl = overlay.localSearchInputRef
+        if (inputEl instanceof HTMLInputElement) {
+          localSearchInputRef.value = inputEl
+          // 通过 blur/focus 恢复插入光标闪烁，再把光标放回末尾。
+          inputEl.blur()
+          inputEl.focus()
+          const len = inputEl.value?.length ?? 0
+          try { inputEl.setSelectionRange(len, len) } catch {}
+        }
+      }
+    })
+  })
 })
 
 
@@ -467,11 +594,17 @@ const updatePageTitle = () => {
 }
 
 // Coordination Watchers
-watch(() => store.search, () => hideCmdHints())
-watch(() => tab.value, () => {
+watch(() => store.search, () => {
+  hideCmdHints()
+})
+watch(() => tab.value, (nextTab, prevTab) => {
   hideCmdHints()
   onMainViewSwitch()
   updatePageTitle()
+
+  if (nextTab === 'bookmarks' && prevTab !== 'bookmarks' && !searchViewOpen.value) {
+    focusMainSearchInput(true)
+  }
 })
 
 watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
@@ -793,41 +926,6 @@ const handleTemplateKeydown = (e: KeyboardEvent) => {
   }
 }
 
-type SubInputMode = 'none' | 'default' | 'template'
-const subInputMode = ref<SubInputMode>('none')
-let subInputSyncToken = 0
-
-const clearSubInput = () => {
-  subInputSyncToken += 1
-  if (subInputMode.value === 'none') return
-  window.utools?.removeSubInput?.()
-  subInputMode.value = 'none'
-}
-
-const restoreDefaultSubInput = (selectAll = true) => {
-  if (!canUseSubInput.value) {
-    clearSubInput()
-    return
-  }
-
-  const token = ++subInputSyncToken
-  const run = () => {
-    if (token !== subInputSyncToken || !canUseSubInput.value || activeTemplateBookmark.value) return
-    window.utools?.setSubInput?.(handleSubInput, '搜索书签...', selectAll)
-    if (typeof store.search === 'string' && store.search) {
-      window.utools?.setSubInputValue?.(store.search)
-    }
-    subInputMode.value = 'default'
-  }
-
-  nextTick(() => {
-    requestAnimationFrame(() => {
-      run()
-      window.setTimeout(run, 120)
-    })
-  })
-}
-
 // Template Mode Actions
 const enterTemplateMode = (bookmark: Bookmark) => {
   activeTemplateBookmark.value = bookmark
@@ -841,11 +939,14 @@ const enterTemplateMode = (bookmark: Bookmark) => {
   
   // Set uTools sub input
   const label = getTemplateLabel(bookmark.url)
-  subInputSyncToken += 1
-  subInputMode.value = 'template'
-  window.utools?.setSubInput?.(({ text }) => {
+  const mounted = activateTemplateSubInput({
+    onChange: ({ text }) => {
     templateQuery.value = text
-  }, `搜索 ${bookmark.title}${label ? ` (${label})` : ''}，回车打开`)
+    },
+    placeholder: `搜索 ${bookmark.title}${label ? ` (${label})` : ''}，回车打开`,
+    focus: true,
+  })
+  if (!mounted) return
   
   // 添加键盘事件监听
   window.addEventListener('keydown', handleTemplateKeydown)
@@ -860,7 +961,142 @@ const exitTemplateMode = () => {
   isSyncPaused.value = false // 退出模式时恢复同步
   
   // Restore default sub input
-  restoreDefaultSubInput()
+  restoreDefaultSearchInput()
+}
+
+const handleStorageSync = ((e: any) => {
+  const { key, value } = e.detail
+  if (!value) return
+  try {
+    const data = JSON.parse(value)
+    if (key === 'settings' && data && typeof data === 'object') {
+      const localMirrorDirectory = settingsStore.localMirrorDirectory
+      const nextSettings = { ...(data as Record<string, unknown>) }
+      delete nextSettings.localMirrorDirectory
+      settingsStore.$patch(nextSettings)
+      settingsStore.setLocalMirrorDirectory(localMirrorDirectory)
+      hydrateMirrorDirectoryForDevice()
+      refreshLocalModePathNotice(true)
+    }
+    if (key === 'bookmark') {
+      const incomingStamp = getLatestUpdatedAt(data)
+      const localStamp = getLatestUpdatedAt({ groups: store.groups, bookmarks: store.bookmarks })
+      if (incomingStamp >= localStamp) {
+        const preferredGroupId = store.activeGroupId
+        const preferredSubGroupId = store.activeSubGroupId
+        const nextGroups = Array.isArray((data as { groups?: unknown }).groups) ? (data as { groups: Group[] }).groups : store.groups
+        const nextBookmarks = Array.isArray((data as { bookmarks?: unknown }).bookmarks) ? (data as { bookmarks: Bookmark[] }).bookmarks : store.bookmarks
+        store.$patch({
+          groups: nextGroups,
+          bookmarks: nextBookmarks
+        })
+        store.ensureValidSelection(preferredGroupId, preferredSubGroupId)
+      }
+    }
+  } catch {}
+}) as EventListener
+
+const handleUToolsSearchInputEvent = (event: Event) => {
+  if (activeTemplateBookmark.value) return
+  const detail = (event as CustomEvent<{ text?: string }>).detail
+  store.setSearch(typeof detail?.text === 'string' ? detail.text : '')
+}
+
+const handleUToolsPluginEnterEvent = (event: Event) => {
+  const params = (event as CustomEvent<{ code?: unknown; payload?: unknown; from?: unknown }>).detail
+  const code = params?.code
+  const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
+
+  if (code === 'save_link') {
+    let urlToSave = ''
+    const payload = params?.payload
+
+    if (typeof payload === 'string') {
+      urlToSave = payload
+    } else if (payload && typeof payload === 'object' && 'text' in payload) {
+      urlToSave = String(payload.text)
+    }
+
+    urlToSave = urlToSave.trim()
+
+    if (urlToSave && isValidUrl(urlToSave)) {
+      onMainViewSwitch()
+      activeTemplateBookmark.value = null
+      syncTheme()
+      syncFeatures(store.bookmarks)
+      restoreDefaultSearchInput()
+      store.setSearch('')
+      openAddWithUrl(urlToSave)
+      return
+    }
+
+    console.warn('[save_link] 无效 URL:', { payload, urlToSave })
+    showToast({ title: '未检测到有效链接', variant: 'warning' })
+    return
+  }
+
+  if (code === 'quick_save') {
+    const from = (params as any)?.from || 'main'
+    const payload = params?.payload
+    handleQuickSave(from, payload)
+    return
+  }
+
+  if (code === 'quick_save_dialog') {
+    onMainViewSwitch()
+    showQuickSaveDialog.value = true
+    return
+  }
+
+  if (!isTemplateFeature) {
+    onMainViewSwitch()
+    activeTemplateBookmark.value = null
+    syncTheme()
+    syncFeatures(store.bookmarks)
+    closeSearchView({ restoreFocus: false })
+    store.setSearch('')
+    activateSearchInputOnly()
+    return
+  }
+
+  syncTheme()
+  const id = (code as string).slice(FEATURE_PREFIX.length)
+  const bookmark = store.bookmarks.find(b => b.id === id)
+
+  if (!bookmark) {
+    window.utools?.outPlugin()
+    return
+  }
+
+  const hasTemplate = /{[^}]+}/.test(bookmark.url)
+  const isInTemplateMode = activeTemplateBookmark.value?.id === id
+  const payloadQuery = getEnterText(params?.payload).trim()
+  const query = isInTemplateMode ? templateQuery.value.trim() : payloadQuery
+
+  if (hasTemplate) {
+    const isKeywordLaunch = (!payloadQuery || payloadQuery === bookmark.title) && !isInTemplateMode
+    if (isKeywordLaunch) {
+      enterTemplateMode(bookmark)
+      return
+    }
+  }
+
+  let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+  showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
+  openUrl(url)
+
+  if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
+    window.utools?.outPlugin()
+  } else if (activeTemplateBookmark.value) {
+    window.utools?.hideMainWindow?.()
+    exitTemplateMode()
+  }
+}
+
+const handleUToolsPluginOutEvent = () => {
+  suppressSearchOverlay.value = false
+  clearSubInput()
 }
 
 // Lifecycle
@@ -885,168 +1121,12 @@ onMounted(async () => {
 
   statsStore.recordUse('open')
   
-  type UToolsApi = {
-    setSubInput?: (cb: (payload: { text: string }) => void, placeholder?: string, isSelectAll?: boolean) => void
-    setSubInputValue?: (text: string) => void
-    removeSubInput?: () => void
-    onPluginEnter?: (cb: (params: { code?: unknown; payload?: unknown } | undefined) => void) => void
-    onPluginOut?: (cb: (isKill: boolean) => void) => void
-  }
-  const utoolsApi = window.utools as unknown as UToolsApi | undefined
-  
-  if (utoolsApi) {
-    const syncSubInput = (selectAll = true) => {
-      if (activeTemplateBookmark.value) return
-      restoreDefaultSubInput(selectAll)
-    }
-    
+  if (window.utools) {
     syncFeatures(store.bookmarks)
-    syncSubInput()
-    // Watch canUseSubInput indirectly via isDetachedWindowNow changes if needed, 
-    // but usually window type doesn't change dynamically in a way that affects this without reload?
-    // Actually, converting to detached might change it.
-    // Let's watch the computed value.
-    watch(canUseSubInput, () => syncSubInput())
-    
-    window.addEventListener('storage-sync', ((e: any) => {
-      const { key, value } = e.detail
-      if (!value) return
-      try {
-        const data = JSON.parse(value)
-        if (key === 'settings' && data && typeof data === 'object') {
-          const localMirrorDirectory = settingsStore.localMirrorDirectory
-          const nextSettings = { ...(data as Record<string, unknown>) }
-          delete nextSettings.localMirrorDirectory
-          settingsStore.$patch(nextSettings)
-          settingsStore.setLocalMirrorDirectory(localMirrorDirectory)
-          hydrateMirrorDirectoryForDevice()
-          refreshLocalModePathNotice(true)
-        }
-        if (key === 'bookmark') {
-          const incomingStamp = getLatestUpdatedAt(data)
-          const localStamp = getLatestUpdatedAt({ groups: store.groups, bookmarks: store.bookmarks })
-          if (incomingStamp >= localStamp) {
-            const preferredGroupId = store.activeGroupId
-            const preferredSubGroupId = store.activeSubGroupId
-            const nextGroups = Array.isArray((data as { groups?: unknown }).groups) ? (data as { groups: Group[] }).groups : store.groups
-            const nextBookmarks = Array.isArray((data as { bookmarks?: unknown }).bookmarks) ? (data as { bookmarks: Bookmark[] }).bookmarks : store.bookmarks
-            store.$patch({
-              groups: nextGroups,
-              bookmarks: nextBookmarks
-            })
-            store.ensureValidSelection(preferredGroupId, preferredSubGroupId)
-          }
-        }
-      } catch {}
-    }) as any)
-
-    window.utools?.onPluginEnter?.((params) => {
-      const code = params?.code
-      const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
-
-      // 处理保存链接（通过 match 匹配 URL）
-      if (code === 'save_link') {
-        // 直接使用 payload，因为 match 模式下 payload 就是用户输入的文本
-        let urlToSave = ''
-        const payload = params?.payload
-
-        if (typeof payload === 'string') {
-          urlToSave = payload
-        } else if (payload && typeof payload === 'object' && 'text' in payload) {
-          urlToSave = String(payload.text)
-        }
-
-        urlToSave = urlToSave.trim()
-
-        // 验证是否是有效 URL
-        if (urlToSave && isValidUrl(urlToSave)) {
-          // 切换到主视图
-          onMainViewSwitch()
-          activeTemplateBookmark.value = null
-          syncTheme()
-          syncFeatures(store.bookmarks)
-          syncSubInput()
-          store.setSearch('')
-
-          // 调用新的打开方法，预填充 URL 且不选分类
-          openAddWithUrl(urlToSave)
-          return
-        } else {
-          // 无效 URL，显示提示
-          console.warn('[save_link] 无效 URL:', { payload, urlToSave })
-          showToast({ title: '未检测到有效链接', variant: 'warning' })
-          return
-        }
-      }
-
-      // 处理快速保存（超级面板 / 当前浏览器）
-      if (code === 'quick_save') {
-        const from = (params as any)?.from || 'main'
-        const payload = params?.payload
-        handleQuickSave(from, payload)
-      }
-
-      // 处理快速保存弹窗
-      if (code === 'quick_save_dialog') {
-        onMainViewSwitch()
-        showQuickSaveDialog.value = true
-      }
-
-      if (!isTemplateFeature) {
-        onMainViewSwitch()
-        activeTemplateBookmark.value = null
-        syncTheme()
-        syncFeatures(store.bookmarks)
-        syncSubInput(false)
-        if (searchViewOpen.value) {
-          syncSearchAutoExitOnReturn()
-        } else {
-          store.setSearch('')
-        }
-        return
-      }
-      
-      syncTheme()
-      const id = (code as string).slice(FEATURE_PREFIX.length)
-      const bookmark = store.bookmarks.find(b => b.id === id)
-      
-      if (!bookmark) {
-        window.utools?.outPlugin()
-        return
-      }
-      
-      const hasTemplate = /{[^}]+}/.test(bookmark.url)
-      const isInTemplateMode = activeTemplateBookmark.value?.id === id
-      const payloadQuery = getEnterText(params?.payload).trim()
-      const query = isInTemplateMode ? templateQuery.value.trim() : payloadQuery
-      
-      if (hasTemplate) {
-        const isKeywordLaunch = (!payloadQuery || payloadQuery === bookmark.title) && !isInTemplateMode
-        if (isKeywordLaunch) {
-           enterTemplateMode(bookmark)
-           return
-        }
-      }
-      
-      let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
-      if (!/^https?:\/\//i.test(url)) url = 'https://' + url
-      showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
-      openUrl(url)
-      
-      if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
-        window.utools?.outPlugin()
-      } else {
-        if (activeTemplateBookmark.value) {
-          window.utools?.hideMainWindow?.()
-          exitTemplateMode()
-        }
-      }
-    })
-
-    utoolsApi.onPluginOut?.(() => {
-      subInputSyncToken += 1
-      subInputMode.value = 'none'
-    })
+    window.addEventListener('storage-sync', handleStorageSync as EventListener)
+    window.addEventListener(UTOOLS_SEARCH_INPUT_EVENT, handleUToolsSearchInputEvent as EventListener)
+    window.addEventListener(UTOOLS_PLUGIN_ENTER_EVENT, handleUToolsPluginEnterEvent as EventListener)
+    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, handleUToolsPluginOutEvent as EventListener)
   }
 })
 
@@ -1057,6 +1137,13 @@ watch(() => store.bookmarks, () => {
 
 // 组件卸载时清理定时器
 onUnmounted(() => {
+  if (window.utools) {
+    window.removeEventListener('storage-sync', handleStorageSync as EventListener)
+    window.removeEventListener(UTOOLS_SEARCH_INPUT_EVENT, handleUToolsSearchInputEvent as EventListener)
+    window.removeEventListener(UTOOLS_PLUGIN_ENTER_EVENT, handleUToolsPluginEnterEvent as EventListener)
+    window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, handleUToolsPluginOutEvent as EventListener)
+  }
+  clearSubInput()
   if (syncTimeout) {
     clearTimeout(syncTimeout)
     syncTimeout = null
@@ -1129,14 +1216,15 @@ const handleLocate = async (bookmark: Bookmark) => {
          @select-group="handleSelectGroup"
          @select-trash="store.selectGroup(TRASH_GROUP_ID); tab = 'bookmarks'"
          @toggle-dark="toggleDark()"
-         @open-search="openSearchView"
+         @open-search="openSearchOverlay()"
        />
     </header>
 
     <!-- Search Overlay -->
     <SearchOverlay
       ref="searchOverlayRef"
-      :open="searchViewOpen"
+      :open="searchViewOpen && !suppressSearchOverlay"
+      :is-u-tools="isUTools"
       :search-value="searchValue"
       :active-bookmarks="activeBookmarks"
       :selected-index="selectedIndex"
@@ -1149,6 +1237,7 @@ const handleLocate = async (bookmark: Bookmark) => {
       :set-grid-ref="setBookmarkGridRef"
       @update:search-value="searchValue = $event"
       @close="closeSearchView"
+      @refocus="focusMainSearchInput(true)"
       @keydown="handleLocalSearchKey"
       @edit="(b, el) => openEdit(b, el)"
       @open="openBookmarkLink"

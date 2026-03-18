@@ -4,25 +4,24 @@ import PinyinMatch from 'pinyin-match'
 import type { Bookmark } from '@/types/bookmark'
 import type { Ref } from 'vue'
 
+type UseSearchOptions = {
+  canUseSubInputRef: Ref<boolean>
+  focusSubInput: (forceRemount?: boolean) => void
+  syncSubInputValue: (text: string) => void
+  suppressAutoOpenOverlayRef?: Ref<boolean>
+}
+
 export function useSearch(
     tab: Ref<'bookmarks' | 'settings'>, 
     selectedIndex: Ref<number>,
-    isUTools: Ref<boolean>
+    options: UseSearchOptions
 ) {
   const store = useBookmarkStore()
   const settingsStore = useSettingsStore()
 
   // Helper to determine if we should use uTools sub-input
   const canUseSubInput = () => {
-     // 简单判断：必须是 uTools 环境且非独立/浏览器窗口
-     // 注意：isUTools 是 Ref，通过 .value 获取
-     if (!isUTools.value) return false
-     try {
-       const type = window.utools?.getWindowType?.()
-       return type !== 'detach' && type !== 'browser'
-     } catch {
-       return false
-     }
+     return options.canUseSubInputRef.value
   }
 
   const localSearchInputRef = ref<HTMLInputElement | { $el?: HTMLElement } | null>(null)
@@ -72,12 +71,14 @@ export function useSearch(
     searchLastActiveAt.value = Date.now()
   }
 
-  const closeSearchView = () => {
+  type CloseSearchOptions = { restoreFocus?: boolean }
+  const closeSearchView = ({ restoreFocus = true }: CloseSearchOptions = {}) => {
     searchViewOpen.value = false
     clearSearchAutoExit()
     store.setSearch('')
-    if (canUseSubInput()) {
-      window.utools?.setSubInputValue?.('')
+    if (restoreFocus && canUseSubInput()) {
+      options.syncSubInputValue('')
+      options.focusSubInput(true)
     }
     selectedIndex.value = -1
   }
@@ -121,17 +122,9 @@ export function useSearch(
     })
   }
 
-  const focusUToolsInput = () => {
-    window.utools?.subInputFocus?.()
-  }
-
-  const syncUToolsSubInputValue = (text: string) => {
-    window.utools?.setSubInputValue?.(text)
-  }
-
-  type OpenSearchOptions = { initialQuery?: string; selectText?: boolean }
-  const openSearchView = (options: OpenSearchOptions = {}) => {
-    const { initialQuery, selectText = false } = options
+  type OpenSearchOptions = { initialQuery?: string; selectText?: boolean; focusInput?: boolean }
+  const openSearchView = (settings: OpenSearchOptions = {}) => {
+    const { initialQuery, selectText = false, focusInput = true } = settings
     tab.value = 'bookmarks'
     searchViewOpen.value = true
     markSearchActive()
@@ -142,8 +135,10 @@ export function useSearch(
     }
     scheduleSearchAutoExit()
     if (canUseSubInput()) {
-      focusUToolsInput()
-      syncUToolsSubInputValue(store.search)
+      if (focusInput) {
+        options.focusSubInput()
+      }
+      options.syncSubInputValue(store.search)
     } else {
       focusLocalSearchInput(selectText)
     }
@@ -158,7 +153,8 @@ export function useSearch(
   const handleTypeToSearch = (e: KeyboardEvent) => {
     const active = document.activeElement as HTMLElement | null
     if (isEditableElement(active)) return
-    if (canUseSubInput() && searchViewOpen.value) return
+    // uTools 原生 subInput 会自行维护输入值；这里再拼接一次会造成竞态丢字。
+    if (canUseSubInput()) return
     if (e.metaKey || e.ctrlKey || e.altKey) return
     const key = e.key
     if (!key || key.length !== 1) return
@@ -174,15 +170,11 @@ export function useSearch(
     const nextValue = store.search + key
     store.setSearch(nextValue)
     if (canUseSubInput()) {
-      focusUToolsInput()
-      syncUToolsSubInputValue(nextValue)
+      options.focusSubInput()
+      options.syncSubInputValue(nextValue)
     } else {
       focusLocalSearchInput()
     }
-  }
-
-  const handleSubInput = ({ text }: { text: string }) => {
-    store.setSearch(text)
   }
 
   const syncSearchAutoExitOnReturn = () => {
@@ -202,7 +194,15 @@ export function useSearch(
   }
 
   // Watchers
-  watch(() => store.search, (val) => {
+  watch(() => store.search, (val, prevVal) => {
+    const nextText = typeof val === 'string' ? val : ''
+    const prevText = typeof prevVal === 'string' ? prevVal : ''
+
+    if (searchViewOpen.value && !nextText.trim() && prevText.trim()) {
+      closeSearchView()
+      return
+    }
+
     if (searchViewOpen.value) {
       selectedIndex.value = -1
       markSearchActive()
@@ -210,7 +210,7 @@ export function useSearch(
       const list = activeBookmarks.value
       selectedIndex.value = list.length > 0 ? 0 : -1
     }
-    if (val && !searchViewOpen.value) openSearchView()
+    if (nextText && !searchViewOpen.value && !options.suppressAutoOpenOverlayRef?.value) openSearchView()
     if (searchViewOpen.value) scheduleSearchAutoExit()
   })
 
@@ -232,8 +232,8 @@ export function useSearch(
       closeSearchView()
       return
     }
-    // uTools 吸附模式下 Tab 退出搜索，独立窗口模式用 Esc
-    if (e.key === 'Tab' && searchViewOpen.value && canUseSubInput()) {
+    // 搜索视图下统一使用 Tab 退出，避免浮层内外出现两套提示
+    if (e.key === 'Tab' && searchViewOpen.value) {
       e.preventDefault()
       closeSearchView()
       return
@@ -254,8 +254,6 @@ export function useSearch(
     closeSearchView,
     handleTypeToSearch,
     focusLocalSearchInput,
-    focusUToolsInput,
-    handleSubInput,
     scheduleSearchAutoExit,
     clearSearchAutoExit,
     syncSearchAutoExitOnReturn

@@ -4,6 +4,7 @@ import SearchHintLine from '@/components/bookmarks/SearchHintLine.vue'
 
 const props = defineProps<{
   open: boolean
+  isUTools: boolean
   searchValue: string
   activeBookmarks: Bookmark[]
   selectedIndex: number
@@ -20,6 +21,7 @@ const emit = defineEmits<{
   'update:searchValue': [value: string]
   close: []
   keydown: [e: KeyboardEvent]
+  refocus: []
   edit: [bookmark: Bookmark, el?: HTMLElement]
   open: [bookmark: Bookmark]
   contextmenu: [e: MouseEvent, bookmark: Bookmark]
@@ -46,6 +48,8 @@ const focus = () => {
 
 const handleClose = () => emit('close')
 const handleKeydown = (e: KeyboardEvent) => emit('keydown', e)
+const handleRefocus = () => emit('refocus')
+const overlayHintText = '按下 Tab 退出搜索模式'
 
 const emptyStateTitle = computed(() => {
   if (props.storeSearch) return '未找到匹配结果'
@@ -71,8 +75,17 @@ defineExpose({ focus, localSearchInputRef }) // 保留 localSearchInputRef 以�
           <Button variant="ghost" size="icon" class="h-11 w-11" @click="handleClose">
             <span class="i-mdi-arrow-left text-xl" />
           </Button>
-          <template v-if="enableSubInput">
-            <div class="flex-1 h-12" />
+          <template v-if="isUTools">
+            <button
+              type="button"
+              class="flex h-12 flex-1 items-center rounded-2xl bg-muted/35 px-4 text-left text-base text-muted-foreground transition-colors hover:bg-muted/45 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+              @mousedown.prevent="handleRefocus"
+              @click.prevent="handleRefocus"
+              @keydown.enter.prevent="handleRefocus"
+              @keydown.space.prevent="handleRefocus"
+            >
+              <span class="truncate">{{ overlayHintText }}</span>
+            </button>
           </template>
           <template v-else>
             <Input

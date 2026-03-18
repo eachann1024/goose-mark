@@ -5,7 +5,7 @@ const props = defineProps<{
 }>()
 
 const hintText = computed(() => {
-  const exitKey = props.enableSubInput ? 'Tab' : 'ESC'
+  const exitKey = 'Tab'
   return `按 ${exitKey} 退出；按 ↑ ↓ 选择，回车打开；${props.searchAutoExitText}`
 })
 </script>
