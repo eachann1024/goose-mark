@@ -7,6 +7,7 @@ import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import OnboardingBanner from '@/components/OnboardingBanner.vue'
 import QuickSaveDialog from '@/components/QuickSaveDialog.vue'
+import StarryBackground from '@/components/StarryBackground.vue'
 import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser'
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
@@ -459,28 +460,28 @@ const getHintKey = (id: string) => hintKeyById.value[id]
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
 const shouldShowSubs = computed(() => activeSubGroups.value.length > 1)
-// 星空定时器引用
-let starTimers: { dim?: number; light?: number; meteor?: number } = {}
 
-// 监听背景设置，同步到 body 类名 + 创建/销毁星空
-watch([
-  () => settingsStore.easterEggEnabled,
-  () => settingsStore.useSolidBackground,
-  () => settingsStore.lightBackgroundStyle,
-  isDark
-], ([enabled, useSolid, lightStyle, dark]) => {
-  const existing = document.getElementById('stars-container')
+const showStarryBackground = computed(() =>
+  isDark.value && settingsStore.easterEggEnabled && !settingsStore.useSolidBackground
+)
 
-  // 清理之前的状态
+const clearBackgroundClasses = () => {
   document.body.classList.remove(
     'easter-egg-active',
     'solid-background',
     'light-white-background',
     'light-utools-background'
   )
-  existing?.remove()
-  Object.values(starTimers).forEach(t => t && clearTimeout(t))
-  starTimers = {}
+}
+
+// 监听背景设置，同步到 body 类名
+watch([
+  () => settingsStore.useSolidBackground,
+  () => settingsStore.lightBackgroundStyle,
+  isDark,
+  showStarryBackground
+], ([useSolid, lightStyle, dark, starryEnabled]) => {
+  clearBackgroundClasses()
 
   if (!dark) {
     document.body.classList.add(lightStyle === 'utools' ? 'light-utools-background' : 'light-white-background')
@@ -488,78 +489,12 @@ watch([
   }
 
   if (useSolid) {
-    // 使用纯色背景
     document.body.classList.add('solid-background')
-  } else if (enabled) {
-    // 使用星空背景
+    return
+  }
+
+  if (starryEnabled) {
     document.body.classList.add('easter-egg-active')
-    const container = document.createElement('div')
-    container.id = 'stars-container'
-    container.className = 'stars-container'
-    // 创建星星
-    for (let i = 0; i < 200; i++) {
-      const star = document.createElement('div')
-      star.className = 'star'
-      star.style.left = `${Math.random() * 100}%`
-      star.style.top = `${Math.random() * 100}%`
-      const size = Math.random() * 2 + 1
-      star.style.width = `${size}px`
-      star.style.height = `${size}px`
-      star.style.setProperty('--duration', `${Math.random() * 15 + 12}s`)
-      star.style.setProperty('--delay', `${Math.random() * 5}s`)
-      container.appendChild(star)
-    }
-    document.body.prepend(container)
-
-    // 每 3 秒随机熄灭 1-5 颗星星
-    starTimers.dim = window.setInterval(() => {
-      const stars = Array.from(container.querySelectorAll('.star:not(.dimmed)')) as HTMLElement[]
-      if (stars.length > 50) {
-        const count = Math.floor(Math.random() * 5) + 1
-        for (let i = 0; i < count && stars.length > 50; i++) {
-          const idx = Math.floor(Math.random() * stars.length)
-          const target = stars.splice(idx, 1)[0]
-          target.classList.add('dimming')
-          setTimeout(() => {
-            target.classList.remove('dimming')
-            target.classList.add('dimmed')
-          }, 2000)
-        }
-      }
-    }, 3000)
-
-    // 每 5 秒随机亮起 1-5 颗星星（重新随机位置）
-    starTimers.light = window.setInterval(() => {
-      const dimmed = Array.from(container.querySelectorAll('.star.dimmed')) as HTMLElement[]
-      if (dimmed.length > 0) {
-        const count = Math.min(Math.floor(Math.random() * 5) + 1, dimmed.length)
-        for (let i = 0; i < count; i++) {
-          const idx = Math.floor(Math.random() * dimmed.length)
-          const target = dimmed.splice(idx, 1)[0]
-          // 随机新位置
-          target.style.left = `${Math.random() * 100}%`
-          target.style.top = `${Math.random() * 100}%`
-          const size = Math.random() * 2 + 1
-          target.style.width = `${size}px`
-          target.style.height = `${size}px`
-          target.classList.remove('dimmed')
-          target.classList.add('lighting')
-          setTimeout(() => target.classList.remove('lighting'), 1500)
-        }
-      }
-    }, 5000)
-
-    // 每 10-30 秒创建一颗流星
-    const createMeteor = () => {
-      const meteor = document.createElement('div')
-      meteor.className = 'meteor'
-      meteor.style.left = `${Math.random() * 80 + 10}%`
-      meteor.style.top = `${Math.random() * 30}%`
-      container.appendChild(meteor)
-      setTimeout(() => meteor.remove(), 4000)
-      starTimers.meteor = window.setTimeout(createMeteor, (Math.random() * 20 + 10) * 1000)
-    }
-    starTimers.meteor = window.setTimeout(createMeteor, (Math.random() * 10 + 5) * 1000)
   }
 }, { immediate: true })
 
@@ -1294,6 +1229,7 @@ onUnmounted(() => {
     clearTimeout(syncTimeout)
     syncTimeout = null
   }
+  clearBackgroundClasses()
 })
 
 // Highlight State
@@ -1336,14 +1272,16 @@ const handleLocate = async (bookmark: Bookmark) => {
 
 <template>
   <TooltipProvider :delay-duration="100">
+  <StarryBackground v-if="showStarryBackground" />
   <TemplateSearch 
     v-if="activeTemplateBookmark" 
+    class="relative z-10"
     :bookmark="activeTemplateBookmark" 
     :query="templateQuery" 
   />
   <div 
     v-else 
-    class="min-h-screen h-screen flex flex-col text-foreground overflow-hidden transition-all duration-500 bg-background app-container" 
+    class="app-container relative z-10 min-h-screen h-screen flex flex-col overflow-hidden bg-background text-foreground transition-all duration-500" 
     @contextmenu.prevent
   >
     <!-- Top Navigation for Groups -->
@@ -1502,7 +1440,7 @@ const handleLocate = async (bookmark: Bookmark) => {
 <style>
 /* 全局彩蛋适配样式 - 星空背景 */
 html.dark body.easter-egg-active {
-  background: #050505 !important;
+  background: #020204 !important;
   background-attachment: fixed !important;
 }
 
@@ -1527,108 +1465,7 @@ html:not(.dark) body.light-utools-background {
   background-color: #F4F4F4 !important;
 }
 
-/* 星空容器 */
-html.dark body.easter-egg-active .stars-container {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  animation: stars-rotate 1200s linear infinite;
-  transform-origin: center center;
-  pointer-events: none;
-  z-index: 0;
-}
-
-@keyframes stars-rotate {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* 星星 */
-html.dark body.easter-egg-active .star {
-  position: absolute;
-  width: 2px;
-  height: 2px;
-  background: white;
-  border-radius: 50%;
-  box-shadow: 0 0 3px rgba(255, 255, 255, 0.8);
-  animation: twinkle var(--duration, 15s) ease-in-out infinite;
-  animation-delay: var(--delay, 0s);
-}
-
-/* 熄灭动画 - 缓慢渐隐 */
-html.dark body.easter-egg-active .star.dimming {
-  animation: star-dim 2s ease-out forwards;
-}
-
-@keyframes star-dim {
-  0% { opacity: 1; transform: scale(1); }
-  30% { opacity: 0.7; transform: scale(1.1); }
-  100% { opacity: 0; transform: scale(0.5); }
-}
-
-/* 熄灭状态 */
-html.dark body.easter-egg-active .star.dimmed {
-  opacity: 0 !important;
-  transform: scale(0);
-  animation: none;
-}
-
-/* 亮起动画 - 直接出现，轻微闪烁 */
-html.dark body.easter-egg-active .star.lighting {
-  animation: star-light 1.5s ease-out forwards;
-}
-
-@keyframes star-light {
-  0% { opacity: 0; transform: scale(0.5); }
-  20% { opacity: 1; transform: scale(1.3); box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.8); }
-  100% { opacity: 1; transform: scale(1); }
-}
-
-@keyframes twinkle {
-  0%, 100% { opacity: 0.3; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.2); }
-}
-
-/* 流星 */
-html.dark body.easter-egg-active .meteor {
-  position: absolute;
-  width: 3px;
-  height: 3px;
-  background: linear-gradient(135deg, white 0%, transparent 70%);
-  border-radius: 50%;
-  box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.6);
-  animation: meteor-fall 4s linear forwards;
-}
-
-html.dark body.easter-egg-active .meteor::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 80px;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(255,255,255,0.8), transparent);
-  transform: rotate(-135deg) translateX(-50%);
-  transform-origin: 0 0;
-}
-
-@keyframes meteor-fall {
-  0% {
-    transform: translate(0, 0) scale(1);
-    opacity: 1;
-  }
-  70% {
-    opacity: 1;
-  }
-  100% {
-    transform: translate(250px, 250px) scale(0.3);
-    opacity: 0;
-  }
-}
-
-/* 彩蛋模式：容器透明以显示背景图 */
+/* 彩蛋模式：容器透明以显示星空层 */
 html.dark body.easter-egg-active .app-container,
 html.dark body.easter-egg-active #app {
   background-color: transparent !important;
