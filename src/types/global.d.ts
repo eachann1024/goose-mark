@@ -72,6 +72,32 @@ declare global {
   interface Window {
     utools?: UToolsApi
     require?: NodeRequire
+    __gooseMarksPluginEnterSerial?: number
+    __gooseMarksLastPluginEnterSerial?: number
+    __gooseMarksLastHandledPluginEnterSerial?: number
+    __gooseMarksPendingPluginEnterEvents?: Array<{
+      serial: number
+      params: {
+        code?: string
+        type?: 'text' | 'img' | 'file' | 'regex' | 'over' | 'window'
+        payload?: unknown
+        from?: 'main' | 'panel' | 'hotkey' | 'reirect'
+        option?: {
+          mainPush: boolean
+        }
+        [key: string]: unknown
+      }
+    }>
+    __gooseMarksLastPluginEnterParams?: {
+      code?: string
+      type?: 'text' | 'img' | 'file' | 'regex' | 'over' | 'window'
+      payload?: unknown
+      from?: 'main' | 'panel' | 'hotkey' | 'reirect'
+      option?: {
+        mainPush: boolean
+      }
+      [key: string]: unknown
+    } | null
   }
 }
 

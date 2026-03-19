@@ -243,10 +243,23 @@ export function useUTools() {
 
   const getEnterText = (payload: unknown): string => {
     if (typeof payload === 'string') return payload
+    if (Array.isArray(payload)) {
+      const first = payload[0] as unknown
+      if (typeof first === 'string') return first
+      if (first && typeof first === 'object') {
+        const value = (first as { text?: unknown; value?: unknown; title?: unknown }).text
+          ?? (first as { text?: unknown; value?: unknown; title?: unknown }).value
+          ?? (first as { text?: unknown; value?: unknown; title?: unknown }).title
+        return typeof value === 'string' ? value : ''
+      }
+      return ''
+    }
     if (!payload || typeof payload !== 'object') return ''
+    const candidate = payload as { text?: unknown; value?: unknown; title?: unknown }
+    const text = candidate.text ?? candidate.value ?? candidate.title
+    if (typeof text === 'string') return text
     if ('text' in payload) {
-      const text = (payload as { text?: unknown }).text
-      return typeof text === 'string' ? text : ''
+      return typeof candidate.text === 'string' ? candidate.text : ''
     }
     return ''
   }

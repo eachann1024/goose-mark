@@ -11,6 +11,10 @@ if (typeof window !== 'undefined') {
 
     window.__gooseMarksSuppressNextChange = false
     window.__gooseMarksLastAppValue = ''
+    window.__gooseMarksPluginEnterSerial = 0
+    window.__gooseMarksLastPluginEnterSerial = 0
+    window.__gooseMarksLastPluginEnterParams = null
+    window.__gooseMarksPendingPluginEnterEvents = []
 
     const mountDefaultSearchInput = (focus = true) => {
       if (typeof utools.setSubInput !== 'function') return
@@ -28,9 +32,21 @@ if (typeof window !== 'undefined') {
 
     if (typeof utools.onPluginEnter === 'function') {
       utools.onPluginEnter((params) => {
+        const nextSerial = (window.__gooseMarksPluginEnterSerial || 0) + 1
+        const entry = {
+          serial: nextSerial,
+          params: params || {},
+        }
+        window.__gooseMarksPluginEnterSerial = nextSerial
+        window.__gooseMarksLastPluginEnterSerial = nextSerial
+        window.__gooseMarksLastPluginEnterParams = entry.params
+        window.__gooseMarksPendingPluginEnterEvents = [
+          ...(window.__gooseMarksPendingPluginEnterEvents || []),
+          entry,
+        ].slice(-8)
         mountDefaultSearchInput(true)
         window.dispatchEvent(new CustomEvent(UTOOLS_PLUGIN_ENTER_EVENT, {
-          detail: params || {},
+          detail: entry.params,
         }))
       })
     }
@@ -62,6 +78,10 @@ if (typeof window !== 'undefined') {
       if (typeof utools.setSubInputValue === 'function') {
         utools.setSubInputValue(window.__gooseMarksLastAppValue || '')
       }
+    })
+
+    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, () => {
+      window.__gooseMarksPendingPluginEnterEvents = []
     })
   }
 
