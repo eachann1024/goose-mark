@@ -1002,96 +1002,241 @@ const handleUToolsSearchInputEvent = (event: Event) => {
   store.setSearch(typeof detail?.text === 'string' ? detail.text : '')
 }
 
-const handleUToolsPluginEnterEvent = (event: Event) => {
-  const params = (event as CustomEvent<{ code?: unknown; payload?: unknown; from?: unknown }>).detail
-  const code = params?.code
-  const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
+type UToolsPluginEnterPayload = {
+  code?: unknown
+  payload?: unknown
+  from?: unknown
+  type?: unknown
+}
 
-  if (code === 'save_link') {
-    let urlToSave = ''
-    const payload = params?.payload
+type PendingUToolsPluginEnterEvent = {
+  serial: number
+  params: UToolsPluginEnterPayload
+}
 
-    if (typeof payload === 'string') {
-      urlToSave = payload
-    } else if (payload && typeof payload === 'object' && 'text' in payload) {
-      urlToSave = String(payload.text)
+const RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS = 1000
+let recentDynamicTemplateEnterAt = 0
+const UNIVERSAL_BOOKMARK_PAYLOAD_SPLIT_RE = /^[\s\/|:：\-—–]+/
+
+type UniversalBookmarkMatch = {
+  bookmark: Bookmark
+  query: string
+  exact: boolean
+}
+
+const getUToolsPluginEnterParams = (input: unknown): UToolsPluginEnterPayload => {
+  if (!input || typeof input !== 'object') return {}
+  const detail = input as UToolsPluginEnterPayload & { params?: unknown }
+  if (detail.params && typeof detail.params === 'object') {
+    return detail.params as UToolsPluginEnterPayload
+  }
+  return detail
+}
+
+const findUniversalBookmarkMatch = (payloadText: string): UniversalBookmarkMatch | null => {
+  const candidates = store.bookmarks
+    .filter((bookmark): bookmark is Bookmark => {
+      return bookmark.allowUniversal === true
+        && !store.isBookmarkInTrash(bookmark)
+        && typeof bookmark.title === 'string'
+        && !!bookmark.title.trim()
+    })
+    .sort((left, right) => right.title.trim().length - left.title.trim().length)
+
+  for (const bookmark of candidates) {
+    const title = bookmark.title.trim()
+    if (!title) continue
+
+    if (payloadText === title) {
+      return { bookmark, query: '', exact: true }
     }
 
-    urlToSave = urlToSave.trim()
+    if (!payloadText.startsWith(title)) continue
 
-    if (urlToSave && isValidUrl(urlToSave)) {
-      onMainViewSwitch()
-      activeTemplateBookmark.value = null
-      syncTheme()
-      syncFeatures(store.bookmarks)
-      restoreDefaultSearchInput()
-      store.setSearch('')
-      openAddWithUrl(urlToSave)
-      return
-    }
+    const suffix = payloadText.slice(title.length)
+    if (!suffix) continue
+    if (!UNIVERSAL_BOOKMARK_PAYLOAD_SPLIT_RE.test(suffix)) continue
 
-    console.warn('[save_link] 无效 URL:', { payload, urlToSave })
-    showToast({ title: '未检测到有效链接', variant: 'warning' })
-    return
-  }
-
-  if (code === 'quick_save') {
-    const from = (params as any)?.from || 'main'
-    const payload = params?.payload
-    handleQuickSave(from, payload)
-    return
-  }
-
-  if (code === 'quick_save_dialog') {
-    onMainViewSwitch()
-    showQuickSaveDialog.value = true
-    return
-  }
-
-  if (!isTemplateFeature) {
-    onMainViewSwitch()
-    activeTemplateBookmark.value = null
-    syncTheme()
-    syncFeatures(store.bookmarks)
-    closeSearchView({ restoreFocus: false })
-    store.setSearch('')
-    activateSearchInputOnly()
-    return
-  }
-
-  syncTheme()
-  const id = (code as string).slice(FEATURE_PREFIX.length)
-  const bookmark = store.bookmarks.find(b => b.id === id)
-
-  if (!bookmark) {
-    window.utools?.outPlugin()
-    return
-  }
-
-  const hasTemplate = /{[^}]+}/.test(bookmark.url)
-  const isInTemplateMode = activeTemplateBookmark.value?.id === id
-  const payloadQuery = getEnterText(params?.payload).trim()
-  const query = isInTemplateMode ? templateQuery.value.trim() : payloadQuery
-
-  if (hasTemplate) {
-    const isKeywordLaunch = (!payloadQuery || payloadQuery === bookmark.title) && !isInTemplateMode
-    if (isKeywordLaunch) {
-      enterTemplateMode(bookmark)
-      return
+    const query = suffix.replace(UNIVERSAL_BOOKMARK_PAYLOAD_SPLIT_RE, '').trim()
+    return {
+      bookmark,
+      query,
+      exact: query.length === 0,
     }
   }
 
-  let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+  return null
+}
+
+const openResolvedUrl = (url: string) => {
   showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
   openUrl(url)
 
   if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
     window.utools?.outPlugin()
-  } else if (activeTemplateBookmark.value) {
-    window.utools?.hideMainWindow?.()
-    exitTemplateMode()
+    return
   }
+
+  if (!isDetachedWindowNow()) {
+    window.utools?.hideMainWindow?.()
+  }
+}
+
+const syncTheme = () => {
+  if (typeof document === 'undefined') return
+  document.documentElement.classList.toggle('dark', !!isDark.value)
+}
+
+const handleUToolsPluginEnterEvent = (event: Event) => {
+  try {
+    const params = getUToolsPluginEnterParams((event as CustomEvent<UToolsPluginEnterPayload>).detail)
+    const code = params?.code
+    const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
+    const enterType = typeof params?.type === 'string' ? params.type : ''
+    const payloadText = getEnterText(params?.payload).trim()
+
+    if (code === 'save_link') {
+      let urlToSave = ''
+      const payload = params?.payload
+
+      if (typeof payload === 'string') {
+        urlToSave = payload
+      } else if (payload && typeof payload === 'object' && 'text' in payload) {
+        urlToSave = String(payload.text)
+      }
+
+      urlToSave = urlToSave.trim()
+
+      if (urlToSave && isValidUrl(urlToSave)) {
+        onMainViewSwitch()
+        activeTemplateBookmark.value = null
+        syncTheme()
+        syncFeatures(store.bookmarks)
+        restoreDefaultSearchInput()
+        store.setSearch('')
+        openAddWithUrl(urlToSave)
+        return
+      }
+
+      console.warn('[save_link] 无效 URL:', { payload, urlToSave })
+      showToast({ title: '未检测到有效链接', variant: 'warning' })
+      return
+    }
+
+    if (code === 'quick_save') {
+      const from = (params as any)?.from || 'main'
+      const payload = params?.payload
+      handleQuickSave(from, payload)
+      return
+    }
+
+    if (code === 'quick_save_dialog') {
+      onMainViewSwitch()
+      showQuickSaveDialog.value = true
+      return
+    }
+
+    if (!isTemplateFeature) {
+      if (code === 'bookmarks' && payloadText) {
+        const match = findUniversalBookmarkMatch(payloadText)
+        if (match) {
+          recentDynamicTemplateEnterAt = Date.now()
+          if (match.exact) {
+            const hasTemplate = /{[^}]+}/.test(match.bookmark.url)
+            if (hasTemplate) {
+              enterTemplateMode(match.bookmark)
+              return
+            }
+          }
+
+          const resolvedUrl = resolveBookmarkLaunchUrl(match.bookmark.url, match.query)
+          if (resolvedUrl) {
+            openResolvedUrl(resolvedUrl)
+            return
+          }
+
+          showToast({ title: '未检测到有效链接', variant: 'warning' })
+          return
+        }
+      }
+
+      if (code === 'bookmarks' && recentDynamicTemplateEnterAt > 0 && (Date.now() - recentDynamicTemplateEnterAt) <= RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS) {
+        recentDynamicTemplateEnterAt = 0
+        return
+      }
+
+      onMainViewSwitch()
+      activeTemplateBookmark.value = null
+      syncTheme()
+      syncFeatures(store.bookmarks)
+      closeSearchView({ restoreFocus: false })
+      store.setSearch('')
+      activateSearchInputOnly()
+      return
+    }
+
+    syncTheme()
+    const id = (code as string).slice(FEATURE_PREFIX.length)
+    const bookmark = store.bookmarks.find(b => b.id === id)
+
+    if (!bookmark) {
+      window.utools?.outPlugin()
+      return
+    }
+
+    const hasTemplate = /{[^}]+}/.test(bookmark.url)
+    const isInTemplateMode = activeTemplateBookmark.value?.id === id
+    const payloadQuery = getEnterText(params?.payload).trim()
+    const query = isInTemplateMode ? templateQuery.value.trim() : payloadQuery
+
+    if (hasTemplate) {
+      const shouldEnterTemplateMode = enterType === 'over'
+        ? !payloadQuery && !isInTemplateMode
+        : (!payloadQuery || payloadQuery === bookmark.title) && !isInTemplateMode
+      if (shouldEnterTemplateMode) {
+        recentDynamicTemplateEnterAt = Date.now()
+        enterTemplateMode(bookmark)
+        return
+      }
+    }
+
+    let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url
+    showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
+    openUrl(url)
+
+    if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
+      window.utools?.outPlugin()
+    } else {
+      if (!isDetachedWindowNow()) {
+        window.utools?.hideMainWindow?.()
+      }
+      if (activeTemplateBookmark.value) {
+        exitTemplateMode()
+      }
+    }
+
+    recentDynamicTemplateEnterAt = Date.now()
+  } finally {
+    window.__gooseMarksLastHandledPluginEnterSerial = window.__gooseMarksLastPluginEnterSerial || 0
+  }
+}
+
+const replayPendingUToolsPluginEnterEvent = () => {
+  const pendingEvents = (window.__gooseMarksPendingPluginEnterEvents || []) as PendingUToolsPluginEnterEvent[]
+  if (pendingEvents.length === 0) return
+
+  const selectedEvent = [...pendingEvents].reverse().find(entry => {
+    const code = entry?.params?.code
+    return typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
+  }) ?? pendingEvents[pendingEvents.length - 1]
+
+  if (!selectedEvent) return
+
+  handleUToolsPluginEnterEvent({
+    detail: selectedEvent.params
+  } as CustomEvent<UToolsPluginEnterPayload>)
+  window.__gooseMarksPendingPluginEnterEvents = []
 }
 
 const handleUToolsPluginOutEvent = () => {
@@ -1127,6 +1272,7 @@ onMounted(async () => {
     window.addEventListener(UTOOLS_SEARCH_INPUT_EVENT, handleUToolsSearchInputEvent as EventListener)
     window.addEventListener(UTOOLS_PLUGIN_ENTER_EVENT, handleUToolsPluginEnterEvent as EventListener)
     window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, handleUToolsPluginOutEvent as EventListener)
+    replayPendingUToolsPluginEnterEvent()
   }
 })
 
