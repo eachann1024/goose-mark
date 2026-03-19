@@ -55,14 +55,14 @@ onMounted(ensureCustomAiModel)
           @click="settingsStore.setUseSolidBackground(false)"
         >
           <div class="sky-preview shrink-0" aria-hidden="true">
-            <span class="i-mdi-star-four-points sky-preview__main" />
+            <span class="sky-preview__main" />
             <span class="sky-preview__dot sky-preview__dot--1" />
             <span class="sky-preview__dot sky-preview__dot--2" />
             <span class="sky-preview__dot sky-preview__dot--3" />
           </div>
           <div class="text-left">
             <div class="text-sm font-medium">星空背景</div>
-            <div class="text-xs text-muted-foreground">带动态效果</div>
+            <div class="text-xs text-muted-foreground">旋转星点与随机流星</div>
           </div>
         </Button>
         <Button
@@ -280,57 +280,73 @@ onMounted(ensureCustomAiModel)
   width: 2.5rem;
   height: 2.5rem;
   border-radius: 0.625rem;
-  border: 1px solid rgb(255 255 255 / 0.12);
   overflow: hidden;
-  background: #050505;
+  background:
+    radial-gradient(circle at 50% -5%, rgb(25 53 84 / 0.95), transparent 52%),
+    linear-gradient(180deg, #08111c 0%, #020204 62%, #000000 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 10px 20px rgb(0 0 0 / 0.18);
+}
+
+.sky-preview::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgb(148 201 255 / 0.18), transparent 48%);
 }
 
 .sky-preview::after {
   content: '';
   position: absolute;
-  inset: -40% auto auto -20%;
-  width: 65%;
+  top: 5px;
+  left: -10px;
+  width: 32px;
   height: 1px;
-  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.85), rgb(255 255 255 / 0));
-  transform: rotate(-18deg);
-  animation: sky-meteor 2.8s ease-in-out infinite;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.92), rgb(255 255 255 / 0));
+  transform: rotate(25deg);
+  animation: sky-meteor 3.6s ease-in-out infinite;
 }
 
 .sky-preview__main {
   position: absolute;
-  top: 7px;
+  top: 8px;
   left: 9px;
-  font-size: 16px;
-  color: rgb(255 255 255 / 0.9);
-  filter: drop-shadow(0 0 5px rgb(255 255 255 / 0.45));
-  animation: sky-twinkle 1.8s ease-in-out infinite;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgb(226 238 255 / 0.92);
+  box-shadow:
+    0 0 8px rgb(173 216 255 / 0.65),
+    0 0 14px rgb(173 216 255 / 0.3);
+  animation: sky-twinkle 2.4s ease-in-out infinite;
 }
 
 .sky-preview__dot {
   position: absolute;
-  width: 3px;
-  height: 3px;
+  width: 2.5px;
+  height: 2.5px;
   border-radius: 9999px;
-  background: rgb(255 255 255 / 0.85);
-  box-shadow: 0 0 6px rgb(255 255 255 / 0.45);
-  animation: sky-dot 2.2s ease-in-out infinite;
+  background: rgb(225 235 255 / 0.82);
+  box-shadow: 0 0 5px rgb(173 216 255 / 0.38);
+  animation: sky-dot 2.8s ease-in-out infinite;
 }
 
-.sky-preview__dot--1 { top: 9px; right: 8px; animation-delay: 0.2s; }
-.sky-preview__dot--2 { top: 19px; left: 7px; animation-delay: 0.6s; }
-.sky-preview__dot--3 { top: 22px; right: 12px; animation-delay: 1s; }
+.sky-preview__dot--1 { top: 10px; right: 9px; animation-delay: 0.2s; }
+.sky-preview__dot--2 { top: 18px; left: 8px; animation-delay: 0.7s; }
+.sky-preview__dot--3 { top: 22px; right: 12px; animation-delay: 1.2s; }
 
 @keyframes sky-twinkle {
-  0%, 100% { opacity: 0.62; transform: scale(0.9) rotate(0deg); }
-  50% { opacity: 1; transform: scale(1.08) rotate(8deg); }
+  0%, 100% { opacity: 0.5; transform: scale(0.86); }
+  50% { opacity: 1; transform: scale(1.18); }
 }
 @keyframes sky-dot {
-  0%, 100% { opacity: 0.35; transform: scale(0.9); }
-  50% { opacity: 0.95; transform: scale(1.15); }
+  0%, 100% { opacity: 0.25; transform: scale(0.85); }
+  50% { opacity: 0.85; transform: scale(1.12); }
 }
 @keyframes sky-meteor {
-  0%, 55%, 100% { opacity: 0; transform: translate(-18px, -8px) rotate(-18deg); }
-  68% { opacity: 0.85; }
-  82% { opacity: 0; transform: translate(28px, 20px) rotate(-18deg); }
+  0%, 58%, 100% { opacity: 0; transform: translate(-10px, -6px) rotate(25deg); }
+  70% { opacity: 0.9; }
+  84% { opacity: 0; transform: translate(24px, 16px) rotate(25deg); }
 }
 </style>
