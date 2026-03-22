@@ -30,6 +30,11 @@ if (typeof window !== 'undefined') {
       }, '搜索书签...', focus)
     }
 
+    const clearDefaultSearchCache = () => {
+      window.__gooseMarksSuppressNextChange = false
+      window.__gooseMarksLastAppValue = ''
+    }
+
     if (typeof utools.onPluginEnter === 'function') {
       utools.onPluginEnter((params) => {
         const nextSerial = (window.__gooseMarksPluginEnterSerial || 0) + 1
@@ -56,6 +61,7 @@ if (typeof window !== 'undefined') {
         if (typeof utools.removeSubInput === 'function') {
           utools.removeSubInput()
         }
+        clearDefaultSearchCache()
         window.dispatchEvent(new CustomEvent(UTOOLS_PLUGIN_OUT_EVENT, {
           detail: { isKill: isKill === true },
         }))
@@ -82,6 +88,7 @@ if (typeof window !== 'undefined') {
 
     window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, () => {
       window.__gooseMarksPendingPluginEnterEvents = []
+      clearDefaultSearchCache()
     })
   }
 

@@ -258,8 +258,16 @@ const canUseSubInput = computed(() => {
   }
 })
 
+const syncSearchInputText = (text: string) => {
+  const nextText = typeof text === 'string' ? text : ''
+  if (nextText.length > 0) {
+    suppressSearchOverlay.value = false
+  }
+  store.setSearch(nextText)
+}
+
 const handleSearchSubInput = ({ text }: { text: string }) => {
-  store.setSearch(text)
+  syncSearchInputText(text)
 }
 
 const {
@@ -273,6 +281,7 @@ const {
 })
 
 const suppressSearchOverlay = ref(false)
+const skipSearchCloseRefocus = ref(false)
 
 const {
   localSearchInputRef,
@@ -387,6 +396,10 @@ const focusMainSearchInput = (forceRemount = false) => {
 watch(searchViewOpen, (isOpen, wasOpen) => {
   if (!isOpen) {
     suppressSearchOverlay.value = false
+    if (skipSearchCloseRefocus.value) {
+      skipSearchCloseRefocus.value = false
+      return
+    }
     if (wasOpen) {
       focusMainSearchInput(true)
     }
@@ -934,7 +947,7 @@ const handleStorageSync = ((e: any) => {
 const handleUToolsSearchInputEvent = (event: Event) => {
   if (activeTemplateBookmark.value) return
   const detail = (event as CustomEvent<{ text?: string }>).detail
-  store.setSearch(typeof detail?.text === 'string' ? detail.text : '')
+  syncSearchInputText(typeof detail?.text === 'string' ? detail.text : '')
 }
 
 type UToolsPluginEnterPayload = {
@@ -1104,6 +1117,7 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
       activeTemplateBookmark.value = null
       syncTheme()
       syncFeatures(store.bookmarks)
+      skipSearchCloseRefocus.value = true
       closeSearchView({ restoreFocus: false })
       store.setSearch('')
       activateSearchInputOnly()
@@ -1175,7 +1189,9 @@ const replayPendingUToolsPluginEnterEvent = () => {
 }
 
 const handleUToolsPluginOutEvent = () => {
+  skipSearchCloseRefocus.value = true
   suppressSearchOverlay.value = false
+  closeSearchView({ restoreFocus: false })
   clearSubInput()
 }
 
