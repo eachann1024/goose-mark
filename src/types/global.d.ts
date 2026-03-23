@@ -11,6 +11,14 @@ interface UBrowserApi {
   run(options?: { width?: number; height?: number; show?: boolean }): Promise<unknown[]>
 }
 
+interface UToolsAiModel {
+  id: string
+  label: string
+  description?: string
+  icon?: string
+  cost?: string
+}
+
 interface UToolsAiOption {
   model?: string
   messages: UToolsAiMessage[]
@@ -49,6 +57,7 @@ interface UToolsApi {
   removeFeature?(code: string): boolean
   // uTools AI API - 需要用户在 uTools 中配置 AI 服务
   ai?(option: UToolsAiOption, streamCallback?: (chunk: { text?: string; content?: string }) => void): Promise<string | { text?: string; content?: string }>
+  allAiModels?(): Promise<UToolsAiModel[]>
   isDarkColors?(): boolean
   getWindowType?(): 'main' | 'detach' | 'browser'
   outPlugin(isKill?: boolean): boolean
