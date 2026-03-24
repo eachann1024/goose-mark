@@ -30,6 +30,12 @@ interface UToolsAiMessage {
   reasoning_content?: string
 }
 
+interface UToolsUserInfo {
+  avatar: string
+  nickname: string
+  type: 'member' | 'user'
+}
+
 interface UToolsApi {
   getPath(name: string): string
   setSubInput(onChange: (params: { text: string }) => void, placeholder?: string, isFocus?: boolean): boolean
@@ -64,6 +70,7 @@ interface UToolsApi {
   createBrowserWindow?(url: string, options?: Record<string, unknown>, callback?: () => void): UToolsBrowserWindow | undefined
   ubrowser?: UBrowserApi
   getVersion?(): string
+  getUser?(): UToolsUserInfo | null
   copyText?(text: string): void
   setExpendHeight?(height: number): void
   showNotification?(text: string): void

@@ -12,6 +12,7 @@ import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
 import { parseJsonImportText, applyImportDataToStore } from '@/composables/useImportExport'
+import { trackEvent } from '@/services/analytics'
 
 // Stores
 const store = useBookmarkStore()
@@ -38,8 +39,12 @@ const {
   getTemplateLabel
 } = useBookmarkOperations()
 
-const openBookmarkLink = (bookmark: Bookmark) => {
-  originalOpenBookmarkLink(bookmark, { useUiQuery: false })
+const openBookmarkLink = (bookmark: Bookmark, options?: { source?: string; openMethod?: 'keyboard' | 'click' | 'command' | 'plugin' }) => {
+  originalOpenBookmarkLink(bookmark, {
+    useUiQuery: false,
+    source: options?.source,
+    openMethod: options?.openMethod ?? 'click',
+  })
 }
 
 // 暂停/恢复 watcher 的标记
@@ -97,12 +102,15 @@ const {
 
 const settingsActiveTab = ref<'general' | 'categories' | 'tools' | 'data' | 'local-mode' | 'about'>('general')
 const showMirrorDecisionDialog = ref(false)
+const hasTrackedSettingsOpen = ref(false)
+const lastTrackedThemeMode = ref('')
 const mirrorDecisionLoading = ref(false)
 const pendingMirrorDecision = ref<PendingMirrorDecision | null>(null)
 
 const openLocalModeSettings = () => {
   tab.value = 'settings'
   settingsActiveTab.value = 'local-mode'
+  trackEvent('settings_open', { entry: 'local_mode_notice' })
   markLocalModeSettingsVisited()
 }
 
@@ -248,6 +256,37 @@ const handleSelectGroup = async (groupId: string) => {
 watch(() => settingsStore.windowHeight, (h) => {
   setExpendHeight(h)
 })
+
+watch(() => tab.value, (value) => {
+  if (value === 'settings') {
+    if (!hasTrackedSettingsOpen.value) {
+      trackEvent('settings_open', { entry: 'tab_switch' })
+      hasTrackedSettingsOpen.value = true
+    }
+    trackEvent('settings_tab_view', { tab: settingsActiveTab.value })
+    if (settingsActiveTab.value === 'about') {
+      trackEvent('stats_view', { source: 'settings_about' })
+    }
+    return
+  }
+
+  hasTrackedSettingsOpen.value = false
+})
+
+watch(() => settingsActiveTab.value, (value) => {
+  if (tab.value !== 'settings') return
+  trackEvent('settings_tab_view', { tab: value })
+  if (value === 'about') {
+    trackEvent('stats_view', { source: 'settings_about' })
+  }
+})
+
+watch(isDark, (value) => {
+  const nextMode = value ? 'dark' : 'light'
+  if (lastTrackedThemeMode.value === nextMode) return
+  lastTrackedThemeMode.value = nextMode
+  trackEvent('theme_mode_change', { themeMode: nextMode })
+}, { immediate: true })
 
 const canUseSubInput = computed(() => {
   if (!isUTools.value) return false
@@ -847,16 +886,20 @@ const quickSaveBookmark = async (url: string) => handleQuickSave('dialog', url)
 const executeTemplateSearch = () => {
   const bookmark = activeTemplateBookmark.value
   if (!bookmark) return
-  
+
   const query = templateQuery.value.trim()
   if (!query) return
-  
+
   // 替换模板变量
   let url = bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query))
   if (!/^https?:\/\//i.test(url)) url = 'https://' + url
-  
+
+  trackEvent('template_search_execute', {
+    bookmarkId: bookmark.id,
+    queryLength: query.length,
+  })
   showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
-  openUrl(url)
+  openUrl(url, { source: 'template_search', openMethod: 'keyboard', bookmarkId: bookmark.id, hasTemplate: true })
   
   if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
     window.utools?.outPlugin()
@@ -1018,7 +1061,7 @@ const findUniversalBookmarkMatch = (payloadText: string): UniversalBookmarkMatch
 
 const openResolvedUrl = (url: string) => {
   showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
-  openUrl(url)
+  openUrl(url, { source: 'plugin', openMethod: 'plugin' })
 
   if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
     window.utools?.outPlugin()
@@ -1039,6 +1082,11 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
   try {
     const params = getUToolsPluginEnterParams((event as CustomEvent<UToolsPluginEnterPayload>).detail)
     const code = params?.code
+    trackEvent('utools_enter', {
+      matchedCode: typeof code === 'string' ? code : '',
+      entryType: typeof params?.type === 'string' ? params.type : '',
+      hasPayload: !!getEnterText(params?.payload).trim(),
+    })
     const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
     const enterType = typeof params?.type === 'string' ? params.type : ''
     const payloadText = getEnterText(params?.payload).trim()
@@ -1152,7 +1200,7 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
     let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url
     showToast({ title: '正在打开...', variant: 'success', duration: 1000 })
-    openUrl(url)
+    openUrl(url, { source: 'plugin', openMethod: 'plugin', bookmarkId: bookmark.id, hasTemplate })
 
     if (settingsStore.autoCloseWindow && isDetachedWindowNow()) {
       window.utools?.outPlugin()

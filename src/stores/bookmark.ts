@@ -4,6 +4,7 @@ import { bulkMatchMissing, ensureIconForBookmark } from '@/services/iconCache'
 import { utoolsStorage } from '@/lib/utoolsStorage'
 import { useSync } from '@/composables/useSync'
 import { useSettingsStore } from '@/stores/settings'
+import { trackEvent } from '@/services/analytics'
 
 const uid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`)
 
@@ -601,6 +602,15 @@ export const useBookmarkStore = defineStore('bookmark', {
         this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
       })
 
+      trackEvent('bookmark_create_success', {
+        bookmarkId: bookmark.id,
+        locationCount: locations.length,
+        firstGroupId: locations[0]?.groupId,
+        firstSubGroupId: locations[0]?.subGroupId,
+        hasTemplate: /{[^}]+}/.test(bookmark.url),
+        allowUniversal: bookmark.allowUniversal ?? false,
+      })
+
       return bookmark
     },
     updateBookmarkLocations(bookmarkId: string, newLocations: BookmarkLocation[]) {
@@ -683,8 +693,17 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
     removeBookmark(id: string) {
       const now = Date.now()
-      const inTrash = this.getBookmarkLocations(id).some(loc => loc.groupId === TRASH_GROUP_ID)
-      
+      const locations = this.getBookmarkLocations(id)
+      const inTrash = locations.some(loc => loc.groupId === TRASH_GROUP_ID)
+
+      trackEvent('bookmark_delete', {
+        bookmarkId: id,
+        deleteType: inTrash ? 'permanent' : 'trash',
+        locationCount: locations.length,
+        firstGroupId: locations[0]?.groupId,
+        firstSubGroupId: locations[0]?.subGroupId,
+      })
+
       if (inTrash) {
         const bookmark = this.bookmarks.find(b => b.id === id)
         const previousLocations = bookmark?.locations

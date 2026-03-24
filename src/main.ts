@@ -1,11 +1,13 @@
 import { createApp } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import piniaPluginPersistedstate from 'pinia-plugin-persistedstate'
+import Clarity from '@microsoft/clarity'
 import App from './App.vue'
 import './assets/index.css'
 import './assets/fonts.css'
 import 'uno.css'
 import { useBookmarkStore } from '@/stores/bookmark'
+import { identifyUser, trackEvent } from '@/services/analytics'
 
 const app = createApp(App)
 
@@ -19,6 +21,21 @@ const { setExpendHeight } = useUTools()
 const { start, bootstrapLocalFirstIfEnabled, hydrateMirrorDirectoryForDevice } = useLocalDataMirror()
 
 const bootstrapApp = async () => {
+  Clarity.init('w0v2zn6wcr')
+  const currentUser = window.utools?.getUser?.()
+  const nickname = currentUser?.nickname?.trim() || '匿名用户'
+  const userType = currentUser?.type || 'guest'
+  const clarityUserId = `${nickname}#${userType}`
+  identifyUser(clarityUserId, {
+    friendlyName: nickname,
+    tags: {
+      user_id: clarityUserId,
+      nickname,
+      user_type: userType,
+      test_environment: import.meta.env.DEV ? 'utools-dev' : 'utools-prod',
+    }
+  })
+  trackEvent('app_launch')
   setExpendHeight(settingsStore.windowHeight)
   bookmarkStore.migrateFromLegacy()
   hydrateMirrorDirectoryForDevice()
