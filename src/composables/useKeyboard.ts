@@ -12,7 +12,7 @@ export function useKeyboard(
   showDeleteConfirm: Ref<boolean>,
   showIconSelector: Ref<boolean>,
   tab: Ref<string>,
-  openBookmarkLink: (b: Bookmark) => void,
+  openBookmarkLink: (b: Bookmark, options?: { source?: string; openMethod?: 'keyboard' | 'click' | 'command' | 'plugin' }) => void,
   groups: Ref<Group[]>,
   activeGroupId: Ref<string>,
   selectGroup: (groupId: string) => void
@@ -152,7 +152,10 @@ export function useKeyboard(
         e.preventDefault()
         if (selectedIndex.value >= 0 && selectedIndex.value < bookmarks.length) {
             const bookmark = bookmarks[selectedIndex.value]
-            if (bookmark) openBookmarkLink(bookmark)
+            if (bookmark) openBookmarkLink(bookmark, {
+              source: searchViewOpen.value ? 'search' : 'bookmark',
+              openMethod: 'keyboard'
+            })
         }
         return
       default:

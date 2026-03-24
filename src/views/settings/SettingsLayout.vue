@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GeneralSettings from './GeneralSettings.vue'
+import { trackEvent } from '@/services/analytics'
 import CategoryManager from './CategoryManager.vue'
 import ToolsSettings from './ToolsSettings.vue'
 import DataSettings from './DataSettings.vue'
@@ -21,7 +22,13 @@ const emit = defineEmits<{
 
 const currentTab = computed<SettingsTab>({
   get: () => props.activeTab,
-  set: (value) => emit('update:activeTab', value)
+  set: (value) => {
+    emit('update:activeTab', value)
+    trackEvent('settings_tab_view', { tab: value })
+    if (value === 'about') {
+      trackEvent('stats_view', { source: 'settings_about' })
+    }
+  }
 })
 
 const { localModeMenuDotVisible, markLocalModeSettingsVisited } = useFeatureNoticeCenter()

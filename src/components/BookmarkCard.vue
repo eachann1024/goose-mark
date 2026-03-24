@@ -2,6 +2,8 @@
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
 
+const settingsStore = useSettingsStore()
+
 const props = defineProps<{ 
   bookmark: Bookmark; 
   selected?: boolean; 
@@ -244,6 +246,26 @@ const copyUrl = async () => {
 }
 
 const canLocate = computed(() => props.showLocate ?? false)
+
+const DAY_IN_MS = 24 * 60 * 60 * 1000
+
+const ageVariant = computed(() => {
+  const updatedAt = Number(props.bookmark.updatedAt)
+  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return 'aged'
+
+  const elapsed = Math.max(0, Date.now() - updatedAt)
+
+  if (elapsed <= 3 * DAY_IN_MS) return 'fresh'
+  if (elapsed <= 15 * DAY_IN_MS) return 'recent'
+  if (elapsed <= 30 * DAY_IN_MS) return 'warm'
+  return 'aged'
+})
+
+const ageCardClass = computed(() => {
+  if (!settingsStore.agingCardEnabled) return ''
+  return `bookmark-card--${ageVariant.value}`
+})
+
 const selectedCardClass = computed(() => {
   if (!props.selected) return ''
   if (props.selectionVariant === 'search') {
@@ -258,6 +280,7 @@ const selectedCardClass = computed(() => {
     ref="cardEl"
     class="bookmark-card relative group hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
     :class="[
+      ageCardClass,
       selected ? selectedCardClass : 'bookmark-card--hoverable'
     ]"
     @click="openLink"
@@ -360,6 +383,45 @@ const selectedCardClass = computed(() => {
 </template>
 
 <style scoped>
+.bookmark-card--fresh {
+  border-color: hsl(var(--border));
+  background: hsl(var(--card));
+  box-shadow: none;
+}
+
+.bookmark-card--recent {
+  border-color: hsl(220 11% 64% / 0.9);
+  background: hsl(var(--card));
+  box-shadow: none;
+}
+
+.bookmark-card--warm {
+  border-color: hsl(42 52% 60% / 0.95);
+  background: hsl(var(--card));
+  box-shadow: none;
+}
+
+.bookmark-card--aged {
+  border-color: hsl(20 46% 34% / 0.98);
+  background: hsl(var(--card));
+  box-shadow: none;
+}
+
+.bookmark-card--aged :deep(.text-foreground) {
+  color: hsl(var(--foreground));
+}
+
+.bookmark-card--aged :deep(.text-muted-foreground) {
+  color: hsl(var(--muted-foreground));
+}
+
+.bookmark-card--fresh.bookmark-card--hoverable:hover,
+.bookmark-card--recent.bookmark-card--hoverable:hover,
+.bookmark-card--warm.bookmark-card--hoverable:hover,
+.bookmark-card--aged.bookmark-card--hoverable:hover {
+  background-color: hsl(var(--card));
+}
+
 .bookmark-card--selected {
   border-color: hsl(var(--primary));
   background-color: hsl(var(--primary) / 0.05);
@@ -376,9 +438,12 @@ const selectedCardClass = computed(() => {
     0 0 0 2px hsl(var(--primary) / 0.3);
 }
 
-.dark .bookmark-card--hoverable:hover {
-  border-color: hsl(var(--primary) / 0.6);
-  background-color: hsl(var(--primary) / 0.05);
+.dark .bookmark-card--hoverable:hover,
+.bookmark-card--fresh.bookmark-card--hoverable:hover,
+.bookmark-card--recent.bookmark-card--hoverable:hover,
+.bookmark-card--warm.bookmark-card--hoverable:hover,
+.bookmark-card--aged.bookmark-card--hoverable:hover {
+  background-color: hsl(var(--card));
 }
 
 .bookmark-card__locate-btn:hover {

@@ -4,6 +4,7 @@ import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { iconToDisplayUrl, fetchAndCacheIcon } from '@/services/iconCache'
 import { useToast } from './useToast'
 import { getTemplateLabel } from '@/lib/utils'
+import { trackEvent } from '@/services/analytics'
 
 
 type UBrowserApi = {
@@ -326,7 +327,6 @@ function _useBookmarkForm() {
 
       if (editingId.value) {
         // 修改书签：获取旧位置和新位置，合并后检查分享
-        const oldLocations = store.getBookmarkLocations(editingId.value)
         store.updateBookmark(editingId.value, {
           title: draft.title.trim(),
           url: draft.url.trim(),
@@ -335,7 +335,14 @@ function _useBookmarkForm() {
           icon: iconToSave
         })
         store.updateBookmarkLocations(editingId.value, draftLocations.value)
-        
+        trackEvent('bookmark_edit_success', {
+          bookmarkId: editingId.value,
+          locationCount: draftLocations.value.length,
+          firstGroupId: draftLocations.value[0]?.groupId,
+          firstSubGroupId: draftLocations.value[0]?.subGroupId,
+          hasTemplate: /{[^}]+}/.test(draft.url.trim()),
+          allowUniversal: draft.allowUniversal,
+        })
       } else {
         const created = store.addBookmark(
           {

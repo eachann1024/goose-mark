@@ -1,6 +1,7 @@
 
 import type { Bookmark } from '@/types/bookmark'
 import { getTemplateLabel, resolveBookmarkLaunchUrl } from '@/lib/utils'
+import { trackEvent } from '@/services/analytics'
 
 type UToolsExtendedApi = {
   copyText?: (text: string) => void
@@ -15,6 +16,8 @@ type UToolsExtendedApi = {
 type OpenBookmarkOptions = {
   query?: string
   useUiQuery?: boolean
+  source?: string
+  openMethod?: 'keyboard' | 'click' | 'command' | 'plugin'
 }
 
 export function useBookmarkOperations() {
@@ -129,10 +132,37 @@ export function useBookmarkOperations() {
       return
     }
 
-    openUrl(url)
+    store.updateBookmark(bookmark.id, {})
+    openUrl(url, {
+      source: options.source ?? (query ? 'search' : 'bookmark'),
+      openMethod: options.openMethod,
+      bookmarkId: bookmark.id,
+      hasTemplate,
+    })
   }
 
-  const openUrl = (url: string) => {
+  const openUrl = (url: string, analytics?: {
+    source?: string
+    openMethod?: 'keyboard' | 'click' | 'command' | 'plugin'
+    bookmarkId?: string
+    hasTemplate?: boolean
+  }) => {
+    trackEvent('bookmark_open', {
+      source: analytics?.source,
+      openMethod: analytics?.openMethod,
+      bookmarkId: analytics?.bookmarkId,
+      hasTemplate: analytics?.hasTemplate,
+      useUtoolsBrowser: settingsStore.preferUtoolsBrowser,
+      autoCloseWindow: settingsStore.autoCloseWindow,
+    })
+
+    if (analytics?.source === 'search' && analytics?.openMethod) {
+      trackEvent('search_result_open', {
+        openMethod: analytics.openMethod,
+        bookmarkId: analytics.bookmarkId,
+      })
+    }
+
     if (window.utools) {
       const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
       const canUseInner = settingsStore.preferUtoolsBrowser && utoolsApi?.ubrowser

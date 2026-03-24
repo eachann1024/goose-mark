@@ -212,6 +212,19 @@ onMounted(async () => {
         </div>
       </div>
       <p class="text-xs text-muted-foreground mt-2">默认自动换行，分组较多时可改为横向滚动。</p>
+
+      <div class="settings-row mt-4">
+        <div class="space-y-0.5">
+          <div class="text-sm font-medium">岁月卡片</div>
+          <div class="text-xs text-muted-foreground">关闭时使用普通白色卡片，开启后仅按最近打开时间改变边框颜色</div>
+        </div>
+        <Switch
+          :model-value="settingsStore.agingCardEnabled"
+          aria-label="岁月卡片"
+          @update:model-value="(checked: boolean) => settingsStore.setAgingCardEnabled(checked)"
+        />
+      </div>
+      <p class="text-xs text-muted-foreground mt-2">规则：3 天内保持默认边框；15 天内显示灰色边框；30 天内显示黄色边框；超过 30 天显示褐色边框。</p>
     </div>
 
     <!-- 窗口行为（uTools only） -->

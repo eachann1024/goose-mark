@@ -1,6 +1,7 @@
 import { utoolsStorage } from '@/lib/utoolsStorage'
 import { defineStore } from 'pinia'
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
+import { trackEvent } from '@/services/analytics'
 
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
@@ -24,6 +25,7 @@ export const useSettingsStore = defineStore('settings', {
     lightBackgroundStyle: 'utools' as 'white' | 'utools',
     autoMatchSearchIcons: true,
     skipFailedIconMatch: true,
+    agingCardEnabled: false,
     iconMatchLogs: [] as Array<{
       time: number
       scope: 'search' | 'missing'
@@ -36,19 +38,24 @@ export const useSettingsStore = defineStore('settings', {
   actions: {
     setGridColumns(value: number) {
       this.gridColumns = Math.min(5, Math.max(2, Math.round(value)))
+      trackEvent('settings_change', { settingKey: 'gridColumns', value: this.gridColumns })
     },
     setGroupTabsLayout(mode: 'wrap' | 'scroll') {
       this.groupTabsLayout = mode === 'scroll' ? 'scroll' : 'wrap'
+      trackEvent('settings_change', { settingKey: 'groupTabsLayout', value: this.groupTabsLayout })
     },
     setSearchAutoExitSeconds(value: number) {
       const num = Number.isFinite(value) ? value : 0
       this.searchAutoExitSeconds = num < 0 ? 0 : Math.round(num)
+      trackEvent('settings_change', { settingKey: 'searchAutoExitSeconds', value: this.searchAutoExitSeconds })
     },
     setAutoCloseWindow(value: boolean) {
       this.autoCloseWindow = !!value
+      trackEvent('settings_change', { settingKey: 'autoCloseWindow', value: this.autoCloseWindow })
     },
     setPreferUtoolsBrowser(value: boolean) {
       this.preferUtoolsBrowser = !!value
+      trackEvent('settings_change', { settingKey: 'preferUtoolsBrowser', value: this.preferUtoolsBrowser })
     },
     setPreferLocalSnapshotOnStartup(value: boolean) {
       this.preferLocalSnapshotOnStartup = !!value
@@ -61,31 +68,43 @@ export const useSettingsStore = defineStore('settings', {
       if (this.useCustomAiModel && !this.customAiModel.trim()) {
         this.customAiModel = DEFAULT_AI_MODEL
       }
+      trackEvent('settings_change', { settingKey: 'useCustomAiModel', value: this.useCustomAiModel })
     },
     setCustomAiModel(value: string) {
       this.customAiModel = String(value || '').trim()
+      trackEvent('settings_change', { settingKey: 'customAiModel', value: this.customAiModel || DEFAULT_AI_MODEL })
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0
       this.windowHeight = num < 100 ? 100 : Math.round(num)
+      trackEvent('settings_change', { settingKey: 'windowHeight', value: this.windowHeight })
     },
     dismissOnboarding() {
       this.onboardingDismissed = true
     },
     setEasterEggEnabled(value: boolean) {
       this.easterEggEnabled = !!value
+      trackEvent('theme_skin_change', { themeSkin: this.easterEggEnabled ? 'starry' : 'plain' })
     },
     setUseSolidBackground(value: boolean) {
       this.useSolidBackground = !!value
+      trackEvent('theme_skin_change', { themeSkin: this.useSolidBackground ? 'solid' : 'starry' })
     },
     setLightBackgroundStyle(value: 'white' | 'utools') {
       this.lightBackgroundStyle = value === 'utools' ? 'utools' : 'white'
+      trackEvent('theme_skin_change', { themeSkin: this.lightBackgroundStyle })
     },
     setAutoMatchSearchIcons(value: boolean) {
       this.autoMatchSearchIcons = !!value
+      trackEvent('settings_change', { settingKey: 'autoMatchSearchIcons', value: this.autoMatchSearchIcons })
     },
     setSkipFailedIconMatch(value: boolean) {
       this.skipFailedIconMatch = !!value
+      trackEvent('settings_change', { settingKey: 'skipFailedIconMatch', value: this.skipFailedIconMatch })
+    },
+    setAgingCardEnabled(value: boolean) {
+      this.agingCardEnabled = !!value
+      trackEvent('settings_change', { settingKey: 'agingCardEnabled', value: this.agingCardEnabled })
     },
     addIconMatchLog(payload: {
       time: number
