@@ -13,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'drop', bookmarkId: string, toSubId: string): void
+  (e: 'edit-group', groupId: string): void
 }>()
 
 const store = useBookmarkStore()
@@ -252,6 +253,7 @@ const checkSubMove = (evt: { draggedContext: { element: { shareId?: string; sour
             :is-drag-over="dragOverSubId === sub.id"
             :has-update="hasUpdate(sub.id)"
             @select="emit('select', $event)"
+            @edit-parent-group="emit('edit-group', activeGroupId)"
             @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
             @dragleave="handleDragLeave"
             @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"

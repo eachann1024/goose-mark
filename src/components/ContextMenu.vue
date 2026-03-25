@@ -7,6 +7,7 @@ const props = defineProps<{
   isTrash?: boolean
   readonly?: boolean
   isUTools?: boolean
+  hasDescription?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -113,6 +114,16 @@ watch(
       <Button variant="ghost" class="menu-item justify-start" @click="handleAction('copy')">
         <span class="i-mdi-content-copy text-muted" />
         <span>复制链接</span>
+      </Button>
+
+      <Button
+        variant="ghost"
+        class="menu-item justify-start"
+        :disabled="!hasDescription"
+        @click="handleAction('copyDescription')"
+      >
+        <span class="i-mdi-text-box-outline text-muted" />
+        <span>复制描述</span>
       </Button>
   
       <template v-if="!readonly">

@@ -23,6 +23,7 @@ const {
   inspectMirrorDirectory,
   activateMirrorDirectory,
   start,
+  stop,
   syncNow,
   setDefaultMirrorDirectoryForDevice,
   isMirrorDirectoryConfiguredOnDevice,
@@ -53,8 +54,12 @@ const displayDirectoryPath = computed(() => {
 const handlePreferLocalSnapshotChange = (checked: boolean) => {
   settingsStore.setPreferLocalSnapshotOnStartup(checked)
   if (!checked) {
+    stop()
     ensureLocalModeDevicePathNotice(false)
+    return
   }
+
+  start()
 }
 
 const closeMirrorDecisionDialog = (force = false) => {

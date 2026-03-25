@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import draggable from 'vuedraggable'
 import ResultToast from '@/components/ResultToast.vue'
+import { useCategoryEditor } from '@/composables/useCategoryEditor'
 import type { Group } from '@/types/bookmark'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
 
@@ -19,6 +20,7 @@ const addSubInput = ref<InstanceType<typeof import('@/components/ui/input').Inpu
 const groupListRef = ref<HTMLElement | null>(null)
 const groupRowRefs = ref<Record<string, HTMLElement | null>>({})
 const isDragging = ref(false)
+const { pendingCategoryEditorRequest, clearCategoryEditorRequest } = useCategoryEditor()
 
 // 删除确认
 const showDeleteConfirm = ref(false)
@@ -135,6 +137,17 @@ const saveEdit = () => {
   editName.value = ''
 }
 
+const isImeComposing = (event: KeyboardEvent) => {
+  const keyboardEvent = event as KeyboardEvent & { keyCode?: number }
+  return keyboardEvent.isComposing || keyboardEvent.keyCode === 229
+}
+
+const handleSubmitOnEnter = (event: KeyboardEvent, submit: () => void) => {
+  if (event.key !== 'Enter' || isImeComposing(event)) return
+  event.preventDefault()
+  submit()
+}
+
 const cancelEdit = () => {
   editingGroupId.value = ''
   editingSubId.value = ''
@@ -182,6 +195,28 @@ const cancelAddSub = () => {
     newSubName.value = ''
   }, 100)
 }
+
+const scrollToRequestedGroup = async (request: { groupId: string; requestId: number } | null) => {
+  if (!request?.groupId) return
+  const group = draggableGroups.value.find(item => item.id === request.groupId)
+  if (!group) {
+    clearCategoryEditorRequest(request.requestId)
+    return
+  }
+
+  isAddingGroup.value = false
+  addingSubGroupId.value = ''
+  cancelEdit()
+
+  await nextTick()
+  const row = groupRowRefs.value[group.id]
+  row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  clearCategoryEditorRequest(request.requestId)
+}
+
+watch(pendingCategoryEditorRequest, (request) => {
+  void scrollToRequestedGroup(request)
+}, { immediate: true })
 
 // 删除确认
 const openDeleteConfirm = (type: 'group' | 'sub', groupId: string, name: string, subId?: string) => {
@@ -285,7 +320,7 @@ const closeUndoToast = () => {
               v-model="newGroupName" 
               placeholder="输入分组名称" 
               class="flex-1 h-9"
-              @keyup.enter="confirmAddGroup"
+              @keydown="handleSubmitOnEnter($event, confirmAddGroup)"
               autofocus
             />
             <Button size="icon" class="h-9 w-9 shrink-0" @click="confirmAddGroup">
@@ -334,7 +369,7 @@ const closeUndoToast = () => {
                   <Input 
                     v-model="editName" 
                     class="flex-1 h-9"
-                    @keyup.enter="saveEdit"
+                    @keydown="handleSubmitOnEnter($event, saveEdit)"
                     autofocus
                   />
                   <Button size="icon" class="h-9 w-9 shrink-0" @click="saveEdit">
@@ -420,7 +455,7 @@ const closeUndoToast = () => {
                       <Input 
                         v-model="editName" 
                         class="flex-1 h-9 text-sm"
-                        @keyup.enter="saveEdit"
+                        @keydown="handleSubmitOnEnter($event, saveEdit)"
                         autofocus
                       />
                       <Button size="icon" class="h-9 w-9 shrink-0" @click="saveEdit">
@@ -471,7 +506,7 @@ const closeUndoToast = () => {
                   v-model="newSubName" 
                   class="flex-1 h-9 text-sm"
                   placeholder="输入子分组名称"
-                  @keyup.enter="confirmAddSub"
+                  @keydown="handleSubmitOnEnter($event, confirmAddSub)"
                   @blur="cancelAddSub"
                   autofocus
                 />

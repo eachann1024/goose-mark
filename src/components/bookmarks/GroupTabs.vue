@@ -29,6 +29,7 @@ const emit = defineEmits<{
   (e: 'select-trash'): void
   (e: 'toggle-dark'): void
   (e: 'open-search'): void
+  (e: 'edit-group', id: string): void
 }>()
 
 const setTab = (value: 'bookmarks' | 'settings') => emit('update:tab', value)
@@ -64,6 +65,7 @@ const handleGroupMouseEnter = (group: Group) => {
             :data-active="activeGroupId === group.id ? 'true' : undefined"
             @click="emit('select-group', group.id)"
             @mouseenter="handleGroupMouseEnter(group)"
+            @contextmenu.prevent="emit('edit-group', group.id)"
           >
             {{ formatName(group.name) }}
           </Button>

@@ -6,6 +6,9 @@
   "homepage": "",
   "preload": "preload/preload.cjs",
   "main": "dist/index.html",
+  "pluginSetting": {
+    "height": 560
+  },
   "logo": "logo.png",
   "features": [
     {

@@ -14,6 +14,7 @@ const emit = defineEmits<{
   (e: 'dragover', event: DragEvent): void
   (e: 'dragleave', event: DragEvent): void
   (e: 'drop', event: DragEvent): void
+  (e: 'edit-parent-group'): void
 }>()
 
 const { isTooltipEnabled } = useUIManager()
@@ -60,6 +61,7 @@ const handleSelect = (event: MouseEvent) => {
         @pointerdown.prevent
         @mousedown.prevent
         @click="handleSelect"
+        @contextmenu.prevent="emit('edit-parent-group')"
         @dragover="emit('dragover', $event)"
         @dragleave="emit('dragleave', $event)"
         @drop="emit('drop', $event)"

@@ -12,6 +12,7 @@ export const useSettingsStore = defineStore('settings', {
     preferUtoolsBrowser: false,
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
+    aiEnabled: true,
     useCustomAiModel: false,
     customAiModel: DEFAULT_AI_MODEL,
     windowHeight: 560,
@@ -63,6 +64,10 @@ export const useSettingsStore = defineStore('settings', {
     setLocalMirrorDirectory(value: string) {
       this.localMirrorDirectory = String(value || '').trim()
     },
+    setAiEnabled(value: boolean) {
+      this.aiEnabled = !!value
+      trackEvent('settings_change', { settingKey: 'aiEnabled', value: this.aiEnabled })
+    },
     setUseCustomAiModel(value: boolean) {
       this.useCustomAiModel = !!value
       if (this.useCustomAiModel && !this.customAiModel.trim()) {
@@ -76,7 +81,7 @@ export const useSettingsStore = defineStore('settings', {
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0
-      this.windowHeight = num < 100 ? 100 : Math.round(num)
+      this.windowHeight = Math.min(900, Math.max(460, Math.round(num)))
       trackEvent('settings_change', { settingKey: 'windowHeight', value: this.windowHeight })
     },
     dismissOnboarding() {

@@ -2,12 +2,11 @@
 import GeneralSettings from './GeneralSettings.vue'
 import { trackEvent } from '@/services/analytics'
 import CategoryManager from './CategoryManager.vue'
-import ToolsSettings from './ToolsSettings.vue'
 import DataSettings from './DataSettings.vue'
 import LocalModeSettings from './LocalModeSettings.vue'
 import AboutSettings from './AboutSettings.vue'
 
-type SettingsTab = 'general' | 'categories' | 'tools' | 'data' | 'local-mode' | 'about'
+type SettingsTab = 'general' | 'categories' | 'data' | 'local-mode' | 'about'
 const feedbackUrl = 'https://wj.qq.com/s2/25958391/c92b/'
 
 const props = withDefaults(defineProps<{
@@ -36,7 +35,6 @@ const { localModeMenuDotVisible, markLocalModeSettingsVisited } = useFeatureNoti
 const tabs = [
   { value: 'general', label: '外观与使用', icon: 'i-mdi-cog-outline' },
   { value: 'categories', label: '分组管理', icon: 'i-mdi-folder-outline' },
-  { value: 'tools', label: '常用工具', icon: 'i-mdi-wrench-outline' },
   { value: 'data', label: '导入与备份', icon: 'i-mdi-database-outline' },
   { value: 'local-mode', label: '浏览器拓展', icon: 'i-mdi-database-sync-outline' },
   { value: 'about', label: '帮助与统计', icon: 'i-mdi-information-outline' }
@@ -113,7 +111,6 @@ const openFeedback = () => {
       >
         <GeneralSettings v-if="currentTab === 'general'" key="general" />
         <CategoryManager v-else-if="currentTab === 'categories'" key="categories" />
-        <ToolsSettings v-else-if="currentTab === 'tools'" key="tools" />
         <DataSettings v-else-if="currentTab === 'data'" key="data" />
         <LocalModeSettings v-else-if="currentTab === 'local-mode'" key="local-mode" />
         <AboutSettings v-else-if="currentTab === 'about'" key="about" />

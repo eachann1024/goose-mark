@@ -3,6 +3,46 @@ if (typeof window !== 'undefined') {
   if (typeof utools !== 'undefined') {
     window.utools = utools
 
+    const WINDOW_HEIGHT_STORAGE_KEY = 'settings'
+    const DEFAULT_WINDOW_HEIGHT = 560
+    const MIN_WINDOW_HEIGHT = 460
+    const MAX_WINDOW_HEIGHT = 900
+
+    const clampWindowHeight = (height) => {
+      const numericHeight = Number(height)
+      if (!Number.isFinite(numericHeight)) return DEFAULT_WINDOW_HEIGHT
+      return Math.min(MAX_WINDOW_HEIGHT, Math.max(MIN_WINDOW_HEIGHT, Math.round(numericHeight)))
+    }
+
+    const readStoredWindowHeight = () => {
+      let rawValue = null
+
+      try {
+        if (utools?.dbStorage && typeof utools.dbStorage.getItem === 'function') {
+          rawValue = utools.dbStorage.getItem(WINDOW_HEIGHT_STORAGE_KEY)
+        }
+      } catch {}
+
+      if (rawValue == null) {
+        try {
+          rawValue = window.localStorage?.getItem?.(WINDOW_HEIGHT_STORAGE_KEY) ?? null
+        } catch {}
+      }
+
+      if (!rawValue) return DEFAULT_WINDOW_HEIGHT
+
+      try {
+        const parsed = JSON.parse(rawValue)
+        return clampWindowHeight(parsed?.windowHeight)
+      } catch {
+        return DEFAULT_WINDOW_HEIGHT
+      }
+    }
+
+    if (typeof utools.setExpendHeight === 'function') {
+      utools.setExpendHeight(readStoredWindowHeight())
+    }
+
     const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
     const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'
     const UTOOLS_PLUGIN_ENTER_EVENT = 'goose-marks:plugin-enter'

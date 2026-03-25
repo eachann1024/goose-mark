@@ -5,6 +5,10 @@ import { iconToDisplayUrl, fetchAndCacheIcon } from '@/services/iconCache'
 import { useToast } from './useToast'
 import { getTemplateLabel } from '@/lib/utils'
 import { trackEvent } from '@/services/analytics'
+import { notify } from '@/lib/notify'
+import { addBehaviorLog } from '@/lib/debugReport'
+import { fetchMetadataFromNetwork } from '@/services/metadataFallback'
+import type { MetadataSource } from './useAI'
 
 
 type UBrowserApi = {
@@ -59,6 +63,7 @@ function _useBookmarkForm() {
   const isTitleDirty = ref(false)
   const isDescDirty = ref(false)
   const originalUrl = ref('') // 编辑时的原始 URL，用于判断是否需要重新获取图标
+  const hydrationJobIds = new Map<string, number>()
 
   // 撤回功能：保存 AI 调用前的原始值
   const originalBeforeAI = ref<{
@@ -108,6 +113,19 @@ function _useBookmarkForm() {
   
   const isDraftTemplate = computed(() => /{[^}]+}/.test(draft.url))
   const draftTemplateLabel = computed(() => getTemplateLabel(draft.url))
+  const needsBackgroundSave = computed(() => {
+    if (!draft.url.trim()) return false
+    if (iconLoading.value || isGenerating.value) return true
+    return !draft.title.trim()
+  })
+  const saveButtonLabel = computed(() => needsBackgroundSave.value ? '后台保存' : '保存')
+  const aiEnabled = computed(() => settingsStore.aiEnabled)
+  const canUseAi = computed(() => checkAiAvailable().available)
+  const aiBackgroundTooltip = computed(() => {
+    if (!draft.url.trim()) return '请输入链接后再使用 AI 后台保存'
+    if (!checkAiAvailable().available) return '当前环境不支持 AI，将按后台保存继续补全'
+    return '先读取标题和描述，AI 理解后翻译成中文；若站点拿不到标题，会自动联网查'
+  })
 
   // Helpers
   const isHostLikeTitle = (title: string, rawUrl: string) => {
@@ -126,6 +144,160 @@ function _useBookmarkForm() {
     const base = (draft.title || draft.url).trim()
     const text = base ? base.slice(0, 4).toUpperCase() : '•'
     return { type: 'text', value: text }
+  }
+
+  const buildTextIconFromValue = (value: string): IconSource => {
+    const base = value.trim()
+    const text = base ? base.slice(0, 4).toUpperCase() : '•'
+    return { type: 'text', value: text }
+  }
+
+  const isValidUrlInput = (rawUrl: string) => {
+    const input = rawUrl.trim()
+    if (!input) return false
+    if (/^javascript:/i.test(input) || /^file:/i.test(input)) return false
+
+    const candidate = input.replace(/{[^}]+}/g, 'x')
+    const normalized = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`
+    try {
+      const parsed = new URL(normalized)
+      return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+    } catch {
+      return false
+    }
+  }
+
+  const resolveLocationsForSave = () => {
+    if (draftLocations.value.length > 0) return [...draftLocations.value]
+
+    const activeGroup = store.groups.find(group => group.id === store.activeGroupId) ?? store.groups[0]
+    const activeSubGroup = activeGroup?.children.find(child => child.id === store.activeSubGroupId) ?? activeGroup?.children[0]
+    if (!activeGroup || !activeSubGroup) return [] as BookmarkLocation[]
+    return [{ groupId: activeGroup.id, subGroupId: activeSubGroup.id }]
+  }
+
+  const toIconSource = (icon: Awaited<ReturnType<typeof fetchAndCacheIcon>>): IconSource | null => {
+    if (!icon) return null
+    const nextIcon: Record<string, any> = { type: icon.type }
+    if ('src' in icon && icon.src) nextIcon.src = icon.src
+    if ('path' in icon && icon.path) nextIcon.path = icon.path
+    if ('value' in icon && icon.value) nextIcon.value = icon.value
+    if ('cache' in icon && icon.cache) nextIcon.cache = icon.cache
+    if ('bgColor' in icon && icon.bgColor) nextIcon.bgColor = icon.bgColor
+    if ('fetchedAt' in icon && icon.fetchedAt) nextIcon.fetchedAt = icon.fetchedAt
+    return nextIcon as IconSource
+  }
+
+  const shouldHydrateTitle = (initialTitle: string, currentTitle: string) => {
+    const initial = initialTitle.trim()
+    const current = currentTitle.trim()
+    return !initial && !current
+  }
+
+  const shouldHydrateDesc = (initialDesc: string, currentDesc?: string) => {
+    const initial = initialDesc.trim()
+    const current = (currentDesc || '').trim()
+    return !initial && !current
+  }
+
+  const enqueueMetadataHydration = (
+    bookmarkId: string,
+    options: {
+      url: string
+      initialTitle: string
+      initialDesc: string
+      forceAi?: boolean
+    }
+  ) => {
+    const jobId = Date.now() + Math.random()
+    hydrationJobIds.set(bookmarkId, jobId)
+
+    void (async () => {
+      let metadataSource: MetadataSource = 'page'
+      let usedNetworkFallback = false
+      try {
+        const fetched = await fetchAndCacheIcon(options.url, true)
+        let rawTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : ''
+        let rawDesc = typeof fetched?.description === 'string' ? fetched.description.trim() : ''
+        let hydratedIcon = toIconSource(fetched)
+
+        if (!rawTitle || isHostLikeTitle(rawTitle, options.url)) {
+          const fallback = await fetchMetadataFromNetwork(options.url)
+          if (fallback) {
+            rawTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) ? rawTitle : (fallback.title || '')
+            rawDesc = rawDesc || fallback.description || ''
+            usedNetworkFallback = true
+            metadataSource = 'network'
+            trackEvent('bookmark_network_fallback_hit', {
+              bookmarkId,
+              url: options.url,
+              provider: fallback.provider
+            })
+          }
+        }
+
+        let nextTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) ? rawTitle : ''
+        let nextDesc = rawDesc
+
+        const aiReady = checkAiAvailable().available
+        if (options.forceAi && aiReady) {
+          const aiResult = await generateMetadata({
+            url: options.url,
+            title: rawTitle,
+            desc: rawDesc,
+            forceNetworkFallback: usedNetworkFallback
+          })
+          if (aiResult) {
+            nextTitle = aiResult.title || nextTitle
+            nextDesc = aiResult.desc || nextDesc
+            metadataSource = aiResult.source
+            usedNetworkFallback = aiResult.usedNetworkFallback
+          }
+        }
+
+        if (hydrationJobIds.get(bookmarkId) !== jobId) return
+
+        const bookmark = store.bookmarks.find(item => item.id === bookmarkId)
+        if (!bookmark) return
+
+        const patch: Partial<Bookmark> = {}
+        if (nextTitle && shouldHydrateTitle(options.initialTitle, bookmark.title)) {
+          patch.title = nextTitle
+        }
+        if (nextDesc && shouldHydrateDesc(options.initialDesc, bookmark.desc)) {
+          patch.desc = nextDesc
+        }
+        if (hydratedIcon && (!bookmark.icon || bookmark.icon.type === 'text')) {
+          patch.icon = hydratedIcon
+        } else if (!bookmark.icon && (nextTitle || options.url)) {
+          patch.icon = buildTextIconFromValue(nextTitle || options.url)
+        }
+
+        if (Object.keys(patch).length > 0) {
+          store.updateBookmark(bookmarkId, patch)
+        }
+
+        trackEvent('bookmark_background_hydration_success', {
+          bookmarkId,
+          url: options.url,
+          mode: options.forceAi ? 'ai' : 'normal',
+          metadataSource,
+          usedNetworkFallback
+        })
+      } catch (error) {
+        console.warn('[BookmarkForm] background hydration failed:', error)
+        trackEvent('bookmark_background_hydration_fail', {
+          bookmarkId,
+          url: options.url,
+          mode: options.forceAi ? 'ai' : 'normal',
+          usedNetworkFallback
+        })
+      } finally {
+        if (hydrationJobIds.get(bookmarkId) === jobId) {
+          hydrationJobIds.delete(bookmarkId)
+        }
+      }
+    })()
   }
 
   const askAI = async (showNotify = false) => {
@@ -147,7 +319,11 @@ function _useBookmarkForm() {
     }
 
     addBehaviorLog('ask-ai', draft.url)
-    const res = await generateMetadata(draft.url)
+    const res = await generateMetadata({
+      url: draft.url,
+      title: draft.title,
+      desc: draft.desc
+    })
     if (res) {
         if (res.title) draft.title = res.title
         if (res.desc) draft.desc = res.desc
@@ -298,14 +474,14 @@ function _useBookmarkForm() {
     showAdd.value = true
   }
 
-  const handleSave = async () => {
+  const handleSave = async (options?: { forceAi?: boolean; background?: boolean }) => {
     formError.value = ''
-    if (!draft.title.trim() || !draft.url.trim()) {
-      formError.value = '标题和链接为必填项'
+    if (!draft.url.trim()) {
+      formError.value = '请输入链接'
       return
     }
-    if (draftLocations.value.length === 0) {
-      formError.value = '请至少选择一个分类'
+    if (!isValidUrlInput(draft.url)) {
+      formError.value = '请输入有效链接'
       return
     }
 
@@ -313,6 +489,15 @@ function _useBookmarkForm() {
     isSaving.value = true
 
     try {
+      const locationsToSave = resolveLocationsForSave()
+      if (locationsToSave.length === 0) {
+        formError.value = '当前没有可用分类'
+        return
+      }
+
+      const titleToSave = draft.title.trim()
+      const descToSave = draft.desc.trim()
+      const urlToSave = draft.url.trim()
       addBehaviorLog(editingId.value ? 'edit-bookmark' : 'add-bookmark', `${draft.title} ${draft.url}`.trim())
       let iconToSave = previewIcon.value ?? buildTextIcon()
 
@@ -328,38 +513,65 @@ function _useBookmarkForm() {
       if (editingId.value) {
         // 修改书签：获取旧位置和新位置，合并后检查分享
         store.updateBookmark(editingId.value, {
-          title: draft.title.trim(),
-          url: draft.url.trim(),
-          desc: draft.desc.trim(),
+          title: titleToSave,
+          url: urlToSave,
+          desc: descToSave,
           allowUniversal: draft.allowUniversal,
           icon: iconToSave
         })
-        store.updateBookmarkLocations(editingId.value, draftLocations.value)
+        store.updateBookmarkLocations(editingId.value, locationsToSave)
         trackEvent('bookmark_edit_success', {
           bookmarkId: editingId.value,
-          locationCount: draftLocations.value.length,
-          firstGroupId: draftLocations.value[0]?.groupId,
-          firstSubGroupId: draftLocations.value[0]?.subGroupId,
-          hasTemplate: /{[^}]+}/.test(draft.url.trim()),
+          locationCount: locationsToSave.length,
+          firstGroupId: locationsToSave[0]?.groupId,
+          firstSubGroupId: locationsToSave[0]?.subGroupId,
+          hasTemplate: /{[^}]+}/.test(urlToSave),
           allowUniversal: draft.allowUniversal,
         })
       } else {
         const created = store.addBookmark(
           {
-            title: draft.title.trim(),
-            url: draft.url.trim(),
-            desc: draft.desc.trim(),
+            title: titleToSave,
+            url: urlToSave,
+            desc: descToSave,
             allowUniversal: draft.allowUniversal,
             tags: [],
             pinned: false,
             icon: iconToSave
           },
-          draftLocations.value
+          locationsToSave
         )
         if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created)
         statsStore.recordUse('add')
+
+        const shouldHydrateInBackground = !!options?.forceAi
+          || !!options?.background
+          || !titleToSave
+          || !descToSave
+          || !previewIcon.value
+          || iconLoading.value
+          || isGenerating.value
+
+        trackEvent(options?.forceAi ? 'bookmark_ai_background_save' : shouldHydrateInBackground ? 'bookmark_background_save' : 'bookmark_direct_save', {
+          bookmarkId: created.id,
+          url: urlToSave,
+          mode: options?.forceAi ? 'ai' : 'normal',
+          hadTitle: !!titleToSave,
+          hadDesc: !!descToSave,
+          hadIcon: !!previewIcon.value,
+          usedBackground: shouldHydrateInBackground
+        })
+
+        if (shouldHydrateInBackground) {
+          enqueueMetadataHydration(created.id, {
+            url: urlToSave,
+            initialTitle: titleToSave,
+            initialDesc: descToSave,
+            forceAi: options?.forceAi
+          })
+        }
         
-        const firstLoc = draftLocations.value[0]
+        const firstLoc = locationsToSave[0]
         if (firstLoc) {
              store.setSearch('')
              store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
@@ -502,6 +714,10 @@ function _useBookmarkForm() {
     openEdit,
     handleSave,
     askAI,
+    canUseAi,
+    saveButtonLabel,
+    aiEnabled,
+    aiBackgroundTooltip,
     undoTitle,
     undoDesc,
     hasAIGenerated,

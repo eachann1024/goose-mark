@@ -6,6 +6,22 @@ import { DEFAULT_AI_MODEL } from '@/constants/ai'
 const PRODUCT_LOCAL_MODE_CONTEXT = '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
 
+export type MetadataSource = 'page' | 'ai' | 'network'
+
+export interface GenerateMetadataInput {
+  url: string
+  title?: string
+  desc?: string
+  forceNetworkFallback?: boolean
+}
+
+export interface GenerateMetadataResult {
+  title: string
+  desc: string
+  source: MetadataSource
+  usedNetworkFallback: boolean
+}
+
 type ActiveModelInfo = {
   model: string
   isCustom: boolean
@@ -50,6 +66,9 @@ export function useAI() {
 
   /** 检查 AI 是否可用，返回 { available, reason } */
   const checkAiAvailable = (): { available: boolean; reason: string } => {
+    if (!settingsStore.aiEnabled) {
+      return { available: false, reason: 'AI 功能已关闭' }
+    }
     if (!window.utools) {
       return { available: false, reason: '当前不在 uTools 环境中运行' }
     }
@@ -151,8 +170,16 @@ export function useAI() {
     }
   }, 500)
 
-  const generateMetadata = async (url: string) => {
-    if (!url) return null
+  const generateMetadata = async (input: string | GenerateMetadataInput): Promise<GenerateMetadataResult | null> => {
+    const params = typeof input === 'string'
+      ? { url: input, title: '', desc: '', forceNetworkFallback: false }
+      : {
+          url: input.url,
+          title: input.title?.trim() || '',
+          desc: input.desc?.trim() || '',
+          forceNetworkFallback: !!input.forceNetworkFallback
+        }
+    if (!params.url) return null
 
     const { available, reason } = checkAiAvailable()
     if (!available) {
@@ -163,20 +190,26 @@ export function useAI() {
     isGenerating.value = true
     aiError.value = ''
     try {
-      const prompt = `你是一个专业的书签整理助手。请分析以下网址，提取核心信息并润色。
-  
-  网址: ${url}
-  产品上下文：${PRODUCT_LOCAL_MODE_CONTEXT}
-  
-  请返回 JSON 格式：{"title": "...", "desc": "..." }
-  要求：
-  1. title: 极简且精准的名称（如 "GitHub"、"Bilibili"）。去除 "- 首页"、"Login" 等冗余后缀。优先中文（若常用）。不超过 15 字。
-  2. desc: 用一句话概括核心功能与价值（如 "全球最大的代码托管与协作平台"）。语气专业、客观。不超过 40 字。`
+      const prompt = `你是一个专业的书签整理助手。请基于已有线索，为该网址生成适合保存到书签里的中文标题和简介。
+
+网址：${params.url}
+页面标题：${params.title || '无'}
+页面描述：${params.desc || '无'}
+是否已触发联网兜底：${params.forceNetworkFallback ? '是' : '否'}
+产品上下文：${PRODUCT_LOCAL_MODE_CONTEXT}
+
+请返回 JSON 格式：{"title":"...","desc":"...","source":"ai"|"network"}
+要求：
+1. 结合网址、页面标题、页面描述理解内容；优先输出自然、简洁、准确的中文。
+2. title: 极简且精准，去除“首页”“登录”“Documentation”等冗余词，不超过 15 字。
+3. desc: 一句话概括核心功能与价值，专业客观，不超过 40 字。
+4. 如果页面标题/描述较弱，但已通过联网兜底拿到线索，source 返回 "network"；否则返回 "ai"。
+5. 只返回 JSON，不要附加解释。`
   
       const res = await callAi([
         {
           role: 'system',
-          content: `你是一个专业的书签整理助手。请分析网址内容并返回 JSON。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+          content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
         },
         {
           role: 'user',
@@ -192,8 +225,10 @@ export function useAI() {
       const jsonStr = match ? match[0] : payload
       const data = JSON.parse(jsonStr)
       return {
-        title: data.title,
-        desc: data.desc
+        title: String(data.title || '').trim(),
+        desc: String(data.desc || '').trim(),
+        source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
+        usedNetworkFallback: params.forceNetworkFallback
       }
     } catch (e) {
       console.error('[AI] 调用失败:', e)

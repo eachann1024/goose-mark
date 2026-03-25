@@ -262,7 +262,7 @@ watch(
 <template>
   <div 
     ref="rootEl"
-    class="relative p-6 bg-popover rounded-2xl border-0 w-[420px] shadow-2xl outline-none" 
+    class="relative p-6 bg-popover rounded-2xl border border-border/60 w-[420px] shadow-2xl outline-none" 
     tabindex="0"
   >
      <!-- Tabs -->
