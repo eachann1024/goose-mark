@@ -1197,6 +1197,7 @@ const primeSeenRevisionFromSnapshot = () => {
 }
 
 const handleExternalSnapshotRefresh = () => {
+  if (!useSettingsStore().preferLocalSnapshotOnStartup) return
   const store = pendingStore
   if (!store) return
 
@@ -1267,6 +1268,7 @@ const bindExternalWatcher = () => {
 }
 
 const scheduleWrite = () => {
+  if (!useSettingsStore().preferLocalSnapshotOnStartup) return
   if (!pendingStore) return
   if (shouldSuppressWrite()) return
 
@@ -1280,6 +1282,11 @@ const scheduleWrite = () => {
 }
 
 export function useLocalDataMirror() {
+  const isMirrorSyncEnabled = () => {
+    const settingsStore = useSettingsStore()
+    return canUseLocalMirror() && settingsStore.preferLocalSnapshotOnStartup
+  }
+
   const canPickMirrorDirectory = () => {
     if (window.utools?.showOpenDialog) return true
     return typeof (window as any).showDirectoryPicker === 'function'
@@ -1360,6 +1367,7 @@ export function useLocalDataMirror() {
   }
 
   const syncNow = () => {
+    if (!isMirrorSyncEnabled()) return
     const store = useBookmarkStore()
     writeMirrorNow(store)
   }
@@ -1414,7 +1422,10 @@ export function useLocalDataMirror() {
   }
 
   const start = () => {
-    if (!canUseLocalMirror()) return
+    if (!isMirrorSyncEnabled()) {
+      stop()
+      return
+    }
 
     const store = useBookmarkStore()
     pendingStore = store

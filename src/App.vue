@@ -12,6 +12,7 @@ import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
 import { parseJsonImportText, applyImportDataToStore } from '@/composables/useImportExport'
+import { useCategoryEditor } from '@/composables/useCategoryEditor'
 import { trackEvent } from '@/services/analytics'
 
 // Stores
@@ -30,6 +31,7 @@ const {
   openUrl,
   openUrlInUtoolsBrowser,
   copyBookmarkUrl,
+  copyBookmarkDescription,
   handleRemove,
   confirmDelete,
   emptyTrash,
@@ -99,8 +101,9 @@ const {
   markDevicePathIgnored,
   markLocalModeSettingsVisited
 } = useFeatureNoticeCenter()
+const { openCategoryEditor } = useCategoryEditor()
 
-const settingsActiveTab = ref<'general' | 'categories' | 'tools' | 'data' | 'local-mode' | 'about'>('general')
+const settingsActiveTab = ref<'general' | 'categories' | 'data' | 'local-mode' | 'about'>('general')
 const showMirrorDecisionDialog = ref(false)
 const hasTrackedSettingsOpen = ref(false)
 const lastTrackedThemeMode = ref('')
@@ -251,10 +254,25 @@ const handleSelectGroup = async (groupId: string) => {
   tab.value = "bookmarks"
 }
 
+const openGroupEditor = (groupId: string) => {
+  if (!groupId || groupId === TRASH_GROUP_ID) return
+  tab.value = 'settings'
+  settingsActiveTab.value = 'categories'
+  openCategoryEditor(groupId)
+}
+
 
 // Window Height Watcher
+const applyWindowHeight = () => {
+  setExpendHeight(settingsStore.windowHeight)
+}
+
 watch(() => settingsStore.windowHeight, (h) => {
   setExpendHeight(h)
+})
+
+onMounted(() => {
+  applyWindowHeight()
 })
 
 watch(() => tab.value, (value) => {
@@ -647,6 +665,9 @@ const handleContextMenuAction = (action: string) => {
       break
     case 'copy':
       copyBookmarkUrl(bookmark)
+      break
+    case 'copyDescription':
+      copyBookmarkDescription(bookmark)
       break
     case 'edit':
       openEdit(bookmark)
@@ -1090,6 +1111,7 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
     const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
     const enterType = typeof params?.type === 'string' ? params.type : ''
     const payloadText = getEnterText(params?.payload).trim()
+    applyWindowHeight()
 
     if (code === 'save_link') {
       let urlToSave = ''
@@ -1365,6 +1387,7 @@ const handleLocate = async (bookmark: Bookmark) => {
          @select-trash="store.selectGroup(TRASH_GROUP_ID); tab = 'bookmarks'"
          @toggle-dark="toggleDark()"
          @open-search="openSearchOverlay()"
+         @edit-group="openGroupEditor"
        />
     </header>
 
@@ -1403,6 +1426,7 @@ const handleLocate = async (bookmark: Bookmark) => {
         :active-group-id="store.activeGroupId"
         @select="store.selectSubGroup"
         @drop="handleBookmarkDrop"
+        @edit-group="openGroupEditor"
       />
 
       <BookmarksGrid
@@ -1445,6 +1469,7 @@ const handleLocate = async (bookmark: Bookmark) => {
       :y="contextMenu.y"
       :is-trash="isTrashActive"
       :is-u-tools="isUTools"
+      :has-description="Boolean(contextMenu.target?.desc?.trim())"
       @close="closeContextMenu"
       @action="handleContextMenuAction"
     />
