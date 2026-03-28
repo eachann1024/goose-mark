@@ -1,7 +1,14 @@
-
 import { ref } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
+import { trackEvent } from '@/services/analytics'
+import {
+  AIProviderRequestError,
+  getAIAvailability,
+  getAIProviderMode,
+  runAIText,
+  type AIMessage
+} from '@/lib/aiProvider'
 
 const PRODUCT_LOCAL_MODE_CONTEXT = '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
@@ -27,26 +34,12 @@ type ActiveModelInfo = {
   isCustom: boolean
 }
 
-class AiRequestError extends Error {
-  override cause: unknown
-  modelInfo: ActiveModelInfo
-  fallbackAttempted: boolean
-
-  constructor(cause: unknown, modelInfo: ActiveModelInfo, fallbackAttempted = false) {
-    super(cause instanceof Error ? cause.message : String(cause))
-    this.name = 'AiRequestError'
-    this.cause = cause
-    this.modelInfo = modelInfo
-    this.fallbackAttempted = fallbackAttempted
-  }
-}
-
 export interface CategorySuggestion {
   groupId: string
   groupName: string
   subGroupId: string
   subGroupName: string
-  confidence: number // 0-1
+  confidence: number
   reason: string
 }
 
@@ -64,18 +57,11 @@ export function useAI() {
   const isSuggestingCategory = ref(false)
   const aiError = ref('')
 
-  /** 检查 AI 是否可用，返回 { available, reason } */
   const checkAiAvailable = (): { available: boolean; reason: string } => {
-    if (!settingsStore.aiEnabled) {
-      return { available: false, reason: 'AI 功能已关闭' }
-    }
-    if (!window.utools) {
-      return { available: false, reason: '当前不在 uTools 环境中运行' }
-    }
-    if (!window.utools.ai || typeof window.utools.ai !== 'function') {
-      return { available: false, reason: '请在 uTools 设置中开启 AI 功能' }
-    }
-    return { available: true, reason: '' }
+    const availability = getAIAvailability(settingsStore.aiSettings)
+    return availability.ok
+      ? { available: true, reason: '' }
+      : { available: false, reason: availability.reason }
   }
 
   const isModelError = (errMsg: string) => {
@@ -84,89 +70,83 @@ export function useAI() {
   }
 
   const getActiveModelInfo = (): ActiveModelInfo => {
-    const customModel = settingsStore.customAiModel.trim()
-    if (settingsStore.useCustomAiModel && customModel) {
-      return { model: customModel, isCustom: true }
+    const settings = settingsStore.aiSettings
+    return {
+      model: settings.selectedModelId || DEFAULT_AI_MODEL,
+      isCustom: settings.useCustomProvider
     }
-    return { model: DEFAULT_AI_MODEL, isCustom: false }
+  }
+
+  const buildAIEventPayload = (featureName: 'metadata' | 'category_suggestion', extra?: Record<string, string | number | boolean>) => {
+    const settings = settingsStore.aiSettings
+    return {
+      feature_name: featureName,
+      provider_type: getAIProviderMode(settings),
+      custom_protocol: settings.useCustomProvider ? settings.customProtocol : 'none',
+      selected_model_id: settings.selectedModelId || DEFAULT_AI_MODEL,
+      ...extra
+    }
   }
 
   const resolveErrorMessage = (
     error: unknown,
-    action: '生成' | '分类',
-    modelInfo: ActiveModelInfo,
-    fallbackAttempted = false
+    action: '生成' | '分类'
   ) => {
+    const providerError = error instanceof AIProviderRequestError ? error : null
     const errMsg = error instanceof Error ? error.message : String(error)
+    const modelInfo = providerError
+      ? { model: providerError.model || getActiveModelInfo().model, isCustom: providerError.isCustomModel }
+      : getActiveModelInfo()
+
     if (errMsg.includes('余额') || errMsg.includes('balance') || errMsg.includes('quota')) {
-      return 'AI 余额不足，请在 uTools 中充值'
+      return 'AI 余额不足，请检查当前供应商额度'
     }
     if (errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('连接')) {
       return 'AI 服务连接失败，请检查网络'
     }
     if (isModelError(errMsg)) {
       if (modelInfo.isCustom) {
-        return `自定义模型“${modelInfo.model}”不可用，请检查模型名是否填写正确，或关闭“使用自定义 AI 模型”后重试`
+        return `自定义模型“${modelInfo.model}”不可用，请检查供应商配置或模型名后重试`
       }
-      if (fallbackAttempted) {
-        return `默认模型 ${DEFAULT_AI_MODEL} 当前不可用，自动回退后仍失败，请检查 uTools AI 配置后重试`
+      if (providerError?.fallbackAttempted) {
+        return `uTools 模型“${modelInfo.model}”不可用，自动回退后仍失败，请检查 AI 配置后重试`
       }
-      return `默认模型 ${DEFAULT_AI_MODEL} 当前不可用，请稍后重试`
+      return `uTools 模型“${modelInfo.model}”当前不可用，请重新选择或稍后重试`
     }
     if (modelInfo.isCustom) {
-      return `AI ${action}失败，请稍后重试；若持续失败，请检查自定义模型“${modelInfo.model}”是否可用`
+      return `AI ${action}失败，请稍后重试；若持续失败，请检查自定义供应商和模型“${modelInfo.model}”`
     }
     return `AI ${action}失败，请稍后重试`
   }
 
-  const callAi = async (messages: Array<{ role: 'system' | 'user'; content: string }>) => {
-    const aiCaller = window.utools!.ai!
-    const modelInfo = getActiveModelInfo()
-    try {
-      return await aiCaller({ model: modelInfo.model, messages })
-    } catch (e) {
-      const errMsg = e instanceof Error ? e.message : String(e)
-      // 仅默认模型允许自动回退，避免覆盖用户显式设置的模型
-      if (!modelInfo.isCustom && isModelError(errMsg)) {
-        console.warn(`[AI] 模型 ${modelInfo.model} 不可用，回退到 uTools 默认模型`)
-        try {
-          return await aiCaller({ messages })
-        } catch (fallbackError) {
-          throw new AiRequestError(fallbackError, modelInfo, true)
-        }
-      }
-      throw new AiRequestError(e, modelInfo)
-    }
-  }
+  const callAi = async (messages: AIMessage[]) => runAIText(settingsStore.aiSettings, messages)
 
   const checkUrl = useDebounceFn(async (url: string) => {
     if (!url) {
       isUrlAccessible.value = false
       return
     }
-    // In Dev environment (no uTools), skip strict probe check to allow UI testing
+
     if (!window.utools) {
-       isUrlAccessible.value = true
-       return
+      isUrlAccessible.value = true
+      return
     }
-  
+
     isCheckingUrl.value = true
     let target = url
-    // Auto-prepend https if missing for check
     if (!/^https?:\/\//i.test(target)) {
-       target = 'https://' + target
+      target = 'https://' + target
     }
-    
-    // Optimistic update
+
     isUrlAccessible.value = true
-    
+
     try {
-       const res = await probeUrl(target)
-       if (!res.ok) isUrlAccessible.value = false
+      const res = await probeUrl(target)
+      if (!res.ok) isUrlAccessible.value = false
     } catch {
-       isUrlAccessible.value = false
+      isUrlAccessible.value = false
     } finally {
-       isCheckingUrl.value = false
+      isCheckingUrl.value = false
     }
   }, 500)
 
@@ -189,6 +169,10 @@ export function useAI() {
 
     isGenerating.value = true
     aiError.value = ''
+    trackEvent('bookmark_ai_request_submitted', buildAIEventPayload('metadata', {
+      used_network_fallback: params.forceNetworkFallback
+    }))
+
     try {
       const prompt = `你是一个专业的书签整理助手。请基于已有线索，为该网址生成适合保存到书签里的中文标题和简介。
 
@@ -205,7 +189,7 @@ export function useAI() {
 3. desc: 一句话概括核心功能与价值，专业客观，不超过 40 字。
 4. 如果页面标题/描述较弱，但已通过联网兜底拿到线索，source 返回 "network"；否则返回 "ai"。
 5. 只返回 JSON，不要附加解释。`
-  
+
       const res = await callAi([
         {
           role: 'system',
@@ -216,38 +200,36 @@ export function useAI() {
           content: prompt
         }
       ])
-      const payload = typeof res === 'string'
-        ? res
-        : typeof res?.content === 'string'
-          ? res.content
-          : JSON.stringify(res)
-      const match = payload.match(/\{[\s\S]*\}/)
-      const jsonStr = match ? match[0] : payload
+
+      const match = res.match(/\{[\s\S]*\}/)
+      const jsonStr = match ? match[0] : res
       const data = JSON.parse(jsonStr)
-      return {
+      const result = {
         title: String(data.title || '').trim(),
         desc: String(data.desc || '').trim(),
         source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
         usedNetworkFallback: params.forceNetworkFallback
-      }
-    } catch (e) {
-      console.error('[AI] 调用失败:', e)
-      const sourceError = e instanceof AiRequestError ? e.cause : e
-      const modelInfo = e instanceof AiRequestError ? e.modelInfo : getActiveModelInfo()
-      const fallbackAttempted = e instanceof AiRequestError ? e.fallbackAttempted : false
-      aiError.value = resolveErrorMessage(sourceError, '生成', modelInfo, fallbackAttempted)
+      } satisfies GenerateMetadataResult
+
+      trackEvent('bookmark_ai_request_succeeded', buildAIEventPayload('metadata', {
+        used_network_fallback: result.usedNetworkFallback,
+        metadata_source: result.source
+      }))
+
+      return result
+    } catch (error) {
+      console.error('[AI] 调用失败:', error)
+      aiError.value = resolveErrorMessage(error, '生成')
+      trackEvent('bookmark_ai_request_failed', buildAIEventPayload('metadata', {
+        used_network_fallback: params.forceNetworkFallback,
+        error_message: aiError.value
+      }))
       return null
     } finally {
       isGenerating.value = false
     }
   }
 
-  /**
-   * 使用 AI 根据 URL 建议最合适的分类
-   * @param url 待分类的网址
-   * @param existingGroups 现有分组列表
-   * @param currentGroupId 当前选中的分组ID（可选，用于避免总是推荐当前分组）
-   */
   const suggestCategory = async (
     url: string,
     existingGroups: GroupInfo[],
@@ -263,14 +245,14 @@ export function useAI() {
 
     isSuggestingCategory.value = true
     aiError.value = ''
+    trackEvent('bookmark_ai_request_submitted', buildAIEventPayload('category_suggestion'))
 
     try {
-      // 构建分组列表描述
-      const currentGroup = currentGroupId ? existingGroups.find(g => g.id === currentGroupId) : null
-      const groupsDescription = existingGroups.map(g => {
-        const subNames = g.subGroups.map(s => s.name).join('、')
-        const isCurrent = currentGroup && g.id === currentGroupId ? ' [当前选中]' : ''
-        return `- "${g.name}"${isCurrent}（子分组：${subNames || '无'}）`
+      const currentGroup = currentGroupId ? existingGroups.find(group => group.id === currentGroupId) : null
+      const groupsDescription = existingGroups.map(group => {
+        const subNames = group.subGroups.map(subGroup => subGroup.name).join('、')
+        const isCurrent = currentGroup && group.id === currentGroupId ? ' [当前选中]' : ''
+        return `- "${group.name}"${isCurrent}（子分组：${subNames || '无'}）`
       }).join('\n')
 
       const avoidCurrentTip = currentGroup
@@ -324,44 +306,44 @@ ${avoidCurrentTip}
         }
       ])
 
-      const payload = typeof res === 'string'
-        ? res
-        : typeof res?.content === 'string'
-          ? res.content
-          : JSON.stringify(res)
-
-      const match = payload.match(/\{[\s\S]*\}/)
-      const jsonStr = match ? match[0] : payload
+      const match = res.match(/\{[\s\S]*\}/)
+      const jsonStr = match ? match[0] : res
       const data = JSON.parse(jsonStr)
 
-      // 验证并映射到实际 ID
       const matchedGroup = existingGroups.find(
-        g => g.name === data.groupName || g.name.includes(data.groupName) || data.groupName.includes(g.name)
+        group => group.name === data.groupName || group.name.includes(data.groupName) || data.groupName.includes(group.name)
       )
       if (!matchedGroup) {
         return null
       }
 
-      const matchedSub = data.subGroupName
+      const matchedSubGroup = data.subGroupName
         ? matchedGroup.subGroups.find(
-            s => s.name === data.subGroupName || s.name.includes(data.subGroupName) || data.subGroupName.includes(s.name)
+            subGroup => subGroup.name === data.subGroupName || subGroup.name.includes(data.subGroupName) || data.subGroupName.includes(subGroup.name)
           )
         : matchedGroup.subGroups[0]
 
-      return {
+      const result = {
         groupId: matchedGroup.id,
         groupName: matchedGroup.name,
-        subGroupId: matchedSub?.id || matchedGroup.subGroups[0]?.id || '',
-        subGroupName: matchedSub?.name || matchedGroup.subGroups[0]?.name || '',
+        subGroupId: matchedSubGroup?.id || matchedGroup.subGroups[0]?.id || '',
+        subGroupName: matchedSubGroup?.name || matchedGroup.subGroups[0]?.name || '',
         confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
         reason: data.reason || '基于 URL 内容推荐'
-      }
-    } catch (e) {
-      console.error('[AI] 分类建议失败:', e)
-      const sourceError = e instanceof AiRequestError ? e.cause : e
-      const modelInfo = e instanceof AiRequestError ? e.modelInfo : getActiveModelInfo()
-      const fallbackAttempted = e instanceof AiRequestError ? e.fallbackAttempted : false
-      aiError.value = resolveErrorMessage(sourceError, '分类', modelInfo, fallbackAttempted)
+      } satisfies CategorySuggestion
+
+      trackEvent('bookmark_ai_request_succeeded', buildAIEventPayload('category_suggestion', {
+        suggested_group_id: result.groupId,
+        suggested_sub_group_id: result.subGroupId
+      }))
+
+      return result
+    } catch (error) {
+      console.error('[AI] 分类建议失败:', error)
+      aiError.value = resolveErrorMessage(error, '分类')
+      trackEvent('bookmark_ai_request_failed', buildAIEventPayload('category_suggestion', {
+        error_message: aiError.value
+      }))
       return null
     } finally {
       isSuggestingCategory.value = false

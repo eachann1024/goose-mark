@@ -80,7 +80,6 @@ const handleSelect = (event: MouseEvent) => {
 
 <style scoped>
 .subgroup-btn {
-  border-left: 2px solid transparent;
   color: hsl(var(--muted-foreground));
   background-color: transparent;
 }
@@ -91,10 +90,10 @@ const handleSelect = (event: MouseEvent) => {
 }
 
 .subgroup-btn--active {
-  color: hsl(var(--foreground));
+  color: hsl(var(--background));
   font-weight: 500;
-  border-left-color: hsl(var(--primary));
-  background-color: hsl(var(--muted));
+  background-color: hsl(var(--foreground));
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.10);
 }
 
 .dark .subgroup-btn--idle:hover {
@@ -105,6 +104,7 @@ const handleSelect = (event: MouseEvent) => {
 .dark .subgroup-btn--active {
   color: hsl(var(--accent-foreground));
   background-color: hsl(var(--accent));
+  box-shadow: 0 2px 10px hsl(var(--foreground) / 0.12);
 }
 
 .subgroup-btn--drag-over {

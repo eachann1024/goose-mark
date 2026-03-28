@@ -103,7 +103,7 @@ const {
 } = useFeatureNoticeCenter()
 const { openCategoryEditor } = useCategoryEditor()
 
-const settingsActiveTab = ref<'general' | 'categories' | 'data' | 'local-mode' | 'about'>('general')
+const settingsActiveTab = ref<'general' | 'ai' | 'categories' | 'data' | 'local-mode' | 'about'>('general')
 const showMirrorDecisionDialog = ref(false)
 const hasTrackedSettingsOpen = ref(false)
 const lastTrackedThemeMode = ref('')

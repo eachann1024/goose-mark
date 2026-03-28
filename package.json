@@ -10,9 +10,12 @@
     "type-check": "vue-tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.64",
+    "@ai-sdk/openai-compatible": "^2.0.37",
     "@iconify-json/mdi": "^1.1.67",
     "@microsoft/clarity": "^1.0.2",
     "@vueuse/core": "^14.1.0",
+    "ai": "^6.0.137",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-vue-next": "^0.559.0",

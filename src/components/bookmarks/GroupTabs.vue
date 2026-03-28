@@ -161,10 +161,10 @@ const handleGroupMouseEnter = (group: Group) => {
 }
 
 .group-tab-btn[data-active="true"] {
-  color: hsl(var(--foreground));
-  background-color: hsl(var(--muted));
-  border-color: hsl(var(--border));
-  box-shadow: 0 1px 2px hsl(var(--foreground) / 0.08);
+  color: hsl(var(--background));
+  background-color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground));
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.10);
 }
 
 .dark .group-tab-btn:hover {
@@ -173,10 +173,10 @@ const handleGroupMouseEnter = (group: Group) => {
 }
 
 .dark .group-tab-btn[data-active="true"] {
-  color: hsl(var(--accent-foreground));
-  background-color: hsl(var(--accent));
-  border-color: hsl(var(--primary) / 0.3);
-  box-shadow: 0 4px 10px hsl(var(--background) / 0.45);
+  color: hsl(var(--primary-foreground));
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  box-shadow: 0 2px 10px hsl(var(--primary) / 0.16);
 }
 
 .group-action-btn--searching {

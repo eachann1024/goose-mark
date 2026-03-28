@@ -36,12 +36,22 @@ interface UToolsUserInfo {
   type: 'member' | 'user'
 }
 
+interface UToolsToolContext {
+  requestId: string | number
+  sendProgress?: (options: {
+    progress: number
+    total?: number
+    message?: string
+  }) => Promise<void>
+}
+
 interface UToolsApi {
   getPath(name: string): string
   setSubInput(onChange: (params: { text: string }) => void, placeholder?: string, isFocus?: boolean): boolean
   setSubInputValue?(text: string): boolean
   subInputFocus?(): void
   removeSubInput(): boolean
+  registerTool?(name: string, handler: (params: Record<string, unknown>, ctx: UToolsToolContext) => unknown | Promise<unknown>): void
   onPluginEnter(callback: (params: {
     code: string
     type: 'text' | 'img' | 'file' | 'regex' | 'over' | 'window'
@@ -114,6 +124,7 @@ declare global {
       }
       [key: string]: unknown
     } | null
+    __gooseMarksMcpReady?: boolean
   }
 }
 

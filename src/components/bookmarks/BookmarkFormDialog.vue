@@ -20,6 +20,7 @@ const {
   askAI,
   aiEnabled,
   canUseAi,
+  aiUnavailableReason,
   saveButtonLabel,
   aiBackgroundTooltip,
   undoTitle,
@@ -94,7 +95,7 @@ const onAiBackgroundSave = async () => {
                     variant="ghost"
                     size="icon"
                     class="bookmark-form__ai-trigger h-8 w-8 text-primary transition-all"
-                    :disabled="!draft.url || isGenerating || !isUTools"
+                    :disabled="!draft.url || isGenerating"
                     @click="askAI()"
                   >
                     <span v-if="isGenerating" class="i-mdi-loading animate-spin text-lg" />
@@ -102,8 +103,8 @@ const onAiBackgroundSave = async () => {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="left">
-                  <p v-if="!isUTools">AI 功能仅在 uTools 环境可用</p>
-                  <p v-else-if="!draft.url">请输入网址以使用 AI</p>
+                  <p v-if="!draft.url">请输入网址以使用 AI</p>
+                  <p v-else-if="!canUseAi">{{ aiUnavailableReason }}</p>
                   <p v-else-if="!isUrlAccessible">网址可能无法访问，仍可尝试 AI</p>
                   <p v-else>AI 只预填标题和描述，不会直接保存</p>
                 </TooltipContent>
@@ -186,7 +187,7 @@ const onAiBackgroundSave = async () => {
           <div class="flex items-center justify-between">
             <label class="text-xs font-medium text-muted-foreground">分类</label>
             <Button
-              v-if="aiEnabled && isUTools"
+              v-if="aiEnabled"
               variant="ghost"
               size="sm"
               class="bookmark-form__suggest-trigger h-6 text-[11px] gap-1 px-2 text-primary hover:text-primary"
