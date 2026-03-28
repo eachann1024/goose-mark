@@ -6,6 +6,7 @@ import App from './App.vue'
 import './assets/index.css'
 import './assets/fonts.css'
 import 'uno.css'
+import { initMcpToolsBridge } from '@/composables/useMcpTools'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { identifyUser, trackEvent } from '@/services/analytics'
 
@@ -44,6 +45,7 @@ const bootstrapApp = async () => {
   } catch (error) {
     console.warn('[Main] 本地优先引导失败，回退到当前数据:', error)
   }
+  initMcpToolsBridge()
   start()
   initConsoleCapture()
   app.mount('#app')

@@ -1,11 +1,4 @@
 <script setup lang="ts">
-import { DEFAULT_AI_MODEL } from '@/constants/ai'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger
-} from '@/components/ui/popover'
-
 const settingsStore = useSettingsStore()
 
 const { isUTools, isDark } = useAppState()
@@ -24,116 +17,12 @@ const groupLayoutOptions: Array<{ value: 'wrap' | 'scroll'; label: string }> = [
   { value: 'scroll', label: '横向滚动' }
 ]
 
-const aiModels = ref<UToolsAiModel[]>([])
-const aiModelsLoading = ref(false)
-const aiModelsError = ref('')
-const aiModelFallbackNotice = ref('')
-const isAiModelPopoverOpen = ref(false)
-
-const selectedAiModelLabel = computed(() => {
-  const savedModel = settingsStore.customAiModel.trim()
-  const selectedModel = aiModels.value.find(model => model.id === savedModel)
-
-  if (selectedModel) return selectedModel.label
-  if (aiModelsLoading.value) return '正在加载模型...'
-  if (savedModel) return savedModel
-  return '模型'
-})
-
-const canSelectAiModel = computed(() => {
-  return settingsStore.useCustomAiModel && !aiModelsLoading.value && aiModels.value.length > 0
-})
-
-const handleAiModelSelect = (modelId: string) => {
-  settingsStore.setCustomAiModel(modelId)
-  isAiModelPopoverOpen.value = false
-}
-
-const ensureCustomAiModel = () => {
-  if (settingsStore.useCustomAiModel && !settingsStore.customAiModel.trim()) {
-    settingsStore.setCustomAiModel(DEFAULT_AI_MODEL)
-  }
-}
-
-const aiModelUnavailable = computed(() => {
-  return !!settingsStore.customAiModel && aiModels.value.length > 0 && !aiModels.value.some(model => model.id === settingsStore.customAiModel)
-})
-
-const aiModelHint = computed(() => {
-  if (aiModelFallbackNotice.value) return aiModelFallbackNotice.value
-  if (!settingsStore.useCustomAiModel) return '关闭后将使用 uTools 当前默认模型'
-  if (aiModelsLoading.value) return '正在读取 uTools AI 模型列表'
-  if (aiModelsError.value) return aiModelsError.value
-  if (aiModels.value.length === 0) {
-    return settingsStore.customAiModel
-      ? `当前已保存模型 ${settingsStore.customAiModel}，但本机暂无可用模型`
-      : '当前未获取到可用模型，请先在 uTools 中配置 AI'
-  }
-  if (aiModelUnavailable.value) return '当前模型不可用'
-  return '选择后将保存该模型 ID，并用于当前 AI 功能'
-})
-
-const loadAiModels = async () => {
-  aiModelsLoading.value = true
-  aiModelsError.value = ''
-  aiModelFallbackNotice.value = ''
-
-  try {
-    const models = await window.utools?.allAiModels?.()
-    aiModels.value = Array.isArray(models)
-      ? models.filter(model => model?.id && model?.label)
-      : []
-
-    if (aiModels.value.length === 0) {
-      return
-    }
-
-    const savedModel = settingsStore.customAiModel.trim()
-    const hasSavedModel = aiModels.value.some(model => model.id === savedModel)
-
-    if (!hasSavedModel) {
-      settingsStore.setCustomAiModel(aiModels.value[0].id)
-      if (savedModel) {
-        aiModelFallbackNotice.value = `已保存模型 ${savedModel} 不可用，已自动切换为 ${aiModels.value[0].label}`
-      }
-    }
-  } catch (error) {
-    console.error('[GeneralSettings] Load AI models failed:', error)
-    aiModels.value = []
-    aiModelsError.value = '模型列表读取失败，请稍后重试'
-  } finally {
-    aiModelsLoading.value = false
-  }
-}
-
 const handleGridColumnsChange = (val: string | number) => {
   const num = typeof val === 'number' ? val : Number(val)
   if (Number.isFinite(num)) {
     settingsStore.setGridColumns(num)
   }
 }
-
-watch(() => settingsStore.useCustomAiModel, ensureCustomAiModel, { immediate: true })
-onMounted(async () => {
-  ensureCustomAiModel()
-  if (settingsStore.aiEnabled && isUTools.value) {
-    await loadAiModels()
-  }
-})
-
-watch(
-  () => settingsStore.aiEnabled,
-  async enabled => {
-    if (!enabled) {
-      isAiModelPopoverOpen.value = false
-      return
-    }
-    if (isUTools.value && aiModels.value.length === 0 && !aiModelsLoading.value) {
-      await loadAiModels()
-    }
-  }
-)
-
 </script>
 
 <template>
@@ -289,80 +178,6 @@ watch(
             @update:model-value="(checked: boolean) => settingsStore.setPreferUtoolsBrowser(checked)"
           />
         </div>
-      </div>
-    </div>
-
-    <div class="settings-block">
-      <div class="settings-block__head">
-        <h3 class="settings-block__title">AI 功能</h3>
-        <p class="settings-block__desc">关闭后将隐藏所有 AI 相关入口</p>
-      </div>
-      <div class="space-y-4">
-        <div class="settings-row">
-          <div class="space-y-0.5">
-            <div class="text-sm font-medium">启用 AI 功能</div>
-            <div class="text-xs text-muted-foreground">默认开启，关闭后不再显示 AI 按钮和 AI 配置</div>
-          </div>
-          <Switch
-            :model-value="settingsStore.aiEnabled"
-            aria-label="启用 AI 功能"
-            @update:model-value="(checked: boolean) => settingsStore.setAiEnabled(checked)"
-          />
-        </div>
-        <template v-if="settingsStore.aiEnabled && isUTools">
-          <div class="settings-row">
-            <div class="space-y-0.5">
-              <div class="text-sm font-medium">指定 AI 模型</div>
-              <div class="text-xs text-muted-foreground">开启后优先使用所选模型，关闭则跟随 uTools 默认模型</div>
-            </div>
-            <Switch
-              :model-value="settingsStore.useCustomAiModel"
-              aria-label="指定 AI 模型"
-              @update:model-value="(checked: boolean) => settingsStore.setUseCustomAiModel(checked)"
-            />
-          </div>
-          <div class="space-y-2">
-            <div class="flex items-center gap-3">
-              <label class="text-sm text-muted-foreground shrink-0">模型</label>
-              <Popover v-model:open="isAiModelPopoverOpen">
-                <PopoverTrigger as-child>
-                  <Button
-                    variant="outline"
-                    class="h-9 flex-1 justify-between px-3 font-normal"
-                    :disabled="!canSelectAiModel"
-                  >
-                    <span
-                      class="truncate text-left"
-                      :class="canSelectAiModel ? 'text-foreground' : 'text-muted-foreground'"
-                    >
-                      {{ selectedAiModelLabel }}
-                    </span>
-                    <span class="i-mdi-chevron-down ml-2 shrink-0 opacity-50 text-sm" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent class="w-[var(--reka-popover-trigger-width)] p-1" align="start" side="bottom" :side-offset="8">
-                  <div class="max-h-64 overflow-y-auto">
-                    <button
-                      v-for="model in aiModels"
-                      :key="model.id"
-                      type="button"
-                      class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-left transition-colors hover:bg-accent hover:text-accent-foreground"
-                      @click="handleAiModelSelect(model.id)"
-                    >
-                      <span class="truncate">{{ model.label }}</span>
-                      <span
-                        v-if="settingsStore.customAiModel === model.id"
-                        class="i-mdi-check text-primary text-sm ml-2 shrink-0"
-                      />
-                    </button>
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
-            <p class="text-xs text-muted-foreground">{{ aiModelHint }}</p>
-          </div>
-        </template>
-        <p v-else-if="settingsStore.aiEnabled" class="text-xs text-muted-foreground">当前不在 uTools 环境，AI 功能暂不可用。</p>
       </div>
     </div>
 

@@ -120,10 +120,12 @@ function _useBookmarkForm() {
   })
   const saveButtonLabel = computed(() => needsBackgroundSave.value ? '后台保存' : '保存')
   const aiEnabled = computed(() => settingsStore.aiEnabled)
-  const canUseAi = computed(() => checkAiAvailable().available)
+  const aiAvailability = computed(() => checkAiAvailable())
+  const canUseAi = computed(() => aiAvailability.value.available)
+  const aiUnavailableReason = computed(() => aiAvailability.value.reason)
   const aiBackgroundTooltip = computed(() => {
     if (!draft.url.trim()) return '请输入链接后再使用 AI 后台保存'
-    if (!checkAiAvailable().available) return '当前环境不支持 AI，将按后台保存继续补全'
+    if (!canUseAi.value) return aiUnavailableReason.value || '当前环境不支持 AI，将按后台保存继续补全'
     return '先读取标题和描述，AI 理解后翻译成中文；若站点拿不到标题，会自动联网查'
   })
 
@@ -715,6 +717,7 @@ function _useBookmarkForm() {
     handleSave,
     askAI,
     canUseAi,
+    aiUnavailableReason,
     saveButtonLabel,
     aiEnabled,
     aiBackgroundTooltip,
