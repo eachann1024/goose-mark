@@ -3,6 +3,8 @@ import { getTemplateLabel } from '@/lib/utils'
 import { useBookmarkStore } from '@/stores/bookmark'
 
 const FEATURE_PREFIX = 'bm_tpl:'
+const AI_QUICK_SAVE_FEATURE_CODE = 'ai_quick_save'
+const DYNAMIC_ENTRY_CODES = new Set([AI_QUICK_SAVE_FEATURE_CODE])
 
 type OverCmd = { type: 'over'; label: string; minLength?: number; icon?: string }
 type FeatureCmd = string | OverCmd
@@ -154,7 +156,15 @@ const getBookmarkSignature = (bookmark: Bookmark) => {
 
 type SyncFeatureOptions = {
   force?: boolean
+  aiQuickSaveEnabled?: boolean
 }
+
+const getAiQuickSaveFeature = (): UToolsFeature => ({
+  code: AI_QUICK_SAVE_FEATURE_CODE,
+  explain: 'AI 快速保存当前页面到书签',
+  cmds: ['AI 快速保存', 'ai quick save'],
+  mainHide: false
+})
 
 export function useUTools() {
   const isTemplateBookmark = (b: Bookmark) => typeof b.title === 'string'
@@ -170,7 +180,10 @@ export function useUTools() {
 
     // 1. 获取现有特性
     const existingFeatures = ut.getFeatures()
-      .filter(f => typeof f.code === 'string' && f.code.startsWith(FEATURE_PREFIX))
+      .filter((f) => {
+        if (typeof f.code !== 'string') return false
+        return f.code.startsWith(FEATURE_PREFIX) || DYNAMIC_ENTRY_CODES.has(f.code)
+      })
 
     if (options.force) {
       existingFeatures.forEach(f => ut.removeFeature!(f.code))
@@ -191,6 +204,9 @@ export function useUTools() {
 
     // 3. 计算需要删除的特性（存在但不再需要的）
     const currentCodes = new Set(unique.map(b => `${FEATURE_PREFIX}${b.id}`))
+    if (options.aiQuickSaveEnabled) {
+      currentCodes.add(AI_QUICK_SAVE_FEATURE_CODE)
+    }
     const toRemove = existingFeatures.filter(f => !currentCodes.has(f.code))
 
     // 4. 删除不再需要的特性，并清理对应的缓存
@@ -239,6 +255,11 @@ export function useUTools() {
       ut.setFeature(feature)
       processedBookmarks.set(b.id, getBookmarkSignature(b))
     }
+
+    const hasAiQuickSaveFeature = existingFeatures.some(feature => feature.code === AI_QUICK_SAVE_FEATURE_CODE)
+    if (options.aiQuickSaveEnabled && (options.force || !hasAiQuickSaveFeature)) {
+      ut.setFeature(getAiQuickSaveFeature())
+    }
   }
 
   const getEnterText = (payload: unknown): string => {
@@ -284,6 +305,7 @@ export function useUTools() {
   }
 
   return {
+    AI_QUICK_SAVE_FEATURE_CODE,
     FEATURE_PREFIX,
     syncFeatures,
     getEnterText,

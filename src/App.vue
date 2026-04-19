@@ -24,7 +24,7 @@ const { toastState, closeToast, showToast, tooltipProviderKey, onMainViewSwitch 
 // Composables
 const { tab, isDark, toggleDark, isUTools, isMac } = useAppState()
 const { isSyncing, syncError } = useSync()
-const { generateMetadata } = useAI()
+const { generateMetadata, checkAiAvailable, aiError } = useAI()
 const { contextMenu, handleContextMenu, closeContextMenu } = useContextMenu()
 const {
   openBookmarkLink: originalOpenBookmarkLink,
@@ -67,6 +67,7 @@ const {
 } = useBookmarkForm()
 
 const {
+  AI_QUICK_SAVE_FEATURE_CODE,
   syncFeatures,
   getEnterText,
   isDetachedWindowNow,
@@ -848,9 +849,25 @@ const isValidUrl = (text: string): boolean => {
   }
 }
 
+const syncUToolsFeatures = () => {
+  syncFeatures(store.bookmarks, {
+    aiQuickSaveEnabled: checkAiAvailable().available
+  })
+}
+
 // 处理快速保存（超级面板 / 当前浏览器 / 弹窗）
-const handleQuickSave = async (from: string, payload: any) => {
+const handleQuickSave = async (
+  from: string,
+  payload: any,
+  options?: {
+    forceAi?: boolean
+  }
+) => {
   let urlToSave = ''
+  let nextTitle = ''
+  let nextDesc = ''
+  let usedAi = false
+  let saveToastTitle = ''
 
   // 1. 从 payload 获取 URL
   if (typeof payload === 'string') {
@@ -879,13 +896,35 @@ const handleQuickSave = async (from: string, payload: any) => {
     const meta = await fetchPageMeta(urlToSave)
     const pageTitle = meta.title || ''
     const pageDesc = meta.description || ''
+    nextTitle = pageTitle
+    nextDesc = pageDesc
+
+    if (options?.forceAi) {
+      const availability = checkAiAvailable()
+      if (availability.available) {
+        const aiResult = await generateMetadata({
+          url: urlToSave,
+          title: pageTitle,
+          desc: pageDesc
+        })
+        if (aiResult) {
+          nextTitle = aiResult.title || nextTitle
+          nextDesc = aiResult.desc || nextDesc
+          usedAi = true
+        } else if (aiError.value) {
+          saveToastTitle = 'AI 暂时不可用，已按普通快速保存处理'
+        }
+      } else {
+        saveToastTitle = 'AI 未就绪，已按普通快速保存处理'
+      }
+    }
 
     // 快速保存到"快速收集"分组（含去重逻辑）
-    const bookmark = store.quickSaveBookmark(urlToSave, pageTitle, pageDesc)
+    const bookmark = store.quickSaveBookmark(urlToSave, nextTitle, nextDesc)
     const isNew = bookmark.title === urlToSave
 
     showToast({
-      title: isNew ? '已保存' : '已添加到快速收集',
+      title: usedAi ? '已 AI 快速保存' : (saveToastTitle || (isNew ? '已保存' : '已添加到快速收集')),
       description: bookmark.title,
       variant: 'success'
     })
@@ -1129,7 +1168,7 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
         onMainViewSwitch()
         activeTemplateBookmark.value = null
         syncTheme()
-        syncFeatures(store.bookmarks)
+        syncUToolsFeatures()
         restoreDefaultSearchInput()
         store.setSearch('')
         openAddWithUrl(urlToSave)
@@ -1141,10 +1180,12 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
       return
     }
 
-    if (code === 'quick_save') {
+    if (code === 'quick_save' || code === AI_QUICK_SAVE_FEATURE_CODE) {
       const from = (params as any)?.from || 'main'
       const payload = params?.payload
-      handleQuickSave(from, payload)
+      handleQuickSave(from, payload, {
+        forceAi: code === AI_QUICK_SAVE_FEATURE_CODE
+      })
       return
     }
 
@@ -1186,7 +1227,7 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
       onMainViewSwitch()
       activeTemplateBookmark.value = null
       syncTheme()
-      syncFeatures(store.bookmarks)
+      syncUToolsFeatures()
       skipSearchCloseRefocus.value = true
       closeSearchView({ restoreFocus: false })
       store.setSearch('')
@@ -1288,7 +1329,7 @@ onMounted(async () => {
   statsStore.recordUse('open')
   
   if (window.utools) {
-    syncFeatures(store.bookmarks)
+    syncUToolsFeatures()
     window.addEventListener('storage-sync', handleStorageSync as EventListener)
     window.addEventListener(UTOOLS_SEARCH_INPUT_EVENT, handleUToolsSearchInputEvent as EventListener)
     window.addEventListener(UTOOLS_PLUGIN_ENTER_EVENT, handleUToolsPluginEnterEvent as EventListener)
@@ -1299,7 +1340,12 @@ onMounted(async () => {
 
 watch(() => store.bookmarks, () => {
   if (isSyncPaused.value) return // 暂停时跳过同步
-  syncFeatures(store.bookmarks)
+  syncUToolsFeatures()
+}, { deep: true })
+
+watch(() => settingsStore.aiSettings, () => {
+  if (!window.utools || isSyncPaused.value) return
+  syncUToolsFeatures()
 }, { deep: true })
 
 // 组件卸载时清理定时器
