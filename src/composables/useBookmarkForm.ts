@@ -425,8 +425,18 @@ function _useBookmarkForm() {
     showDeleteConfirmLocal.value = false
   }
 
+  const resetPendingIconFetch = () => {
+    if (fetchTimer) {
+      clearTimeout(fetchTimer)
+      fetchTimer = null
+    }
+    iconLoading.value = false
+    iconFetchFailed.value = false
+  }
+
   // Actions
   const openAdd = (_eventOrEl?: MouseEvent | HTMLElement) => {
+    resetPendingIconFetch()
     editingId.value = ''
     modalTitle.value = '新建书签'
     draft.title = ''
@@ -444,6 +454,7 @@ function _useBookmarkForm() {
 
   // 新增：支持预填充 URL 且默认不选分类的方法（用于超级面板）
   const openAddWithUrl = (url: string, _eventOrEl?: MouseEvent | HTMLElement) => {
+    resetPendingIconFetch()
     editingId.value = ''
     modalTitle.value = '新建书签'
     draft.url = url
@@ -460,6 +471,7 @@ function _useBookmarkForm() {
   }
 
   const openEdit = (bookmark: Bookmark, _eventOrEl?: MouseEvent | HTMLElement) => {
+    resetPendingIconFetch()
     editingId.value = bookmark.id
     modalTitle.value = '编辑书签'
     draft.title = bookmark.title || ''
@@ -597,9 +609,8 @@ function _useBookmarkForm() {
     checkUrl(val)
     
     if (!val) {
-      if (fetchTimer) clearTimeout(fetchTimer)
+      resetPendingIconFetch()
       previewIcon.value = null
-      iconLoading.value = false
       if (!isTitleDirty.value) draft.title = ''
       if (!isDescDirty.value) draft.desc = ''
       return
@@ -616,6 +627,7 @@ function _useBookmarkForm() {
   
     if (fetchTimer) clearTimeout(fetchTimer)
     fetchTimer = setTimeout(async () => {
+      fetchTimer = null
       iconLoading.value = true
       iconFetchFailed.value = false
       try {
@@ -640,7 +652,7 @@ function _useBookmarkForm() {
             draft.desc = fetched.description
           }
         } else {
-          previewIcon.value = null
+          previewIcon.value = buildTextIconFromValue(val)
           iconFetchFailed.value = true
           // 如果标题仍是 hostname，则提示
           const currentTitle = draft.title.trim()
@@ -649,7 +661,7 @@ function _useBookmarkForm() {
           }
         }
       } catch {
-        previewIcon.value = null
+        previewIcon.value = buildTextIconFromValue(val)
         iconFetchFailed.value = true
       } finally {
         iconLoading.value = false

@@ -8,6 +8,14 @@ import type { AIModelOption, CustomAIProtocol } from '@/lib/aiProvider'
 import { fetchCustomAIModels, getDefaultBaseURL, getStoredAIModelOptions } from '@/lib/aiProvider'
 import { getAvailableUToolsAiModels, isUToolsAiSupported } from '@/lib/utoolsAi'
 
+type UToolsAiModel = {
+  id: string
+  label: string
+  description?: string
+  icon?: string
+  cost?: string
+}
+
 const settingsStore = useSettingsStore()
 const { isUTools } = useAppState()
 const { showToast } = useUIManager()
@@ -70,7 +78,7 @@ const usingCustomProvider = computed(() => settingsStore.aiUseCustomProvider)
 const aiSupported = computed(() => isUTools.value && isUToolsAiSupported())
 const customModels = computed(() => getStoredAIModelOptions(settingsStore.aiSettings))
 const currentModels = computed(() => usingCustomProvider.value ? customModels.value : utoolsModels.value)
-const currentModel = computed(() => currentModels.value.find(model => model.id === settingsStore.aiSelectedModelId) ?? null)
+const currentModel = computed(() => currentModels.value.find((model: UToolsAiModel | AIModelOption) => model.id === settingsStore.aiSelectedModelId) ?? null)
 const selectedProtocol = computed(() => {
   return customProtocolOptions.find(option => option.id === customProtocol.value) ?? customProtocolOptions[0]
 })

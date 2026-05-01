@@ -8,3 +8,4 @@ src/auto-imports.d.ts
 bun.lock
 .trae
 .claude/worktrees/
+CHANGELOG.md

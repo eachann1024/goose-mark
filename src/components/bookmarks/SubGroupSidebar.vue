@@ -18,6 +18,8 @@ const emit = defineEmits<{
 
 const store = useBookmarkStore()
 const { showToast, isTooltipEnabled } = useUIManager()
+const getShareData = async (_sourceShareId: string): Promise<any> => null
+const checkForUpdate = async (_sourceShareId: string, _lastSyncedAt: number): Promise<boolean> => false
 
 // 更新检测状态
 const updatesMap = ref<Record<string, boolean>>({})
@@ -58,7 +60,7 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
       
       const dataToUpdate = { groups, bookmarks: shareData.bookmarks || [] }
       // 使用新方法：只更新单个子分组，保留其他子分组
-      const updateResult = store.updateSubGroupFromShare(groupId, subGroupId, sourceShareId, dataToUpdate)
+      const updateResult = (store as any).updateSubGroupFromShare?.(groupId, subGroupId, sourceShareId, dataToUpdate)
       
       if (updateResult && typeof updateResult === 'object') {
         // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
@@ -69,10 +71,10 @@ const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, gro
         // 构建详细的变更描述
         const logs: string[] = []
         if (updateResult.added > 0) {
-          logs.push(`新增\n${updateResult.addedItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}`)
+          logs.push(`新增\n${updateResult.addedItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}`)
         }
         if (updateResult.removed > 0) {
-          logs.push(`移除了\n${updateResult.removedItems.map((item, i) => `${i + 1}. ${item}`).join('\n')}`)
+          logs.push(`移除了\n${updateResult.removedItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}`)
         }
         
         const description = logs.length > 0 ? logs.join('\n\n') : undefined
@@ -222,7 +224,7 @@ const localSubGroups = computed({
   get: () => props.activeSubGroups,
   set: (val) => {
     if (!props.activeGroupId || props.activeGroupId === TRASH_GROUP_ID) return
-    store.reorderSubGroups(props.activeGroupId, val)
+    store.reorderSubGroups(props.activeGroupId, val as any)
   }
 })
 

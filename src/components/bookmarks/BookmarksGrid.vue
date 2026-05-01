@@ -30,6 +30,10 @@ const props = defineProps<{
   selectionVariant?: 'default' | 'search'
 }>()
 
+const bindGridRef = (el: Element | ComponentPublicInstance | null) => {
+  props.setGridRef?.(el instanceof HTMLElement ? el : null)
+}
+
 const emit = defineEmits<{
   (e: 'remove', bookmark: Bookmark): void
   (e: 'edit', bookmark: Bookmark, el?: HTMLElement): void
@@ -172,7 +176,7 @@ watch(() => props.highlightedId, (id) => {
 
 <template>
   <section
-    :ref="setGridRef"
+    :ref="bindGridRef"
     class="flex-1"
   >
     <!-- Header Slot for Onboarding Banner -->

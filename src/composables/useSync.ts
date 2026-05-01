@@ -94,7 +94,7 @@ export function useSync() {
       })
     } else if (item.itemType === 'group') {
       const contentGroup = item.content as ShareAwareGroup | null
-      collectShareIds(contentGroup).forEach(id => shareIds.add(id))
+      collectShareIds(contentGroup || undefined).forEach(id => shareIds.add(id))
 
       const group = store.groups.find(g => g.id === item.itemId) as ShareAwareGroup | undefined
       collectShareIds(group).forEach(id => shareIds.add(id))
