@@ -42,6 +42,11 @@ const {
 } = useBookmarkOperations()
 
 const openBookmarkLink = (bookmark: Bookmark, options?: { source?: string; openMethod?: 'keyboard' | 'click' | 'command' | 'plugin' }) => {
+  if (/{[^}]+}/.test(bookmark.url) && !options?.source?.startsWith('template')) {
+    enterTemplateMode(bookmark)
+    return
+  }
+
   originalOpenBookmarkLink(bookmark, {
     useUiQuery: false,
     source: options?.source,
@@ -676,6 +681,13 @@ const handleContextMenuAction = (action: string) => {
     case 'remove':
       handleRemove(bookmark)
       break
+    case 'restore':
+      if (store.restoreBookmarkFromTrash(bookmark.id)) {
+        showToast({ title: '书签已还原', variant: 'success', duration: 1500 })
+      } else {
+        showToast({ title: '还原失败', variant: 'error' })
+      }
+      break
   }
 }
 
@@ -979,6 +991,7 @@ const handleTemplateKeydown = (e: KeyboardEvent) => {
 
 // Template Mode Actions
 const enterTemplateMode = (bookmark: Bookmark) => {
+  exitTemplateMode({ restoreInput: false })
   activeTemplateBookmark.value = bookmark
   templateQuery.value = ''
   isSyncPaused.value = true // 进入模式时暂停同步
@@ -997,13 +1010,13 @@ const enterTemplateMode = (bookmark: Bookmark) => {
     placeholder: `搜索 ${bookmark.title}${label ? ` (${label})` : ''}，回车打开`,
     focus: true,
   })
-  if (!mounted) return
+  if (!mounted && isUTools.value) return
   
   // 添加键盘事件监听
   window.addEventListener('keydown', handleTemplateKeydown)
 }
 
-const exitTemplateMode = () => {
+const exitTemplateMode = (options: { restoreInput?: boolean } = {}) => {
   // 移除键盘事件监听
   window.removeEventListener('keydown', handleTemplateKeydown)
   
@@ -1012,7 +1025,9 @@ const exitTemplateMode = () => {
   isSyncPaused.value = false // 退出模式时恢复同步
   
   // Restore default sub input
-  restoreDefaultSearchInput()
+  if (options.restoreInput !== false) {
+    restoreDefaultSearchInput()
+  }
 }
 
 const handleStorageSync = ((e: any) => {
@@ -1409,7 +1424,9 @@ const handleLocate = async (bookmark: Bookmark) => {
     v-if="activeTemplateBookmark" 
     class="relative z-10"
     :bookmark="activeTemplateBookmark" 
-    :query="templateQuery" 
+    :query="templateQuery"
+    @update:query="templateQuery = $event"
+    @submit="executeTemplateSearch"
   />
   <div 
     v-else 

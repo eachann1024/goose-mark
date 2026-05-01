@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port 7001",
     "build": "vite build && node scripts/utools-build.js",
+    "e2e": "playwright test",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit"
   },
@@ -36,6 +37,7 @@
     "@vitejs/plugin-vue": "^6.0.5",
     "autoprefixer": "^10.4.23",
     "code-inspector-plugin": "^1.4.2",
+    "@playwright/test": "^1.56.1",
     "esbuild": "^0.27.4",
     "postcss": "^8.5.6",
     "sharp": "^0.34.5",

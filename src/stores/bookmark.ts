@@ -171,6 +171,7 @@ export const useBookmarkStore = defineStore('bookmark', {
           if (!b.createdAt) b.createdAt = now
           if (!b.updatedAt) b.updatedAt = now
         })
+        this.ensureValidSelection()
         return
       }
 
@@ -530,7 +531,9 @@ export const useBookmarkStore = defineStore('bookmark', {
     setSearch(value: string) {
       this.search = typeof value === 'string' ? value : ''
     },
-    ensureValidSelection(preferredGroupId = this.activeGroupId, preferredSubGroupId = this.activeSubGroupId) {
+    ensureValidSelection(preferredGroupId?: string, preferredSubGroupId?: string) {
+      preferredGroupId = preferredGroupId ?? this.activeGroupId
+      preferredSubGroupId = preferredSubGroupId ?? this.activeSubGroupId
       if (!this.groups.length) {
         this.activeGroupId = ''
         this.activeSubGroupId = ''
@@ -756,8 +759,19 @@ export const useBookmarkStore = defineStore('bookmark', {
       }
     },
     restoreBookmark(id: string) {
+      return this.restoreBookmarkFromTrash(id)
+    },
+    restoreBookmarkFromTrash(id: string) {
       const bookmark = this.bookmarks.find(b => b.id === id)
-      if (!bookmark) return
+      if (!bookmark) return false
+
+      const now = Date.now()
+      const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+      const trashSubs = trashGroup?.children ?? []
+      const previousLocations = bookmark.locations
+        ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
+        : this.getBookmarkLocations(id)
+      const previousShareIds = this.getShareIdsFromLocations(previousLocations)
 
       let targetLocations: BookmarkLocation[] = []
 
@@ -766,7 +780,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         // 过滤掉已经不存在的分组或子分组
         targetLocations = bookmark.prevLocations.filter(loc => {
           const group = this.groups.find(g => g.id === loc.groupId)
-          return group && group.children.some(c => c.id === loc.subGroupId)
+          return group && group.id !== TRASH_GROUP_ID && group.children.some(c => c.id === loc.subGroupId)
         })
       }
 
@@ -776,14 +790,31 @@ export const useBookmarkStore = defineStore('bookmark', {
         if (defaultGroup && defaultGroup.children.length > 0) {
           targetLocations = [{ groupId: defaultGroup.id, subGroupId: defaultGroup.children[0].id }]
         } else {
-          // 极端情况：没有任何分组，则还原到内置默认 ID（通常 migrateFromLegacy 会确保有分组）
-          targetLocations = [{ groupId: 'g-default', subGroupId: 'sg-default' }]
+          const createdGroups = createSeedGroups()
+          const defaultGroup = createdGroups.find(g => g.id !== TRASH_GROUP_ID)!
+          this.groups.unshift(defaultGroup)
+          targetLocations = [{ groupId: defaultGroup.id, subGroupId: defaultGroup.children[0].id }]
         }
       }
 
+      trashSubs.forEach(sub => {
+        sub.bookmarkIds = sub.bookmarkIds.filter(bid => bid !== id)
+        sub.updatedAt = now
+      })
+      if (trashGroup) trashGroup.updatedAt = now
+
+      bookmark.isDeleted = false
+      bookmark.updatedAt = now
       this.updateBookmarkLocations(id, targetLocations)
-      // 还原后清理原位置记录
       delete bookmark.prevLocations
+      this.selectGroup(targetLocations[0].groupId, targetLocations[0].subGroupId)
+      this.scheduleBookmarkSync(id, { updatedAt: now, previousShareIds })
+      targetLocations.forEach(loc => {
+        this.scheduleSubGroupSync(loc.groupId, loc.subGroupId, { updatedAt: now })
+        this.scheduleGroupSync(loc.groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === loc.groupId) })
+      })
+      ;(this as any).$persist?.()
+      return true
     },
     emptyTrash() {
       const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
@@ -1559,6 +1590,6 @@ export const useBookmarkStore = defineStore('bookmark', {
   },
   persist: {
     storage: utoolsStorage,
-    pick: ['groups', 'bookmarks'],
+    pick: ['groups', 'bookmarks', 'activeGroupId', 'activeSubGroupId'],
   },
 })

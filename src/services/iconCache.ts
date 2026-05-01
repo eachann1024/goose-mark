@@ -13,6 +13,7 @@ const getIconApiBase = () => {
 const ICON_API_URL = getIconApiBase() ? `${getIconApiBase()}/api/icon` : ''
 const isDataUrl = (value: string) => value.startsWith('data:image/')
 const FAVICON_COOLDOWN_MS = 10 * 60 * 1000
+const ICON_FETCH_TIMEOUT_MS = 12000
 const faviconOriginCooldowns = new Map<string, number>()
 
 const shouldCooldownStatus = (status: number) => status >= 400 && status < 500
@@ -56,11 +57,25 @@ const blobToDataUrl = (blob: Blob): Promise<string | null> => new Promise((resol
   reader.readAsDataURL(blob)
 })
 
+const withTimeout = async <T>(promise: Promise<T>, timeoutMs = ICON_FETCH_TIMEOUT_MS): Promise<T | null> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), timeoutMs)
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 export const fetchAsDataUrl = async (url: string): Promise<string | null> => {
   if (!url) return null
   if (isOriginInCooldown(url)) return null
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12000)
+  const timer = setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS)
   try {
     const response = await fetch(url, { signal: controller.signal })
     clearTimeout(timer)
@@ -141,7 +156,7 @@ const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; t
   if (!ICON_API_URL) return null
 
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 12000)
+  const timer = setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS)
 
   try {
     const response = await fetch(`${ICON_API_URL}?url=${encodeURIComponent(url)}`, {
@@ -184,7 +199,7 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<UToolsBrowserFet
     try {
       const runner = ubrowser.goto(url)
       if (runner?.wait && runner?.evaluate && runner?.run) {
-        const result = await runner.wait(1000).evaluate(() => {
+        const result = await withTimeout(runner.wait(1000).evaluate(() => {
           const readDescription = () => {
             const candidates = [
               "meta[name='description']",
@@ -221,7 +236,8 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<UToolsBrowserFet
             title: document.title?.trim() || null,
             description: readDescription()
           }
-        }).run({ width: 800, height: 600, show: false })
+        }).run({ width: 800, height: 600, show: false }))
+        if (!result) return null
         const payload = Array.isArray(result) ? (result[0] as { href?: string; title?: string | null; description?: string | null }) : undefined
         const href = payload?.href || null
         const cache = href ? await fetchAsDataUrl(href) : null
@@ -244,7 +260,7 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<UToolsBrowserFet
     browserWindow = utoolsApi?.createBrowserWindow?.(url, { show: false })
     const exec = browserWindow?.webContents?.executeJavaScript
     if (exec) {
-      const payload = await exec(`
+      const payload = await withTimeout(exec(`
         (async () => {
           const readDescription = () => {
             const candidates = [
@@ -293,7 +309,8 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<UToolsBrowserFet
             return { href, status: 0, dataUrl: "", title: document.title?.trim() || null, description: readDescription() }
           }
         })()
-      `)
+      `))
+      if (!payload) return null
       const href = (payload as { href?: string })?.href
       const status = (payload as { status?: number })?.status
       const dataUrl = (payload as { dataUrl?: string })?.dataUrl

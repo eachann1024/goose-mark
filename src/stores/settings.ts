@@ -292,7 +292,7 @@ export const useSettingsStore = defineStore('settings', {
       }
 
       if (Object.keys(nextPatch).length > 0) {
-        context.store.$patch(nextPatch)
+        context.store.$patch(nextPatch as any)
         ;(context.store as typeof context.store & { $persist?: () => void }).$persist?.()
       }
     }

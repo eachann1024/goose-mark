@@ -59,8 +59,7 @@ export function useUToolsSubInputController(options: UseUToolsSubInputController
     if (!pendingFocusMode.value || !options.isUTools.value) return false
     if (!canFocusSubInputNow()) return false
     if (pendingFocusMode.value !== subInputMode.value) return false
-    const focused = window.utools?.subInputFocus?.()
-    if (focused === false) return false
+    window.utools?.subInputFocus?.()
     clearSubInputFocusRecoveryTimers()
     clearPendingFocus()
     return true

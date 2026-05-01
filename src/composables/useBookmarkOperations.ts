@@ -294,6 +294,7 @@ export function useBookmarkOperations() {
     copyBookmarkDescription,
     openUrl,
     openUrlInUtoolsBrowser,
+    getTemplateLabel,
     handleRemove,
     requestDelete,
     confirmDelete,

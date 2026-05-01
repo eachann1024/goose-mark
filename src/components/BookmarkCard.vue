@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Bookmark } from '@/types/bookmark'
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
+import Card from '@/components/ui/card/Card.vue'
 
 const settingsStore = useSettingsStore()
 

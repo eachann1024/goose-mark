@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import type { CSSProperties } from 'vue'
 
 const props = defineProps<{
   x: number
@@ -17,7 +18,7 @@ const emit = defineEmits<{
 
 const menu = ref<HTMLElement | null>(null)
 const isPositioned = ref(false)
-const menuStyle = ref({
+const menuStyle = ref<CSSProperties>({
   top: '0px',
   left: '0px',
   visibility: 'hidden'
@@ -57,7 +58,7 @@ const updatePosition = async () => {
   isPositioned.value = true
 }
 
-const handleClickOutside = (e: MouseEvent) => {
+const handleClickOutside = (e: Event) => {
   if (menu.value && !menu.value.contains(e.target as Node)) {
     emit('close')
   }

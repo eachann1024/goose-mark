@@ -7,10 +7,30 @@ const props = defineProps<{
   bookmark: Bookmark
   query: string
 }>()
+
+const emit = defineEmits<{
+  (e: 'update:query', value: string): void
+  (e: 'submit'): void
+}>()
+
+const inputRef = ref<HTMLInputElement | null>(null)
+
+onMounted(() => {
+  nextTick(() => inputRef.value?.focus())
+})
 </script>
 
 <template>
   <div class="h-screen flex flex-col items-center justify-center p-8 text-center space-y-8 animate-in fade-in zoom-in-95 duration-200">
+    <input
+      ref="inputRef"
+      :value="query"
+      class="sr-only"
+      data-template-query-input
+      autofocus
+      @input="emit('update:query', ($event.target as HTMLInputElement).value)"
+      @keydown.enter.prevent="emit('submit')"
+    />
     <!-- Icon -->
     <BookmarkIcon 
       :icon="bookmark.icon"

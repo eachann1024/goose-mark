@@ -1,10 +1,23 @@
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
 
+type UToolsAiModel = {
+  id: string
+  label: string
+  description?: string
+  icon?: string
+  cost?: string
+}
+
+type UToolsApi = {
+  ai?: (option: unknown, streamCallback?: (chunk: { text?: string; content?: string }) => void) => Promise<string | { text?: string; content?: string }>
+  allAiModels?: () => Promise<UToolsAiModel[]>
+}
+
 type UToolsAiApi = Pick<UToolsApi, 'ai' | 'allAiModels'>
 
 function getUToolsApi(): UToolsAiApi | null {
   if (typeof window === 'undefined') return null
-  return window.utools ?? null
+  return (window.utools as UToolsAiApi | undefined) ?? null
 }
 
 export function isUToolsAiSupported() {
