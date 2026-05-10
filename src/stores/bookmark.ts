@@ -96,10 +96,10 @@ export const useBookmarkStore = defineStore('bookmark', {
     const groups = createSeedGroups()
     const bookmarks: Bookmark[] = []
 
-    const addSeedBookmark = (title: string, url: string, groupId: string, subGroupId: string) => {
+    const addSeedBookmark = (title: string, url: string, groupId: string, subGroupId: string, tags: string[] = []) => {
       const id = uid()
       bookmarks.push({
-        id, title, url, desc: '', tags: [],
+        id, title, url, desc: '', tags,
         locations: [{ groupId, subGroupId }],
         createdAt: now, updatedAt: now
       })
@@ -148,7 +148,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         { t: '微博', u: 'https://weibo.com' },
         { t: '今日头条', u: 'https://www.toutiao.com' },
         { t: '腾讯新闻', u: 'https://news.qq.com' },
-      ].forEach(b => navCommon.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-common')))
+      ].forEach(b => navCommon.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-common', ['导航'])))
     }
 
     // 导航 - 实用工具
@@ -170,7 +170,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         { t: 'BOSS直聘', u: 'https://www.zhipin.com' },
         { t: '拉勾网', u: 'https://www.lagou.com' },
         { t: '前程无忧', u: 'https://www.51job.com' },
-      ].forEach(b => navTools.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-tools')))
+      ].forEach(b => navTools.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-tools', ['工具'])))
     }
 
     // AI - 对话 AI
@@ -187,7 +187,7 @@ export const useBookmarkStore = defineStore('bookmark', {
         { t: '文心一言', u: 'https://yiyan.baidu.com' },
         { t: '天工 AI', u: 'https://www.tiangong.cn' },
         { t: 'Hugging Face', u: 'https://huggingface.co' },
-      ].forEach(b => aiChat.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-chat')))
+      ].forEach(b => aiChat.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-chat', ['AI'])))
     }
 
     // AI - 创作 AI
@@ -204,10 +204,8 @@ export const useBookmarkStore = defineStore('bookmark', {
         { t: 'Cursor', u: 'https://cursor.sh' },
         { t: 'GitHub Copilot', u: 'https://github.com/features/copilot' },
         { t: 'Notion AI', u: 'https://www.notion.so/product/ai' },
-      ].forEach(b => aiCreate.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-create')))
+      ].forEach(b => aiCreate.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-create', ['AI', '创作'])))
     }
-
-    matchSeedIcons()
 
     return {
       groups,

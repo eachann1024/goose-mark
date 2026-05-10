@@ -1351,6 +1351,11 @@ onMounted(async () => {
     window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, handleUToolsPluginOutEvent as EventListener)
     replayPendingUToolsPluginEnterEvent()
   }
+
+  // 新用户种子书签图标批量匹配（在 store 初始化完成后执行）
+  nextTick(() => {
+    store.refreshMissingIcons()
+  })
 })
 
 watch(() => store.bookmarks, () => {
