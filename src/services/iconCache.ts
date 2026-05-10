@@ -116,21 +116,17 @@ const isHtmlDocument = async (url: string): Promise<boolean> => {
   }
 }
 
-const buildFaviconUrl = (url: string): string | null => {
+const fetchIconDirect = async (url: string): Promise<{ icon: string; cache: string } | null> => {
   try {
     const target = new URL(url)
-    return `${target.origin}/favicon.ico`
+    // 直接使用 DuckDuckGo favicon 服务，避免 CORS 和 404 问题
+    return {
+      icon: `https://icons.duckduckgo.com/ip3/${target.hostname}.ico`,
+      cache: ''
+    }
   } catch {
     return null
   }
-}
-
-const fetchIconDirect = async (url: string): Promise<{ icon: string; cache: string } | null> => {
-  const faviconUrl = buildFaviconUrl(url)
-  if (!faviconUrl) return null
-  const dataUrl = await fetchAsDataUrl(faviconUrl)
-  if (!dataUrl) return null
-  return { icon: faviconUrl, cache: dataUrl }
 }
 
 const buildTextIconValue = (text: string) => {
