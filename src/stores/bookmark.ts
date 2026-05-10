@@ -29,14 +29,43 @@ const createSeedGroups = (): Group[] => {
   const now = Date.now()
   return [
     {
-      id: 'g-default',
-      name: '默认',
+      id: 'g-nav',
+      name: '导航',
       createdAt: now,
       updatedAt: now,
       children: [
         {
-          id: 'sg-default',
-          name: '子分组',
+          id: 'sg-nav-common',
+          name: '常用网站',
+          bookmarkIds: [],
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: 'sg-nav-tools',
+          name: '实用工具',
+          bookmarkIds: [],
+          createdAt: now,
+          updatedAt: now
+        }
+      ]
+    },
+    {
+      id: 'g-ai',
+      name: 'AI 工具',
+      createdAt: now,
+      updatedAt: now,
+      children: [
+        {
+          id: 'sg-ai-chat',
+          name: '对话 AI',
+          bookmarkIds: [],
+          createdAt: now,
+          updatedAt: now
+        },
+        {
+          id: 'sg-ai-create',
+          name: '创作 AI',
           bookmarkIds: [],
           createdAt: now,
           updatedAt: now
@@ -63,13 +92,129 @@ const createSeedGroups = (): Group[] => {
 
 export const useBookmarkStore = defineStore('bookmark', {
   state: () => {
+    const now = Date.now()
     const groups = createSeedGroups()
+    const bookmarks: Bookmark[] = []
+
+    const addSeedBookmark = (title: string, url: string, groupId: string, subGroupId: string) => {
+      const id = uid()
+      bookmarks.push({
+        id, title, url, desc: '', tags: [],
+        locations: [{ groupId, subGroupId }],
+        createdAt: now, updatedAt: now
+      })
+      return id
+    }
+
+    // 异步为种子书签获取图标（不阻塞初始化）
+    const matchSeedIcons = () => {
+      setTimeout(() => {
+        bookmarks.forEach(bm => {
+          if (!bm.icon || bm.icon.type === 'text') {
+            ensureIconForBookmark(bm).then(icon => {
+              if (icon) {
+                const idx = bookmarks.findIndex(b => b.id === bm.id)
+                if (idx !== -1) {
+                  bookmarks[idx] = { ...bookmarks[idx], icon, iconMatchedAt: Date.now() }
+                }
+              }
+            }).catch(() => {})
+          }
+        })
+      }, 500)
+    }
+
+    const findSub = (groupId: string, subId: string) => {
+      const g = groups.find(gr => gr.id === groupId)
+      return g?.children.find(c => c.id === subId)
+    }
+
+    // 导航 - 常用网站
+    const navCommon = findSub('g-nav', 'sg-nav-common')
+    if (navCommon) {
+      ;[
+        { t: '百度', u: 'https://www.baidu.com' },
+        { t: 'Google', u: 'https://www.google.com' },
+        { t: '淘宝', u: 'https://www.taobao.com' },
+        { t: '京东', u: 'https://www.jd.com' },
+        { t: '微信网页版', u: 'https://wx.qq.com' },
+        { t: '12306', u: 'https://www.12306.cn' },
+        { t: '百度网盘', u: 'https://pan.baidu.com' },
+        { t: '高德地图', u: 'https://ditu.amap.com' },
+        { t: '百度地图', u: 'https://map.baidu.com' },
+        { t: '知乎', u: 'https://www.zhihu.com' },
+        { t: 'B站', u: 'https://www.bilibili.com' },
+        { t: '豆瓣', u: 'https://www.douban.com' },
+        { t: '微博', u: 'https://weibo.com' },
+        { t: '今日头条', u: 'https://www.toutiao.com' },
+        { t: '腾讯新闻', u: 'https://news.qq.com' },
+      ].forEach(b => navCommon.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-common')))
+    }
+
+    // 导航 - 实用工具
+    const navTools = findSub('g-nav', 'sg-nav-tools')
+    if (navTools) {
+      ;[
+        { t: '查快递', u: 'https://www.kuaidi100.com' },
+        { t: '天气查询', u: 'https://tianqi.baidu.com' },
+        { t: '携程旅行', u: 'https://www.ctrip.com' },
+        { t: '去哪儿', u: 'https://www.qunar.com' },
+        { t: '马蜂窝', u: 'https://www.mafengwo.cn' },
+        { t: '飞猪', u: 'https://www.fliggy.com' },
+        { t: '同程', u: 'https://www.ly.com' },
+        { t: '途牛', u: 'https://www.tuniu.com' },
+        { t: '穷游', u: 'https://www.qyer.com' },
+        { t: '默沙东诊疗手册', u: 'https://www.msdmanuals.cn' },
+        { t: '时光邮局', u: 'https://www.timepost.cn' },
+        { t: '国家企业信用信息公示', u: 'https://www.gsxt.gov.cn' },
+        { t: 'BOSS直聘', u: 'https://www.zhipin.com' },
+        { t: '拉勾网', u: 'https://www.lagou.com' },
+        { t: '前程无忧', u: 'https://www.51job.com' },
+      ].forEach(b => navTools.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-tools')))
+    }
+
+    // AI - 对话 AI
+    const aiChat = findSub('g-ai', 'sg-ai-chat')
+    if (aiChat) {
+      ;[
+        { t: 'ChatGPT', u: 'https://chatgpt.com' },
+        { t: 'Claude', u: 'https://claude.ai' },
+        { t: 'Google Gemini', u: 'https://gemini.google.com' },
+        { t: 'Perplexity', u: 'https://www.perplexity.ai' },
+        { t: 'DeepSeek', u: 'https://chat.deepseek.com' },
+        { t: 'Kimi', u: 'https://www.kimi.com' },
+        { t: '通义千问', u: 'https://tongyi.aliyun.com' },
+        { t: '文心一言', u: 'https://yiyan.baidu.com' },
+        { t: '天工 AI', u: 'https://www.tiangong.cn' },
+        { t: 'Hugging Face', u: 'https://huggingface.co' },
+      ].forEach(b => aiChat.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-chat')))
+    }
+
+    // AI - 创作 AI
+    const aiCreate = findSub('g-ai', 'sg-ai-create')
+    if (aiCreate) {
+      ;[
+        { t: 'Midjourney', u: 'https://www.midjourney.com' },
+        { t: 'Stable Diffusion', u: 'https://stability.ai' },
+        { t: 'DALL-E', u: 'https://openai.com/dall-e-3' },
+        { t: 'Runway', u: 'https://runwayml.com' },
+        { t: 'Sora', u: 'https://openai.com/sora' },
+        { t: 'Gamma', u: 'https://gamma.app' },
+        { t: 'Poe', u: 'https://poe.com' },
+        { t: 'Cursor', u: 'https://cursor.sh' },
+        { t: 'GitHub Copilot', u: 'https://github.com/features/copilot' },
+        { t: 'Notion AI', u: 'https://www.notion.so/product/ai' },
+      ].forEach(b => aiCreate.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-create')))
+    }
+
+    matchSeedIcons()
+
     return {
       groups,
-      bookmarks: [] as Bookmark[],
+      bookmarks,
       search: '',
-      activeGroupId: groups[0]?.id ?? '',
-      activeSubGroupId: groups[0]?.children?.[0]?.id ?? '',
+      activeGroupId: 'g-nav',
+      activeSubGroupId: 'sg-nav-common',
       isReadOnly: false
     }
   },
