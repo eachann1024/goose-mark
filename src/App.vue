@@ -1515,6 +1515,7 @@ const handleLocate = async (bookmark: Bookmark) => {
           <OnboardingBanner
             v-if="!isTrashActive"
             @import="handleOnboardingImport"
+            @export="exportData"
           />
         </template>
       </BookmarksGrid>

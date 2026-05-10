@@ -2,14 +2,13 @@
 const settingsStore = useSettingsStore()
 const store = useBookmarkStore()
 
-// 显示条件：未关闭引导 且 书签数量少于 5 个
-const showOnboarding = computed(() => 
-  !settingsStore.onboardingDismissed && store.bookmarks.length < 5
-)
+// 显示条件：未手动关闭引导（永远显示直到用户点击关闭）
+const showOnboarding = computed(() => !settingsStore.onboardingDismissed)
 
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const emit = defineEmits<{
   'import': [file: File]
+  'export': []
 }>()
 
 const triggerImport = async () => {
@@ -87,6 +86,10 @@ const handleFileSelect = (e: Event) => {
 const dismiss = () => {
   settingsStore.dismissOnboarding()
 }
+
+const handleExport = () => {
+  emit('export')
+}
 </script>
 
 <template>
@@ -114,10 +117,11 @@ const dismiss = () => {
           <div class="flex items-center gap-2">
             <Button size="sm" @click="triggerImport">
               <span class="i-mdi-import mr-1.5" />
-              选择导入文件
+              导入书签
             </Button>
-            <Button variant="ghost" size="sm" @click="dismiss">
-              以后再说
+            <Button size="sm" variant="outline" @click="handleExport">
+              <span class="i-mdi-export mr-1.5" />
+              导出书签
             </Button>
             <input
               ref="fileInputRef"
