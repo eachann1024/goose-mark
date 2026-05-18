@@ -9,7 +9,6 @@ export function useKeyboard(
   searchViewOpen: Ref<boolean>,
   isMac: Ref<boolean>,
   showAdd: Ref<boolean>,
-  showDeleteConfirm: Ref<boolean>,
   showIconSelector: Ref<boolean>,
   tab: Ref<string>,
   openBookmarkLink: (b: Bookmark, options?: { source?: string; openMethod?: 'keyboard' | 'click' | 'command' | 'plugin' }) => void,
@@ -105,11 +104,13 @@ export function useKeyboard(
 
   // Key Handler
   const handleKeyNavigation = (e: KeyboardEvent) => {
-    if (showAdd.value || showDeleteConfirm.value || showIconSelector.value || tab.value !== 'bookmarks') return
-    
-    // 有修饰键时直接放行（允许 Cmd+A、Cmd+C 等系统快捷键）
-    if (e.metaKey || e.ctrlKey || e.altKey) return
-    
+    if (showAdd.value || showIconSelector.value || tab.value !== 'bookmarks') return
+
+    // 有修饰键时直接放行（允许 Cmd+A、Cmd+C 等系统快捷键；但 Cmd/Alt+数字由上面的监听器处理）
+    const hasModifier = isMac.value ? e.metaKey : e.altKey
+    if (hasModifier) return
+    if (e.ctrlKey) return
+
     const active = document.activeElement as HTMLElement
     // 焦点在输入框/文本域/可编辑元素时不拦截导航键
     if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return
@@ -175,68 +176,30 @@ export function useKeyboard(
     }
   }
 
-  const isHintHoldKey = (key: string) => {
-    // 仅使用 Control 触发数字快捷键，不再需要 Option/Alt
-    return key === 'Control'
+  const isModifierHintKey = (e: KeyboardEvent) => {
+    // macOS: Cmd, Windows/Linux: Alt
+    return isMac.value ? e.metaKey : e.altKey
   }
 
-  // 过滤有效的非回收站分组
-  const validGroups = computed(() =>
-    groups.value.filter(g => g.id !== TRASH_GROUP_ID)
-  )
+  const getModifierKeyName = () => isMac.value ? 'Meta' : 'Alt'
 
   // Setup Listeners
-  // 主分组快捷键切换（Cmd/Alt + 1-9）
+  useEventListener(window, 'keydown', handleKeyNavigation)
+
+  // Cmd/Alt + 数字 快速跳转书签 + hint 反馈
   useEventListener(window, 'keydown', (e: KeyboardEvent) => {
-    // 1. 有弹窗时直接返回
+    // 有弹窗时直接返回
     if (showAdd.value || showDeleteConfirm.value || showIconSelector.value) return
 
-    // 2. 焦点在输入框时不拦截
+    // 焦点在输入框时不拦截（但允许修饰键+数字）
     const active = document.activeElement as HTMLElement
-    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
-      return
-    }
+    const isInInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
 
-    // 3. 检查修饰键：macOS 用 Cmd，Windows/Linux 用 Alt
+    // 检测修饰键：macOS Cmd / Windows Alt
     const hasModifier = isMac.value ? e.metaKey : e.altKey
-    if (!hasModifier) return
 
-    // 4. 如果有其他修饰键（Ctrl/Shift），不拦截
-    if (e.ctrlKey || e.shiftKey) return
-
-    // 5. 检查数字键（Digit1-9 或 Numpad1-9）
-    const codeToNumber: Record<string, number> = {
-      'Digit1': 1, 'Digit2': 2, 'Digit3': 3, 'Digit4': 4, 'Digit5': 5,
-      'Digit6': 6, 'Digit7': 7, 'Digit8': 8, 'Digit9': 9,
-      'Numpad1': 1, 'Numpad2': 2, 'Numpad3': 3, 'Numpad4': 4, 'Numpad5': 5,
-      'Numpad6': 6, 'Numpad7': 7, 'Numpad8': 8, 'Numpad9': 9
-    }
-
-    const targetNumber = codeToNumber[e.code]
-    if (!targetNumber) return
-
-    // 6. 计算索引（按键 1 → 索引 0）
-    const targetIndex = targetNumber - 1
-
-    // 7. 检查索引是否有效
-    if (targetIndex >= validGroups.value.length) return
-
-    // 8. 执行切换
-    const targetGroup = validGroups.value[targetIndex]
-    if (targetGroup && targetGroup.id !== activeGroupId.value) {
-      e.preventDefault()
-      e.stopPropagation()
-      selectGroup(targetGroup.id)
-    }
-  })
-
-  useEventListener(window, 'keydown', handleKeyNavigation)
-  
-  useEventListener(window, 'keydown', (e: KeyboardEvent) => {
-    // 允许在输入框中使用 Ctrl 触发提示，不再拦截 input 焦点
-
-
-    if (isHintHoldKey(e.key)) {
+    if (hasModifier) {
+      // 显示 hint
       if (!cmdPressed.value) {
         cmdPressed.value = true
         if (cmdHideTimer) {
@@ -251,11 +214,10 @@ export function useKeyboard(
           cmdAutoHideTimer = setTimeout(() => {
             hideCmdHints()
           }, 10000)
-        }, 100)
+        }, 150)
       }
-      return
-    }
-    if (cmdPressed.value) {
+
+      // 数字键跳转
       const codeToKey: Record<string, string> = {
         'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4', 'Digit5': '5',
         'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9', 'Digit0': '0',
@@ -263,22 +225,24 @@ export function useKeyboard(
         'Numpad6': '6', 'Numpad7': '7', 'Numpad8': '8', 'Numpad9': '9', 'Numpad0': '0'
       }
       const key = codeToKey[e.code]
-      if (!key) return
-      const targetId = Object.entries(hintKeyById.value).find(([, k]) => k === key)?.[0]
-      if (targetId) {
-        const bookmark = activeBookmarks.value.find(b => b.id === targetId)
-        if (bookmark) {
-          e.preventDefault()
-          e.stopPropagation()
-          openBookmarkLink(bookmark)
-          hideCmdHints()
+      if (key) {
+        const targetId = Object.entries(hintKeyById.value).find(([, k]) => k === key)?.[0]
+        if (targetId) {
+          const bookmark = activeBookmarks.value.find(b => b.id === targetId)
+          if (bookmark) {
+            e.preventDefault()
+            e.stopPropagation()
+            openBookmarkLink(bookmark)
+            hideCmdHints()
+          }
         }
       }
+      return
     }
   })
 
   useEventListener(window, 'keyup', (e: KeyboardEvent) => {
-    if (isHintHoldKey(e.key)) {
+    if (e.key === getModifierKeyName()) {
       scheduleHideCmdHints()
     }
   })

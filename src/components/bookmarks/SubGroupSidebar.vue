@@ -1,276 +1,160 @@
 <script setup lang="ts">
-import draggable from 'vuedraggable'
-import SubGroupItem from './SubGroupItem.vue'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
 
+interface OutlineSubGroup {
+  subGroupId: string
+  subGroupName: string
+  bookmarkCount: number
+  anchorId: string
+}
+
+interface OutlineGroup {
+  groupId: string
+  groupName: string
+  bookmarkCount: number
+  children: OutlineSubGroup[]
+}
+
 const props = defineProps<{
-  show: boolean
-  activeSubGroups: Array<{ id: string; name: string; shareId?: string; sourceShareId?: string; lastSyncedAt?: number; bookmarkIds?: string[] }>
-  activeSubGroupId: string
-  activeGroupId: string
+  groups?: OutlineGroup[]
+  activeAnchorId?: string
 }>()
 
 const emit = defineEmits<{
-  (e: 'select', id: string): void
-  (e: 'drop', bookmarkId: string, toSubId: string): void
+  (e: 'scroll-to', anchorId: string): void
   (e: 'edit-group', groupId: string): void
+  (e: 'focus-search'): void
 }>()
 
 const store = useBookmarkStore()
-const { showToast, isTooltipEnabled } = useUIManager()
-const getShareData = async (_sourceShareId: string): Promise<any> => null
-const checkForUpdate = async (_sourceShareId: string, _lastSyncedAt: number): Promise<boolean> => false
 
-// 更新检测状态
-const updatesMap = ref<Record<string, boolean>>({})
-const checkingMap = ref<Record<string, boolean>>({})
-const updatingMap = ref<Record<string, boolean>>({})
+// 如果没有传入 groups，从 store 计算（包含子分组）
+const outlineGroups = computed<OutlineGroup[]>(() => {
+  if (props.groups?.length) return props.groups
 
-// 自动更新单个子分组
-const autoUpdateSubGroup = async (subGroupId: string, sourceShareId: string, groupId: string) => {
-  if (updatingMap.value[subGroupId]) return
-  updatingMap.value[subGroupId] = true
-  try {
-    const result = await getShareData(sourceShareId)
-    if (result?.data) {
-      // 将 ShareData 转换为 updateSubGroupFromShare 需要的格式
-      const shareData = result.data.data
-      
-      // 验证数据有效性
-      if (!shareData.subGroups || shareData.subGroups.length === 0) {
-        showToast({ 
-          title: '自动更新失败', 
-          description: '分享数据为空',
-          variant: 'error' 
-        })
-        return
+  return store.groups
+    .filter(g => g.id !== TRASH_GROUP_ID)
+    .map(group => {
+      const children = group.children
+        .filter(sub => (sub.bookmarkIds?.length || 0) > 0)
+        .map(sub => ({
+          subGroupId: sub.id,
+          subGroupName: sub.name,
+          bookmarkCount: sub.bookmarkIds?.length || 0,
+          anchorId: `section-${group.id}-${sub.id}`,
+        }))
+
+      const bookmarkCount = children.reduce((sum, sub) => sum + sub.bookmarkCount, 0)
+
+      return {
+        groupId: group.id,
+        groupName: group.name,
+        bookmarkCount,
+        children,
       }
-      
-      const groups = shareData.group 
-        ? [{ 
-            id: shareData.group.id, 
-            name: shareData.group.name, 
-            children: shareData.subGroups 
-          }]
-        : [{ 
-            id: 'shared', 
-            name: '分享内容', 
-            children: shareData.subGroups 
-          }]
-      
-      const dataToUpdate = { groups, bookmarks: shareData.bookmarks || [] }
-      // 使用新方法：只更新单个子分组，保留其他子分组
-      const updateResult = (store as any).updateSubGroupFromShare?.(groupId, subGroupId, sourceShareId, dataToUpdate)
-      
-      if (updateResult && typeof updateResult === 'object') {
-        // 等待下一个 tick，让 Pinia 的 persist 插件有机会保存
-        await nextTick()
-        // 立即刷新存储，确保在 uTools 环境下数据被保存
-        utoolsStorage.flushItem('bookmark')
-        
-        // 构建详细的变更描述
-        const logs: string[] = []
-        if (updateResult.added > 0) {
-          logs.push(`新增\n${updateResult.addedItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}`)
-        }
-        if (updateResult.removed > 0) {
-          logs.push(`移除了\n${updateResult.removedItems.map((item: string, i: number) => `${i + 1}. ${item}`).join('\n')}`)
-        }
-        
-        const description = logs.length > 0 ? logs.join('\n\n') : undefined
-        
-        showToast({ 
-          title: '已自动同步更新', 
-          description,
-          variant: 'success',
-          position: 'bottom-right'
-        })
-        // 清除更新标记
-        updatesMap.value[subGroupId] = false
-      } else {
-        showToast({ 
-          title: '自动更新失败', 
-          description: '更新数据失败',
-          variant: 'error' 
-        })
-      }
-    } else {
-      showToast({ 
-        title: '自动更新失败', 
-        description: result?.error || '未知错误',
-        variant: 'error' 
-      })
-    }
-  } catch (e: unknown) {
-    showToast({ 
-      title: '自动更新失败', 
-      description: e instanceof Error ? e.message : '网络错误',
-      variant: 'error' 
     })
-  } finally {
-    updatingMap.value[subGroupId] = false
-  }
-}
-
-const checkSingleUpdate = async (subGroupId: string, sourceShareId: string, lastSyncedAt: number | undefined, groupId: string) => {
-  if (checkingMap.value[subGroupId]) return
-  
-  // 如果 lastSyncedAt 不存在或为 0，说明是首次导入，不进行自动更新检查
-  if (!lastSyncedAt || lastSyncedAt === 0) return
-  
-  checkingMap.value[subGroupId] = true
-  try {
-    const has = await checkForUpdate(sourceShareId, lastSyncedAt)
-    if (has) {
-      updatesMap.value[subGroupId] = true
-      // 自动更新
-      await autoUpdateSubGroup(subGroupId, sourceShareId, groupId)
-    }
-  } catch {
-    // 背景检查失败不应中断或抛出未处理错误
-  } finally {
-    checkingMap.value[subGroupId] = false
-  }
-}
-
-// 只检查当前活动的子分组
-const checkCurrentSubGroupUpdate = () => {
-  const sub = props.activeSubGroups.find(s => s.id === props.activeSubGroupId)
-  if (sub?.sourceShareId && sub.lastSyncedAt) {
-    checkSingleUpdate(sub.id, sub.sourceShareId, sub.lastSyncedAt, props.activeGroupId)
-  }
-}
-
-// 监听分组变化，重置状态并只检查当前子分组
-watch(() => props.activeGroupId, () => {
-  updatesMap.value = {}
-  checkCurrentSubGroupUpdate()
+    .filter(g => g.bookmarkCount > 0)
 })
 
-// 监听子分组切换，自动检查并更新
-watch(() => props.activeSubGroupId, async (newSubGroupId, oldSubGroupId) => {
-  if (newSubGroupId === oldSubGroupId) return
-
-  const sub = props.activeSubGroups.find(s => s.id === newSubGroupId)
-  if (!sub?.sourceShareId) return
-
-  // 如果 lastSyncedAt 不存在或为 0，说明是首次导入，跳过
-  if (!sub.lastSyncedAt || sub.lastSyncedAt === 0) return
-
-  // 自动检查并更新
-  await checkSingleUpdate(newSubGroupId, sub.sourceShareId, sub.lastSyncedAt, props.activeGroupId)
-})
-
-onMounted(() => {
-  // 只检查当前活动的子分组，而不是所有子分组
-  checkCurrentSubGroupUpdate()
-})
-
-const hasUpdate = (subId: string) => !!updatesMap.value[subId]
-
-// 拖拽相关状态
-const dragOverSubId = ref<string | null>(null)
-
-const handleDragOver = (e: DragEvent, subId: string, isReadonly: boolean) => {
-  const types = e.dataTransfer?.types
-  const isBookmarkDrag = !types || types.length === 0 || Array.from(types).includes('text/bookmark-id')
-  if (!isBookmarkDrag) return
-  // 只读子分组不接受拖放
-  if (isReadonly) return
-  // 不能拖到当前激活的子分组
-  if (subId === props.activeSubGroupId) return
-  
-  e.preventDefault()
-  e.dataTransfer!.dropEffect = 'move'
-  dragOverSubId.value = subId
+const handleSubGroupClick = (anchorId: string) => {
+  emit('scroll-to', anchorId)
+  emit('focus-search')
 }
 
-const handleDragLeave = (e: DragEvent) => {
-  // 检查是否真的离开了元素（而不是进入子元素）
-  const relatedTarget = e.relatedTarget as HTMLElement | null
-  if (relatedTarget && (e.currentTarget as HTMLElement).contains(relatedTarget)) {
-    return
-  }
-  dragOverSubId.value = null
-}
-
-const handleDrop = (e: DragEvent, toSubId: string, isReadonly: boolean) => {
-  const types = e.dataTransfer?.types
-  const isBookmarkDrag = !types || types.length === 0 || Array.from(types).includes('text/bookmark-id')
-  if (!isBookmarkDrag) return
-  e.preventDefault()
-  dragOverSubId.value = null
-  
-  if (isReadonly) {
-    console.log('[SubGroupSidebar] Drop rejected: readonly')
-    return
-  }
-  if (toSubId === props.activeSubGroupId) {
-    console.log('[SubGroupSidebar] Drop rejected: same subgroup')
-    return
-  }
-  
-  const bookmarkId = e.dataTransfer?.getData('text/bookmark-id')
-  console.log('[SubGroupSidebar] Drop received:', { bookmarkId, toSubId })
-  
-  if (bookmarkId) {
-    emit('drop', bookmarkId, toSubId)
-  } else {
-    console.warn('[SubGroupSidebar] No bookmark ID in dataTransfer')
-  }
-}
-
-const localSubGroups = computed({
-  get: () => props.activeSubGroups,
-  set: (val) => {
-    if (!props.activeGroupId || props.activeGroupId === TRASH_GROUP_ID) return
-    store.reorderSubGroups(props.activeGroupId, val as any)
-  }
-})
-
-const checkSubMove = (evt: { draggedContext: { element: { shareId?: string; sourceShareId?: string } } }) => {
-  const sub = evt.draggedContext.element
-  return !(sub.shareId || sub.sourceShareId)
+const isSubGroupActive = (anchorId: string) => {
+  if (!props.activeAnchorId) return false
+  // 检查是否是当前激活 section 或其子 section
+  return props.activeAnchorId === anchorId || anchorId.startsWith(`${props.activeAnchorId}-`)
 }
 </script>
 
 <template>
-  <aside
-    v-if="show"
-    class="shrink-0 w-32 flex flex-col gap-1 relative overflow-y-auto no-scrollbar"
-  >
-    <draggable
-      v-model="localSubGroups"
-      item-key="id"
-      :animation="150"
-      :disabled="activeSubGroups.length <= 1"
-      :move="checkSubMove"
-      class="flex flex-col gap-1"
-    >
-      <template #item="{ element: sub }">
-        <div class="subgroup-sort-item">
-          <SubGroupItem
-            :sub="sub"
-            :is-active="activeSubGroupId === sub.id"
-            :is-drag-over="dragOverSubId === sub.id"
-            :has-update="hasUpdate(sub.id)"
-            @select="emit('select', $event)"
-            @edit-parent-group="emit('edit-group', activeGroupId)"
-            @dragover="handleDragOver($event, sub.id, !!sub.sourceShareId)"
-            @dragleave="handleDragLeave"
-            @drop="handleDrop($event, sub.id, !!sub.sourceShareId)"
-          />
+  <aside class="shrink-0 w-36 flex flex-col overflow-y-auto no-scrollbar py-2 px-2 gap-1">
+    <!-- Outline: Groups with SubGroups -->
+    <div class="flex flex-col gap-2">
+      <div
+        v-for="group in outlineGroups"
+        :key="group.groupId"
+        class="flex flex-col gap-0.5"
+      >
+        <!-- Group Label -->
+        <div class="px-2 py-1 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">
+          {{ group.groupName }}
         </div>
-      </template>
-    </draggable>
+        <!-- SubGroups -->
+        <button
+          v-for="sub in group.children"
+          :key="sub.subGroupId"
+          class="group-nav-item relative flex items-center gap-2 pl-5 pr-2 py-1 rounded-md text-left text-xs transition-colors duration-120"
+          :class="{
+            'group-nav-item--active': isSubGroupActive(sub.anchorId),
+            'group-nav-item--idle': !isSubGroupActive(sub.anchorId),
+          }"
+          @click="handleSubGroupClick(sub.anchorId)"
+        >
+          <span class="truncate flex-1">{{ sub.subGroupName }}</span>
+          <span
+            v-if="sub.bookmarkCount > 0"
+            class="shrink-0 text-[10px] text-muted-foreground/40 tabular-nums"
+          >
+            {{ sub.bookmarkCount }}
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Trash -->
+    <button
+      class="mt-auto flex items-center gap-2 px-2 py-2 rounded-md text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-colors"
+      :class="{ 'text-destructive bg-destructive/5': store.activeGroupId === TRASH_GROUP_ID }"
+      @click="store.selectGroup(TRASH_GROUP_ID)"
+    >
+      <span class="i-ph-trash-thin text-sm" />
+      <span>回收站</span>
+    </button>
   </aside>
 </template>
 
 <style scoped>
-/* 隐藏滚动条 */
+.group-nav-item--idle {
+  color: hsl(var(--muted-foreground));
+}
+
+.group-nav-item--idle:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.4);
+}
+
+.dark .group-nav-item--idle:hover {
+  background-color: hsl(var(--muted) / 0.2);
+}
+
+.group-nav-item--active {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.7);
+  font-weight: 500;
+}
+
+.dark .group-nav-item--active {
+  background-color: hsl(var(--muted) / 0.4);
+}
+
+.group-nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: 0 2px 2px 0;
+  background-color: hsl(var(--primary));
+}
+
 aside::-webkit-scrollbar {
   display: none;
 }
+
 aside {
   scrollbar-width: none;
   -ms-overflow-style: none;

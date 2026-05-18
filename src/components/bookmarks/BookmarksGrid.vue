@@ -49,10 +49,11 @@ const emit = defineEmits<{
 // 记录一次拖拽开始时的顺序，用于稳定计算 fromId/toId
 let dragStartOrderIds: string[] = []
 
-// 本地书签列表，用于 v-model
-const localBookmarks = computed({
-  get: () => props.bookmarks,
-  set: (val) => emit('update:bookmarks', val)
+// 本地书签列表，用于 v-model（使用 ref 避免 vuedraggable 与 Vue computed setter 的潜在冲突）
+const localBookmarks = ref<Bookmark[]>([...props.bookmarks])
+
+watch(() => props.bookmarks, (newVal) => {
+  localBookmarks.value = [...newVal]
 })
 
 // vuedraggable change 事件处理
@@ -163,13 +164,39 @@ const confirmEmptyTrash = () => {
   emptyToastOpen.value = true
 }
 
+const DURATION = 300
+
+const animateScrollTo = (scrollEl: HTMLElement, target: number) => {
+  const start = scrollEl.scrollTop
+  const delta = target - start
+  if (Math.abs(delta) < 1) { scrollEl.scrollTop = target; return }
+  const t0 = performance.now()
+  const tick = (now: number) => {
+    const t = Math.min((now - t0) / DURATION, 1)
+    scrollEl.scrollTop = start + delta * (1 - Math.pow(1 - t, 3))
+    if (t < 1) requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+}
+
+const findScroller = (el: Element): HTMLElement | null => {
+  let parent = el.parentElement
+  while (parent) {
+    if (parent.scrollHeight > parent.clientHeight) return parent
+    parent = parent.parentElement
+  }
+  return null
+}
+
 watch(() => props.highlightedId, (id) => {
   if (!id) return
   nextTick(() => {
-    const el = document.querySelector(`[data-bookmark-id="${id}"]`)
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-    }
+    const item = document.querySelector(`[data-bookmark-id="${id}"]`) as HTMLElement | null
+    if (!item) return
+    const scroller = findScroller(item)
+    if (!scroller) return
+    const top = item.offsetTop - scroller.clientHeight / 2 + item.clientHeight / 2
+    animateScrollTo(scroller, Math.max(0, top))
   })
 })
 </script>
@@ -249,7 +276,7 @@ watch(() => props.highlightedId, (id) => {
 
     <div v-if="isTrashActive && bookmarks.length > 0" class="flex justify-center py-8">
       <Button variant="destructive" @click="requestEmptyTrash">
-        <span class="i-mdi-delete-empty mr-2" />
+        <span class="i-ph-trash-thin mr-2" />
         清空回收站
       </Button>
     </div>

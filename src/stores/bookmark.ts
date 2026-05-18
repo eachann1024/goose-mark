@@ -234,7 +234,35 @@ export const useBookmarkStore = defineStore('bookmark', {
     },
     filteredBookmarks(): Bookmark[] {
       const query = (typeof this.search === 'string' ? this.search : '').trim().toLowerCase()
-      const pool = this.currentBookmarks
+
+      const pool: Bookmark[] = []
+
+      if (this.activeGroupId === TRASH_GROUP_ID) {
+        // Trash mode: show only trash bookmarks
+        const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+        trashGroup?.children.forEach(sub => {
+          sub.bookmarkIds.forEach(id => {
+            const bm = this.bookmarks.find(b => b.id === id)
+            if (bm && !bm.isDeleted) {
+              pool.push(bm)
+            }
+          })
+        })
+      } else {
+        // Normal mode: show all non-trash bookmarks, preserving sub-group order
+        this.groups.forEach(group => {
+          if (group.id === TRASH_GROUP_ID) return
+          group.children.forEach(sub => {
+            sub.bookmarkIds.forEach(id => {
+              const bm = this.bookmarks.find(b => b.id === id)
+              if (bm && !bm.isDeleted) {
+                pool.push(bm)
+              }
+            })
+          })
+        })
+      }
+
       if (!query) return pool
       return pool.filter(item => {
         const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()

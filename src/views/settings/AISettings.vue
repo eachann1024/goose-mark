@@ -271,7 +271,7 @@ watch(
               <PopoverTrigger as-child>
                 <Button variant="outline" class="h-9 justify-between px-3 font-normal">
                   <span class="truncate">{{ selectedProtocol.label }}</span>
-                  <span class="i-mdi-chevron-down ml-2 shrink-0 opacity-50 text-sm" />
+                  <span class="i-ph-caret-down-thin ml-2 shrink-0 opacity-50 text-sm" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent class="w-[320px] p-1" align="start" side="bottom" :side-offset="8">
@@ -289,7 +289,7 @@ watch(
                     </div>
                     <span
                       v-if="customProtocol === option.id"
-                      class="i-mdi-check text-primary text-sm ml-2 shrink-0"
+                      class="i-ph-check-thin text-primary text-sm ml-2 shrink-0"
                     />
                   </button>
                 </div>
@@ -382,7 +382,7 @@ watch(
                   >
                     {{ currentModel?.label || '请选择模型' }}
                   </span>
-                  <span class="i-mdi-chevron-down ml-2 shrink-0 opacity-50 text-sm" />
+                  <span class="i-ph-caret-down-thin ml-2 shrink-0 opacity-50 text-sm" />
                 </Button>
               </PopoverTrigger>
               <PopoverContent class="w-[320px] p-1" align="end" side="bottom" :side-offset="8">
@@ -402,7 +402,7 @@ watch(
                     </div>
                     <span
                       v-if="settingsStore.aiSelectedModelId === model.id"
-                      class="i-mdi-check text-primary text-sm ml-2 shrink-0"
+                      class="i-ph-check-thin text-primary text-sm ml-2 shrink-0"
                     />
                   </button>
                 </div>
@@ -417,25 +417,6 @@ watch(
 </template>
 
 <style scoped>
-.settings-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.settings-field__label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: hsl(var(--foreground));
-}
-
 .settings-list-item {
   width: 100%;
   display: flex;

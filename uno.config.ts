@@ -9,7 +9,7 @@ export default defineConfig({
     presetIcons({
       scale: 1.2,
       collections: {
-        mdi: () => import('@iconify-json/mdi/icons.json').then(i => i.default)
+        ph: () => import('@iconify-json/ph').then(i => i.icons)
       }
     })
   ],

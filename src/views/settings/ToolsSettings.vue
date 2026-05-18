@@ -103,7 +103,7 @@ const matchMissing = async () => {
         <p class="settings-block__desc">待补全图标：<span class="text-foreground font-semibold">{{ missingCount }}</span> 个</p>
       </div>
       <Button class="w-full" variant="secondary" :disabled="matching || missingCount === 0" @click="matchMissing">
-        <span v-if="matching" class="i-mdi-loading animate-spin mr-2" />
+        <span v-if="matching" class="i-ph-spinner-thin animate-spin mr-2" />
         {{ matching ? '补全中...' : (missingCount === 0 ? '已全部补全' : '一键补全图标') }}
       </Button>
     </div>

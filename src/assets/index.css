@@ -177,6 +177,18 @@ img, a, [role="img"] {
   display: none; /* Chrome/Safari/Opera */
 }
 
+.custom-scroll {
+  scrollbar-width: thin;
+  -ms-overflow-style: auto;
+  scrollbar-gutter: stable;
+}
+
+.custom-scroll::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
 /* 隐藏数字输入框步进器 */
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {

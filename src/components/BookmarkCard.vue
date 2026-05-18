@@ -3,8 +3,6 @@ import type { Bookmark } from '@/types/bookmark'
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
 import Card from '@/components/ui/card/Card.vue'
 
-const settingsStore = useSettingsStore()
-
 const props = defineProps<{ 
   bookmark: Bookmark; 
   selected?: boolean; 
@@ -206,14 +204,46 @@ const checkTruncate = () => {
   isDescTruncated.value = horizOverflow || vertOverflow || heuristicOverflow
 }
 
-onMounted(() => nextTick(checkTruncate))
+const setupResizeObserver = () => {
+  const targets = [descEl.value, titleEl.value].filter((t): t is HTMLElement => !!t)
+  if (targets.length === 0) return
+  resizeObserver = new ResizeObserver(() => checkTruncate())
+  targets.forEach(t => resizeObserver?.observe(t))
+}
+
+const teardownResizeObserver = () => {
+  clearFallbackToast()
+  if (resizeObserver) {
+    resizeObserver.disconnect()
+    resizeObserver = null
+  }
+}
+
 onMounted(() => {
   nextTick(() => {
-    const targets = [descEl.value, titleEl.value].filter((t): t is HTMLElement => !!t)
-    if (targets.length === 0) return
-    resizeObserver = new ResizeObserver(() => checkTruncate())
-    targets.forEach(t => resizeObserver?.observe(t))
+    checkTruncate()
+    // 使用 requestIdleCallback 或 setTimeout 延迟创建，避免阻塞关键渲染路径
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(setupResizeObserver, { timeout: 200 })
+    } else {
+      setTimeout(setupResizeObserver, 100)
+    }
   })
+})
+
+onActivated(() => {
+  nextTick(() => {
+    checkTruncate()
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(setupResizeObserver, { timeout: 200 })
+    } else {
+      setTimeout(setupResizeObserver, 100)
+    }
+  })
+})
+
+onDeactivated(() => {
+  teardownResizeObserver()
 })
 
 watch(
@@ -222,11 +252,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  clearFallbackToast()
-  if (resizeObserver) {
-    resizeObserver.disconnect()
-    resizeObserver = null
-  }
+  teardownResizeObserver()
 })
 
 const openLink = () => {
@@ -248,25 +274,6 @@ const copyUrl = async () => {
 
 const canLocate = computed(() => props.showLocate ?? false)
 
-const DAY_IN_MS = 24 * 60 * 60 * 1000
-
-const ageVariant = computed(() => {
-  const updatedAt = Number(props.bookmark.updatedAt)
-  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return 'aged'
-
-  const elapsed = Math.max(0, Date.now() - updatedAt)
-
-  if (elapsed <= 3 * DAY_IN_MS) return 'fresh'
-  if (elapsed <= 15 * DAY_IN_MS) return 'recent'
-  if (elapsed <= 30 * DAY_IN_MS) return 'warm'
-  return 'aged'
-})
-
-const ageCardClass = computed(() => {
-  if (!settingsStore.agingCardEnabled) return ''
-  return `bookmark-card--${ageVariant.value}`
-})
-
 const selectedCardClass = computed(() => {
   if (!props.selected) return ''
   if (props.selectionVariant === 'search') {
@@ -281,7 +288,6 @@ const selectedCardClass = computed(() => {
     ref="cardEl"
     class="bookmark-card relative group hover:shadow-lg transition-all duration-200 cursor-pointer overflow-hidden flex flex-col justify-center select-none"
     :class="[
-      ageCardClass,
       selected ? selectedCardClass : 'bookmark-card--hoverable'
     ]"
     @click="openLink"
@@ -356,7 +362,7 @@ const selectedCardClass = computed(() => {
             <h3 ref="titleEl" class="font-medium text-sm truncate pr-2 text-foreground break-all cursor-pointer">
                 {{ bookmark.title }}
               </h3>
-              <span v-if="bookmark.pinned" class="i-mdi-pin text-primary text-[10px] shrink-0" />
+              <span v-if="bookmark.pinned" class="i-ph-push-pin-thin text-primary text-[10px] shrink-0" />
             </div>
             <p
               ref="descEl"
@@ -374,7 +380,7 @@ const selectedCardClass = computed(() => {
         <Tooltip :disable-hoverable-content="true">
           <TooltipTrigger as-child>
             <Button size="icon" variant="ghost" class="bookmark-card__locate-btn h-7 w-7 rounded-lg group/locate-btn" @click.stop="emit('locate', bookmark)">
-              <span class="i-mdi-target text-xs transition-colors group-hover/locate-btn:text-primary" />
+              <span class="i-ph-target-thin text-xs transition-colors group-hover/locate-btn:text-primary" />
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom"><p>定位到原分组</p></TooltipContent>
@@ -384,66 +390,23 @@ const selectedCardClass = computed(() => {
 </template>
 
 <style scoped>
-.bookmark-card--fresh {
-  border-color: hsl(var(--border));
-  background: hsl(var(--card));
-  box-shadow: none;
-}
-
-.bookmark-card--recent {
-  border-color: hsl(220 11% 64% / 0.9);
-  background: hsl(var(--card));
-  box-shadow: none;
-}
-
-.bookmark-card--warm {
-  border-color: hsl(42 52% 60% / 0.95);
-  background: hsl(var(--card));
-  box-shadow: none;
-}
-
-.bookmark-card--aged {
-  border-color: hsl(20 46% 34% / 0.98);
-  background: hsl(var(--card));
-  box-shadow: none;
-}
-
-.bookmark-card--aged :deep(.text-foreground) {
-  color: hsl(var(--foreground));
-}
-
-.bookmark-card--aged :deep(.text-muted-foreground) {
-  color: hsl(var(--muted-foreground));
-}
-
-.bookmark-card--fresh.bookmark-card--hoverable:hover,
-.bookmark-card--recent.bookmark-card--hoverable:hover,
-.bookmark-card--warm.bookmark-card--hoverable:hover,
-.bookmark-card--aged.bookmark-card--hoverable:hover {
-  background-color: hsl(var(--card));
-}
-
 .bookmark-card--selected {
-  border-color: hsl(var(--primary));
-  background-color: hsl(var(--primary) / 0.05);
+  border-color: hsl(var(--primary) / 0.35);
+  background-color: hsl(var(--primary) / 0.08);
   box-shadow:
-    0 12px 24px hsl(var(--foreground) / 0.08),
-    0 0 0 2px hsl(var(--primary) / 0.5);
+    0 4px 16px hsl(var(--primary) / 0.08),
+    0 0 0 1px hsl(var(--primary) / 0.25);
 }
 
 .bookmark-card--selected-search {
   border-color: hsl(var(--primary) / 0.25);
-  background-color: hsl(var(--card));
+  background-color: hsl(var(--primary) / 0.05);
   box-shadow:
-    0 12px 24px hsl(var(--foreground) / 0.08),
-    0 0 0 2px hsl(var(--primary) / 0.3);
+    0 4px 12px hsl(var(--primary) / 0.06),
+    0 0 0 1px hsl(var(--primary) / 0.18);
 }
 
-.dark .bookmark-card--hoverable:hover,
-.bookmark-card--fresh.bookmark-card--hoverable:hover,
-.bookmark-card--recent.bookmark-card--hoverable:hover,
-.bookmark-card--warm.bookmark-card--hoverable:hover,
-.bookmark-card--aged.bookmark-card--hoverable:hover {
+.dark .bookmark-card--hoverable:hover {
   background-color: hsl(var(--card));
 }
 

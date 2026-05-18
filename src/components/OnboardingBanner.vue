@@ -100,7 +100,7 @@ const handleExport = () => {
     >
       <div class="flex items-start gap-4">
         <div class="onboarding-banner__icon shrink-0 w-12 h-12 rounded-xl flex items-center justify-center">
-          <span class="i-mdi-bookmark-plus text-2xl text-primary" />
+          <span class="i-ph-bookmark-simple-thin text-2xl text-primary" />
         </div>
         
         <div class="flex-1 min-w-0">
@@ -116,11 +116,11 @@ const handleExport = () => {
           
           <div class="flex items-center gap-2">
             <Button size="sm" @click="triggerImport">
-              <span class="i-mdi-import mr-1.5" />
+              <span class="i-ph-download-thin mr-1.5" />
               导入书签
             </Button>
             <Button size="sm" variant="outline" @click="handleExport">
-              <span class="i-mdi-export mr-1.5" />
+              <span class="i-ph-upload-thin mr-1.5" />
               导出书签
             </Button>
             <input
@@ -138,7 +138,7 @@ const handleExport = () => {
           class="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
           @click="dismiss"
         >
-          <span class="i-mdi-close" />
+          <span class="i-ph-x-thin" />
         </Button>
       </div>
     </div>

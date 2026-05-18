@@ -5,6 +5,7 @@ import { TRASH_GROUP_ID } from '@/stores/bookmark'
 const props = defineProps<{
   modelValue: BookmarkLocation[]
   readonly?: boolean
+  inline?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -14,9 +15,6 @@ const emit = defineEmits<{
 
 const store = useBookmarkStore()
 
-// 当前展开的分组
-const expandedGroupId = ref<string>(store.groups[0]?.id ?? '')
-
 // 选中的位置
 const selectedLocations = ref<BookmarkLocation[]>([...props.modelValue])
 
@@ -25,11 +23,10 @@ watch(() => props.modelValue, (val) => {
   selectedLocations.value = [...val]
 }, { deep: true })
 
-// 当前展开分组的子分组列表
-const currentSubGroups = computed(() => {
-  const group = store.groups.find(g => g.id === expandedGroupId.value)
-  return group?.children ?? []
-})
+// 过滤掉回收站的父分组
+const displayGroups = computed(() =>
+  store.groups.filter(g => g.id !== TRASH_GROUP_ID)
+)
 
 // 判断某个位置是否被选中
 const isSelected = (groupId: string, subGroupId: string) => {
@@ -61,138 +58,139 @@ const removeLocation = (loc: BookmarkLocation) => {
   emit('update:modelValue', [...selectedLocations.value])
 }
 
-// 获取位置显示名称
+// 获取位置显示名称（只显示子分组名）
 const getLocationLabel = (loc: BookmarkLocation) => {
   const group = store.groups.find(g => g.id === loc.groupId)
   const sub = group?.children.find(c => c.id === loc.subGroupId)
-  return group && sub ? `${group.name} / ${sub.name}` : ''
+  return sub?.name ?? ''
 }
 </script>
 
 <template>
-  <div class="w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border-0 bg-popover shadow-2xl overflow-hidden" @click.stop>
-    <!-- 主体：左右分栏 -->
-    <div class="flex h-[220px]">
-      <!-- 左侧：一级分组列表 -->
-      <div class="w-1/2 border-r border-border/40 overflow-y-auto p-1.5">
+  <div
+    :class="[
+      'overflow-hidden',
+      inline
+        ? 'w-full rounded-2xl bg-background/60 p-3'
+        : 'w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border-0 bg-popover shadow-2xl p-3'
+    ]"
+    @click.stop
+  >
+    <!-- 平铺子分组网格 -->
+    <div
+      :class="[
+        inline ? '' : 'overflow-y-auto max-h-[300px]'
+      ]"
+    >
+      <div class="flex flex-col gap-4">
         <div
-          v-for="group in store.groups.filter(g => g.id !== TRASH_GROUP_ID)"
+          v-for="group in displayGroups"
           :key="group.id"
-          class="flex items-center justify-between px-2.5 py-1.5 rounded-md cursor-pointer transition-colors"
-          :class="{
-            'bg-muted': expandedGroupId === group.id,
-            'hover:bg-muted/50': expandedGroupId !== group.id
-          }"
-          @mouseenter="expandedGroupId = group.id"
+          class="flex flex-col gap-2"
         >
-          <div class="flex items-center gap-2">
-            <span 
-              v-if="selectedLocations.some(loc => loc.groupId === group.id)"
-              class="w-2 h-2 rounded-full bg-primary shrink-0 dark-selection-indicator"
-            />
-            <span class="text-[13px] font-medium">{{ group.name }}</span>
+          <!-- 父分组小标题 -->
+          <div class="flex items-center gap-1.5 px-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-primary/50 shrink-0" />
+            <span class="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
+              {{ group.name }}
+            </span>
           </div>
-          <span class="i-mdi-chevron-right text-muted-foreground" />
-        </div>
-      </div>
 
-      <!-- 右侧：二级子分组列表（多选） -->
-      <div class="w-1/2 overflow-y-auto p-1.5">
-        <div
-          v-for="sub in currentSubGroups"
-          :key="sub.id"
-          class="subgroup-item flex items-center gap-2 px-2.5 py-1.5 rounded-md cursor-pointer transition-colors hover:bg-muted/50 text-left"
-          :class="{
-            'dark-selected': isSelected(expandedGroupId, sub.id)
-          }"
-          @click="toggleLocation(expandedGroupId, sub.id)"
-        >
-          <span 
-            class="w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors dark-checkbox"
-            :class="{
-              'bg-primary border-primary text-primary-foreground': isSelected(expandedGroupId, sub.id),
-              'border-muted-foreground/50': !isSelected(expandedGroupId, sub.id)
-            }"
-          >
-            <span v-if="isSelected(expandedGroupId, sub.id)" class="i-mdi-check text-xs" />
-          </span>
-          <span class="text-[13px] text-left">{{ sub.name }}</span>
+          <!-- 子分组平铺网格 -->
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="sub in group.children"
+              :key="sub.id"
+              type="button"
+              class="subgroup-chip flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] transition-all"
+              :class="{
+                'subgroup-chip--selected': isSelected(group.id, sub.id),
+                'subgroup-chip--idle': !isSelected(group.id, sub.id)
+              }"
+              @click="toggleLocation(group.id, sub.id)"
+            >
+              <span
+                class="w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors"
+                :class="{
+                  'bg-primary border-primary text-primary-foreground': isSelected(group.id, sub.id),
+                  'border-muted-foreground/30': !isSelected(group.id, sub.id)
+                }"
+              >
+                <span v-if="isSelected(group.id, sub.id)" class="i-ph-check-thin text-[10px]" />
+              </span>
+              <span class="truncate">{{ sub.name }}</span>
+            </button>
+          </div>
         </div>
-        <div v-if="currentSubGroups.length === 0" class="flex items-center justify-center h-full text-muted-foreground text-sm">
-          暂无子分组
+
+        <div v-if="displayGroups.length === 0" class="flex items-center justify-center py-8 text-muted-foreground text-sm">
+          暂无分组
         </div>
       </div>
     </div>
 
-    <!-- 底部：已选显示 + 操作 -->
-    <div class="border-t border-border/40 px-3.5 py-2.5">
-      <div class="flex items-center gap-3">
-        <div class="min-w-0 flex-1 overflow-x-auto no-scrollbar">
-          <div v-if="selectedLocations.length > 0" class="flex items-center gap-1.5 whitespace-nowrap pr-1">
-            <div
-              v-for="loc in selectedLocations"
-              :key="`${loc.groupId}-${loc.subGroupId}`"
-              class="flex items-center gap-1 px-2 py-0.5 rounded-md bg-secondary text-secondary-foreground text-xs dark-selected-tag shrink-0"
-            >
-              <span>{{ getLocationLabel(loc) }}</span>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="h-6 w-6 text-muted-foreground hover:text-destructive"
-                @click.stop="removeLocation(loc)"
-              >
-                <span class="i-mdi-close text-sm" />
-              </Button>
-            </div>
-          </div>
-          <span v-else class="text-muted-foreground text-sm">请选择分类...</span>
+    <!-- 底部：已选显示（inline 模式也显示） -->
+    <div
+      v-if="selectedLocations.length > 0"
+      class="px-1 pt-3 mt-2 border-t border-border/30"
+    >
+      <div class="flex items-center gap-1.5 flex-wrap">
+        <div
+          v-for="loc in selectedLocations"
+          :key="`${loc.groupId}-${loc.subGroupId}`"
+          class="flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium shrink-0"
+        >
+          <span class="truncate">{{ getLocationLabel(loc) }}</span>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="h-4 w-4 text-primary/60 hover:text-destructive"
+            @click.stop="removeLocation(loc)"
+          >
+            <span class="i-ph-x-thin text-[10px]" />
+          </Button>
         </div>
+      </div>
+    </div>
 
-        <div class="flex items-center justify-end gap-2 shrink-0">
+    <!-- 底部按钮（仅弹窗模式） -->
+    <div
+      v-if="!inline"
+      class="border-t border-border/40 px-1 pt-2.5 mt-2"
+    >
+      <div class="flex items-center justify-end gap-2">
         <Button variant="ghost" size="sm" class="w-16" @click="emit('close')">取消</Button>
         <Button size="sm" class="w-16" @click="emit('close')">确定</Button>
-        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 平滑过渡 */
-.subgroup-item,
-.dark-selected-tag,
-.dark-checkbox {
-  transition: all 0.2s ease;
-}
-</style>
-
-<style>
-/* 深色模式：选中状态显示清晰的视觉效果 */
-html.dark .subgroup-item.dark-selected {
-  background-color: hsl(var(--accent)) !important;
-  border: 1px solid hsl(var(--primary) / 0.4);
-  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2);
-  margin: -1px;
-  padding-left: calc(0.625rem + 1px);
-  padding-right: calc(0.625rem + 1px);
-  padding-top: calc(0.375rem + 1px);
-  padding-bottom: calc(0.375rem + 1px);
+.subgroup-chip {
+  transition: all 0.15s ease;
 }
 
-/* 深色模式：选中标签高亮 */
-html.dark .dark-selected-tag {
-  background-color: hsl(var(--primary) / 0.3) !important;
-  border: 1px solid hsl(var(--primary) / 0.5);
-  color: hsl(var(--primary)) !important;
+.subgroup-chip--idle {
+  background: hsl(var(--muted) / 0.3);
+  color: hsl(var(--foreground));
+  border: 1px solid transparent;
 }
 
-/* 深色模式：选中指示点更明显 */
-html.dark .dark-selection-indicator {
-  box-shadow: 0 0 4px hsl(var(--primary) / 0.6);
+.subgroup-chip--idle:hover {
+  background: hsl(var(--muted) / 0.6);
+  border-color: hsl(var(--border));
 }
 
-/* 深色模式：复选框更醒目 */
-html.dark .dark-checkbox.bg-primary {
-  box-shadow: 0 0 6px hsl(var(--primary) / 0.5);
+.subgroup-chip--selected {
+  background: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--primary) / 0.25);
+}
+
+.dark .subgroup-chip--selected {
+  background: hsl(var(--primary) / 0.15);
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 0 8px hsl(var(--primary) / 0.1);
 }
 </style>

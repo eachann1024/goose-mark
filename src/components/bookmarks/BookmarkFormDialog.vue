@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
-import DeleteConfirmDialog from '@/components/bookmarks/DeleteConfirmDialog.vue'
 
 const {
   showAdd,
@@ -37,23 +36,12 @@ const {
   applyCategorySuggestion,
   dismissCategorySuggestion,
   requestDelete,
-  confirmDelete,
-  showDeleteConfirmLocal,
   editingId
 } = useBookmarkForm()
 
-const props = defineProps<{
-  open: boolean
-  isUTools: boolean
-}>()
-
 const emit = defineEmits<{
-  'update:open': [value: boolean]
+  close: []
 }>()
-
-// 同步外部 open 状态到 showAdd
-watch(() => props.open, (v) => { showAdd.value = v })
-watch(showAdd, (v) => { if (v !== props.open) emit('update:open', v) })
 
 const onSave = async () => {
   await handleSave()
@@ -62,44 +50,52 @@ const onSave = async () => {
 const onAiBackgroundSave = async () => {
   await handleSave({ forceAi: true, background: true })
 }
+
+const handleClose = () => {
+  emit('close')
+}
 </script>
 
 <template>
-  <Dialog :open="open" @update:open="emit('update:open', $event)">
-    <DialogContent
-      class="sm:max-w-[634px] max-h-[96.8vh] overflow-hidden p-0 gap-0 bg-background border-0 shadow-2xl rounded-2xl flex flex-col"
-    >
-      <!-- Header -->
-      <div class="shrink-0 px-5 pt-5 pb-3 flex items-center justify-between bg-background">
-        <DialogTitle class="text-base font-semibold flex items-center gap-2">
-          <span class="i-mdi-card-text-outline text-primary text-lg" />
-          {{ modalTitle }}
-        </DialogTitle>
+  <div class="bookmark-form-page flex flex-col h-full bg-background relative z-10">
+    <!-- Header -->
+    <header class="shrink-0 z-30 flex items-center gap-4 px-6 pt-5 pb-3">
+      <Button variant="outline" size="icon" class="h-10 w-10 shrink-0 rounded-xl bg-background/80" @click="handleClose">
+        <span class="i-ph-arrow-left-thin text-lg" />
+      </Button>
+      <div class="flex items-center gap-3">
+        <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-muted/60 text-muted-foreground">
+          <span class="i-ph-article-thin text-lg" />
+        </span>
+        <h1 class="text-xl font-semibold tracking-tight text-foreground">{{ modalTitle }}</h1>
       </div>
+    </header>
 
-      <div class="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-3 space-y-3">
+    <!-- Form Content -->
+    <div class="flex-1 min-h-0 overflow-y-auto custom-scroll">
+      <div class="bookmark-form__canvas flex w-full flex-col gap-5 px-6 pb-28 pt-4">
         <!-- 1. URL Input with Inline AI Button -->
-        <div class="settings-block" style="padding: 0.75rem 1rem;">
-          <label class="text-xs font-medium text-muted-foreground">链接 / 模板</label>
+        <section class="bookmark-form__section bookmark-form__url-section">
+          <label class="bookmark-form__label">链接 / 模板</label>
           <div class="relative group">
             <Input
               v-model="draft.url"
               placeholder="https://example.com 或 {query} 模板"
-              class="h-10 bg-muted/20 font-mono text-sm placeholder:text-muted-foreground/60 pr-10 focus:bg-muted/30 transition-colors shadow-none border-0 rounded-lg"
+              class="bookmark-form__control bookmark-form__url-input h-14 font-mono text-base placeholder:text-muted-foreground/50 pr-14"
               auto-focus
             />
-            <div class="absolute right-1 top-1">
+            <div class="absolute right-2 top-1/2 -translate-y-1/2">
               <Tooltip v-if="aiEnabled">
                 <TooltipTrigger as-child>
                   <Button
                     variant="ghost"
                     size="icon"
-                    class="bookmark-form__ai-trigger h-8 w-8 text-primary transition-all"
+                    class="bookmark-form__ai-trigger h-10 w-10 rounded-xl text-primary transition-all"
                     :disabled="!draft.url || isGenerating"
                     @click="askAI()"
                   >
-                    <span v-if="isGenerating" class="i-mdi-loading animate-spin text-lg" />
-                    <span v-else class="i-mdi-sparkles text-lg" />
+                    <span v-if="isGenerating" class="i-ph-spinner-thin animate-spin text-lg" />
+                    <span v-else class="i-ph-star-thin text-lg" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="left">
@@ -111,98 +107,111 @@ const onAiBackgroundSave = async () => {
               </Tooltip>
             </div>
           </div>
-          <p v-if="formError" class="text-[11px] text-destructive">{{ formError }}</p>
-        </div>
+          <p v-if="formError" class="mt-2 text-[11px] text-destructive">{{ formError }}</p>
+        </section>
 
-        <!-- 2. Split Layout: Icon + Info -->
-        <div class="settings-block" style="padding: 0.875rem 1rem;">
-          <div class="flex gap-3 items-start">
+        <!-- 2. Icon + Title -->
+        <section class="bookmark-form__section">
+          <div class="flex items-center gap-4">
             <!-- Left: Icon Preview -->
-            <div class="shrink-0 flex flex-col items-center gap-1.5 w-16">
-              <div
-                class="relative group cursor-pointer"
-                @click="showIconSelector = true"
-              >
+            <div class="shrink-0 flex flex-col items-center gap-2">
+              <div class="relative group cursor-pointer" @click="showIconSelector = !showIconSelector">
                 <BookmarkIcon
                   :icon="previewIcon"
                   :fallback-text="draft.title || draft.url"
                   :loading="iconLoading"
                   size="custom"
-                  custom-size-class="w-16 h-16 rounded-xl"
-                  class="shadow-sm transition-all"
+                  custom-size-class="w-20 h-20 rounded-2xl"
+                  class="bookmark-form__icon-preview transition-all"
                 />
-                <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 rounded-xl flex items-center justify-center transition-opacity">
-                  <span class="i-mdi-pencil text-white text-xl" />
+                <div class="absolute inset-0 bg-foreground/50 opacity-0 group-hover:opacity-100 rounded-2xl flex items-center justify-center transition-opacity">
+                  <span class="i-ph-pencil-simple-thin text-white text-xl" />
                 </div>
               </div>
-              <span class="text-[10px] text-center leading-tight min-h-5 flex items-center" :class="iconLoading ? 'text-amber-500 font-medium animate-pulse' : iconFetchFailed ? 'text-muted-foreground' : 'text-muted-foreground font-medium'">
+              <span class="text-xs text-center leading-tight min-h-5 flex items-center" :class="iconLoading ? 'text-amber-500 font-medium animate-pulse' : iconFetchFailed ? 'text-muted-foreground' : 'text-muted-foreground font-medium'">
                 {{ iconLoading ? '正在识别站点信息...' : iconFetchFailed ? '识别失败' : '修改图标' }}
               </span>
             </div>
 
-            <!-- Right: Title & Desc -->
-            <div class="flex-1 space-y-2 min-w-0">
+            <!-- Right: Title -->
+            <div class="flex-1 min-w-0">
               <div class="relative flex items-center gap-2">
                 <Input
                   v-model="draft.title"
                   placeholder="网站标题"
-                  class="h-9 bg-muted/20 px-3 focus-visible:ring-1 focus-visible:ring-primary/40 shadow-none text-sm font-semibold flex-1 border-0 rounded-lg"
+                  class="bookmark-form__control h-12 px-4 text-base font-semibold flex-1"
                   @input="onTitleInput"
                 />
                 <Button
                   v-if="aiEnabled && hasAIGenerated"
                   variant="ghost"
                   size="icon"
-                  class="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                  class="h-10 w-10 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
                   @click="undoTitle()"
                 >
-                  <span class="i-mdi-undo text-sm" />
-                </Button>
-              </div>
-
-              <div class="relative">
-                <Textarea
-                  v-model="draft.desc"
-                  placeholder="请输入网站简介"
-                  :maxlength="maxDescLen"
-                  class="h-16 min-h-[64px] text-xs resize-none bg-muted/20 px-3 py-2 focus-visible:ring-1 focus-visible:ring-primary/40 shadow-none pr-8 border-0 rounded-lg"
-                  @input="onDescInput"
-                />
-                <Button
-                  v-if="aiEnabled && hasAIGenerated"
-                  variant="ghost"
-                  size="icon"
-                  class="absolute top-1.5 right-1.5 h-6 w-6 text-muted-foreground hover:text-foreground"
-                  @click="undoDesc()"
-                >
-                  <span class="i-mdi-undo text-xs" />
+                  <span class="i-ph-arrow-counter-clockwise-thin text-sm" />
                 </Button>
               </div>
             </div>
           </div>
-        </div>
 
-        <!-- 3. Category & AI Suggestion -->
-        <div class="settings-block" style="padding: 0.75rem 1rem;">
+          <!-- Inline Icon Editor (展开式，非弹窗) -->
+          <Transition name="fade">
+            <div v-if="showIconSelector" class="mt-5 pt-5 border-t border-border/30">
+              <IconSelector
+                inline
+                :modelValue="previewIcon ?? undefined"
+                :title="draft.title"
+                @update:modelValue="(val) => previewIcon = val"
+                @close="showIconSelector = false"
+                @confirm="showIconSelector = false"
+              />
+            </div>
+          </Transition>
+        </section>
+
+        <!-- 3. Description (独立全宽区块) -->
+        <section class="bookmark-form__section">
+          <div class="flex items-center justify-between mb-3">
+            <label class="bookmark-form__label !mb-0">描述</label>
+            <Button
+              v-if="aiEnabled && hasAIGenerated"
+              variant="ghost"
+              size="icon"
+              class="h-8 w-8 rounded-lg text-muted-foreground hover:text-foreground"
+              @click="undoDesc()"
+            >
+              <span class="i-ph-arrow-counter-clockwise-thin text-sm" />
+            </Button>
+          </div>
+          <BlockNoteEditor
+            :model-value="draft.desc"
+            placeholder="请输入网站简介，支持富文本格式..."
+            @update:model-value="onDescInput"
+          />
+        </section>
+
+        <!-- 4. Category (独立全宽区块) -->
+        <section class="bookmark-form__section">
           <div class="flex items-center justify-between">
-            <label class="text-xs font-medium text-muted-foreground">分类</label>
+            <label class="bookmark-form__label">分类</label>
             <Button
               v-if="aiEnabled"
               variant="ghost"
               size="sm"
-              class="bookmark-form__suggest-trigger h-6 text-[11px] gap-1 px-2 text-primary hover:text-primary"
+              class="bookmark-form__suggest-trigger h-8 text-xs gap-1 px-3 rounded-xl text-primary hover:text-primary"
               :disabled="!draft.url || isSuggestingCategory"
               @click="askCategorySuggestion"
             >
-              <span v-if="isSuggestingCategory" class="i-mdi-loading animate-spin" />
-              <span v-else class="i-mdi-auto-fix" />
+              <span v-if="isSuggestingCategory" class="i-ph-spinner-thin animate-spin" />
+              <span v-else class="i-ph-magic-wand-thin" />
               AI 推荐
             </Button>
           </div>
 
           <Transition name="fade">
             <div v-if="aiEnabled && categorySuggestion" class="bookmark-form__suggestion flex items-center gap-2 px-3 py-1.5 rounded-lg">
-              <span class="i-mdi-lightbulb-on-outline text-primary text-base shrink-0" />
+              <span class="i-ph-lightbulb-thin text-primary text-base shrink-0" />
               <div class="flex-1 min-w-0">
                 <p class="text-[11px] font-medium text-foreground truncate">
                   {{ categorySuggestion.groupName }} / {{ categorySuggestion.subGroupName }}
@@ -210,97 +219,121 @@ const onAiBackgroundSave = async () => {
               </div>
               <div class="flex gap-1 shrink-0">
                 <Button variant="ghost" size="icon" class="h-6 w-6" @click="applyCategorySuggestion">
-                  <span class="i-mdi-check text-green-500 text-sm" />
+                  <span class="i-ph-check-thin text-green-500 text-sm" />
                 </Button>
                 <Button variant="ghost" size="icon" class="h-6 w-6" @click="dismissCategorySuggestion">
-                  <span class="i-mdi-close text-muted-foreground text-sm" />
+                  <span class="i-ph-x-thin text-muted-foreground text-sm" />
                 </Button>
               </div>
             </div>
           </Transition>
 
-          <Popover v-model:open="showCategorySelector">
-            <PopoverTrigger as-child>
-              <div
-                class="flex h-9 w-full items-center justify-between rounded-lg bg-muted/20 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40 transition-colors"
-              >
-                <div v-if="selectedLocationsLabel" class="flex items-center gap-2 truncate text-primary font-medium text-xs">
-                  {{ selectedLocationsLabel }}
-                </div>
-                <span v-else class="text-muted-foreground text-xs">选择分类...</span>
-                <span class="i-mdi-chevron-down opacity-50 shrink-0 text-sm" />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent class="w-auto p-0 bg-transparent border-0 shadow-none z-[9999]" align="start" side="bottom" :side-offset="8">
-              <CategoryMultiSelect
-                v-model="draftLocations"
-                @close="showCategorySelector = false"
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
+          <!-- 平铺展示分类选择 -->
+          <CategoryMultiSelect
+            v-model="draftLocations"
+            inline
+          />
+        </section>
 
+        <!-- Footer Buttons (sticky at bottom) -->
+        <div class="bookmark-form__footer sticky bottom-4 flex items-center justify-between gap-3 rounded-2xl bg-background/90 px-4 py-3 backdrop-blur-sm">
+          <div class="flex-1">
+            <Button
+              v-if="editingId"
+              variant="ghost"
+              size="sm"
+              class="bookmark-form__delete-trigger text-destructive hover:text-destructive px-3 h-9 rounded-xl"
+              @click="requestDelete"
+            >
+              <span class="i-ph-trash-thin mr-1 text-base" />
+              删除
+            </Button>
+          </div>
+          <div class="flex items-center gap-2">
+            <Button variant="ghost" size="sm" class="h-10 w-24 rounded-xl text-muted-foreground" @click="handleClose">取消</Button>
+            <Tooltip v-if="aiEnabled && !editingId && canUseAi">
+              <TooltipTrigger as-child>
+                <Button variant="outline" size="sm" class="h-10 px-4 rounded-xl bg-background/80" :disabled="isSaving || !draft.url" @click="onAiBackgroundSave">
+                  <span v-if="isSaving" class="i-ph-spinner-thin animate-spin mr-1" />
+                  <span v-else class="i-ph-star-thin mr-1" />
+                  AI 后台保存
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" class="max-w-[260px] text-xs leading-5">
+                <p>{{ aiBackgroundTooltip }}</p>
+              </TooltipContent>
+            </Tooltip>
+            <Button size="sm" class="h-10 w-28 rounded-xl" :disabled="isSaving" @click="onSave">
+              <span v-if="isSaving" class="i-ph-spinner-thin animate-spin mr-1" />
+              {{ saveButtonLabel }}
+            </Button>
+          </div>
+        </div>
       </div>
+    </div>
 
-      <!-- Footer Buttons -->
-      <DialogFooter class="shrink-0 px-4 py-3 flex flex-row items-center justify-between sm:justify-between gap-2 bg-background">
-        <div class="flex-1">
-          <Button
-            v-if="editingId"
-            variant="ghost"
-            size="sm"
-            class="bookmark-form__delete-trigger text-destructive hover:text-destructive px-2 h-8"
-            @click="requestDelete"
-          >
-            <span class="i-mdi-trash-can-outline mr-1 text-base" />
-            删除
-          </Button>
-        </div>
-        <div class="flex items-center gap-2">
-          <Button variant="ghost" size="sm" class="h-8 w-20 text-muted-foreground" @click="emit('update:open', false)">取消</Button>
-          <Tooltip v-if="aiEnabled && !editingId && canUseAi">
-            <TooltipTrigger as-child>
-              <Button variant="outline" size="sm" class="h-8 px-3" :disabled="isSaving || !draft.url" @click="onAiBackgroundSave">
-                <span v-if="isSaving" class="i-mdi-loading animate-spin mr-1" />
-                <span v-else class="i-mdi-sparkles mr-1" />
-                AI 后台保存
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="top" class="max-w-[260px] text-xs leading-5">
-              <p>{{ aiBackgroundTooltip }}</p>
-            </TooltipContent>
-          </Tooltip>
-          <Button size="sm" class="h-8 w-24" :disabled="isSaving" @click="onSave">
-            <span v-if="isSaving" class="i-mdi-loading animate-spin mr-1" />
-            {{ saveButtonLabel }}
-          </Button>
-        </div>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
-
-  <!-- Delete Confirm -->
-  <DeleteConfirmDialog
-    v-model:open="showDeleteConfirmLocal"
-    :is-trash-active="false"
-    @confirm="confirmDelete"
-  />
-
-  <!-- Icon Selector -->
-  <Dialog v-model:open="showIconSelector">
-    <DialogContent class="w-auto p-0 bg-transparent border-0 shadow-none">
-      <IconSelector
-        :modelValue="previewIcon ?? undefined"
-        :title="draft.title"
-        @update:modelValue="(val) => previewIcon = val"
-        @close="showIconSelector = false"
-        @confirm="showIconSelector = false"
-      />
-    </DialogContent>
-  </Dialog>
+  </div>
 </template>
 
 <style scoped>
+.bookmark-form-page {
+  --form-surface: hsl(var(--card) / 0.72);
+  --form-control-border: hsl(var(--border) / 0.72);
+}
+
+.bookmark-form__canvas {
+  max-width: none;
+}
+
+.bookmark-form__section {
+  width: 100%;
+  border-radius: 28px;
+  background: var(--form-surface);
+  padding: 1.5rem;
+}
+
+.bookmark-form__url-section {
+  padding: 1.25rem 1.5rem;
+}
+
+.bookmark-form__label {
+  display: inline-flex;
+  margin-bottom: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: hsl(var(--muted-foreground));
+}
+
+.bookmark-form__control {
+  border: 1px solid var(--form-control-border) !important;
+  border-radius: 1rem !important;
+  background: hsl(var(--background) / 0.72) !important;
+  box-shadow: none !important;
+  transition: border-color 0.16s ease, background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.bookmark-form__control:hover {
+  border-color: hsl(var(--muted-foreground) / 0.34) !important;
+}
+
+.bookmark-form__control:focus,
+.bookmark-form__control:focus-visible {
+  border-color: hsl(var(--primary) / 0.72) !important;
+  box-shadow: 0 0 0 3px hsl(var(--primary) / 0.12) !important;
+}
+
+.bookmark-form__url-input {
+  letter-spacing: -0.01em;
+}
+
+.bookmark-form__icon-preview {
+  box-shadow: 0 14px 34px hsl(var(--foreground) / 0.06);
+}
+
+.bookmark-form__footer {
+  box-shadow: 0 18px 48px hsl(var(--foreground) / 0.08);
+}
+
 .bookmark-form__ai-trigger:hover,
 .bookmark-form__suggest-trigger:hover {
   background-color: hsl(var(--primary) / 0.1);
@@ -326,5 +359,19 @@ const onAiBackgroundSave = async () => {
 .fade-leave-to {
   opacity: 0;
   transform: translateY(4px);
+}
+
+.custom-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.3);
+  border-radius: var(--radius-sm);
+}
+.custom-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.5);
 }
 </style>

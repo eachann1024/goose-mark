@@ -22,7 +22,7 @@ const handleSubClick = (groupId: string, subId: string) => {
         @click="handleGroupClick(group.id)"
       >
         <span class="truncate">{{ group.name }}</span>
-        <span class="i-mdi-chevron-right text-muted" />
+        <span class="i-ph-caret-right-thin text-muted" />
       </Button>
       <div class="pl-4 flex flex-col gap-1">
         <Button
@@ -33,7 +33,7 @@ const handleSubClick = (groupId: string, subId: string) => {
           :class="sub.id === store.activeSubGroupId ? 'bg-secondary text-accent-foreground' : 'bg-transparent'"
           @click="handleSubClick(group.id, sub.id)"
         >
-          <span class="i-mdi-circle-medium text-xs" />
+          <span class="i-ph-circle-thin text-xs" />
           <span class="truncate">{{ sub.name }}</span>
         </Button>
       </div>

@@ -55,8 +55,7 @@ function _useBookmarkForm() {
   
   const formError = ref('')
   const isSaving = ref(false)
-  const showDeleteConfirmLocal = ref(false)
-  
+
   const iconLoading = ref(false)
   const iconFetchFailed = ref(false)
   
@@ -86,7 +85,7 @@ function _useBookmarkForm() {
 
   // Computed
   const isEditing = computed(() => !!editingId.value)
-  const maxDescLen = 300
+  const maxDescLen = Infinity
 
   const previewIconStyle = computed(() => {
     if (previewIcon.value?.bgColor) {
@@ -351,8 +350,9 @@ function _useBookmarkForm() {
     isTitleDirty.value = true
   }
 
-  const onDescInput = () => {
+  const onDescInput = (val: string) => {
     isDescDirty.value = true
+    draft.desc = val
   }
 
   // AI 分类建议方法
@@ -413,16 +413,10 @@ function _useBookmarkForm() {
 
   const requestDelete = () => {
     if (!editingId.value) return
-    showDeleteConfirmLocal.value = true
-  }
-
-  const confirmDelete = () => {
-    if (editingId.value) {
-      addBehaviorLog('delete-bookmark', `id: ${editingId.value}`)
-      store.removeBookmark(editingId.value)
-      showAdd.value = false
-    }
-    showDeleteConfirmLocal.value = false
+    addBehaviorLog('delete-bookmark', `id: ${editingId.value}`)
+    store.removeBookmark(editingId.value)
+    showAdd.value = false
+    showToast({ title: '书签已删除', variant: 'success', duration: 2000 })
   }
 
   const resetPendingIconFetch = () => {
@@ -741,14 +735,12 @@ function _useBookmarkForm() {
     isGenerating,
     isSuggestingCategory,
     categorySuggestion,
-    showDeleteConfirmLocal,
     onTitleInput,
     onDescInput,
     askCategorySuggestion,
     applyCategorySuggestion,
     dismissCategorySuggestion,
-    requestDelete,
-    confirmDelete
+    requestDelete
   }
 }
 

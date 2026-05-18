@@ -48,14 +48,14 @@ const maxClicks = computed(() => Math.max(...weekTrend.value.map(d => d.clicks),
     <div class="grid grid-cols-2 gap-3">
       <div class="settings-block" style="gap: 0.5rem; padding: 0.875rem 1rem;">
         <div class="flex items-center gap-2 text-muted-foreground">
-          <span class="i-mdi-bookmark-multiple text-lg" />
+          <span class="i-ph-bookmarks-thin text-lg" />
           <span class="text-xs font-medium">书签总数</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ store.bookmarks.length }}</p>
       </div>
       <div class="settings-block" style="gap: 0.5rem; padding: 0.875rem 1rem;">
         <div class="flex items-center gap-2 text-muted-foreground">
-          <span class="i-mdi-folder-multiple text-lg" />
+          <span class="i-ph-folders-thin text-lg" />
           <span class="text-xs font-medium">分组数量</span>
         </div>
         <p class="text-2xl font-bold text-foreground">{{ store.groups.length }}</p>

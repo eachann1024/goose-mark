@@ -103,17 +103,17 @@ watch(
   >
     <template v-if="!isTrash">
       <Button variant="ghost" class="menu-item justify-start" @click="handleAction('open')">
-        <span class="i-mdi-open-in-new text-muted" />
+        <span class="i-ph-arrow-square-out-thin text-muted" />
         <span>打开链接</span>
       </Button>
 
       <Button v-if="isUTools" variant="ghost" class="menu-item justify-start" @click="handleAction('openInUtoolsBrowser')">
-        <span class="i-mdi-web text-muted" />
+        <span class="i-ph-globe-thin text-muted" />
         <span>使用 uTools 浏览器打开</span>
       </Button>
 
       <Button variant="ghost" class="menu-item justify-start" @click="handleAction('copy')">
-        <span class="i-mdi-content-copy text-muted" />
+        <span class="i-ph-copy-thin text-muted" />
         <span>复制链接</span>
       </Button>
 
@@ -123,7 +123,7 @@ watch(
         :disabled="!hasDescription"
         @click="handleAction('copyDescription')"
       >
-        <span class="i-mdi-text-box-outline text-muted" />
+        <span class="i-ph-article-thin text-muted" />
         <span>复制描述</span>
       </Button>
   
@@ -131,14 +131,14 @@ watch(
         <div class="h-px bg-white/10 mx-1" />
 
         <Button variant="ghost" class="menu-item justify-start" @click="handleAction('edit')">
-          <span class="i-mdi-pencil-outline text-muted" />
+          <span class="i-ph-pencil-simple-thin text-muted" />
           <span>编辑</span>
         </Button>
 
         <div class="h-px bg-white/10 mx-1" />
         
         <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
-          <span class="i-mdi-delete-outline" />
+          <span class="i-ph-trash-thin" />
           <span>移除</span>
         </Button>
       </template>
@@ -146,14 +146,14 @@ watch(
 
     <template v-else>
       <Button variant="ghost" class="menu-item justify-start text-primary" @click="handleAction('restore')">
-        <span class="i-mdi-restore" />
+        <span class="i-ph-arrow-counter-clockwise-thin" />
         <span>还原</span>
       </Button>
 
       <div class="h-px bg-white/10 mx-1" />
 
       <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
-        <span class="i-mdi-delete-forever-outline" />
+        <span class="i-ph-trash-simple-thin" />
         <span>彻底删除</span>
       </Button>
     </template>

@@ -18,7 +18,6 @@ app.use(pinia)
 setActivePinia(pinia)
 const settingsStore = useSettingsStore()
 const bookmarkStore = useBookmarkStore()
-const { setExpendHeight } = useUTools()
 const { start, bootstrapLocalFirstIfEnabled, hydrateMirrorDirectoryForDevice } = useLocalDataMirror()
 
 const bootstrapApp = async () => {
@@ -37,7 +36,7 @@ const bootstrapApp = async () => {
     }
   })
   trackEvent('app_launch')
-  setExpendHeight(settingsStore.windowHeight)
+  // 高度已在 preload.cjs 中预先设置，避免重复调用导致窗口闪烁
   bookmarkStore.migrateFromLegacy()
   hydrateMirrorDirectoryForDevice()
   try {

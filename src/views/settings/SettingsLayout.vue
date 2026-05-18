@@ -1,52 +1,84 @@
 <script setup lang="ts">
 import GeneralSettings from './GeneralSettings.vue'
-import { trackEvent } from '@/services/analytics'
+import ListSettings from './ListSettings.vue'
+import CardSettings from './CardSettings.vue'
 import AISettings from './AISettings.vue'
 import CategoryManager from './CategoryManager.vue'
 import DataSettings from './DataSettings.vue'
 import LocalModeSettings from './LocalModeSettings.vue'
 import AboutSettings from './AboutSettings.vue'
+import { trackEvent } from '@/services/analytics'
 
-type SettingsTab = 'general' | 'ai' | 'categories' | 'data' | 'local-mode' | 'about'
-const feedbackUrl = 'https://wj.qq.com/s2/25958391/c92b/'
-
-const props = withDefaults(defineProps<{
-  activeTab?: SettingsTab
-}>(), {
-  activeTab: 'general'
-})
-
-const emit = defineEmits<{
-  (e: 'update:activeTab', value: SettingsTab): void
-}>()
-
-const currentTab = computed<SettingsTab>({
-  get: () => props.activeTab,
-  set: (value) => {
-    emit('update:activeTab', value)
-    trackEvent('settings_tab_view', { tab: value })
-    if (value === 'about') {
-      trackEvent('stats_view', { source: 'settings_about' })
-    }
-  }
-})
+interface SettingsSection {
+  id: string
+  label: string
+  icon: string
+  component: typeof GeneralSettings
+}
 
 const { localModeMenuDotVisible, markLocalModeSettingsVisited } = useFeatureNoticeCenter()
 
-const tabs = [
-  { value: 'general', label: '外观与使用', icon: 'i-mdi-cog-outline' },
-  { value: 'ai', label: 'AI 助手', icon: 'i-mdi-sparkles' },
-  { value: 'categories', label: '分组管理', icon: 'i-mdi-folder-outline' },
-  { value: 'data', label: '导入与备份', icon: 'i-mdi-database-outline' },
-  { value: 'local-mode', label: '浏览器拓展', icon: 'i-mdi-database-sync-outline' },
-  { value: 'about', label: '帮助与统计', icon: 'i-mdi-information-outline' }
-] as const
+const sections: SettingsSection[] = [
+  { id: 'general', label: '通用设置', icon: 'i-mdi-cog-outline', component: GeneralSettings },
+  { id: 'list', label: '列表设置', icon: 'i-mdi-format-list-bulleted', component: ListSettings },
+  { id: 'card', label: '卡片设置', icon: 'i-mdi-view-grid-outline', component: CardSettings },
+  { id: 'ai', label: 'AI 助手', icon: 'i-mdi-sparkles', component: AISettings },
+  { id: 'categories', label: '分组管理', icon: 'i-mdi-folder-outline', component: CategoryManager },
+  { id: 'data', label: '导入与备份', icon: 'i-mdi-database-outline', component: DataSettings },
+  { id: 'local-mode', label: '浏览器拓展', icon: 'i-mdi-database-sync-outline', component: LocalModeSettings },
+  { id: 'about', label: '帮助与统计', icon: 'i-mdi-information-outline', component: AboutSettings },
+]
 
-watch(() => currentTab.value, (value) => {
-  if (value === 'local-mode') {
-    markLocalModeSettingsVisited()
+const activeSectionId = ref('general')
+const isScrolling = ref(false)
+let scrollTimeout: ReturnType<typeof setTimeout> | null = null
+
+const scrollToSection = (id: string) => {
+  const el = document.getElementById(`settings-section-${id}`)
+  if (!el) return
+  isScrolling.value = true
+  if (scrollTimeout) clearTimeout(scrollTimeout)
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  activeSectionId.value = id
+  trackEvent('settings_section_scroll', { section: id })
+  if (id === 'about') {
+    trackEvent('stats_view', { source: 'settings_about' })
   }
-}, { immediate: true })
+  scrollTimeout = setTimeout(() => {
+    isScrolling.value = false
+  }, 600)
+}
+
+// IntersectionObserver 监听当前可见的 section
+const sectionRefs = ref<Record<string, HTMLElement>>({})
+
+onMounted(() => {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (isScrolling.value) return
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          const id = entry.target.id.replace('settings-section-', '')
+          activeSectionId.value = id
+          if (id === 'local-mode') {
+            markLocalModeSettingsVisited()
+          }
+          break
+        }
+      }
+    },
+    { rootMargin: '-20% 0px -70% 0px', threshold: 0 }
+  )
+
+  for (const section of sections) {
+    const el = document.getElementById(`settings-section-${section.id}`)
+    if (el) observer.observe(el)
+  }
+
+  onBeforeUnmount(() => observer.disconnect())
+})
+
+const feedbackUrl = 'https://wj.qq.com/s2/25958391/c92b/'
 
 const openFeedback = () => {
   try {
@@ -62,29 +94,23 @@ const openFeedback = () => {
 </script>
 
 <template>
-  <div class="settings-layout flex h-full min-h-0 gap-2">
-    <!-- 左侧导航 -->
-    <nav class="settings-nav w-44 shrink-0 flex flex-col p-2 rounded-xl">
+  <div class="settings-layout flex h-full min-h-0">
+    <!-- Sticky TOC Sidebar -->
+    <nav class="settings-nav w-36 shrink-0 flex flex-col py-2 px-1.5">
       <div class="flex-1 space-y-0.5">
         <button
-          v-for="tab in tabs"
-          :key="tab.value"
+          v-for="section in sections"
+          :key="section.id"
           type="button"
-          class="settings-nav-item w-full flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-left"
-          :class="[
-            currentTab === tab.value
-              ? 'settings-nav-item--active'
-              : 'settings-nav-item--idle'
-          ]"
-          @click="currentTab = tab.value"
+          class="settings-nav-item w-full flex items-center gap-2 px-2.5 py-2 text-xs font-medium text-left"
+          :class="activeSectionId === section.id ? 'settings-nav-item--active' : 'settings-nav-item--idle'"
+          @click="scrollToSection(section.id)"
         >
-          <span class="settings-nav-item__icon-wrap">
-            <span :class="[tab.icon, 'text-lg settings-nav-item__icon']" />
-          </span>
-          <span class="min-w-0 flex items-center gap-2">
-            <span class="truncate">{{ tab.label }}</span>
+          <span :class="[section.icon, 'text-base settings-nav-item__icon']" />
+          <span class="min-w-0 flex items-center gap-1.5">
+            <span class="truncate">{{ section.label }}</span>
             <span
-              v-if="tab.value === 'local-mode' && localModeMenuDotVisible"
+              v-if="section.id === 'local-mode' && localModeMenuDotVisible"
               class="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500"
             />
           </span>
@@ -92,57 +118,59 @@ const openFeedback = () => {
       </div>
       <button
         type="button"
-        class="settings-feedback mt-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold"
+        class="settings-feedback mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold"
         @click="openFeedback"
       >
-        <span class="i-mdi-message-alert-outline text-lg" />
+        <span class="i-mdi-message-alert-outline text-base" />
         <span>快速反馈</span>
       </button>
     </nav>
 
-    <!-- 右侧内容区 -->
-    <main class="flex-1 overflow-y-auto px-4 pb-6 pt-1 custom-scroll">
-      <Transition
-        mode="out-in"
-        enter-active-class="transition-opacity duration-150"
-        enter-from-class="opacity-0"
-        enter-to-class="opacity-100"
-        leave-active-class="transition-opacity duration-100"
-        leave-from-class="opacity-100"
-        leave-to-class="opacity-0"
-      >
-        <GeneralSettings v-if="currentTab === 'general'" key="general" />
-        <AISettings v-else-if="currentTab === 'ai'" key="ai" />
-        <CategoryManager v-else-if="currentTab === 'categories'" key="categories" />
-        <DataSettings v-else-if="currentTab === 'data'" key="data" />
-        <LocalModeSettings v-else-if="currentTab === 'local-mode'" key="local-mode" />
-        <AboutSettings v-else-if="currentTab === 'about'" key="about" />
-      </Transition>
+    <!-- Main Content: all sections laid out vertically -->
+    <main class="flex-1 overflow-y-auto px-4 pb-8 pt-2 custom-scroll">
+      <div class="max-w-[680px] space-y-6">
+        <div
+          v-for="section in sections"
+          :id="`settings-section-${section.id}`"
+          :key="section.id"
+          class="settings-section"
+        >
+          <div class="mb-2 flex items-center gap-2 px-1">
+            <span :class="[section.icon, 'text-base text-muted-foreground/60']" />
+            <h2 class="text-sm font-semibold text-foreground">{{ section.label }}</h2>
+          </div>
+          <component :is="section.component" />
+        </div>
+      </div>
     </main>
   </div>
 </template>
 
 <style scoped>
-/* 左侧导航：白色背景，圆角 */
 .settings-nav {
   background: #ffffff;
+  border-right: 1px solid hsl(var(--border) / 0.3);
 }
 
 .dark .settings-nav {
-  background: hsl(var(--card));
+  background: hsl(var(--card) / 0.45);
+  border-right-color: hsl(var(--border) / 0.15);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
 .settings-nav-item {
-  border-radius: 10px;
+  border-radius: 8px;
   transition: background-color 120ms ease, color 120ms ease;
 }
 
-.settings-nav-item__icon-wrap {
-  width: 24px;
-  height: 24px;
+.settings-nav-item__icon {
+  width: 20px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .settings-nav-item--idle {
@@ -151,19 +179,18 @@ const openFeedback = () => {
 
 .settings-nav-item--idle:hover {
   color: hsl(var(--foreground));
-  background: hsl(var(--muted) / 0.6);
+  background: hsl(var(--muted) / 0.5);
 }
 
 .settings-nav-item--active {
-  color: hsl(var(--background));
-  background: hsl(var(--foreground));
-  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.10);
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
 }
 
 .dark .settings-nav-item--active {
   color: hsl(var(--primary-foreground));
-  background: hsl(var(--primary));
-  box-shadow: 0 2px 10px hsl(var(--primary) / 0.16);
+  background: hsl(var(--primary) / 0.85);
+  box-shadow: inset 3px 0 0 0 hsl(var(--primary-foreground) / 0.6);
 }
 
 .settings-feedback {
@@ -174,60 +201,92 @@ const openFeedback = () => {
 
 .settings-feedback:hover {
   color: hsl(var(--foreground));
-  background: hsl(var(--muted) / 0.8);
+  background: hsl(var(--muted) / 0.75);
 }
 
-.settings-feedback:active {
-  opacity: 0.8;
+.custom-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
 }
 
 .custom-scroll::-webkit-scrollbar {
-  width: 4px;
+  width: 8px;
 }
+
 .custom-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
 .custom-scroll::-webkit-scrollbar-thumb {
-  background-color: hsl(var(--muted-foreground) / 0.3);
-  border-radius: var(--radius-sm);
+  background-color: hsl(var(--muted-foreground) / 0.32);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
 }
+
 .custom-scroll::-webkit-scrollbar-thumb:hover {
   background-color: hsl(var(--muted-foreground) / 0.5);
 }
-</style>
 
-<!-- 全局注入 settings-block 色块，让所有子设置页面共享 -->
-<style>
-.settings-block {
-  background: #ffffff;
-  border-radius: 1rem;
-  padding: 1.125rem 1.25rem;
+.settings-section {
+  scroll-margin-top: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-row--top {
+  align-items: flex-start;
+}
+
+.settings-field {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.5rem;
+}
+
+.settings-field__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+}
+</style>
+
+<style>
+.settings-block {
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid hsl(var(--border) / 0.25);
+  background: hsl(var(--card));
+  box-shadow: 0 10px 24px hsl(var(--foreground) / 0.03);
 }
 
 .dark .settings-block {
-  background: hsl(var(--card));
+  background: hsl(var(--card) / 0.55);
+  border-color: hsl(var(--border) / 0.15);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
 }
 
 .settings-block__head {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 0.25rem;
+  margin-bottom: 12px;
 }
 
 .settings-block__title {
-  font-size: 0.875rem;
+  font-size: 14px;
+  line-height: 20px;
   font-weight: 600;
   color: hsl(var(--foreground));
-  line-height: 1.4;
 }
 
 .settings-block__desc {
-  font-size: 0.75rem;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
   color: hsl(var(--muted-foreground));
-  line-height: 1.4;
 }
 </style>

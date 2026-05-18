@@ -8,6 +8,9 @@ import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import OnboardingBanner from '@/components/OnboardingBanner.vue'
 import QuickSaveDialog from '@/components/QuickSaveDialog.vue'
 import StarryBackground from '@/components/StarryBackground.vue'
+import BookmarksList from '@/components/bookmarks/BookmarksList.vue'
+import BookmarkPreview from '@/components/bookmarks/BookmarkPreview.vue'
+import SubGroupNav from '@/components/bookmarks/SubGroupNav.vue'
 import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser'
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
@@ -33,11 +36,8 @@ const {
   copyBookmarkUrl,
   copyBookmarkDescription,
   handleRemove,
-  confirmDelete,
   emptyTrash,
   handleReorder,
-  showDeleteConfirm,
-  confirmDeleteId,
   getTemplateLabel
 } = useBookmarkOperations()
 
@@ -70,6 +70,25 @@ const {
   openAddWithUrl,
   openEdit,
 } = useBookmarkForm()
+
+const exportData = () => {
+  const json = JSON.stringify({
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    groups: store.groups,
+    bookmarks: store.bookmarks
+  }, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `goose-marks-backup-${new Date().toISOString().slice(0, 10)}.json`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  showToast({ title: '备份已导出', description: '文件已开始下载（JSON）', variant: 'success' })
+}
 
 const {
   AI_QUICK_SAVE_FEATURE_CODE,
@@ -109,7 +128,7 @@ const {
 } = useFeatureNoticeCenter()
 const { openCategoryEditor } = useCategoryEditor()
 
-const settingsActiveTab = ref<'general' | 'ai' | 'categories' | 'data' | 'local-mode' | 'about'>('general')
+const settingsActiveTab = ref<'general' | 'list' | 'card' | 'ai' | 'categories' | 'data' | 'local-mode' | 'about'>('general')
 const showMirrorDecisionDialog = ref(false)
 const hasTrackedSettingsOpen = ref(false)
 const lastTrackedThemeMode = ref('')
@@ -254,6 +273,47 @@ let syncTimeout: NodeJS.Timeout | null = null
 // Shared State
 const selectedIndex = ref(-1)
 
+// View Mode: list (default) or grid (persisted independently from search view mode)
+const viewMode = ref<'list' | 'grid'>(settingsStore.homeViewMode)
+let viewModePersistTimer: ReturnType<typeof setTimeout> | null = null
+watch(viewMode, (mode) => {
+  if (viewModePersistTimer) clearTimeout(viewModePersistTimer)
+  viewModePersistTimer = setTimeout(() => {
+    if (settingsStore.homeViewMode !== mode) {
+      settingsStore.setHomeViewMode(mode)
+    }
+  }, 0)
+})
+
+// 详情栏收起状态，跟随设置持久化，重开插件后保持上次状态
+const previewPanelCollapsed = computed({
+  get: () => settingsStore.previewPanelCollapsed,
+  set: (value: boolean) => settingsStore.setPreviewPanelCollapsed(value),
+})
+
+// Bottom status bar info
+const statusBarInfo = computed(() => {
+  const total = store.bookmarks.filter(b => !store.isBookmarkInTrash(b)).length
+  if (viewMode.value === 'grid' && !isTrashActive.value && !searchViewOpen.value) {
+    const current = visibleBookmarks.value.length
+    const group = activeGroup.value
+    const sub = currentSubGroup.value
+    return {
+      groupName: group?.name ?? '',
+      subName: sub?.name ?? '',
+      current,
+      total,
+    }
+  }
+  const current = activeBookmarks.value.length
+  return {
+    groupName: isTrashActive.value ? '回收站' : '全部书签',
+    subName: '',
+    current,
+    total,
+  }
+})
+
 
 const handleSelectGroup = async (groupId: string) => {
   store.selectGroup(groupId)
@@ -268,17 +328,25 @@ const openGroupEditor = (groupId: string) => {
 }
 
 
-// Window Height Watcher
-const applyWindowHeight = () => {
-  setExpendHeight(settingsStore.windowHeight)
+// Window Height Watcher — debounced to avoid rapid resize causing UI freeze
+let heightDebounceTimer: ReturnType<typeof setTimeout> | null = null
+let lastAppliedWindowHeight: number | null = null
+
+const debouncedSetExpendHeight = (height: number) => {
+  if (heightDebounceTimer) clearTimeout(heightDebounceTimer)
+  heightDebounceTimer = setTimeout(() => {
+    if (lastAppliedWindowHeight === height) return
+    lastAppliedWindowHeight = height
+    setExpendHeight(height)
+  }, 150)
 }
 
 watch(() => settingsStore.windowHeight, (h) => {
-  setExpendHeight(h)
+  debouncedSetExpendHeight(h)
 })
 
 onMounted(() => {
-  applyWindowHeight()
+  lastAppliedWindowHeight = settingsStore.windowHeight
 })
 
 watch(() => tab.value, (value) => {
@@ -362,6 +430,20 @@ const {
   suppressAutoOpenOverlayRef: suppressSearchOverlay,
 })
 
+// View-aware bookmarks: list uses all bookmarks, grid uses current sub-group only
+const visibleBookmarks = computed<Bookmark[]>(() => {
+  if (viewMode.value === 'grid' && tab.value === 'bookmarks' && !searchViewOpen.value) {
+    return store.currentBookmarks
+  }
+  return activeBookmarks.value
+})
+
+const selectedBookmark = computed(() => {
+  const list = visibleBookmarks.value
+  if (selectedIndex.value < 0 || selectedIndex.value >= list.length) return null
+  return list[selectedIndex.value]
+})
+
 // SearchOverlay 组件 ref
 const searchOverlayRef = ref<{ 
   focus: () => void;
@@ -420,14 +502,6 @@ const activateHomeSearch = ({ openSearch = false, forceRemount = false } = {}) =
 
   if (canUseSubInput.value) {
     focusDefaultSearchInput()
-  }
-}
-
-const openSearchOverlay = (forceRemount = false) => {
-  suppressSearchOverlay.value = false
-  openSearchView({ focusInput: true })
-  if (forceRemount && canUseSubInput.value) {
-    focusDefaultSearchInput(true)
   }
 }
 
@@ -512,11 +586,10 @@ const {
   handleLocalSearchKey,
 } = useKeyboard(
   selectedIndex,
-  activeBookmarks,
+  visibleBookmarks,
   searchViewOpen,
   isMac,
   showAdd,
-  showDeleteConfirm,
   ref(false),
   tab,
   openBookmarkLink,
@@ -536,6 +609,123 @@ const getHintKey = (id: string) => hintKeyById.value[id]
 const activeGroup = computed(() => store.groups.find(g => g.id === store.activeGroupId))
 const activeSubGroups = computed(() => activeGroup.value?.children ?? [])
 const shouldShowSubs = computed(() => activeSubGroups.value.length > 1)
+
+// Bookmark sections for outline view
+const bookmarkSections = computed(() => {
+  const sections: Array<{
+    groupId: string
+    groupName: string
+    subGroupId: string
+    subGroupName: string
+    bookmarks: Bookmark[]
+    anchorId: string
+  }> = []
+
+  // When trash is active, show trash sections
+  const targetGroups = isTrashActive.value
+    ? store.groups.filter(g => g.id === TRASH_GROUP_ID)
+    : store.groups.filter(g => g.id !== TRASH_GROUP_ID)
+
+  targetGroups.forEach(group => {
+    group.children.forEach(sub => {
+      const subBookmarks = sub.bookmarkIds
+        .map(id => store.bookmarks.find(b => b.id === id))
+        .filter((b): b is Bookmark => !!b && !b.isDeleted)
+
+      if (subBookmarks.length > 0) {
+        sections.push({
+          groupId: group.id,
+          groupName: group.name,
+          subGroupId: sub.id,
+          subGroupName: sub.name,
+          bookmarks: subBookmarks,
+          anchorId: `section-${group.id}-${sub.id}`
+        })
+      }
+    })
+  })
+
+  return sections
+})
+
+// Scroll position memory
+const SCROLL_POS_KEY = 'goose-marks:scroll-position'
+const contentScrollRef = ref<HTMLElement | null>(null)
+let scrollSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+const saveScrollPosition = () => {
+  if (!contentScrollRef.value) return
+  const pos = contentScrollRef.value.scrollTop
+  try {
+    localStorage.setItem(SCROLL_POS_KEY, String(pos))
+  } catch {}
+}
+
+const debouncedSaveScroll = () => {
+  if (scrollSaveTimer) clearTimeout(scrollSaveTimer)
+  scrollSaveTimer = setTimeout(saveScrollPosition, 200)
+}
+
+const restoreScrollPosition = () => {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (!contentScrollRef.value) return
+      try {
+        const saved = localStorage.getItem(SCROLL_POS_KEY)
+        if (saved) {
+          contentScrollRef.value.scrollTop = Number(saved)
+        }
+      } catch {}
+    })
+  })
+}
+
+// Active section tracking via IntersectionObserver
+const activeAnchorId = ref('')
+let sectionObserver: IntersectionObserver | null = null
+
+const setupSectionObserver = () => {
+  if (sectionObserver) {
+    sectionObserver.disconnect()
+    sectionObserver = null
+  }
+  if (!contentScrollRef.value) return
+
+  sectionObserver = new IntersectionObserver(
+    (entries) => {
+      // Find the first visible section
+      const visible = entries
+        .filter(e => e.isIntersecting)
+        .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+
+      if (visible.length > 0) {
+        // Use full sub-group anchor id for precise highlighting
+        activeAnchorId.value = visible[0].target.id
+      }
+    },
+    {
+      root: contentScrollRef.value,
+      threshold: 0,
+      rootMargin: '-10% 0px -80% 0px'
+    }
+  )
+
+  // Observe all section headers
+  const headers = contentScrollRef.value.querySelectorAll('[id^="section-"]')
+  headers.forEach(h => sectionObserver?.observe(h))
+}
+
+const scrollToSection = (anchorId: string) => {
+  if (!contentScrollRef.value) return
+  // anchorId is full sub-group anchor like "section-g-nav-sg-nav-common"
+  const el = contentScrollRef.value.querySelector(`[id="${anchorId}"]`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+// Skeleton loading state
+const isLoading = ref(true)
 
 const showStarryBackground = computed(() =>
   isDark.value && settingsStore.easterEggEnabled && !settingsStore.useSolidBackground
@@ -613,21 +803,42 @@ watch(() => tab.value, (nextTab, prevTab) => {
   onMainViewSwitch()
   updatePageTitle()
 
+  // 切换界面时清空搜索框（搜索界面除外）
+  if (nextTab !== 'bookmarks' && prevTab === 'bookmarks' && !searchViewOpen.value) {
+    store.setSearch('')
+    syncDefaultSearchInputValue('')
+  }
+
   if (nextTab === 'bookmarks' && prevTab !== 'bookmarks' && !searchViewOpen.value) {
     focusMainSearchInput(true)
   }
 })
 
 watch([() => store.activeGroupId, () => store.activeSubGroupId], () => {
-  selectedIndex.value = -1
+  selectedIndex.value = visibleBookmarks.value.length > 0 ? 0 : -1
   hideCmdHints()
   updatePageTitle()
+})
+
+// 切换视图模式时重置选中索引
+watch(() => viewMode.value, () => {
+  selectedIndex.value = visibleBookmarks.value.length > 0 ? 0 : -1
 })
 
 
 // 书签点击逻辑：左键打开，右键复制
 const handleBookmarkClick = (bookmark: Bookmark) => {
   openBookmarkLink(bookmark)
+}
+
+const handleBookmarkSelect = (index: number) => {
+  const bookmark = visibleBookmarks.value[index]
+  if (!bookmark) return
+  if (previewPanelCollapsed.value) {
+    openBookmarkLink(bookmark)
+    return
+  }
+  selectedIndex.value = index
 }
 
 const handleBookmarkRightClick = (e: MouseEvent, bookmark: Bookmark) => {
@@ -640,20 +851,6 @@ const handleContextMenuWrapper = (e: MouseEvent, bookmark: Bookmark) => {
   e.preventDefault()
   e.stopPropagation() // 阻止冒泡，避免触发 document 的 click/contextmenu 导致菜单立即关闭
   handleContextMenu(e, bookmark)
-}
-
-// 书签拖拽到子分组的处理
-const handleBookmarkDrop = (bookmarkId: string, toSubId: string) => {
-  const moved = store.moveBookmarkToSubGroup(
-    bookmarkId,
-    store.activeGroupId,
-    store.activeSubGroupId,
-    store.activeGroupId,
-    toSubId
-  )
-  if (moved) {
-    showToast({ title: '书签已移动', variant: 'success', duration: 1500 })
-  }
 }
 
 const handleContextMenuAction = (action: string) => {
@@ -1323,6 +1520,21 @@ const handleUToolsPluginOutEvent = () => {
 
 // Lifecycle
 onMounted(async () => {
+  // 默认选中第一项，使预览面板立即显示
+  if (activeBookmarks.value.length > 0) {
+    selectedIndex.value = 0
+  }
+
+  // 模拟骨架屏加载
+  setTimeout(() => {
+    isLoading.value = false
+    // 加载完成后恢复滚动位置
+    nextTick(() => {
+      restoreScrollPosition()
+      setupSectionObserver()
+    })
+  }, 400)
+
   hydrateMirrorDirectoryForDevice()
   ensureLocalModeIntroNotice()
   refreshLocalModePathNotice(true)
@@ -1363,6 +1575,13 @@ watch(() => store.bookmarks, () => {
   syncUToolsFeatures()
 }, { deep: true })
 
+// 当书签数据变化时，重新设置 section observer
+watch(() => bookmarkSections.value, () => {
+  nextTick(() => {
+    setupSectionObserver()
+  })
+}, { deep: true })
+
 watch(() => settingsStore.aiSettings, () => {
   if (!window.utools || isSyncPaused.value) return
   syncUToolsFeatures()
@@ -1370,6 +1589,14 @@ watch(() => settingsStore.aiSettings, () => {
 
 // 组件卸载时清理定时器
 onUnmounted(() => {
+  if (viewModePersistTimer) {
+    clearTimeout(viewModePersistTimer)
+    viewModePersistTimer = null
+  }
+  if (heightDebounceTimer) {
+    clearTimeout(heightDebounceTimer)
+    heightDebounceTimer = null
+  }
   if (window.utools) {
     window.removeEventListener('storage-sync', handleStorageSync as EventListener)
     window.removeEventListener(UTOOLS_SEARCH_INPUT_EVENT, handleUToolsSearchInputEvent as EventListener)
@@ -1388,6 +1615,46 @@ onUnmounted(() => {
 const highlightedBookmarkId = ref<string | null>(null)
 
 // 定位逻辑
+// Preview panel resize
+let resizeStartX = 0
+let resizeStartWidth = 0
+// 拖动时的实时宽度（不写入 store，避免高频 persist 导致卡死）
+const previewPanelWidthLive = ref(settingsStore.previewPanelWidth)
+watch(() => settingsStore.previewPanelWidth, (w) => {
+  previewPanelWidthLive.value = w
+})
+
+const startResizePreview = (e: MouseEvent) => {
+  if (previewPanelCollapsed.value) return
+  e.preventDefault()
+  resizeStartX = e.clientX
+  resizeStartWidth = previewPanelWidthLive.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMove = (ev: MouseEvent) => {
+    const delta = resizeStartX - ev.clientX
+    previewPanelWidthLive.value = Math.min(400, Math.max(200, Math.round(resizeStartWidth + delta)))
+  }
+  const onUp = () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    settingsStore.setPreviewPanelWidth(previewPanelWidthLive.value)
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
+
+const updateBookmarkDesc = (bookmark: Bookmark, desc: string) => {
+  const b = store.bookmarks.find(b => b.id === bookmark.id)
+  if (b) {
+    b.desc = desc
+    b.updatedAt = Date.now()
+  }
+}
+
 const handleLocate = async (bookmark: Bookmark) => {
   if (bookmark.locations && bookmark.locations.length > 0) {
     const loc = bookmark.locations[0]
@@ -1425,38 +1692,87 @@ const handleLocate = async (bookmark: Bookmark) => {
 <template>
   <TooltipProvider :delay-duration="100">
   <StarryBackground v-if="showStarryBackground" />
-  <TemplateSearch 
-    v-if="activeTemplateBookmark" 
+  <TemplateSearch
+    v-if="activeTemplateBookmark"
     class="relative z-10"
-    :bookmark="activeTemplateBookmark" 
+    :bookmark="activeTemplateBookmark"
     :query="templateQuery"
     @update:query="templateQuery = $event"
     @submit="executeTemplateSearch"
   />
-  <div 
-    v-else 
-    class="app-container relative z-10 min-h-screen h-screen flex flex-col overflow-hidden bg-background text-foreground transition-all duration-500" 
+  <BookmarkFormDialog
+    v-else-if="showAdd"
+    @close="showAdd = false"
+  />
+  <div
+    v-else
+    class="app-container relative z-10 min-h-screen h-screen flex flex-col overflow-hidden bg-background text-foreground transition-all duration-500"
     @contextmenu.prevent
   >
-    <!-- Top Navigation for Groups -->
+    <!-- Top Bar: Search + View Toggle + Actions -->
     <header
-      class="sticky top-0 z-30 flex flex-col gap-2 p-6 transition-colors duration-300"
+      class="shrink-0 z-30 flex items-center gap-3 px-4 py-3 border-b border-border/30"
     >
-       <GroupTabs
-         :visible-groups="visibleGroups"
-         :active-group-id="store.activeGroupId"
-         :tab="tab"
-         :is-u-tools="isUTools"
-         :is-trash-active="isTrashActive"
-         :group-layout="settingsStore.groupTabsLayout"
-         :searching="searchViewOpen"
-         @update:tab="tab = $event"
-         @select-group="handleSelectGroup"
-         @select-trash="store.selectGroup(TRASH_GROUP_ID); tab = 'bookmarks'"
-         @toggle-dark="toggleDark()"
-         @open-search="openSearchOverlay()"
-         @edit-group="openGroupEditor"
-       />
+      <!-- Search Input (仅在非 uTools 环境显示) -->
+      <div v-if="!isUTools" class="flex-1 flex items-center gap-2">
+        <div class="relative flex-1">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40">
+            <span class="i-ph-magnifying-glass-thin text-base" />
+          </span>
+          <input
+            v-model="store.search"
+            type="text"
+            placeholder="搜索书签..."
+            class="w-full h-9 pl-9 pr-3 text-sm bg-muted/40 rounded-lg border-0 outline-none focus:ring-1 focus:ring-primary/30 placeholder:text-muted-foreground/40 transition-all"
+            @keydown="handleLocalSearchKey"
+          />
+        </div>
+      </div>
+
+      <!-- View Toggle -->
+      <div class="flex items-center gap-0.5 bg-muted/30 rounded-lg p-0.5">
+        <button
+          class="h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors"
+          :class="viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          @click="viewMode = 'list'; tab = 'bookmarks'"
+        >
+          <span class="i-ph-list-thin text-base" />
+        </button>
+        <button
+          class="h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors"
+          :class="viewMode === 'grid' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          @click="viewMode = 'grid'; tab = 'bookmarks'"
+        >
+          <span class="i-ph-squares-four-thin text-base" />
+        </button>
+      </div>
+
+      <!-- Add Button -->
+      <button
+        class="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+        @click="openAdd()"
+      >
+        <span class="i-ph-plus-thin text-lg" />
+      </button>
+
+      <div class="h-5 w-px bg-border/50" />
+
+      <!-- Settings -->
+      <button
+        class="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+        :class="{ 'bg-muted text-foreground': tab === 'settings' }"
+        @click="tab = tab === 'settings' ? 'bookmarks' : 'settings'"
+      >
+        <span class="i-ph-gear-thin text-lg" />
+      </button>
+
+      <!-- Theme Toggle -->
+      <button
+        class="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+        @click="toggleDark()"
+      >
+        <span class="i-ph-moon-stars-thin text-lg" />
+      </button>
     </header>
 
     <!-- Search Overlay -->
@@ -1475,59 +1791,145 @@ const handleLocate = async (bookmark: Bookmark) => {
       :grid-columns="settingsStore.gridColumns"
       :set-grid-ref="setBookmarkGridRef"
       @update:search-value="searchValue = $event"
+      @update:selected-index="selectedIndex = $event"
       @close="closeSearchView"
       @refocus="focusMainSearchInput(true)"
       @keydown="handleLocalSearchKey"
       @edit="(b, el) => openEdit(b, el)"
       @open="openBookmarkLink"
-      @contextmenu="handleBookmarkRightClick"
+      @copy-url="copyBookmarkUrl"
+      @remove="handleRemove"
+      @contextmenu="handleContextMenuWrapper"
       @reorder="handleReorder"
       @locate="handleLocate"
     />
 
-    <!-- Main Content with Sub-groups sidebar -->
-    <main class="flex-1 min-h-0 flex px-6 pb-6 gap-4 overflow-y-auto no-scrollbar">
+    <!-- Main Content -->
+    <main v-if="tab === 'bookmarks'" class="flex-1 min-h-0 flex overflow-hidden select-none">
+      <!-- Left Sidebar: list=group outline, grid=sub-group nav -->
       <SubGroupSidebar
-        :show="tab === 'bookmarks' && shouldShowSubs"
-        :active-sub-groups="activeSubGroups"
-        :active-sub-group-id="store.activeSubGroupId"
-        :active-group-id="store.activeGroupId"
-        @select="store.selectSubGroup"
-        @drop="handleBookmarkDrop"
+        v-if="viewMode === 'list'"
+        :active-anchor-id="activeAnchorId"
+        @scroll-to="scrollToSection"
         @edit-group="openGroupEditor"
+        @focus-search="focusMainSearchInput(true)"
       />
+      <SubGroupNav v-else-if="viewMode === 'grid' && !isTrashActive" />
 
-      <BookmarksGrid
-        v-if="tab === 'bookmarks'"
-        :bookmarks="activeBookmarks"
-        :selected-index="selectedIndex"
-        :is-trash-active="isTrashActive"
-        :columns="settingsStore.gridColumns"
-        :set-grid-ref="setBookmarkGridRef"
-        :show-command-hints="showCmdHints"
-        :hint-key-by-id="hintKeyById"
-        :highlighted-id="highlightedBookmarkId"
-        @remove="handleRemove"
-        @edit="openEdit"
-        @open="openBookmarkLink"
-        @contextmenu="handleContextMenuWrapper"
-        @reorder="handleReorder"
-        @add="(el) => openAdd(el)"
-        @emptyTrash="emptyTrash"
-        @locate="handleLocate"
-      >
-        <template #header>
+      <!-- Center: Bookmark List/Grid + Bottom Status -->
+      <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <!-- Content Area -->
+        <div
+          ref="contentScrollRef"
+          class="flex-1 min-h-0 overflow-y-auto px-4 py-2"
+          @scroll="debouncedSaveScroll"
+        >
           <OnboardingBanner
-            v-if="!isTrashActive"
+            v-if="!isTrashActive && !store.search"
             @import="handleOnboardingImport"
             @export="exportData"
           />
-        </template>
-      </BookmarksGrid>
 
-      <section v-else class="flex-1 min-h-0">
-        <SettingsLayout v-model:active-tab="settingsActiveTab" />
-      </section>
+          <KeepAlive>
+            <BookmarksList
+              v-if="viewMode === 'list'"
+              :bookmarks="activeBookmarks"
+              :selected-index="selectedIndex"
+              :is-trash-active="isTrashActive"
+              :show-command-hints="showCmdHints"
+              :hint-key-by-id="hintKeyById"
+              :highlighted-id="highlightedBookmarkId"
+              :sections="searchViewOpen || isTrashActive ? undefined : bookmarkSections"
+              :loading="isLoading"
+              :clickable-icon="!previewPanelCollapsed"
+              @select="handleBookmarkSelect"
+              @remove="handleRemove"
+              @edit="openEdit"
+              @open="openBookmarkLink"
+              @icon-click="openBookmarkLink"
+              @contextmenu="handleContextMenuWrapper"
+              @reorder="handleReorder"
+              @locate="handleLocate"
+            />
+
+            <BookmarksGrid
+              v-else
+              :bookmarks="visibleBookmarks"
+              :selected-index="selectedIndex"
+              :is-trash-active="isTrashActive"
+              :columns="settingsStore.gridColumns"
+              :set-grid-ref="setBookmarkGridRef"
+              :show-command-hints="showCmdHints"
+              :hint-key-by-id="hintKeyById"
+              :highlighted-id="highlightedBookmarkId"
+              @remove="handleRemove"
+              @edit="openEdit"
+              @open="openBookmarkLink"
+              @contextmenu="handleContextMenuWrapper"
+              @reorder="handleReorder"
+              @add="(el) => openAdd(el)"
+              @emptyTrash="emptyTrash"
+              @locate="handleLocate"
+            />
+          </KeepAlive>
+        </div>
+
+        <!-- Bottom Status Bar -->
+        <div class="shrink-0 flex items-center justify-between px-4 py-2 border-t border-border/20 text-[11px] text-muted-foreground/50 select-none"
+        >
+          <template v-if="isLoading">
+            <div class="h-3 w-16 bg-muted/50 rounded animate-pulse" />
+            <div class="h-3 w-10 bg-muted/50 rounded animate-pulse" />
+          </template>
+          <template v-else>
+            <span v-if="statusBarInfo.subName"
+              >{{ statusBarInfo.groupName }} / {{ statusBarInfo.subName }}</span
+            >
+            <span v-else>{{ statusBarInfo.groupName }}</span>
+            <span class="tabular-nums"
+              >{{ statusBarInfo.current }} / {{ statusBarInfo.total }}</span
+            >
+          </template>
+        </div>
+      </div>
+
+      <!-- Right: Preview Panel (仅列表模式显示) -->
+      <template v-if="!isTrashActive && viewMode === 'list'">
+        <!-- Resize handle -->
+        <div
+          v-if="!previewPanelCollapsed"
+          class="w-1 shrink-0 cursor-col-resize hover:bg-primary/20 transition-colors"
+          title="拖动调整宽度"
+          @mousedown="startResizePreview"
+        />
+        <BookmarkPreview
+          v-if="!previewPanelCollapsed"
+          :bookmark="selectedBookmark"
+          :is-trash-active="isTrashActive"
+          :width="previewPanelWidthLive"
+          @open="openBookmarkLink"
+          @edit="openEdit"
+          @remove="handleRemove"
+          @copy-url="copyBookmarkUrl"
+          @locate="handleLocate"
+          @toggle-collapse="previewPanelCollapsed = true"
+          @update-desc="updateBookmarkDesc"
+        />
+        <!-- Collapsed preview toggle -->
+        <div
+          v-else
+          class="w-8 shrink-0 flex flex-col items-center border-l border-border/50 bg-card/30 py-3 cursor-pointer hover:bg-muted/30 transition-colors"
+          title="展开详情"
+          @click="previewPanelCollapsed = false"
+        >
+          <span class="i-ph-caret-left-thin text-muted-foreground text-lg" />
+        </div>
+      </template>
+    </main>
+
+    <!-- Settings -->
+    <main v-else class="flex-1 min-h-0 overflow-hidden">
+      <SettingsLayout />
     </main>
     
 
@@ -1549,18 +1951,6 @@ const handleLocate = async (bookmark: Bookmark) => {
       @save="quickSaveBookmark"
     />
 
-    <!-- Bookmark Form Dialog -->
-    <BookmarkFormDialog
-      v-model:open="showAdd"
-      :is-u-tools="isUTools"
-    />
-
-    <!-- Delete Confirmation Dialog -->
-    <DeleteConfirmDialog
-      v-model:open="showDeleteConfirm"
-      :is-trash-active="isTrashActive"
-      @confirm="confirmDelete"
-    />
 
 
   </div>
