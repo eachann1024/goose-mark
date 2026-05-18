@@ -50,7 +50,7 @@ const showSkeleton = computed(() => !hasError.value && !hasLoaded.value && !!pro
       @load="handleLoad"
     />
     <div v-else-if="props.fallback !== 'none'" class="flex h-full w-full items-center justify-center text-muted-foreground">
-      <span class="i-mdi-image-off text-xl" />
+      <span class="i-ph-image-broken-thin text-xl" />
     </div>
   </div>
 </template>

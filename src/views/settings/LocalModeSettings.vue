@@ -156,21 +156,21 @@ const resetMirrorDirectory = () => {
         <div class="flex items-start justify-between gap-3">
           <div class="space-y-1">
             <div class="flex items-center gap-2 text-foreground">
-              <span class="i-mdi-star-four-points-circle text-lg" />
+              <span class="i-ph-star-thin text-lg" />
               <span class="text-sm font-semibold">浏览器拓展已上线（含说明视频）</span>
             </div>
             <div class="text-xs text-muted-foreground">
               打开下载与说明
             </div>
           </div>
-          <span class="i-mdi-open-in-new text-lg text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+          <span class="i-ph-arrow-square-out-thin text-lg text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
         </div>
       </button>
 
-      <div class="flex items-center justify-between">
+      <div class="settings-row">
         <div class="space-y-0.5">
           <div class="text-sm font-medium">启用本地快照同步</div>
-          <div class="text-xs text-muted-foreground">共享同一个 `snapshot.json`</div>
+          <div class="text-xs text-muted-foreground">共享同一个 snapshot.json</div>
         </div>
         <Switch
           :model-value="settingsStore.preferLocalSnapshotOnStartup"

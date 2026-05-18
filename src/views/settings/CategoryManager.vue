@@ -311,7 +311,7 @@ const closeUndoToast = () => {
         <div class="pb-2">
           <div v-if="!isAddingGroup">
             <Button variant="outline" class="w-full h-9 border-dashed border-input hover:border-foreground/20 hover:text-foreground transition-colors" :disabled="editingLocked" @click="startAddGroup">
-              <span class="i-mdi-plus mr-2" /> 新建分组
+              <span class="i-ph-plus-thin mr-2" /> 新建分组
             </Button>
           </div>
           <div v-else class="flex gap-2 animate-in fade-in slide-in-from-top-2">
@@ -324,10 +324,10 @@ const closeUndoToast = () => {
               autofocus
             />
             <Button size="icon" class="h-9 w-9 shrink-0" @click="confirmAddGroup">
-              <span class="i-mdi-check text-lg" />
+              <span class="i-ph-check-thin text-lg" />
             </Button>
             <Button size="icon" variant="ghost" class="h-9 w-9 shrink-0" @click="isAddingGroup = false">
-              <span class="i-mdi-close text-lg" />
+              <span class="i-ph-x-thin text-lg" />
             </Button>
           </div>
         </div>
@@ -338,7 +338,7 @@ const closeUndoToast = () => {
           class="rounded-lg border-2 border-dashed border-input bg-muted/35 p-4 text-center text-sm text-muted-foreground transition-all"
           data-group-id="promote-zone"
         >
-          <span class="i-mdi-arrow-up-bold mr-2" />把子分组拖到这里，可升级为主分组
+          <span class="i-ph-arrow-up-thin mr-2" />把子分组拖到这里，可升级为主分组
         </div>
         
         <!-- Group List -->
@@ -359,11 +359,11 @@ const closeUndoToast = () => {
             >
               <!-- Group Header -->
               <div class="flex items-center gap-2">
-                <span 
-                  class="i-mdi-drag-vertical text-muted-foreground/50 drag-handle shrink-0" 
+                <span
+                  class="i-ph-dots-six-vertical-thin text-muted-foreground/50 drag-handle shrink-0"
                   :class="editingLocked ? 'cursor-not-allowed opacity-30' : 'cursor-grab active:cursor-grabbing'"
                 />
-                <span class="i-mdi-folder-outline text-xl text-foreground shrink-0" />
+                <span class="i-ph-folder-thin text-xl text-foreground shrink-0" />
                 
                 <div v-if="editingGroupId === group.id && !editingSubId" class="flex-1 flex gap-2 items-center">
                   <Input 
@@ -373,10 +373,10 @@ const closeUndoToast = () => {
                     autofocus
                   />
                   <Button size="icon" class="h-9 w-9 shrink-0" @click="saveEdit">
-                    <span class="i-mdi-check text-lg" />
+                    <span class="i-ph-check-thin text-lg" />
                   </Button>
                   <Button size="icon" variant="ghost" class="h-9 w-9 shrink-0" @click="cancelEdit">
-                    <span class="i-mdi-close text-lg" />
+                    <span class="i-ph-x-thin text-lg" />
                   </Button>
                 </div>
                 <span v-else class="flex-1 text-sm font-bold text-foreground">{{ group.name }}</span>
@@ -394,7 +394,7 @@ const closeUndoToast = () => {
                     :disabled="editingLocked"
                     @click="startEditGroup(group.id, group.name)"
                   >
-                    <span class="i-mdi-rename-box text-base" />
+                    <span class="i-ph-textbox-thin text-base" />
                   </Button>
                   <Button 
                     variant="ghost" 
@@ -404,7 +404,7 @@ const closeUndoToast = () => {
                     :disabled="editingLocked"
                     @click="startAddSub(group.id)"
                   >
-                    <span class="i-mdi-plus text-base" />
+                    <span class="i-ph-plus-thin text-base" />
                   </Button>
                   <Button 
                     variant="ghost" 
@@ -414,7 +414,7 @@ const closeUndoToast = () => {
                     :disabled="editingLocked"
                     @click="openDeleteConfirm('group', group.id, group.name)"
                   >
-                    <span class="i-mdi-trash-can-outline text-base" />
+                    <span class="i-ph-trash-thin text-base" />
                   </Button>
                 </div>
               </div>
@@ -443,13 +443,13 @@ const closeUndoToast = () => {
                       'border border-dashed border-input bg-muted/15': sub.shareId || sub.sourceShareId
                     }"
                   >
-                    <span 
-                      v-if="!sub.shareId && !sub.sourceShareId" 
-                      class="i-mdi-drag-vertical text-muted-foreground/30 shrink-0" 
+                    <span
+                      v-if="!sub.shareId && !sub.sourceShareId"
+                      class="i-ph-dots-six-vertical-thin text-muted-foreground/30 shrink-0"
                       :class="editingLocked ? 'cursor-not-allowed opacity-30' : 'cursor-grab active:cursor-grabbing'"
                     />
                     <span v-else class="w-4 shrink-0" />
-                    <span class="i-mdi-subdirectory-arrow-right text-muted-foreground/30 shrink-0" />
+                    <span class="i-ph-arrow-bend-down-right-thin text-muted-foreground/30 shrink-0" />
                     
                     <div v-if="editingSubId === sub.id" class="flex-1 flex gap-2 items-center">
                       <Input 
@@ -459,16 +459,16 @@ const closeUndoToast = () => {
                         autofocus
                       />
                       <Button size="icon" class="h-9 w-9 shrink-0" @click="saveEdit">
-                        <span class="i-mdi-check text-lg" />
+                        <span class="i-ph-check-thin text-lg" />
                       </Button>
                       <Button size="icon" variant="ghost" class="h-9 w-9 shrink-0" @click="cancelEdit">
-                        <span class="i-mdi-close text-lg" />
+                        <span class="i-ph-x-thin text-lg" />
                       </Button>
                     </div>
                     <span v-else class="flex-1 text-muted-foreground flex items-center gap-1.5">
                       {{ sub.name }}
-                      <span v-if="sub.shareId" class="i-mdi-share-variant text-xs text-muted-foreground" title="我分享的" />
-                      <span v-else-if="sub.sourceShareId" class="i-mdi-cloud-download text-xs text-muted-foreground" title="我导入的" />
+                      <span v-if="sub.shareId" class="i-ph-share-network-thin text-xs text-muted-foreground" title="我分享的" />
+                      <span v-else-if="sub.sourceShareId" class="i-ph-cloud-arrow-down-thin text-xs text-muted-foreground" title="我导入的" />
                     </span>
                     
                     <div class="flex items-center gap-1 opacity-0 group-hover/sub:opacity-100 transition-opacity">
@@ -481,7 +481,7 @@ const closeUndoToast = () => {
                         :title="sub.sourceShareId ? '导入的分组暂不支持重命名' : '重命名'"
                         @click="startEditSub(group.id, sub.id, sub.name)"
                       >
-                        <span class="i-mdi-pencil text-xs" />
+                        <span class="i-ph-pencil-simple-thin text-xs" />
                       </Button>
                       <Button 
                         variant="ghost"
@@ -491,7 +491,7 @@ const closeUndoToast = () => {
                         :disabled="editingLocked"
                         @click="openDeleteConfirm('sub', group.id, sub.name, sub.id)"
                       >
-                        <span class="i-mdi-close text-xs" />
+                        <span class="i-ph-x-thin text-xs" />
                       </Button>
                     </div>
                   </div>
@@ -500,7 +500,7 @@ const closeUndoToast = () => {
 
               <!-- Add Sub Input -->
               <div v-if="addingSubGroupId === group.id" class="flex items-center gap-2 pl-8 mt-1 animate-in fade-in slide-in-from-left-2">
-                <span class="i-mdi-subdirectory-arrow-right text-muted-foreground shrink-0" />
+                <span class="i-ph-arrow-bend-down-right-thin text-muted-foreground shrink-0" />
                 <Input 
                   ref="addSubInput"
                   v-model="newSubName" 
@@ -511,10 +511,10 @@ const closeUndoToast = () => {
                   autofocus
                 />
                 <Button size="icon" class="h-9 w-9 shrink-0" @click="confirmAddSub" @mousedown.prevent>
-                  <span class="i-mdi-check text-lg" />
+                  <span class="i-ph-check-thin text-lg" />
                 </Button>
                 <Button size="icon" variant="ghost" class="h-9 w-9 shrink-0" @click="addingSubGroupId = ''" @mousedown.prevent>
-                  <span class="i-mdi-close text-lg" />
+                  <span class="i-ph-x-thin text-lg" />
                 </Button>
               </div>
             </div>
@@ -554,7 +554,7 @@ const closeUndoToast = () => {
           v-if="undoToast.visible"
           class="fixed bottom-4 right-4 z-[9999] flex items-center gap-3 px-4 py-3 rounded-lg border border-border bg-card shadow-lg backdrop-blur-sm"
         >
-          <span class="i-mdi-delete-outline text-lg text-destructive" />
+          <span class="i-ph-trash-thin text-lg text-destructive" />
           <span class="text-sm text-foreground">{{ undoToast.message }}</span>
           <Button size="sm" variant="outline" class="h-7 px-3 text-xs ml-2" @click="handleUndo">
             撤回
@@ -566,7 +566,7 @@ const closeUndoToast = () => {
             @click="closeUndoToast"
             title="关闭"
           >
-            <span class="i-mdi-close text-sm text-muted-foreground" />
+            <span class="i-ph-x-thin text-sm text-muted-foreground" />
           </Button>
         </div>
       </Transition>

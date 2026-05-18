@@ -12,7 +12,7 @@ const hintText = computed(() => {
 
 <template>
   <div class="flex items-center gap-2 justify-center">
-    <span class="i-mdi-information-outline" />
+    <span class="i-ph-info-thin" />
     <span>{{ hintText }}</span>
   </div>
 </template>

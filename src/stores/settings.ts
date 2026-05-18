@@ -39,7 +39,12 @@ export const useSettingsStore = defineStore('settings', {
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     ...createAIState(),
-    windowHeight: 560,
+    windowHeight: 800,
+    homeViewMode: 'list' as 'list' | 'grid',
+    searchViewMode: 'list' as 'list' | 'grid',
+    previewPanelWidth: 256,
+    previewPanelCollapsed: false,
+    previewPanelDescEditing: false,
     // 首次用户引导是否已关闭
     onboardingDismissed: false,
     // 彩蛋：深色模式使用星空背景图（默认开启）
@@ -50,7 +55,6 @@ export const useSettingsStore = defineStore('settings', {
     lightBackgroundStyle: 'utools' as 'white' | 'utools',
     autoMatchSearchIcons: true,
     skipFailedIconMatch: true,
-    agingCardEnabled: false,
     iconMatchLogs: [] as Array<{
       time: number
       scope: 'search' | 'missing'
@@ -154,7 +158,7 @@ export const useSettingsStore = defineStore('settings', {
     },
     setWindowHeight(value: number) {
       const num = Number.isFinite(value) ? value : 0
-      this.windowHeight = Math.min(900, Math.max(460, Math.round(num)))
+      this.windowHeight = Math.min(1000, Math.max(650, Math.round(num)))
       trackEvent('settings_change', { settingKey: 'windowHeight', value: this.windowHeight })
     },
     dismissOnboarding() {
@@ -180,9 +184,20 @@ export const useSettingsStore = defineStore('settings', {
       this.skipFailedIconMatch = !!value
       trackEvent('settings_change', { settingKey: 'skipFailedIconMatch', value: this.skipFailedIconMatch })
     },
-    setAgingCardEnabled(value: boolean) {
-      this.agingCardEnabled = !!value
-      trackEvent('settings_change', { settingKey: 'agingCardEnabled', value: this.agingCardEnabled })
+    setHomeViewMode(mode: 'list' | 'grid') {
+      this.homeViewMode = mode
+      trackEvent('settings_change', { settingKey: 'homeViewMode', value: mode })
+    },
+    setSearchViewMode(mode: 'list' | 'grid') {
+      this.searchViewMode = mode
+      trackEvent('settings_change', { settingKey: 'searchViewMode', value: mode })
+    },
+    setPreviewPanelWidth(width: number) {
+      this.previewPanelWidth = Math.min(400, Math.max(200, Math.round(width)))
+    },
+    setPreviewPanelCollapsed(value: boolean) {
+      this.previewPanelCollapsed = !!value
+      trackEvent('settings_change', { settingKey: 'previewPanelCollapsed', value: this.previewPanelCollapsed })
     },
     addIconMatchLog(payload: {
       time: number

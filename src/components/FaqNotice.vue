@@ -9,7 +9,7 @@ const props = defineProps<{
   class?: string
 }>()
 
-const iconClass = computed(() => props.icon ?? 'i-mdi-information-outline')
+const iconClass = computed(() => props.icon ?? 'i-ph-info-thin')
 </script>
 
 <template>

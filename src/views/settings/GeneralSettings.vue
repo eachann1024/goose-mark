@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { useThrottleFn } from '@vueuse/core'
+
 const settingsStore = useSettingsStore()
 
 const { isUTools, isDark } = useAppState()
@@ -11,22 +13,82 @@ const easterEggEnabled = computed({
   }
 })
 
-const gridColumnsOptions = [2, 3, 4, 5]
+const viewModeOptions: Array<{ value: 'list' | 'grid'; label: string }> = [
+  { value: 'list', label: '列表' },
+  { value: 'grid', label: '卡片' }
+]
+
 const groupLayoutOptions: Array<{ value: 'wrap' | 'scroll'; label: string }> = [
   { value: 'wrap', label: '换行' },
   { value: 'scroll', label: '横向滚动' }
 ]
 
-const handleGridColumnsChange = (val: string | number) => {
-  const num = typeof val === 'number' ? val : Number(val)
-  if (Number.isFinite(num)) {
-    settingsStore.setGridColumns(num)
-  }
+const windowHeightDraft = ref([settingsStore.windowHeight])
+
+watch(() => settingsStore.windowHeight, (value) => {
+  windowHeightDraft.value = [value]
+})
+
+const handleWindowHeightPreview = useThrottleFn((value: number[] | undefined) => {
+  if (!value?.length) return
+  windowHeightDraft.value = value
+}, 50)
+
+const commitWindowHeight = (value: number[]) => {
+  if (!value.length) return
+  settingsStore.setWindowHeight(value[0])
 }
 </script>
 
 <template>
   <div class="flex flex-col gap-3">
+    <!-- 视图 -->
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">视图</h3>
+        <p class="settings-block__desc">控制主页和搜索结果默认使用列表还是卡片模式</p>
+      </div>
+      <div class="space-y-4">
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">主页默认展示</div>
+            <div class="text-xs text-muted-foreground">打开书签页时，默认进入的内容布局</div>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <Button
+              v-for="opt in viewModeOptions"
+              :key="`home-${opt.value}`"
+              size="sm"
+              :variant="settingsStore.homeViewMode === opt.value ? 'default' : 'ghost'"
+              class="h-8 min-w-16 px-3"
+              @click="settingsStore.setHomeViewMode(opt.value)"
+            >
+              {{ opt.label }}
+            </Button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">搜索结果默认展示</div>
+            <div class="text-xs text-muted-foreground">进入搜索结果浮层时，默认展示方式会被记住</div>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <Button
+              v-for="opt in viewModeOptions"
+              :key="`search-${opt.value}`"
+              size="sm"
+              :variant="settingsStore.searchViewMode === opt.value ? 'default' : 'ghost'"
+              class="h-8 min-w-16 px-3"
+              @click="settingsStore.setSearchViewMode(opt.value)"
+            >
+              {{ opt.label }}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+
 
     <!-- 外观 -->
     <div v-if="isDark" class="settings-block">
@@ -57,7 +119,7 @@ const handleGridColumnsChange = (val: string | number) => {
           @click="settingsStore.setUseSolidBackground(true)"
         >
           <div class="background-preview background-preview--dark shrink-0" aria-hidden="true">
-            <span class="i-mdi-moon-waning-crescent text-lg text-white/85" />
+            <span class="i-ph-moon-thin text-lg text-white/85" />
           </div>
           <div class="text-left">
             <div class="text-sm font-medium">纯色背景</div>
@@ -67,40 +129,13 @@ const handleGridColumnsChange = (val: string | number) => {
       </div>
     </div>
 
-    <!-- 布局 -->
+    <!-- 导航 -->
     <div class="settings-block">
       <div class="settings-block__head">
-        <h3 class="settings-block__title">布局</h3>
-        <p class="settings-block__desc">设置主页每行显示多少张卡片（2-5）</p>
+        <h3 class="settings-block__title">导航</h3>
+        <p class="settings-block__desc">控制顶部主分组在空间不足时的展示方式</p>
       </div>
-      <div class="flex items-center gap-4 flex-wrap">
-        <div class="flex items-center gap-2 shrink-0">
-          <label class="text-sm text-muted-foreground shrink-0">每行卡片</label>
-          <Input
-            type="number"
-            min="2"
-            max="5"
-            step="1"
-            class="h-9 w-16"
-            :model-value="settingsStore.gridColumns"
-            @update:model-value="handleGridColumnsChange"
-          />
-        </div>
-        <div class="flex gap-1.5 shrink-0">
-          <Button
-            v-for="opt in gridColumnsOptions"
-            :key="opt"
-            size="sm"
-            :variant="settingsStore.gridColumns === opt ? 'default' : 'ghost'"
-            class="h-8 w-10 px-0 shrink-0"
-            @click="settingsStore.setGridColumns(opt)"
-          >
-            {{ opt }}
-          </Button>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-3 mt-3">
+      <div class="flex items-center gap-3">
         <label class="text-sm text-muted-foreground shrink-0">主分组展示</label>
         <div class="flex gap-2">
           <Button
@@ -116,19 +151,6 @@ const handleGridColumnsChange = (val: string | number) => {
         </div>
       </div>
       <p class="text-xs text-muted-foreground mt-2">默认自动换行，分组较多时可改为横向滚动。</p>
-
-      <div class="settings-row mt-4">
-        <div class="space-y-0.5">
-          <div class="text-sm font-medium">岁月卡片</div>
-          <div class="text-xs text-muted-foreground">关闭时使用普通白色卡片，开启后仅按最近打开时间改变边框颜色</div>
-        </div>
-        <Switch
-          :model-value="settingsStore.agingCardEnabled"
-          aria-label="岁月卡片"
-          @update:model-value="(checked: boolean) => settingsStore.setAgingCardEnabled(checked)"
-        />
-      </div>
-      <p class="text-xs text-muted-foreground mt-2">规则：3 天内保持默认边框；15 天内显示灰色边框；30 天内显示黄色边框；超过 30 天显示褐色边框。</p>
     </div>
 
     <!-- 窗口行为（uTools only） -->
@@ -142,18 +164,15 @@ const handleGridColumnsChange = (val: string | number) => {
           <label class="text-sm font-medium">窗口高度</label>
           <div class="flex items-center gap-3 flex-1 max-w-[220px]">
             <Slider
-              :model-value="[settingsStore.windowHeight]"
-              :min="460"
-              :max="900"
+              :model-value="windowHeightDraft"
+              :min="650"
+              :max="1000"
               :step="10"
               class="flex-1"
-              @update:model-value="(val: number[] | undefined) => {
-                if (val && val.length > 0) {
-                  settingsStore.setWindowHeight(val[0])
-                }
-              }"
+              @update:model-value="handleWindowHeightPreview"
+              @value-commit="commitWindowHeight"
             />
-            <span class="text-sm w-10 text-right tabular-nums">{{ settingsStore.windowHeight }}</span>
+            <span class="text-sm w-10 text-right tabular-nums">{{ windowHeightDraft[0] }}</span>
           </div>
         </div>
         <div class="settings-row">
@@ -207,13 +226,6 @@ const handleGridColumnsChange = (val: string | number) => {
 </template>
 
 <style scoped>
-.settings-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
 .background-preview {
   width: 2.5rem;
   height: 2.5rem;

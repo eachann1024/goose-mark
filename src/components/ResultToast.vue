@@ -30,10 +30,10 @@ const emit = defineEmits<{
 const iconClass = computed(() => {
   if (props.icon) return props.icon
   const v = props.variant ?? 'info'
-  if (v === 'success') return 'i-mdi-check-circle-outline text-primary'
-  if (v === 'warning') return 'i-mdi-alert-outline text-yellow-500'
-  if (v === 'error') return 'i-mdi-close-circle-outline text-destructive'
-  return 'i-mdi-information-outline text-muted-foreground'
+  if (v === 'success') return 'i-ph-check-circle-thin text-primary'
+  if (v === 'warning') return 'i-ph-warning-thin text-yellow-500'
+  if (v === 'error') return 'i-ph-x-circle-thin text-destructive'
+  return 'i-ph-info-thin text-muted-foreground'
 })
 
 const MAX_TITLE_LEN = 50
@@ -79,7 +79,7 @@ const originStyle = computed(() => {
           <p v-if="sanitizedDescription" class="text-xs text-muted-foreground mt-1 whitespace-pre-wrap break-words max-h-[120px] overflow-y-auto">{{ sanitizedDescription }}</p>
         </div>
         <Button variant="ghost" size="icon" class="h-7 w-7 shrink-0" title="关闭" @click="emit('close')">
-          <span class="i-mdi-close text-sm text-muted-foreground" />
+          <span class="i-ph-x-thin text-sm text-muted-foreground" />
         </Button>
       </div>
 

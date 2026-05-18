@@ -86,7 +86,7 @@ const handleGroupMouseEnter = (group: Group) => {
             :class="{ 'group-action-btn--searching': searching }"
             @click="emit('open-search')"
           >
-            <span class="i-mdi-magnify text-lg" />
+            <span class="i-ph-magnifying-glass-thin text-lg" />
             <span class="text-xs">搜索</span>
           </Button>
         </TooltipTrigger>
@@ -107,7 +107,7 @@ const handleGroupMouseEnter = (group: Group) => {
             @click="setTab('settings')"
             aria-label="设置"
           >
-            <span class="i-mdi-cog-outline text-lg" />
+            <span class="i-ph-gear-thin text-lg" />
           </Button>
         </TooltipTrigger>
         <TooltipContent><p>设置</p></TooltipContent>
@@ -123,7 +123,7 @@ const handleGroupMouseEnter = (group: Group) => {
             class="w-7 h-7 text-muted-foreground hover:text-foreground"
             @click="emit('toggle-dark')"
           >
-            <span class="i-mdi-theme-light-dark text-lg" />
+            <span class="i-ph-moon-stars-thin text-lg" />
           </Button>
         </TooltipTrigger>
         <TooltipContent><p>切换深浅模式</p></TooltipContent>
@@ -140,7 +140,7 @@ const handleGroupMouseEnter = (group: Group) => {
             :class="{ 'group-action-btn--danger-active text-destructive': isTrashActive }"
             @click="emit('select-trash')"
           >
-            <span class="i-mdi-trash-can-outline text-lg" />
+            <span class="i-ph-trash-thin text-lg" />
           </Button>
         </TooltipTrigger>
         <TooltipContent><p>回收站</p></TooltipContent>

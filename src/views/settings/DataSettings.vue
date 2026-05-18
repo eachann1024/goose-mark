@@ -456,11 +456,11 @@ const clearAllBookmarks = () => {
       </div>
         <div class="flex gap-3">
           <Button class="flex-1" variant="outline" @click="exportData">
-            <span class="i-mdi-export mr-2" />
+            <span class="i-ph-upload-thin mr-2" />
             导出备份
           </Button>
           <Button class="flex-1" variant="outline" @click="triggerImport">
-            <span class="i-mdi-import mr-2" />
+            <span class="i-ph-download-thin mr-2" />
             导入备份
           </Button>
           <input
@@ -476,7 +476,7 @@ const clearAllBookmarks = () => {
         </p>
         
         <!-- Debug Tools -->
-        <div class="mt-3 pt-3" style="border-top: 1px solid hsl(var(--border) / 0.4);">
+        <div class="mt-4 pt-2">
           <Button
             variant="ghost"
             class="w-full h-auto py-0 px-0 flex items-center justify-between text-xs text-muted-foreground mb-2 hover:text-foreground hover:bg-transparent"
@@ -484,17 +484,17 @@ const clearAllBookmarks = () => {
           >
             <span>高级操作（调试）</span>
             <span
-              class="i-mdi-chevron-down text-base transition-transform"
+              class="i-ph-caret-down-thin text-base transition-transform"
               :class="debugOpen ? 'rotate-180' : ''"
             />
           </Button>
           <div v-if="debugOpen" class="flex gap-3">
             <Button class="flex-1" variant="outline" size="sm" @click="copyAllData">
-              <span class="i-mdi-content-copy mr-2" />
+              <span class="i-ph-copy-thin mr-2" />
               复制全部数据（JSON）
             </Button>
             <Button class="flex-1" variant="destructive" size="sm" @click="showClearConfirm = true">
-              <span class="i-mdi-delete-forever mr-2" />
+              <span class="i-ph-trash-simple-thin mr-2" />
               清空全部书签
             </Button>
           </div>
@@ -574,7 +574,7 @@ const clearAllBookmarks = () => {
         <DialogFooter class="gap-2 sm:gap-0">
           <Button variant="ghost" @click="cancelImport">取消</Button>
           <Button :disabled="importing" @click="confirmImport">
-            <span v-if="importing" class="i-mdi-loading animate-spin mr-2" />
+            <span v-if="importing" class="i-ph-spinner-thin animate-spin mr-2" />
             开始导入
           </Button>
         </DialogFooter>
@@ -586,7 +586,7 @@ const clearAllBookmarks = () => {
       <DialogContent class="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle class="flex items-center gap-2">
-            <span class="i-mdi-file-code text-muted-foreground" />
+            <span class="i-ph-file-code-thin text-muted-foreground" />
             导入浏览器书签（HTML）
           </DialogTitle>
           <DialogDescription>
@@ -624,7 +624,7 @@ const clearAllBookmarks = () => {
                   class="flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border border-input bg-background transition-colors shadow-sm"
                   :class="selectedHtmlFolders.has(folder.name) ? 'border-foreground bg-foreground text-background' : ''"
                 >
-                  <span v-if="selectedHtmlFolders.has(folder.name)" class="i-mdi-check text-[12px] font-bold" />
+                  <span v-if="selectedHtmlFolders.has(folder.name)" class="i-ph-check-thin text-[12px] font-bold" />
                 </div>
                 <div class="flex-1 min-w-0">
                   <div class="font-medium text-sm truncate">{{ folder.name }}</div>
@@ -651,7 +651,7 @@ const clearAllBookmarks = () => {
             :disabled="htmlImporting || selectedHtmlFolders.size === 0" 
             @click="confirmHtmlImport"
           >
-            <span v-if="htmlImporting" class="i-mdi-loading animate-spin mr-2" />
+            <span v-if="htmlImporting" class="i-ph-spinner-thin animate-spin mr-2" />
             导入 {{ selectedHtmlFolders.size }} 个文件夹
           </Button>
         </DialogFooter>

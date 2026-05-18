@@ -24,12 +24,12 @@ const emit = defineEmits<{
           aria-label="关闭提示"
           @click="emit('ignore')"
         >
-          <span class="i-mdi-close text-sm" />
+          <span class="i-ph-x-thin text-sm" />
         </button>
 
         <div class="pr-7">
           <div class="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <span class="i-mdi-bell-ring-outline text-base text-primary" />
+            <span class="i-ph-bell-ringing-thin text-base text-primary" />
             <span>{{ notice.title }}</span>
           </div>
           <p class="mt-2 text-xs leading-5 text-muted-foreground">

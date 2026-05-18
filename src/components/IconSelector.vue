@@ -8,6 +8,7 @@ import BookmarkIcon from '@/components/BookmarkIcon.vue'
 const props = defineProps<{
   modelValue?: IconSource
   title?: string
+  inline?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -260,9 +261,12 @@ watch(
 </script>
 
 <template>
-  <div 
+  <div
     ref="rootEl"
-    class="relative p-6 bg-popover rounded-2xl border border-border/60 w-[420px] shadow-2xl outline-none" 
+    class="outline-none"
+    :class="inline
+      ? 'relative w-full'
+      : 'relative p-6 bg-popover rounded-2xl border border-border/60 w-[420px] shadow-2xl'"
     tabindex="0"
   >
      <!-- Tabs -->
@@ -288,7 +292,7 @@ watch(
      </div>
 
     <!-- Main Content -->
-    <div class="flex gap-5 mb-5 items-start">
+    <div class="flex gap-5 mb-5 items-start" :class="inline ? 'max-w-lg mx-auto' : ''">
         <!-- Preview / Action Area -->
         <div class="flex-1 flex justify-center">
            <div class="relative group">
@@ -311,7 +315,7 @@ watch(
                           class="h-8 w-8 rounded-full shadow-sm"
                           @click="triggerFileSelect"
                         >
-                          <span class="i-mdi-upload text-sm" />
+                          <span class="i-ph-upload-thin text-sm" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent>
@@ -327,7 +331,7 @@ watch(
                       title="裁剪/编辑"
                       @click="handleEditImage"
                     >
-                      <span class="i-mdi-crop text-sm" />
+                      <span class="i-ph-crop-thin text-sm" />
                     </Button>
                  </template>
               </div>
@@ -342,7 +346,7 @@ watch(
                  title="清除"
                  @click="clearIcon"
                >
-                 <span class="i-mdi-close text-xs" />
+                 <span class="i-ph-x-thin text-xs" />
                </Button>
            </div>
         </div>
@@ -379,7 +383,7 @@ watch(
                    :class="!localColor ? 'border-primary text-primary' : ''"
                    @click="clearColor"
                  >
-                    <span class="i-mdi-format-color-highlight text-xs" />
+                    <span class="i-ph-highlighter-thin text-xs" />
                  </button>
                  <!-- Custom Color -->
                  <button 
@@ -387,15 +391,15 @@ watch(
                    title="自定义颜色"
                    @click="triggerPickColor"
                  >
-                   <span class="i-mdi-eyedropper-variant text-xs" />
+                   <span class="i-ph-eyedropper-thin text-xs" />
                  </button>
               </div>
            </div>
         </div>
      </div>
      
-     <!-- Footer -->
-     <div class="flex justify-end gap-2 mt-2 pt-4 border-t border-border/30">
+     <!-- Footer (popover 模式下显示) -->
+     <div v-if="!inline" class="flex justify-end gap-2 mt-2 pt-4 border-t border-border/30">
          <Button variant="ghost" size="sm" @click="$emit('close')">取消</Button>
          <Button size="sm" @click="emitFinalChange(); $emit('confirm')">确定</Button>
      </div>

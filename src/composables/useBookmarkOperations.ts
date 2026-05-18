@@ -26,11 +26,6 @@ export function useBookmarkOperations() {
   const { showToast } = useUIManager()
   const isDevRuntime = import.meta.env.DEV
 
-  // Delete Confirmation State
-  const showDeleteConfirm = ref(false)
-  const confirmDeleteId = ref('')
-
-
   // Helpers
   const getWindowType = () => {
     try {
@@ -256,24 +251,6 @@ export function useBookmarkOperations() {
     
   }
 
-  // For context menu or other places that need confirmation
-  const requestDelete = (id: string) => {
-    confirmDeleteId.value = id
-    showDeleteConfirm.value = true
-  }
-
-  const confirmDelete = () => {
-    if (confirmDeleteId.value) {
-      // 只从当前位置移除书签
-      const groupId = store.activeGroupId
-      const subGroupId = store.activeSubGroupId
-      
-      store.removeBookmarkFromLocation(confirmDeleteId.value, groupId, subGroupId)
-      
-    }
-    showDeleteConfirm.value = false
-  }
-
   const emptyTrash = () => {
     store.emptyTrash()
   }
@@ -287,8 +264,6 @@ export function useBookmarkOperations() {
   }
 
   return {
-    showDeleteConfirm,
-    confirmDeleteId,
     openBookmarkLink,
     copyBookmarkUrl,
     copyBookmarkDescription,
@@ -296,8 +271,6 @@ export function useBookmarkOperations() {
     openUrlInUtoolsBrowser,
     getTemplateLabel,
     handleRemove,
-    requestDelete,
-    confirmDelete,
     emptyTrash,
     handleReorder
   }
