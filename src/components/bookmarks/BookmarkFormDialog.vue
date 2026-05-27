@@ -184,10 +184,11 @@ const handleClose = () => {
               <span class="i-ph-arrow-counter-clockwise-thin text-sm" />
             </Button>
           </div>
-          <BlockNoteEditor
+          <Textarea
             :model-value="draft.desc"
-            placeholder="请输入网站简介，支持富文本格式..."
-            @update:model-value="onDescInput"
+            placeholder="请输入网站简介..."
+            class="min-h-[120px] resize-y"
+            @update:model-value="(value: string | number) => onDescInput(String(value))"
           />
         </section>
 

@@ -3,7 +3,6 @@ import type { Bookmark } from '@/types/bookmark'
 import BookmarkIcon from '@/components/BookmarkIcon.vue'
 import BookmarkSkeleton from './BookmarkSkeleton.vue'
 import { Copy, Edit3, ExternalLink, Trash2 } from 'lucide-vue-next'
-import DOMPurify from 'dompurify'
 
 interface BookmarkSection {
   groupId: string
@@ -41,10 +40,15 @@ const emit = defineEmits<{
 
 const listRef = ref<HTMLElement | null>(null)
 
-// 安全渲染描述（支持 HTML）
+// desc 现在是纯文本;旧数据残留的 HTML 标签剥离,实体解码
+const HTML_ENTITY_MAP: Record<string, string> = {
+  '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&nbsp;': ' '
+}
 const renderDesc = (desc?: string): string => {
   if (!desc) return ''
-  return DOMPurify.sanitize(desc, { ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 's', 'del', 'a', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'blockquote', 'code'], ALLOWED_ATTR: ['href', 'target', 'rel'] })
+  return desc
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(amp|lt|gt|quot|#39|nbsp);/g, m => HTML_ENTITY_MAP[m] ?? m)
 }
 
 // 提取域名
@@ -329,9 +333,8 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
                 </div>
                 <div
                   v-if="bookmark.desc"
-                  class="bookmark-desc-rendered text-[12px] text-muted-foreground/80 leading-relaxed mt-0.5"
-                  v-html="renderDesc(bookmark.desc)"
-                />
+                  class="bookmark-desc-rendered text-[12px] text-muted-foreground/80 leading-relaxed mt-0.5 whitespace-pre-wrap"
+                >{{ renderDesc(bookmark.desc) }}</div>
               </div>
             </li>
           </ul>

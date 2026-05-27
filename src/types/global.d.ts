@@ -124,7 +124,6 @@ declare global {
       }
       [key: string]: unknown
     } | null
-    __gooseMarksMcpReady?: boolean
   }
 }
 

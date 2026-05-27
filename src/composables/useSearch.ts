@@ -4,6 +4,8 @@ import PinyinMatch from 'pinyin-match'
 import type { Bookmark } from '@/types/bookmark'
 import type { Ref } from 'vue'
 
+const SEARCH_AUTO_EXIT_SECONDS = 15
+
 type UseSearchOptions = {
   canUseSubInputRef: Ref<boolean>
   focusSubInput: (forceRemount?: boolean) => void
@@ -17,7 +19,6 @@ export function useSearch(
     options: UseSearchOptions
 ) {
   const store = useBookmarkStore()
-  const settingsStore = useSettingsStore()
 
   // Helper to determine if we should use uTools sub-input
   const canUseSubInput = () => {
@@ -55,10 +56,7 @@ export function useSearch(
 
   const activeBookmarks = computed(() => searchViewOpen.value ? searchResults.value : store.filteredBookmarks)
 
-  const searchAutoExitText = computed(() => {
-    const seconds = settingsStore.searchAutoExitSeconds
-    return seconds > 0 ? `${seconds} 秒无操作自动退出` : '自动退出已关闭'
-  })
+  const searchAutoExitText = computed(() => `${SEARCH_AUTO_EXIT_SECONDS} 秒无操作自动退出`)
 
   const clearSearchAutoExit = () => {
     if (searchAutoExitTimer) {
@@ -86,12 +84,10 @@ export function useSearch(
   const scheduleSearchAutoExit = () => {
     clearSearchAutoExit()
     if (!searchViewOpen.value) return
-    const seconds = settingsStore.searchAutoExitSeconds
-    if (!seconds || seconds <= 0) return
     markSearchActive()
     searchAutoExitTimer = setTimeout(() => {
       closeSearchView()
-    }, seconds * 1000)
+    }, SEARCH_AUTO_EXIT_SECONDS * 1000)
   }
 
   const getLocalSearchInputEl = () => {
@@ -179,18 +175,16 @@ export function useSearch(
 
   const syncSearchAutoExitOnReturn = () => {
     if (!searchViewOpen.value) return
-    const seconds = settingsStore.searchAutoExitSeconds
-    if (!seconds || seconds <= 0) return
     const last = searchLastActiveAt.value || Date.now()
     const elapsed = Date.now() - last
-    if (elapsed >= seconds * 1000) {
+    if (elapsed >= SEARCH_AUTO_EXIT_SECONDS * 1000) {
       closeSearchView()
       return
     }
     clearSearchAutoExit()
     searchAutoExitTimer = setTimeout(() => {
       closeSearchView()
-    }, seconds * 1000 - elapsed)
+    }, SEARCH_AUTO_EXIT_SECONDS * 1000 - elapsed)
   }
 
   // Watchers
@@ -211,10 +205,6 @@ export function useSearch(
       selectedIndex.value = list.length > 0 ? 0 : -1
     }
     if (nextText && !searchViewOpen.value && !options.suppressAutoOpenOverlayRef?.value) openSearchView()
-    if (searchViewOpen.value) scheduleSearchAutoExit()
-  })
-
-  watch(() => settingsStore.searchAutoExitSeconds, () => {
     if (searchViewOpen.value) scheduleSearchAutoExit()
   })
 

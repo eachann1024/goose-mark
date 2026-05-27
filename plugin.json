@@ -403,42 +403,19 @@
       "cmds": ["书签", "bookmark", "bookmarks"]
     },
     {
-      "code": "save_link",
-      "explain": "保存链接到书签",
-      "mainHide": false,
-      "cmds": [
-        {
-          "type": "regex",
-          "label": "保存链接到书签",
-          "match": "/^https?:\\/\\/.*$/i"
-        }
-      ],
-      "platform": ["win32", "darwin", "linux"]
-    },
-    {
       "code": "quick_save",
-      "explain": "快速保存当前页面到书签",
+      "explain": "保存当前页到书签",
       "mainHide": false,
       "cmds": [
         "快速保存",
         "快速收藏",
+        "保存弹窗",
         "quick save",
         {
           "type": "regex",
-          "label": "快速保存到书签",
+          "label": "保存到书签",
           "match": "/^https?:\\/\\/.*$/i"
         }
-      ],
-      "platform": ["win32", "darwin", "linux"]
-    },
-    {
-      "code": "quick_save_dialog",
-      "explain": "打开快速保存弹窗",
-      "mainHide": false,
-      "cmds": [
-        "保存弹窗",
-        "快速保存弹窗",
-        "save dialog"
       ],
       "platform": ["win32", "darwin", "linux"]
     }

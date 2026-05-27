@@ -177,7 +177,6 @@ export function useBookmarkOperations() {
       openMethod: analytics?.openMethod,
       bookmarkId: analytics?.bookmarkId,
       hasTemplate: analytics?.hasTemplate,
-      useUtoolsBrowser: settingsStore.preferUtoolsBrowser,
       autoCloseWindow: settingsStore.autoCloseWindow,
     })
 
@@ -190,7 +189,7 @@ export function useBookmarkOperations() {
 
     if (window.utools) {
       const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-      const canUseInner = settingsStore.preferUtoolsBrowser && utoolsApi?.ubrowser
+      const canUseInner = !!utoolsApi?.ubrowser
       let opened = false
       if (canUseInner) {
         try {

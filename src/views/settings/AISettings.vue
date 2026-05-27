@@ -4,7 +4,7 @@ import {
   PopoverContent,
   PopoverTrigger
 } from '@/components/ui/popover'
-import type { AIModelOption, CustomAIProtocol } from '@/lib/aiProvider'
+import type { AIModelOption } from '@/lib/aiProvider'
 import { fetchCustomAIModels, getDefaultBaseURL, getStoredAIModelOptions } from '@/lib/aiProvider'
 import { getAvailableUToolsAiModels, isUToolsAiSupported } from '@/lib/utoolsAi'
 
@@ -20,11 +20,8 @@ const settingsStore = useSettingsStore()
 const { isUTools } = useAppState()
 const { showToast } = useUIManager()
 
-const customProtocol = ref<CustomAIProtocol>(settingsStore.aiCustomProtocol)
-const customOpenAIBaseURL = ref(settingsStore.aiCustomOpenAIBaseURL)
-const customClaudeBaseURL = ref(settingsStore.aiCustomClaudeBaseURL)
-const customOpenAIApiKey = ref(settingsStore.aiCustomOpenAIApiKey)
-const customClaudeApiKey = ref(settingsStore.aiCustomClaudeApiKey)
+const customBaseURL = ref(settingsStore.aiCustomBaseURL)
+const customApiKey = ref(settingsStore.aiCustomApiKey)
 const customSaveError = ref('')
 const savingCustomConfig = ref(false)
 
@@ -32,56 +29,13 @@ const utoolsModels = ref<UToolsAiModel[]>([])
 const loadingUToolsModels = ref(false)
 const utoolsLoadError = ref('')
 const utoolsFallbackNotice = ref('')
-const isProtocolPopoverOpen = ref(false)
 const isModelPopoverOpen = ref(false)
-
-const customProtocolOptions: Array<{
-  id: CustomAIProtocol
-  label: string
-  description: string
-}> = [
-  {
-    id: 'openai',
-    label: 'OpenAI 兼容协议',
-    description: '支持自定义 Base URL、API Key 与模型列表'
-  },
-  {
-    id: 'claude',
-    label: 'Claude 协议',
-    description: '支持自定义 Base URL、API Key 与模型列表'
-  }
-]
-
-const customBaseURL = computed({
-  get: () => customProtocol.value === 'claude' ? customClaudeBaseURL.value : customOpenAIBaseURL.value,
-  set: (value: string) => {
-    if (customProtocol.value === 'claude') {
-      customClaudeBaseURL.value = value
-      return
-    }
-    customOpenAIBaseURL.value = value
-  }
-})
-
-const customApiKey = computed({
-  get: () => customProtocol.value === 'claude' ? customClaudeApiKey.value : customOpenAIApiKey.value,
-  set: (value: string) => {
-    if (customProtocol.value === 'claude') {
-      customClaudeApiKey.value = value
-      return
-    }
-    customOpenAIApiKey.value = value
-  }
-})
 
 const usingCustomProvider = computed(() => settingsStore.aiUseCustomProvider)
 const aiSupported = computed(() => isUTools.value && isUToolsAiSupported())
 const customModels = computed(() => getStoredAIModelOptions(settingsStore.aiSettings))
 const currentModels = computed(() => usingCustomProvider.value ? customModels.value : utoolsModels.value)
 const currentModel = computed(() => currentModels.value.find((model: UToolsAiModel | AIModelOption) => model.id === settingsStore.aiSelectedModelId) ?? null)
-const selectedProtocol = computed(() => {
-  return customProtocolOptions.find(option => option.id === customProtocol.value) ?? customProtocolOptions[0]
-})
 
 const saveButtonReason = computed(() => {
   if (savingCustomConfig.value) return '正在保存并读取模型列表'
@@ -158,13 +112,11 @@ const handleSaveCustomConfig = async () => {
 
   try {
     const modelOptions = await fetchCustomAIModels({
-      protocol: customProtocol.value,
       baseURL: customBaseURL.value,
       apiKey: customApiKey.value
     })
 
     settingsStore.saveAiCustomConfig({
-      protocol: customProtocol.value,
       baseURL: customBaseURL.value,
       apiKey: customApiKey.value,
       modelOptions
@@ -180,35 +132,17 @@ const handleSaveCustomConfig = async () => {
   }
 }
 
-const selectProtocol = (protocol: CustomAIProtocol) => {
-  customProtocol.value = protocol
-  customSaveError.value = ''
-  isProtocolPopoverOpen.value = false
-}
-
 const selectModel = (modelId: string) => {
   settingsStore.setAiSelectedModelId(modelId)
   isModelPopoverOpen.value = false
 }
 
-watch(() => settingsStore.aiCustomProtocol, (value) => {
-  customProtocol.value = value
+watch(() => settingsStore.aiCustomBaseURL, (value) => {
+  customBaseURL.value = value
 })
 
-watch(() => settingsStore.aiCustomOpenAIBaseURL, (value) => {
-  customOpenAIBaseURL.value = value
-})
-
-watch(() => settingsStore.aiCustomClaudeBaseURL, (value) => {
-  customClaudeBaseURL.value = value
-})
-
-watch(() => settingsStore.aiCustomOpenAIApiKey, (value) => {
-  customOpenAIApiKey.value = value
-})
-
-watch(() => settingsStore.aiCustomClaudeApiKey, (value) => {
-  customClaudeApiKey.value = value
+watch(() => settingsStore.aiCustomApiKey, (value) => {
+  customApiKey.value = value
 })
 
 watch(
@@ -249,13 +183,13 @@ watch(
     <div class="settings-block">
       <div class="settings-block__head">
         <h3 class="settings-block__title">AI 来源</h3>
-        <p class="settings-block__desc">默认使用 uTools AI，也可以切到自定义供应商</p>
+        <p class="settings-block__desc">默认使用 uTools AI，也可以切到自定义 OpenAI 兼容接口</p>
       </div>
       <div class="space-y-3">
         <div class="settings-row">
           <div class="space-y-0.5">
-            <div class="text-sm font-medium">关闭 uTools AI 使用自定义 AI</div>
-            <div class="text-xs text-muted-foreground">开启后改走 OpenAI 兼容或 Claude 协议</div>
+            <div class="text-sm font-medium">使用自定义 OpenAI 兼容接口</div>
+            <div class="text-xs text-muted-foreground">DeepSeek、Moonshot、智谱、本地 Ollama 等均走该协议</div>
           </div>
           <Switch
             :model-value="settingsStore.aiUseCustomProvider"
@@ -266,42 +200,10 @@ watch(
 
         <template v-if="usingCustomProvider">
           <div class="settings-field">
-            <label class="settings-field__label">协议</label>
-            <Popover v-model:open="isProtocolPopoverOpen">
-              <PopoverTrigger as-child>
-                <Button variant="outline" class="h-9 justify-between px-3 font-normal">
-                  <span class="truncate">{{ selectedProtocol.label }}</span>
-                  <span class="i-ph-caret-down-thin ml-2 shrink-0 opacity-50 text-sm" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent class="w-[320px] p-1" align="start" side="bottom" :side-offset="8">
-                <div class="space-y-1">
-                  <button
-                    v-for="option in customProtocolOptions"
-                    :key="option.id"
-                    type="button"
-                    class="settings-list-item"
-                    @click="selectProtocol(option.id)"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <div class="truncate text-sm font-medium text-foreground">{{ option.label }}</div>
-                      <div class="mt-0.5 text-xs text-muted-foreground leading-5">{{ option.description }}</div>
-                    </div>
-                    <span
-                      v-if="customProtocol === option.id"
-                      class="i-ph-check-thin text-primary text-sm ml-2 shrink-0"
-                    />
-                  </button>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <div class="settings-field">
             <label class="settings-field__label">Base URL</label>
             <Input
               v-model="customBaseURL"
-              :placeholder="getDefaultBaseURL(customProtocol)"
+              :placeholder="getDefaultBaseURL()"
               class="h-9"
               autocomplete="off"
             />

@@ -82,7 +82,6 @@ export function useAI() {
     return {
       feature_name: featureName,
       provider_type: getAIProviderMode(settings),
-      custom_protocol: settings.useCustomProvider ? settings.customProtocol : 'none',
       selected_model_id: settings.selectedModelId || DEFAULT_AI_MODEL,
       ...extra
     }

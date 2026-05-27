@@ -2,12 +2,11 @@ import { utoolsStorage } from '@/lib/utoolsStorage'
 import { defineStore } from 'pinia'
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { trackEvent } from '@/services/analytics'
-import type { AIModelOption, CustomAIProtocol, AISettingsLike } from '@/lib/aiProvider'
+import type { AIModelOption, AISettingsLike } from '@/lib/aiProvider'
 import { getAIProviderMode, getDefaultAISettings, getDefaultBaseURL, normalizeAIModelOptions } from '@/lib/aiProvider'
 
 const getAISettingsPayload = (state: AISettingsLike) => ({
   provider_type: getAIProviderMode(state),
-  custom_protocol: state.useCustomProvider ? state.customProtocol : 'none',
   selected_model_id: state.selectedModelId || DEFAULT_AI_MODEL,
   ai_enabled: state.enabled
 })
@@ -18,11 +17,6 @@ const createAIState = () => {
     aiEnabled: defaults.enabled,
     aiSelectedModelId: defaults.selectedModelId,
     aiUseCustomProvider: defaults.useCustomProvider,
-    aiCustomProtocol: defaults.customProtocol,
-    aiCustomOpenAIBaseURL: getDefaultBaseURL('openai'),
-    aiCustomClaudeBaseURL: getDefaultBaseURL('claude'),
-    aiCustomOpenAIApiKey: '',
-    aiCustomClaudeApiKey: '',
     aiCustomBaseURL: defaults.customBaseURL,
     aiCustomApiKey: defaults.customApiKey,
     aiCustomModelOptions: defaults.customModelOptions
@@ -32,14 +26,10 @@ const createAIState = () => {
 export const useSettingsStore = defineStore('settings', {
   state: () => ({
     gridColumns: 3,
-    searchAutoExitSeconds: 15,
-    groupTabsLayout: 'wrap' as 'wrap' | 'scroll',
     autoCloseWindow: true,
-    preferUtoolsBrowser: false,
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     ...createAIState(),
-    windowHeight: 800,
     homeViewMode: 'list' as 'list' | 'grid',
     searchViewMode: 'list' as 'list' | 'grid',
     previewPanelWidth: 256,
@@ -69,7 +59,6 @@ export const useSettingsStore = defineStore('settings', {
       enabled: state.aiEnabled,
       selectedModelId: state.aiSelectedModelId?.trim() || null,
       useCustomProvider: state.aiUseCustomProvider,
-      customProtocol: state.aiCustomProtocol,
       customBaseURL: state.aiCustomBaseURL,
       customApiKey: state.aiCustomApiKey,
       customModelOptions: state.aiCustomModelOptions
@@ -80,22 +69,9 @@ export const useSettingsStore = defineStore('settings', {
       this.gridColumns = Math.min(5, Math.max(2, Math.round(value)))
       trackEvent('settings_change', { settingKey: 'gridColumns', value: this.gridColumns })
     },
-    setGroupTabsLayout(mode: 'wrap' | 'scroll') {
-      this.groupTabsLayout = mode === 'scroll' ? 'scroll' : 'wrap'
-      trackEvent('settings_change', { settingKey: 'groupTabsLayout', value: this.groupTabsLayout })
-    },
-    setSearchAutoExitSeconds(value: number) {
-      const num = Number.isFinite(value) ? value : 0
-      this.searchAutoExitSeconds = num < 0 ? 0 : Math.round(num)
-      trackEvent('settings_change', { settingKey: 'searchAutoExitSeconds', value: this.searchAutoExitSeconds })
-    },
     setAutoCloseWindow(value: boolean) {
       this.autoCloseWindow = !!value
       trackEvent('settings_change', { settingKey: 'autoCloseWindow', value: this.autoCloseWindow })
-    },
-    setPreferUtoolsBrowser(value: boolean) {
-      this.preferUtoolsBrowser = !!value
-      trackEvent('settings_change', { settingKey: 'preferUtoolsBrowser', value: this.preferUtoolsBrowser })
     },
     setPreferLocalSnapshotOnStartup(value: boolean) {
       this.preferLocalSnapshotOnStartup = !!value
@@ -128,38 +104,22 @@ export const useSettingsStore = defineStore('settings', {
       })
     },
     saveAiCustomConfig(config: {
-      protocol: CustomAIProtocol
       baseURL: string
       apiKey: string
       modelOptions: AIModelOption[]
     }) {
       const modelOptions = normalizeAIModelOptions(config.modelOptions)
-      const normalizedBaseURL = config.baseURL.trim() || getDefaultBaseURL(config.protocol)
-      const normalizedApiKey = config.apiKey.trim()
-      this.aiCustomProtocol = config.protocol
-      this.aiCustomBaseURL = normalizedBaseURL
-      this.aiCustomApiKey = normalizedApiKey
-      if (config.protocol === 'openai') {
-        this.aiCustomOpenAIBaseURL = normalizedBaseURL
-        this.aiCustomOpenAIApiKey = normalizedApiKey
-      } else {
-        this.aiCustomClaudeBaseURL = normalizedBaseURL
-        this.aiCustomClaudeApiKey = normalizedApiKey
-      }
+      this.aiCustomBaseURL = config.baseURL.trim() || getDefaultBaseURL()
+      this.aiCustomApiKey = config.apiKey.trim()
       this.aiCustomModelOptions = modelOptions
       if (!modelOptions.some(model => model.id === this.aiSelectedModelId)) {
         this.aiSelectedModelId = modelOptions[0]?.id ?? this.aiSelectedModelId ?? DEFAULT_AI_MODEL
       }
-      trackEvent('settings_change', { settingKey: 'aiCustomConfigSaved', value: config.protocol })
+      trackEvent('settings_change', { settingKey: 'aiCustomConfigSaved' })
       trackEvent('ai_settings_changed', {
         action: 'save_custom_config',
         ...getAISettingsPayload(this.aiSettings)
       })
-    },
-    setWindowHeight(value: number) {
-      const num = Number.isFinite(value) ? value : 0
-      this.windowHeight = Math.min(1000, Math.max(650, Math.round(num)))
-      trackEvent('settings_change', { settingKey: 'windowHeight', value: this.windowHeight })
     },
     dismissOnboarding() {
       this.onboardingDismissed = true
@@ -220,88 +180,36 @@ export const useSettingsStore = defineStore('settings', {
     afterHydrate: (context) => {
       const state = context.store.$state as Record<string, unknown>
       const nextPatch: Record<string, unknown> = {}
-      const hasNewSelectedModelId = typeof state.aiSelectedModelId === 'string' && state.aiSelectedModelId.trim().length > 0
-      const legacyModel = typeof state.customAiModel === 'string' ? state.customAiModel.trim() : ''
-      const selectedModelId = typeof state.aiSelectedModelId === 'string'
-        ? state.aiSelectedModelId.trim()
-        : typeof state.selectedModelId === 'string'
-          ? state.selectedModelId.trim()
-          : ''
 
-      if (!hasNewSelectedModelId) {
-        nextPatch.aiSelectedModelId = selectedModelId || legacyModel || DEFAULT_AI_MODEL
+      if (typeof state.aiSelectedModelId !== 'string' || !state.aiSelectedModelId.trim()) {
+        nextPatch.aiSelectedModelId = DEFAULT_AI_MODEL
       }
 
       if (typeof state.aiEnabled !== 'boolean') {
-        nextPatch.aiEnabled = typeof state.enabled === 'boolean' ? state.enabled : true
+        nextPatch.aiEnabled = true
       }
 
       if (typeof state.aiUseCustomProvider !== 'boolean') {
-        nextPatch.aiUseCustomProvider = typeof state.useCustomProvider === 'boolean'
-          ? state.useCustomProvider
-          : false
-      }
-
-      const customProtocol = state.aiCustomProtocol ?? state.customProtocol
-      if (typeof state.aiCustomProtocol !== 'string' || (customProtocol !== 'openai' && customProtocol !== 'claude')) {
-        nextPatch.aiCustomProtocol = 'openai'
-        if (customProtocol === 'openai' || customProtocol === 'claude') {
-          nextPatch.aiCustomProtocol = customProtocol
-        }
+        nextPatch.aiUseCustomProvider = false
       }
 
       if (typeof state.aiCustomBaseURL !== 'string') {
-        nextPatch.aiCustomBaseURL = typeof state.customBaseURL === 'string'
-          ? state.customBaseURL
-          : getDefaultBaseURL(customProtocol === 'claude' ? 'claude' : 'openai')
+        nextPatch.aiCustomBaseURL = getDefaultBaseURL()
       }
 
       if (typeof state.aiCustomApiKey !== 'string') {
-        nextPatch.aiCustomApiKey = typeof state.customApiKey === 'string' ? state.customApiKey : ''
-      }
-
-      const legacyBaseURL = typeof state.aiCustomBaseURL === 'string'
-        ? state.aiCustomBaseURL
-        : typeof state.customBaseURL === 'string'
-          ? state.customBaseURL
-          : ''
-      const legacyApiKey = typeof state.aiCustomApiKey === 'string'
-        ? state.aiCustomApiKey
-        : typeof state.customApiKey === 'string'
-          ? state.customApiKey
-          : ''
-
-      if (typeof state.aiCustomOpenAIBaseURL !== 'string') {
-        nextPatch.aiCustomOpenAIBaseURL = customProtocol === 'openai' && legacyBaseURL.trim()
-          ? legacyBaseURL.trim()
-          : getDefaultBaseURL('openai')
-      }
-
-      if (typeof state.aiCustomClaudeBaseURL !== 'string') {
-        nextPatch.aiCustomClaudeBaseURL = customProtocol === 'claude' && legacyBaseURL.trim()
-          ? legacyBaseURL.trim()
-          : getDefaultBaseURL('claude')
-      }
-
-      if (typeof state.aiCustomOpenAIApiKey !== 'string') {
-        nextPatch.aiCustomOpenAIApiKey = customProtocol === 'openai' ? legacyApiKey : ''
-      }
-
-      if (typeof state.aiCustomClaudeApiKey !== 'string') {
-        nextPatch.aiCustomClaudeApiKey = customProtocol === 'claude' ? legacyApiKey : ''
+        nextPatch.aiCustomApiKey = ''
       }
 
       const rawCustomModelOptions = Array.isArray(state.aiCustomModelOptions)
         ? state.aiCustomModelOptions
-        : Array.isArray(state.customModelOptions)
-          ? state.customModelOptions
-          : null
+        : null
 
       if (!rawCustomModelOptions) {
         nextPatch.aiCustomModelOptions = []
       } else {
         const normalizedModelOptions = normalizeAIModelOptions(rawCustomModelOptions as AIModelOption[])
-        if (!Array.isArray(state.aiCustomModelOptions) || JSON.stringify(normalizedModelOptions) !== JSON.stringify(rawCustomModelOptions)) {
+        if (JSON.stringify(normalizedModelOptions) !== JSON.stringify(rawCustomModelOptions)) {
           nextPatch.aiCustomModelOptions = normalizedModelOptions
         }
       }

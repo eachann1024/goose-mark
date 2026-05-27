@@ -67,7 +67,6 @@ const UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT = 'goose-marks:restore-default-search-
 const {
   showAdd,
   openAdd,
-  openAddWithUrl,
   openEdit,
 } = useBookmarkForm()
 
@@ -95,8 +94,7 @@ const {
   syncFeatures,
   getEnterText,
   isDetachedWindowNow,
-  FEATURE_PREFIX,
-  setExpendHeight
+  FEATURE_PREFIX
 } = useUTools()
 
 const {
@@ -327,27 +325,6 @@ const openGroupEditor = (groupId: string) => {
   openCategoryEditor(groupId)
 }
 
-
-// Window Height Watcher — debounced to avoid rapid resize causing UI freeze
-let heightDebounceTimer: ReturnType<typeof setTimeout> | null = null
-let lastAppliedWindowHeight: number | null = null
-
-const debouncedSetExpendHeight = (height: number) => {
-  if (heightDebounceTimer) clearTimeout(heightDebounceTimer)
-  heightDebounceTimer = setTimeout(() => {
-    if (lastAppliedWindowHeight === height) return
-    lastAppliedWindowHeight = height
-    setExpendHeight(height)
-  }, 150)
-}
-
-watch(() => settingsStore.windowHeight, (h) => {
-  debouncedSetExpendHeight(h)
-})
-
-onMounted(() => {
-  lastAppliedWindowHeight = settingsStore.windowHeight
-})
 
 watch(() => tab.value, (value) => {
   if (value === 'settings') {
@@ -1364,46 +1341,27 @@ const handleUToolsPluginEnterEvent = (event: Event) => {
     const payloadText = getEnterText(params?.payload).trim()
     applyWindowHeight()
 
-    if (code === 'save_link') {
-      let urlToSave = ''
-      const payload = params?.payload
-
-      if (typeof payload === 'string') {
-        urlToSave = payload
-      } else if (payload && typeof payload === 'object' && 'text' in payload) {
-        urlToSave = String(payload.text)
-      }
-
-      urlToSave = urlToSave.trim()
-
-      if (urlToSave && isValidUrl(urlToSave)) {
-        onMainViewSwitch()
-        activeTemplateBookmark.value = null
-        syncTheme()
-        syncUToolsFeatures()
-        restoreDefaultSearchInput()
-        store.setSearch('')
-        openAddWithUrl(urlToSave)
-        return
-      }
-
-      console.warn('[save_link] 无效 URL:', { payload, urlToSave })
-      showToast({ title: '未检测到有效链接', variant: 'warning' })
-      return
-    }
-
     if (code === 'quick_save' || code === AI_QUICK_SAVE_FEATURE_CODE) {
       const from = (params as any)?.from || 'main'
       const payload = params?.payload
+      const payloadHasUrl = (() => {
+        if (typeof payload === 'string') return isValidUrl(payload.trim())
+        if (payload && typeof payload === 'object' && 'text' in payload) {
+          return isValidUrl(String(payload.text).trim())
+        }
+        return false
+      })()
+
+      // 词语命令(无 URL payload)时打开表单让用户输入;有 URL 时走静默/AI 保存
+      if (code === 'quick_save' && !payloadHasUrl) {
+        onMainViewSwitch()
+        showQuickSaveDialog.value = true
+        return
+      }
+
       handleQuickSave(from, payload, {
         forceAi: code === AI_QUICK_SAVE_FEATURE_CODE
       })
-      return
-    }
-
-    if (code === 'quick_save_dialog') {
-      onMainViewSwitch()
-      showQuickSaveDialog.value = true
       return
     }
 
@@ -1592,10 +1550,6 @@ onUnmounted(() => {
   if (viewModePersistTimer) {
     clearTimeout(viewModePersistTimer)
     viewModePersistTimer = null
-  }
-  if (heightDebounceTimer) {
-    clearTimeout(heightDebounceTimer)
-    heightDebounceTimer = null
   }
   if (window.utools) {
     window.removeEventListener('storage-sync', handleStorageSync as EventListener)
