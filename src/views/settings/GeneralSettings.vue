@@ -1,11 +1,8 @@
 <script setup lang="ts">
-import { useThrottleFn } from '@vueuse/core'
-
 const settingsStore = useSettingsStore()
 
 const { isUTools, isDark } = useAppState()
 
-// 彩蛋开关的 computed（用于 v-model 双向绑定）
 const easterEggEnabled = computed({
   get: () => settingsStore.easterEggEnabled,
   set: (val) => {
@@ -18,25 +15,13 @@ const viewModeOptions: Array<{ value: 'list' | 'grid'; label: string }> = [
   { value: 'grid', label: '卡片' }
 ]
 
-const groupLayoutOptions: Array<{ value: 'wrap' | 'scroll'; label: string }> = [
-  { value: 'wrap', label: '换行' },
-  { value: 'scroll', label: '横向滚动' }
-]
+const gridColumnsOptions = [2, 3, 4, 5]
 
-const windowHeightDraft = ref([settingsStore.windowHeight])
-
-watch(() => settingsStore.windowHeight, (value) => {
-  windowHeightDraft.value = [value]
-})
-
-const handleWindowHeightPreview = useThrottleFn((value: number[] | undefined) => {
-  if (!value?.length) return
-  windowHeightDraft.value = value
-}, 50)
-
-const commitWindowHeight = (value: number[]) => {
-  if (!value.length) return
-  settingsStore.setWindowHeight(value[0])
+const handleGridColumnsChange = (value: string | number) => {
+  const next = typeof value === 'number' ? value : Number(value)
+  if (Number.isFinite(next)) {
+    settingsStore.setGridColumns(next)
+  }
 }
 </script>
 
@@ -86,6 +71,37 @@ const commitWindowHeight = (value: number[]) => {
             </Button>
           </div>
         </div>
+
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">卡片每行数量</div>
+            <div class="text-xs text-muted-foreground">仅卡片模式生效</div>
+          </div>
+          <div class="flex gap-1.5 shrink-0">
+            <Button
+              v-for="opt in gridColumnsOptions"
+              :key="opt"
+              size="sm"
+              :variant="settingsStore.gridColumns === opt ? 'default' : 'ghost'"
+              class="h-8 w-10 px-0 shrink-0"
+              @click="handleGridColumnsChange(opt)"
+            >
+              {{ opt }}
+            </Button>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">默认收起详情栏</div>
+            <div class="text-xs text-muted-foreground">列表模式下，点击直接打开书签而不先展示详情</div>
+          </div>
+          <Switch
+            :model-value="settingsStore.previewPanelCollapsed"
+            aria-label="默认收起详情栏"
+            @update:model-value="(checked: boolean) => settingsStore.setPreviewPanelCollapsed(checked)"
+          />
+        </div>
       </div>
     </div>
 
@@ -129,97 +145,23 @@ const commitWindowHeight = (value: number[]) => {
       </div>
     </div>
 
-    <!-- 导航 -->
-    <div class="settings-block">
-      <div class="settings-block__head">
-        <h3 class="settings-block__title">导航</h3>
-        <p class="settings-block__desc">控制顶部主分组在空间不足时的展示方式</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <label class="text-sm text-muted-foreground shrink-0">主分组展示</label>
-        <div class="flex gap-2">
-          <Button
-            v-for="opt in groupLayoutOptions"
-            :key="opt.value"
-            size="sm"
-            :variant="settingsStore.groupTabsLayout === opt.value ? 'default' : 'ghost'"
-            class="h-8 px-3"
-            @click="settingsStore.setGroupTabsLayout(opt.value)"
-          >
-            {{ opt.label }}
-          </Button>
-        </div>
-      </div>
-      <p class="text-xs text-muted-foreground mt-2">默认自动换行，分组较多时可改为横向滚动。</p>
-    </div>
-
     <!-- 窗口行为（uTools only） -->
     <div v-if="isUTools" class="settings-block">
       <div class="settings-block__head">
         <h3 class="settings-block__title">窗口行为</h3>
-        <p class="settings-block__desc">控制窗口大小与打开方式</p>
+        <p class="settings-block__desc">控制独立窗口的关闭方式</p>
       </div>
-      <div class="space-y-4">
-        <div class="settings-row">
-          <label class="text-sm font-medium">窗口高度</label>
-          <div class="flex items-center gap-3 flex-1 max-w-[220px]">
-            <Slider
-              :model-value="windowHeightDraft"
-              :min="650"
-              :max="1000"
-              :step="10"
-              class="flex-1"
-              @update:model-value="handleWindowHeightPreview"
-              @value-commit="commitWindowHeight"
-            />
-            <span class="text-sm w-10 text-right tabular-nums">{{ windowHeightDraft[0] }}</span>
-          </div>
+      <div class="settings-row">
+        <div class="space-y-0.5">
+          <div class="text-sm font-medium">独立窗口自动关闭</div>
+          <div class="text-xs text-muted-foreground">独立窗口打开书签后自动关闭当前窗口</div>
         </div>
-        <div class="settings-row">
-          <div class="space-y-0.5">
-            <div class="text-sm font-medium">独立窗口自动关闭</div>
-            <div class="text-xs text-muted-foreground">独立窗口打开书签后自动关闭当前窗口</div>
-          </div>
-          <Switch
-            :model-value="settingsStore.autoCloseWindow"
-            aria-label="独立窗口自动关闭"
-            @update:model-value="(checked: boolean) => settingsStore.setAutoCloseWindow(checked)"
-          />
-        </div>
-        <div class="settings-row">
-          <div class="space-y-0.5">
-            <div class="text-sm font-medium">优先使用 uTools 内置浏览器</div>
-            <div class="text-xs text-muted-foreground">不可用时会自动改用系统浏览器</div>
-          </div>
-          <Switch
-            :model-value="settingsStore.preferUtoolsBrowser"
-            aria-label="优先使用 uTools 内置浏览器"
-            @update:model-value="(checked: boolean) => settingsStore.setPreferUtoolsBrowser(checked)"
-          />
-        </div>
-      </div>
-    </div>
-
-    <!-- 搜索 -->
-    <div class="settings-block">
-      <div class="settings-block__head">
-        <h3 class="settings-block__title">搜索</h3>
-        <p class="settings-block__desc">控制搜索页在无操作时的自动关闭时间</p>
-      </div>
-      <div class="flex items-center gap-3">
-        <label class="text-sm text-muted-foreground shrink-0">无操作后自动关闭（秒）</label>
-        <Input
-          type="number"
-          min="0"
-          step="1"
-          inputmode="numeric"
-          class="h-9 w-20"
-          placeholder="15"
-          :model-value="settingsStore.searchAutoExitSeconds"
-          @update:model-value="(val) => settingsStore.setSearchAutoExitSeconds(Number(val))"
+        <Switch
+          :model-value="settingsStore.autoCloseWindow"
+          aria-label="独立窗口自动关闭"
+          @update:model-value="(checked: boolean) => settingsStore.setAutoCloseWindow(checked)"
         />
       </div>
-      <p class="text-xs text-muted-foreground mt-2">设为 0 表示保持常驻，不自动关闭。</p>
     </div>
 
   </div>

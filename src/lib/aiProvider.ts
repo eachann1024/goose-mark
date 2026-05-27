@@ -1,16 +1,12 @@
-import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
 import { generateText } from 'ai'
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { getAvailableUToolsAiModels, isUToolsAiSupported, resolvePreferredUToolsModel } from '@/lib/utoolsAi'
 
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
-const DEFAULT_CUSTOM_PROTOCOL = 'openai'
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
-const DEFAULT_CLAUDE_BASE_URL = 'https://api.anthropic.com/v1'
 const SETTINGS_ENTRY_HINT = '请前往“设置 -> AI 助手”检查配置。'
 
-export type CustomAIProtocol = 'openai' | 'claude'
 export type AIProviderMode = 'utools' | 'custom'
 
 export interface AIModelOption {
@@ -23,7 +19,6 @@ export interface AISettingsLike {
   enabled: boolean
   selectedModelId: string | null
   useCustomProvider: boolean
-  customProtocol: CustomAIProtocol
   customBaseURL: string
   customApiKey: string
   customModelOptions: AIModelOption[]
@@ -126,8 +121,8 @@ function getOpenAIChatCompletionsUrl(baseURL: string) {
   return `${baseURL.replace(/\/+$/, '')}/chat/completions`
 }
 
-export function getDefaultBaseURL(protocol: CustomAIProtocol) {
-  return protocol === 'claude' ? DEFAULT_CLAUDE_BASE_URL : DEFAULT_OPENAI_BASE_URL
+export function getDefaultBaseURL() {
+  return DEFAULT_OPENAI_BASE_URL
 }
 
 async function readErrorMessage(response: Response) {
@@ -356,7 +351,7 @@ function isInvalidJsonResponseError(error: unknown) {
 }
 
 async function runCustomOpenAICompatibleText(settings: AISettingsLike, messages: AIMessage[], selectedModelId: string) {
-  const baseURL = settings.customBaseURL.trim() || getDefaultBaseURL('openai')
+  const baseURL = settings.customBaseURL.trim() || getDefaultBaseURL()
   const response = await fetch(getOpenAIChatCompletionsUrl(baseURL), {
     method: 'POST',
     headers: {
@@ -439,17 +434,11 @@ async function runCustomText(settings: AISettingsLike, messages: AIMessage[]) {
     })
   }
 
-  const model = settings.customProtocol === 'openai'
-    ? createOpenAICompatible({
-        baseURL: settings.customBaseURL.trim() || getDefaultBaseURL('openai'),
-        apiKey: settings.customApiKey.trim(),
-        name: 'custom.openai'
-      }).chatModel(selectedModelId)
-    : createAnthropic({
-        baseURL: settings.customBaseURL.trim() || getDefaultBaseURL('claude'),
-        apiKey: settings.customApiKey.trim(),
-        name: 'custom.claude'
-      })(selectedModelId)
+  const model = createOpenAICompatible({
+    baseURL: settings.customBaseURL.trim() || getDefaultBaseURL(),
+    apiKey: settings.customApiKey.trim(),
+    name: 'custom.openai'
+  }).chatModel(selectedModelId)
 
   try {
     const { text } = await generateText({
@@ -464,7 +453,7 @@ async function runCustomText(settings: AISettingsLike, messages: AIMessage[]) {
 
     return normalizedText
   } catch (error) {
-    if (settings.customProtocol === 'openai' && isInvalidJsonResponseError(error)) {
+    if (isInvalidJsonResponseError(error)) {
       try {
         return await runCustomOpenAICompatibleText(settings, messages, selectedModelId)
       } catch (fallbackError) {
@@ -541,33 +530,25 @@ export function getAIAvailability(settings: AISettingsLike) {
 }
 
 export async function fetchCustomAIModels(config: {
-  protocol: CustomAIProtocol
   baseURL: string
   apiKey: string
 }) {
   const apiKey = config.apiKey.trim()
-  const baseURL = config.baseURL.trim() || getDefaultBaseURL(config.protocol)
+  const baseURL = config.baseURL.trim() || getDefaultBaseURL()
   if (!apiKey) {
     throw new Error(getApiKeyMissingMessage())
   }
 
-  const response = config.protocol === 'openai'
-    ? await fetch(getOpenAIModelsUrl(baseURL), {
-        headers: {
-          Authorization: `Bearer ${apiKey}`
-        }
-      })
-    : await fetch(getOpenAIModelsUrl(baseURL), {
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01'
-        }
-      })
+  const response = await fetch(getOpenAIModelsUrl(baseURL), {
+    headers: {
+      Authorization: `Bearer ${apiKey}`
+    }
+  })
 
   if (!response.ok) {
     const detail = await readErrorMessage(response)
     if (response.status === 401 || response.status === 403) {
-      throw new Error(getAuthFailedMessage(config.protocol === 'openai' ? 'OpenAI 兼容接口' : 'Claude 接口'))
+      throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
     }
     throw new Error(detail || `读取模型列表失败（${response.status}）`)
   }
@@ -608,8 +589,7 @@ export function getDefaultAISettings() {
     enabled: true,
     selectedModelId: DEFAULT_AI_MODEL,
     useCustomProvider: false,
-    customProtocol: DEFAULT_CUSTOM_PROTOCOL as CustomAIProtocol,
-    customBaseURL: getDefaultBaseURL(DEFAULT_CUSTOM_PROTOCOL as CustomAIProtocol),
+    customBaseURL: getDefaultBaseURL(),
     customApiKey: '',
     customModelOptions: [] as AIModelOption[]
   }

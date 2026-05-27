@@ -106,24 +106,6 @@ export const useBookmarkStore = defineStore('bookmark', {
       return id
     }
 
-    // 异步为种子书签获取图标（不阻塞初始化）
-    const matchSeedIcons = () => {
-      setTimeout(() => {
-        bookmarks.forEach(bm => {
-          if (!bm.icon || bm.icon.type === 'text') {
-            ensureIconForBookmark(bm).then(icon => {
-              if (icon) {
-                const idx = bookmarks.findIndex(b => b.id === bm.id)
-                if (idx !== -1) {
-                  bookmarks[idx] = { ...bookmarks[idx], icon, iconMatchedAt: Date.now() }
-                }
-              }
-            }).catch(() => {})
-          }
-        })
-      }, 500)
-    }
-
     const findSub = (groupId: string, subId: string) => {
       const g = groups.find(gr => gr.id === groupId)
       return g?.children.find(c => c.id === subId)

@@ -1,7 +1,5 @@
 <script setup lang="ts">
 import GeneralSettings from './GeneralSettings.vue'
-import ListSettings from './ListSettings.vue'
-import CardSettings from './CardSettings.vue'
 import AISettings from './AISettings.vue'
 import CategoryManager from './CategoryManager.vue'
 import DataSettings from './DataSettings.vue'
@@ -20,8 +18,6 @@ const { localModeMenuDotVisible, markLocalModeSettingsVisited } = useFeatureNoti
 
 const sections: SettingsSection[] = [
   { id: 'general', label: '通用设置', icon: 'i-mdi-cog-outline', component: GeneralSettings },
-  { id: 'list', label: '列表设置', icon: 'i-mdi-format-list-bulleted', component: ListSettings },
-  { id: 'card', label: '卡片设置', icon: 'i-mdi-view-grid-outline', component: CardSettings },
   { id: 'ai', label: 'AI 助手', icon: 'i-mdi-sparkles', component: AISettings },
   { id: 'categories', label: '分组管理', icon: 'i-mdi-folder-outline', component: CategoryManager },
   { id: 'data', label: '导入与备份', icon: 'i-mdi-database-outline', component: DataSettings },
