@@ -1687,14 +1687,14 @@ const handleLocate = async (bookmark: Bookmark) => {
       <div class="flex items-center gap-0.5 bg-muted/30 rounded-lg p-0.5">
         <button
           class="h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors"
-          :class="viewMode === 'list' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          :class="viewMode === 'list' ? 'bg-background text-foreground shadow-sm ring-1 ring-border font-medium' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'"
           @click="viewMode = 'list'; tab = 'bookmarks'"
         >
           <span class="i-ph-list-thin text-base" />
         </button>
         <button
           class="h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors"
-          :class="viewMode === 'grid' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'"
+          :class="viewMode === 'grid' ? 'bg-background text-foreground shadow-sm ring-1 ring-border font-medium' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'"
           @click="viewMode = 'grid'; tab = 'bookmarks'"
         >
           <span class="i-ph-squares-four-thin text-base" />
