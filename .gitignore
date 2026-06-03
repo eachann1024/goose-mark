@@ -11,3 +11,4 @@ bun.lock
 CHANGELOG.md
 .playwright-mcp/
 src-tauri/target/
+.design-check/

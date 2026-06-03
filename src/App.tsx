@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft } from 'lucide-react'
+import { ChevronLeft, List, LayoutGrid, StretchHorizontal, Plus, Settings, Sun, Moon } from 'lucide-react'
 import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
@@ -1664,31 +1664,37 @@ function App() {
 
           {/* 视图切换 */}
           <div className="flex items-center gap-0.5 bg-muted/30 rounded-lg p-0.5">
-            {(['list', 'grid', 'cards'] as ViewMode[]).map((mode) => (
+            {([
+              ['list', List, '列表视图'],
+              ['grid', LayoutGrid, '网格视图'],
+              ['cards', StretchHorizontal, '卡片视图']
+            ] as const).map(([mode, Ico, label]) => (
               <button
                 key={mode}
-                className={`h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors ${
+                className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors ${
                   viewMode === mode
-                    ? 'bg-background text-foreground shadow-sm ring-1 ring-border font-medium'
+                    ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
                     : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'
                 }`}
-                title={mode === 'list' ? '列表视图' : mode === 'grid' ? '网格视图' : '卡片视图'}
+                title={label}
                 onClick={() => {
                   setViewMode(mode)
                   setTab('bookmarks')
                 }}
               >
-                {mode === 'list' ? '≡' : mode === 'grid' ? '▦' : '▤'}
+                <Ico className="size-[15px]" />
               </button>
             ))}
           </div>
 
+          {/* 新建（珊瑚强调按钮） */}
           <button
-            className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors text-lg leading-none"
+            className="h-8 inline-flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-primary text-primary-foreground text-[12.5px] font-semibold shadow-sm hover:brightness-105 active:brightness-95 transition-all"
             onClick={() => openAdd()}
             title="新建书签"
           >
-            +
+            <Plus className="size-[15px]" />
+            新建
           </button>
 
           <div className="h-5 w-px bg-border/50" />
@@ -1700,7 +1706,7 @@ function App() {
             onClick={() => setTab(tab === 'settings' ? 'bookmarks' : 'settings')}
             title="设置"
           >
-            ⚙
+            <Settings className="size-[17px]" />
           </button>
 
           <button
@@ -1708,7 +1714,7 @@ function App() {
             onClick={() => toggleDark()}
             title="切换明暗"
           >
-            {isDark ? '☀' : '☾'}
+            {isDark ? <Sun className="size-[17px]" /> : <Moon className="size-[17px]" />}
           </button>
         </header>
 
