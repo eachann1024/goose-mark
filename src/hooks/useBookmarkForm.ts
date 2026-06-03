@@ -1,0 +1,832 @@
+import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { create } from 'zustand'
+import { useShallow } from 'zustand/react/shallow'
+import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
+import { iconToDisplayUrl, fetchAndCacheIcon, fetchAsDataUrl } from '@/services/iconCache'
+import { getTemplateLabel } from '@/lib/utils'
+import { notify } from '@/lib/notify'
+import { addBehaviorLog } from '@/lib/debugReport'
+import { fetchMetadataFromNetwork } from '@/services/metadataFallback'
+import {
+  getAIAvailability,
+  runAIText,
+  AIProviderRequestError,
+  type AIMessage,
+  type AISettingsLike
+} from '@/lib/aiProvider'
+import { DEFAULT_AI_MODEL } from '@/constants/ai'
+import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import { useSettingsStore, selectAiSettings } from '@/stores/settings'
+import { useStatsStore } from '@/stores/stats'
+import { useUIManager } from './useUIManager'
+import type { MetadataSource } from './useAI'
+
+/**
+ * 新建 / 编辑书签表单（React / Zustand 版）
+ * --------------------------------------------------------------------------
+ * 旧版用 Vue createSharedComposable 保证全局单例（所有组件共享一份表单状态、
+ * watcher 只注册一次）。React 等价：把表单状态放进模块级 Zustand store
+ * （useBookmarkFormStore），useBookmarkForm() 订阅并补一层 React 副作用
+ * （URL 防抖取图标、关闭时重置）。副作用挂载者应在应用顶层只渲染一次以等价
+ * “watcher 只注册一次”。
+ *
+ * 已移除全部 trackEvent 上报（保留业务逻辑）。AI 调用走 lib/aiProvider 纯函数，
+ * 配置实时读自 settings store。store 的 addBookmark/updateBookmark/
+ * updateBookmarkLocations/removeBookmark/getBookmarkLocations/selectGroup/
+ * refreshSingleIcon 为业务阶段方法。statsStore.recordUse 为本地业务统计，保留。
+ */
+
+const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
+
+export interface CategorySuggestionState {
+  groupId: string
+  groupName: string
+  subGroupId: string
+  subGroupName: string
+  confidence: number
+  reason: string
+}
+
+interface DraftState {
+  title: string
+  url: string
+  desc: string
+  allowUniversal: boolean
+}
+
+interface BookmarkFormState {
+  showAdd: boolean
+  modalTitle: string
+  editingId: string
+  draft: DraftState
+  draftLocations: BookmarkLocation[]
+  previewIcon: IconSource | null
+  showCategorySelector: boolean
+  showIconSelector: boolean
+  formError: string
+  isSaving: boolean
+  iconLoading: boolean
+  iconFetchFailed: boolean
+  isTitleDirty: boolean
+  isDescDirty: boolean
+  originalUrl: string
+  isGenerating: boolean
+  isSuggestingCategory: boolean
+  aiError: string
+  originalBeforeAI: { title: string; desc: string } | null
+  categorySuggestion: CategorySuggestionState | null
+
+  set: (patch: Partial<BookmarkFormState>) => void
+  patchDraft: (patch: Partial<DraftState>) => void
+}
+
+const initialDraft = (): DraftState => ({ title: '', url: '', desc: '', allowUniversal: false })
+
+/** 模块级共享表单状态（等价旧版 createSharedComposable 的单例 state） */
+const useBookmarkFormStore = create<BookmarkFormState>((set) => ({
+  showAdd: false,
+  modalTitle: '新建书签',
+  editingId: '',
+  draft: initialDraft(),
+  draftLocations: [],
+  previewIcon: null,
+  showCategorySelector: false,
+  showIconSelector: false,
+  formError: '',
+  isSaving: false,
+  iconLoading: false,
+  iconFetchFailed: false,
+  isTitleDirty: false,
+  isDescDirty: false,
+  originalUrl: '',
+  isGenerating: false,
+  isSuggestingCategory: false,
+  aiError: '',
+  originalBeforeAI: null,
+  categorySuggestion: null,
+
+  set: (patch) => set(patch),
+  patchDraft: (patch) => set((s) => ({ draft: { ...s.draft, ...patch } }))
+}))
+
+// ---- 框架无关纯辅助函数（从旧版迁移）----
+
+const getActiveAiSettings = (): AISettingsLike => selectAiSettings(useSettingsStore.getState())
+
+const checkAiAvailable = (): { available: boolean; reason: string } => {
+  const availability = getAIAvailability(getActiveAiSettings())
+  return availability.ok ? { available: true, reason: '' } : { available: false, reason: availability.reason }
+}
+
+const isModelError = (errMsg: string) => {
+  const lower = errMsg.toLowerCase()
+  return MODEL_ERROR_KEYWORDS.some((key) => lower.includes(key.toLowerCase()))
+}
+
+const resolveErrorMessage = (error: unknown, action: '生成' | '分类') => {
+  const providerError = error instanceof AIProviderRequestError ? error : null
+  const errMsg = error instanceof Error ? error.message : String(error)
+  const settings = getActiveAiSettings()
+  const modelInfo = providerError
+    ? { model: providerError.model || settings.selectedModelId || DEFAULT_AI_MODEL, isCustom: providerError.isCustomModel }
+    : { model: settings.selectedModelId || DEFAULT_AI_MODEL, isCustom: settings.useCustomProvider }
+
+  if (errMsg.includes('余额') || errMsg.includes('balance') || errMsg.includes('quota')) {
+    return 'AI 余额不足，请检查当前供应商额度'
+  }
+  if (errMsg.includes('network') || errMsg.includes('timeout') || errMsg.includes('连接')) {
+    return 'AI 服务连接失败，请检查网络'
+  }
+  if (isModelError(errMsg)) {
+    if (modelInfo.isCustom) return `自定义模型“${modelInfo.model}”不可用，请检查供应商配置或模型名后重试`
+    if (providerError?.fallbackAttempted)
+      return `uTools 模型“${modelInfo.model}”不可用，自动回退后仍失败，请检查 AI 配置后重试`
+    return `uTools 模型“${modelInfo.model}”当前不可用，请重新选择或稍后重试`
+  }
+  if (modelInfo.isCustom)
+    return `AI ${action}失败，请稍后重试；若持续失败，请检查自定义供应商和模型“${modelInfo.model}”`
+  return `AI ${action}失败，请稍后重试`
+}
+
+const PRODUCT_LOCAL_MODE_CONTEXT =
+  '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
+
+const generateMetadataDirect = async (input: {
+  url: string
+  title?: string
+  desc?: string
+  forceNetworkFallback?: boolean
+}): Promise<{ title: string; desc: string; source: MetadataSource; usedNetworkFallback: boolean } | null> => {
+  const params = {
+    url: input.url,
+    title: input.title?.trim() || '',
+    desc: input.desc?.trim() || '',
+    forceNetworkFallback: !!input.forceNetworkFallback
+  }
+  if (!params.url) return null
+
+  const prompt = `你是一个专业的书签整理助手。请基于已有线索，为该网址生成适合保存到书签里的中文标题和简介。
+
+网址：${params.url}
+页面标题：${params.title || '无'}
+页面描述：${params.desc || '无'}
+是否已触发联网兜底：${params.forceNetworkFallback ? '是' : '否'}
+产品上下文：${PRODUCT_LOCAL_MODE_CONTEXT}
+
+请返回 JSON 格式：{"title":"...","desc":"...","source":"ai"|"network"}
+要求：
+1. 结合网址、页面标题、页面描述理解内容；优先输出自然、简洁、准确的中文。
+2. title: 极简且精准，去除“首页”“登录”“Documentation”等冗余词，不超过 15 字。
+3. desc: 一句话概括核心功能与价值，专业客观，不超过 40 字。
+4. 如果页面标题/描述较弱，但已通过联网兜底拿到线索，source 返回 "network"；否则返回 "ai"。
+5. 只返回 JSON，不要附加解释。`
+
+  const messages: AIMessage[] = [
+    {
+      role: 'system',
+      content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+    },
+    { role: 'user', content: prompt }
+  ]
+
+  const res = await runAIText(getActiveAiSettings(), messages)
+  const match = res.match(/\{[\s\S]*\}/)
+  const jsonStr = match ? match[0] : res
+  const data = JSON.parse(jsonStr)
+  return {
+    title: String(data.title || '').trim(),
+    desc: String(data.desc || '').trim(),
+    source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
+    usedNetworkFallback: params.forceNetworkFallback
+  }
+}
+
+const isHostLikeTitle = (title: string, rawUrl: string) => {
+  const normalizedTitle = title.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/$/, '')
+  if (!normalizedTitle) return false
+  try {
+    const safeUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`
+    const host = new URL(safeUrl).hostname.toLowerCase().replace(/^www\./, '')
+    return normalizedTitle === host
+  } catch {
+    return false
+  }
+}
+
+const buildTextIconFromValue = (value: string): IconSource => {
+  const base = value.trim()
+  const text = base ? base.slice(0, 4).toUpperCase() : '•'
+  return { type: 'text', value: text }
+}
+
+const isValidUrlInput = (rawUrl: string) => {
+  const input = rawUrl.trim()
+  if (!input) return false
+  if (/^javascript:/i.test(input) || /^file:/i.test(input)) return false
+  const candidate = input.replace(/{[^}]+}/g, 'x')
+  const normalized = /^https?:\/\//i.test(candidate) ? candidate : `https://${candidate}`
+  try {
+    const parsed = new URL(normalized)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+const toIconSource = (icon: Awaited<ReturnType<typeof fetchAndCacheIcon>>): IconSource | null => {
+  if (!icon) return null
+  const nextIcon: Record<string, any> = { type: icon.type }
+  if ('src' in icon && icon.src) nextIcon.src = icon.src
+  if ('path' in icon && icon.path) nextIcon.path = icon.path
+  if ('value' in icon && icon.value) nextIcon.value = icon.value
+  if ('cache' in icon && icon.cache) nextIcon.cache = icon.cache
+  if ('bgColor' in icon && icon.bgColor) nextIcon.bgColor = icon.bgColor
+  if ('fetchedAt' in icon && icon.fetchedAt) nextIcon.fetchedAt = icon.fetchedAt
+  return nextIcon as IconSource
+}
+
+const shouldHydrateTitle = (initialTitle: string, currentTitle: string) =>
+  !initialTitle.trim() && !currentTitle.trim()
+const shouldHydrateDesc = (initialDesc: string, currentDesc?: string) =>
+  !initialDesc.trim() && !(currentDesc || '').trim()
+
+// 后台元信息补全任务（模块级，跨实例共享 job 表，等价旧版单例）
+const hydrationJobIds = new Map<string, number>()
+
+const enqueueMetadataHydration = (
+  bookmarkId: string,
+  options: { url: string; initialTitle: string; initialDesc: string; forceAi?: boolean }
+) => {
+  const jobId = Date.now() + Math.random()
+  hydrationJobIds.set(bookmarkId, jobId)
+
+  void (async () => {
+    let usedNetworkFallback = false
+    try {
+      const fetched = await fetchAndCacheIcon(options.url, true)
+      let rawTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : ''
+      let rawDesc = typeof fetched?.description === 'string' ? fetched.description.trim() : ''
+      const hydratedIcon = toIconSource(fetched)
+
+      if (!rawTitle || isHostLikeTitle(rawTitle, options.url)) {
+        const fallback = await fetchMetadataFromNetwork(options.url)
+        if (fallback) {
+          rawTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) ? rawTitle : fallback.title || ''
+          rawDesc = rawDesc || fallback.description || ''
+          usedNetworkFallback = true
+        }
+      }
+
+      let nextTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) ? rawTitle : ''
+      let nextDesc = rawDesc
+
+      const aiReady = checkAiAvailable().available
+      if (options.forceAi && aiReady) {
+        const aiResult = await generateMetadataDirect({
+          url: options.url,
+          title: rawTitle,
+          desc: rawDesc,
+          forceNetworkFallback: usedNetworkFallback
+        })
+        if (aiResult) {
+          nextTitle = aiResult.title || nextTitle
+          nextDesc = aiResult.desc || nextDesc
+        }
+      }
+
+      if (hydrationJobIds.get(bookmarkId) !== jobId) return
+
+      const store = useBookmarkStore.getState()
+      const bookmark = store.bookmarks.find((item) => item.id === bookmarkId)
+      if (!bookmark) return
+
+      const patch: Partial<Bookmark> = {}
+      if (nextTitle && shouldHydrateTitle(options.initialTitle, bookmark.title)) patch.title = nextTitle
+      if (nextDesc && shouldHydrateDesc(options.initialDesc, bookmark.desc)) patch.desc = nextDesc
+      if (hydratedIcon && (!bookmark.icon || bookmark.icon.type === 'text')) {
+        patch.icon = hydratedIcon
+      } else if (!bookmark.icon && (nextTitle || options.url)) {
+        patch.icon = buildTextIconFromValue(nextTitle || options.url)
+      }
+
+      if (Object.keys(patch).length > 0) store.updateBookmark(bookmarkId, patch)
+    } catch (error) {
+      console.warn('[BookmarkForm] background hydration failed:', error)
+    } finally {
+      if (hydrationJobIds.get(bookmarkId) === jobId) hydrationJobIds.delete(bookmarkId)
+    }
+  })()
+}
+
+// URL 变更后取图标的防抖定时器（模块级单例）
+let urlFetchTimer: ReturnType<typeof setTimeout> | null = null
+
+export function useBookmarkForm() {
+  const form = useBookmarkFormStore(
+    useShallow((s) => ({
+      showAdd: s.showAdd,
+      modalTitle: s.modalTitle,
+      editingId: s.editingId,
+      draft: s.draft,
+      draftLocations: s.draftLocations,
+      previewIcon: s.previewIcon,
+      showCategorySelector: s.showCategorySelector,
+      showIconSelector: s.showIconSelector,
+      formError: s.formError,
+      isSaving: s.isSaving,
+      iconLoading: s.iconLoading,
+      iconFetchFailed: s.iconFetchFailed,
+      isGenerating: s.isGenerating,
+      isSuggestingCategory: s.isSuggestingCategory,
+      aiError: s.aiError,
+      categorySuggestion: s.categorySuggestion,
+      originalBeforeAI: s.originalBeforeAI
+    }))
+  )
+  const set = useBookmarkFormStore((s) => s.set)
+  const patchDraft = useBookmarkFormStore((s) => s.patchDraft)
+
+  const showToast = useUIManager((s) => s.showToast)
+
+  // ---- 计算属性（等价旧版 computed）----
+  const isEditing = !!form.editingId
+  const previewText = useMemo(() => {
+    const text = (form.draft.title || form.draft.url || '').trim()
+    return text ? text.slice(0, 4) : 'ICON'
+  }, [form.draft.title, form.draft.url])
+  const previewIconUrl = useMemo(() => iconToDisplayUrl(form.previewIcon ?? undefined), [form.previewIcon])
+  const previewIconStyle = useMemo(
+    () => ({ backgroundColor: form.previewIcon?.bgColor || 'transparent' }),
+    [form.previewIcon]
+  )
+  const isDraftTemplate = useMemo(() => /{[^}]+}/.test(form.draft.url), [form.draft.url])
+  const draftTemplateLabel = useMemo(() => getTemplateLabel(form.draft.url), [form.draft.url])
+  const needsBackgroundSave = useMemo(() => {
+    if (!form.draft.url.trim()) return false
+    if (form.iconLoading || form.isGenerating) return true
+    return !form.draft.title.trim()
+  }, [form.draft.url, form.draft.title, form.iconLoading, form.isGenerating])
+  const saveButtonLabel = needsBackgroundSave ? '后台保存' : '保存'
+  const aiEnabled = useSettingsStore((s) => s.aiEnabled)
+  const aiAvailability = useMemo(() => checkAiAvailable(), [aiEnabled, form.showAdd])
+  const canUseAi = aiAvailability.available
+  const aiUnavailableReason = aiAvailability.reason
+  const hasAIGenerated = !!form.originalBeforeAI
+  const selectedLocationsLabel = useMemo(() => {
+    if (form.draftLocations.length === 0) return ''
+    const groups = useBookmarkStore.getState().groups
+    return form.draftLocations
+      .map((loc) => {
+        const group = groups.find((g) => g.id === loc.groupId)
+        const sub = group?.children.find((c) => c.id === loc.subGroupId)
+        return group && sub ? `${group.name} / ${sub.name}` : ''
+      })
+      .filter(Boolean)
+      .join(', ')
+  }, [form.draftLocations])
+
+  // ---- 动作 ----
+  const buildTextIcon = useCallback((): IconSource => {
+    const { draft } = useBookmarkFormStore.getState()
+    const base = (draft.title || draft.url).trim()
+    const text = base ? base.slice(0, 4).toUpperCase() : '•'
+    return { type: 'text', value: text }
+  }, [])
+
+  const resolveLocationsForSave = useCallback((): BookmarkLocation[] => {
+    const { draftLocations } = useBookmarkFormStore.getState()
+    if (draftLocations.length > 0) return [...draftLocations]
+    const store = useBookmarkStore.getState()
+    const activeGroup = store.groups.find((group) => group.id === store.activeGroupId) ?? store.groups[0]
+    const activeSubGroup =
+      activeGroup?.children.find((child) => child.id === store.activeSubGroupId) ?? activeGroup?.children[0]
+    if (!activeGroup || !activeSubGroup) return []
+    return [{ groupId: activeGroup.id, subGroupId: activeSubGroup.id }]
+  }, [])
+
+  const resetPendingIconFetch = useCallback(() => {
+    if (urlFetchTimer) {
+      clearTimeout(urlFetchTimer)
+      urlFetchTimer = null
+    }
+    set({ iconLoading: false, iconFetchFailed: false })
+  }, [set])
+
+  const openAdd = useCallback(() => {
+    resetPendingIconFetch()
+    const store = useBookmarkStore.getState()
+    set({
+      editingId: '',
+      modalTitle: '新建书签',
+      draft: initialDraft(),
+      draftLocations: [{ groupId: store.activeGroupId, subGroupId: store.activeSubGroupId }],
+      previewIcon: null,
+      formError: '',
+      isTitleDirty: false,
+      isDescDirty: false,
+      originalUrl: '',
+      showAdd: true
+    })
+  }, [resetPendingIconFetch, set])
+
+  const openEdit = useCallback(
+    (bookmark: Bookmark) => {
+      resetPendingIconFetch()
+      const store = useBookmarkStore.getState()
+      set({
+        editingId: bookmark.id,
+        modalTitle: '编辑书签',
+        draft: {
+          title: bookmark.title || '',
+          url: bookmark.url,
+          allowUniversal: bookmark.allowUniversal ?? false,
+          desc: bookmark.desc || ''
+        },
+        previewIcon: bookmark.icon ?? null,
+        formError: '',
+        isTitleDirty: true,
+        isDescDirty: true,
+        originalUrl: bookmark.url,
+        draftLocations: store.getBookmarkLocations(bookmark.id),
+        showAdd: true
+      })
+    },
+    [resetPendingIconFetch, set]
+  )
+
+  const askAI = useCallback(
+    async (showNotify = false) => {
+      const { draft, originalBeforeAI } = useBookmarkFormStore.getState()
+      if (!draft.url) return
+
+      const { available, reason } = checkAiAvailable()
+      if (!available) {
+        if (showNotify) notify(reason)
+        set({ formError: reason })
+        return
+      }
+
+      if (!originalBeforeAI) {
+        set({ originalBeforeAI: { title: draft.title, desc: draft.desc } })
+      }
+
+      addBehaviorLog('ask-ai', draft.url)
+      set({ isGenerating: true, aiError: '' })
+      try {
+        const res = await generateMetadataDirect({ url: draft.url, title: draft.title, desc: draft.desc })
+        if (res) {
+          const patch: Partial<DraftState> = {}
+          if (res.title) patch.title = res.title
+          if (res.desc) patch.desc = res.desc
+          if (Object.keys(patch).length) patchDraft(patch)
+        }
+      } catch (error) {
+        const message = resolveErrorMessage(error, '生成')
+        set({ aiError: message })
+        if (showNotify) notify(message)
+        set({ formError: message })
+      } finally {
+        set({ isGenerating: false })
+      }
+    },
+    [set, patchDraft]
+  )
+
+  const undoTitle = useCallback(() => {
+    const { originalBeforeAI } = useBookmarkFormStore.getState()
+    if (!originalBeforeAI) return
+    patchDraft({ title: originalBeforeAI.title })
+  }, [patchDraft])
+
+  const undoDesc = useCallback(() => {
+    const { originalBeforeAI } = useBookmarkFormStore.getState()
+    if (!originalBeforeAI) return
+    patchDraft({ desc: originalBeforeAI.desc })
+  }, [patchDraft])
+
+  const onTitleInput = useCallback(() => set({ isTitleDirty: true }), [set])
+  const onDescInput = useCallback(
+    (val: string) => {
+      set({ isDescDirty: true })
+      patchDraft({ desc: val })
+    },
+    [set, patchDraft]
+  )
+
+  const applyCategorySuggestion = useCallback(
+    (options?: { silent?: boolean; keepSuggestion?: boolean }) => {
+      const { categorySuggestion } = useBookmarkFormStore.getState()
+      if (!categorySuggestion) return
+      set({
+        draftLocations: [{ groupId: categorySuggestion.groupId, subGroupId: categorySuggestion.subGroupId }]
+      })
+      if (!options?.keepSuggestion) set({ categorySuggestion: null })
+      if (!options?.silent) showToast({ title: '已应用分类建议', variant: 'success' })
+    },
+    [set, showToast]
+  )
+
+  const askCategorySuggestion = useCallback(async () => {
+    const { draft } = useBookmarkFormStore.getState()
+    if (!draft.url) return
+
+    const { available, reason } = checkAiAvailable()
+    if (!available) {
+      showToast({ title: reason, variant: 'warning' })
+      return
+    }
+
+    const store = useBookmarkStore.getState()
+    const existingGroups = store.groups
+      .filter((g) => g.id !== TRASH_GROUP_ID)
+      .map((g) => ({ id: g.id, name: g.name, subGroups: g.children.map((c) => ({ id: c.id, name: c.name })) }))
+
+    if (existingGroups.length === 0) {
+      showToast({ title: '请先创建分组', variant: 'warning' })
+      return
+    }
+
+    addBehaviorLog('ask-category-suggestion', draft.url)
+    set({ isSuggestingCategory: true, aiError: '' })
+
+    try {
+      const groupsDescription = existingGroups
+        .map((group) => {
+          const subNames = group.subGroups.map((s) => s.name).join('、')
+          return `- "${group.name}"（子分组：${subNames || '无'}）`
+        })
+        .join('\n')
+
+      const prompt = `你是一个专业的书签分类助手。请认真分析以下网址的内容和用途，从用户的分组结构中推荐最合适的分类。
+
+【待分类网址】
+${draft.url}
+
+【产品上下文】
+${PRODUCT_LOCAL_MODE_CONTEXT}
+
+【用户现有分组】
+${groupsDescription}
+
+请返回 JSON：{"groupName":"...","subGroupName":"...","confidence":0.85,"reason":"..."}
+必须从现有分组中选择，不要创造新分组；若无合适分组，groupName 返回空字符串。`
+
+      const res = await runAIText(getActiveAiSettings(), [
+        {
+          role: 'system',
+          content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+        },
+        { role: 'user', content: prompt }
+      ])
+
+      const match = res.match(/\{[\s\S]*\}/)
+      const data = JSON.parse(match ? match[0] : res)
+      const matchedGroup = existingGroups.find(
+        (group) =>
+          group.name === data.groupName || group.name.includes(data.groupName) || data.groupName?.includes(group.name)
+      )
+
+      if (matchedGroup) {
+        const matchedSubGroup = data.subGroupName
+          ? matchedGroup.subGroups.find(
+              (s) =>
+                s.name === data.subGroupName || s.name.includes(data.subGroupName) || data.subGroupName.includes(s.name)
+            )
+          : matchedGroup.subGroups[0]
+
+        const result: CategorySuggestionState = {
+          groupId: matchedGroup.id,
+          groupName: matchedGroup.name,
+          subGroupId: matchedSubGroup?.id || matchedGroup.subGroups[0]?.id || '',
+          subGroupName: matchedSubGroup?.name || matchedGroup.subGroups[0]?.name || '',
+          confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
+          reason: data.reason || '基于 URL 内容推荐'
+        }
+        set({ categorySuggestion: result })
+        applyCategorySuggestion({ silent: true, keepSuggestion: false })
+      } else {
+        showToast({ title: '未找到合适的分类建议', variant: 'info' })
+      }
+    } catch (error) {
+      const message = resolveErrorMessage(error, '分类')
+      set({ aiError: message })
+      showToast({ title: message, variant: 'warning' })
+    } finally {
+      set({ isSuggestingCategory: false })
+    }
+  }, [set, showToast, applyCategorySuggestion])
+
+  const dismissCategorySuggestion = useCallback(() => set({ categorySuggestion: null }), [set])
+
+  const requestDelete = useCallback(() => {
+    const { editingId } = useBookmarkFormStore.getState()
+    if (!editingId) return
+    addBehaviorLog('delete-bookmark', `id: ${editingId}`)
+    useBookmarkStore.getState().removeBookmark(editingId)
+    set({ showAdd: false })
+    showToast({ title: '书签已删除', variant: 'success', duration: 2000 })
+  }, [set, showToast])
+
+  const handleSave = useCallback(
+    async (options?: { forceAi?: boolean; background?: boolean }) => {
+      const state = useBookmarkFormStore.getState()
+      const { draft, editingId, previewIcon, iconLoading, isGenerating } = state
+      set({ formError: '' })
+
+      if (!draft.url.trim()) return set({ formError: '请输入链接' })
+      if (!isValidUrlInput(draft.url)) return set({ formError: '请输入有效链接' })
+      if (state.isSaving) return
+      set({ isSaving: true })
+
+      try {
+        const locationsToSave = resolveLocationsForSave()
+        if (locationsToSave.length === 0) {
+          set({ formError: '当前没有可用分类' })
+          return
+        }
+
+        const titleToSave = draft.title.trim()
+        const descToSave = draft.desc.trim()
+        const urlToSave = draft.url.trim()
+        addBehaviorLog(editingId ? 'edit-bookmark' : 'add-bookmark', `${draft.title} ${draft.url}`.trim())
+        let iconToSave = previewIcon ?? buildTextIcon()
+
+        if (iconToSave.type === 'remote' && !iconToSave.cache && iconToSave.src) {
+          const base64 = await fetchAsDataUrl(iconToSave.src)
+          if (base64) iconToSave = { ...iconToSave, cache: base64, fetchedAt: Date.now() }
+        }
+
+        const store = useBookmarkStore.getState()
+
+        if (editingId) {
+          store.updateBookmark(editingId, {
+            title: titleToSave,
+            url: urlToSave,
+            desc: descToSave,
+            allowUniversal: draft.allowUniversal,
+            icon: iconToSave
+          })
+          store.updateBookmarkLocations(editingId, locationsToSave)
+        } else {
+          const created = store.addBookmark(
+            {
+              title: titleToSave,
+              url: urlToSave,
+              desc: descToSave,
+              allowUniversal: draft.allowUniversal,
+              tags: [],
+              pinned: false,
+              icon: iconToSave
+            },
+            locationsToSave
+          )
+          if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created)
+          useStatsStore.getState().recordUse('add')
+
+          const shouldHydrateInBackground =
+            !!options?.forceAi ||
+            !!options?.background ||
+            !titleToSave ||
+            !descToSave ||
+            !previewIcon ||
+            iconLoading ||
+            isGenerating
+
+          if (shouldHydrateInBackground) {
+            enqueueMetadataHydration(created.id, {
+              url: urlToSave,
+              initialTitle: titleToSave,
+              initialDesc: descToSave,
+              forceAi: options?.forceAi
+            })
+          }
+
+          const firstLoc = locationsToSave[0]
+          if (firstLoc) {
+            store.setSearch('')
+            store.selectGroup(firstLoc.groupId, firstLoc.subGroupId)
+          }
+        }
+
+        set({ showAdd: false })
+      } finally {
+        set({ isSaving: false })
+      }
+    },
+    [set, resolveLocationsForSave, buildTextIcon]
+  )
+
+  // ---- 副作用：URL 变更防抖取图标（等价旧版 watch(draft.url)）----
+  const draftUrl = form.draft.url
+  useEffect(() => {
+    const { isTitleDirty, isDescDirty, editingId, originalUrl } = useBookmarkFormStore.getState()
+    const val = draftUrl
+
+    if (!val) {
+      resetPendingIconFetch()
+      set({ previewIcon: null })
+      if (!isTitleDirty) patchDraft({ title: '' })
+      if (!isDescDirty) patchDraft({ desc: '' })
+      return
+    }
+
+    if (!isTitleDirty) patchDraft({ title: '' })
+
+    // 编辑模式下：URL 未变化则跳过自动取图标/标题
+    if (editingId && val === originalUrl) return
+
+    if (urlFetchTimer) clearTimeout(urlFetchTimer)
+    urlFetchTimer = setTimeout(async () => {
+      urlFetchTimer = null
+      set({ iconLoading: true, iconFetchFailed: false })
+      try {
+        const fetched = await fetchAndCacheIcon(val, true)
+        const latest = useBookmarkFormStore.getState()
+        if (fetched) {
+          const newIcon = toIconSource(fetched)
+          set({
+            previewIcon: newIcon,
+            iconFetchFailed: fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src)
+          })
+          const fetchedTitle = typeof fetched.title === 'string' ? fetched.title.trim() : ''
+          if (fetchedTitle && !latest.isTitleDirty && !isHostLikeTitle(fetchedTitle, val)) {
+            patchDraft({ title: fetchedTitle })
+          }
+          if (fetched.description && !latest.isDescDirty) patchDraft({ desc: fetched.description })
+        } else {
+          set({ previewIcon: buildTextIconFromValue(val), iconFetchFailed: true })
+          if (!latest.draft.title.trim()) {
+            showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
+          }
+        }
+      } catch {
+        set({ previewIcon: buildTextIconFromValue(val), iconFetchFailed: true })
+      } finally {
+        set({ iconLoading: false })
+      }
+    }, 1000)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftUrl])
+
+  // 模板失效时清掉 allowUniversal（等价旧版 watch(isDraftTemplate)）
+  useEffect(() => {
+    if (!isDraftTemplate) patchDraft({ allowUniversal: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDraftTemplate])
+
+  // 关闭弹窗时重置状态（等价旧版 watch(showAdd)）
+  useEffect(() => {
+    if (!form.showAdd) {
+      set({
+        previewIcon: null,
+        showCategorySelector: false,
+        iconLoading: false,
+        editingId: '',
+        iconFetchFailed: false,
+        formError: '',
+        isSaving: false,
+        originalBeforeAI: null,
+        categorySuggestion: null,
+        originalUrl: ''
+      })
+      if (urlFetchTimer) {
+        clearTimeout(urlFetchTimer)
+        urlFetchTimer = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.showAdd])
+
+  return {
+    ...form,
+    set,
+    patchDraft,
+    isEditing,
+    maxDescLen: Infinity,
+    previewIconStyle,
+    previewText,
+    previewIconUrl,
+    selectedLocationsLabel,
+    isDraftTemplate,
+    draftTemplateLabel,
+    needsBackgroundSave,
+    saveButtonLabel,
+    aiEnabled,
+    canUseAi,
+    aiUnavailableReason,
+    hasAIGenerated,
+    openAdd,
+    openEdit,
+    handleSave,
+    askAI,
+    undoTitle,
+    undoDesc,
+    onTitleInput,
+    onDescInput,
+    askCategorySuggestion,
+    applyCategorySuggestion,
+    dismissCategorySuggestion,
+    requestDelete,
+    checkAiAvailable
+  }
+}

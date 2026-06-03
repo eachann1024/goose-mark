@@ -1,4 +1,2 @@
-export { default as Popover } from "./Popover.vue"
-export { default as PopoverContent } from "./PopoverContent.vue"
-export { default as PopoverTrigger } from "./PopoverTrigger.vue"
-export { PopoverAnchor } from "reka-ui"
+export { Popover, PopoverContent, PopoverTrigger } from "./Popover"
+export type { PopoverProps, PopoverContentProps, PopoverTriggerProps } from "./Popover"

@@ -1,1 +1,2 @@
-export { default as Image } from './Image.vue'
+export { Image } from './Image'
+export type { ImageProps } from './Image'

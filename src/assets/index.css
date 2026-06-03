@@ -1,9 +1,14 @@
-
+/* 所有 @import 必须置于文件最顶部（CSS 规范：@import 须先于其他语句） */
 @import "tailwindcss";
+/* HeroUI v3 样式（无 Provider；通过 useTheme 切换 light/dark；主题类挂在 <html>） */
+@import "@heroui/styles";
+/* 衬线标题字体（Newsreader 已本地化，见 fonts.css；CJK 标题回退系统 Songti SC / serif，
+   不再远程拉取 Noto Serif SC，避免 uTools/离线环境对 Google Fonts 的网络依赖与隐私外泄）。 */
+
 @config "../../tailwind.config.js";
 
-/* 衬线标题字体（仅标题使用；加载失败回退系统 Georgia / Songti SC） */
-@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap');
+/* 图标迁移说明：原 UnoCSS presetIcons 的 i-ph-* 用法已废弃，
+   组件阶段统一改用 lucide-react 的命名导出（如 import { Bookmark } from 'lucide-react'）。 */
 
   /* ============================================================
      配色：暖象牙纸 + 珊瑚强调 + AI 紫 + 衬线标题（goose-run 风格）
@@ -129,7 +134,7 @@
    For now, let's add a script in index.html or App.vue to sync.
 */
 
-html, body, #app {
+html, body, #root {
   height: 100%;
 }
 * {
@@ -226,7 +231,7 @@ input[type="number"] {
 /* ============================================================
    标题衬线（正文仍 DM Sans）— 命中应用标题 / 设置 / 弹窗 / 详情标题
    ============================================================ */
-#app h1, #app h2, #app h3,
+#root h1, #root h2, #root h3,
 .font-serif-title,
 .bookmark-preview__title,
 .settings-block__title,
@@ -244,4 +249,405 @@ input[type="number"] {
 .ai-accent-subtle {
   background: hsl(var(--ai-subtle)) !important;
   border-color: hsl(var(--ai) / 0.25) !important;
+}
+
+/* ============================================================
+   组件动画 / 样式（React 重写阶段）
+   旧版分散在各 .vue 的 <style scoped>；React 无 scoped CSS，集中迁移到此。
+   ============================================================ */
+
+/* ContextMenu 弹出 */
+@keyframes ctx-pop-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+/* BookmarkCard 蛇形描边彩蛋 */
+@keyframes snake-border {
+  0%   { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -1000; }
+}
+.animate-snake-border {
+  animation: snake-border 3s linear infinite;
+}
+
+/* BookmarkCard 选中态（普通 / 搜索浮层两种变体） */
+.bookmark-card--selected {
+  border-color: hsl(var(--primary) / 0.35);
+  background-color: hsl(var(--primary) / 0.08);
+  box-shadow:
+    0 4px 16px hsl(var(--primary) / 0.08),
+    0 0 0 1px hsl(var(--primary) / 0.25);
+}
+.bookmark-card--selected-search {
+  border-color: hsl(var(--primary) / 0.25);
+  background-color: hsl(var(--primary) / 0.05);
+  box-shadow:
+    0 4px 12px hsl(var(--primary) / 0.06),
+    0 0 0 1px hsl(var(--primary) / 0.18);
+}
+.dark .bookmark-card--hoverable:hover {
+  background-color: hsl(var(--card));
+}
+.bookmark-card__locate-btn:hover {
+  background-color: hsl(var(--foreground) / 0.1) !important;
+}
+
+/* CategoryMultiSelect 子分组 chip */
+.subgroup-chip {
+  transition: all 0.15s ease;
+}
+.subgroup-chip--idle {
+  background: hsl(var(--muted) / 0.3);
+  color: hsl(var(--foreground));
+  border: 1px solid transparent;
+}
+.subgroup-chip--idle:hover {
+  background: hsl(var(--muted) / 0.6);
+  border-color: hsl(var(--border));
+}
+.subgroup-chip--selected {
+  background: hsl(var(--primary) / 0.08);
+  color: hsl(var(--primary));
+  border: 1px solid hsl(var(--primary) / 0.25);
+}
+.dark .subgroup-chip--selected {
+  background: hsl(var(--primary) / 0.15);
+  border-color: hsl(var(--primary) / 0.3);
+  box-shadow: 0 0 8px hsl(var(--primary) / 0.1);
+}
+
+/* IconSelector tab 激活态 */
+.icon-selector-tab--active {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
+}
+
+/* OnboardingBanner 渐变背景 */
+.onboarding-banner {
+  border-color: hsl(var(--primary) / 0.2);
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary) / 0.05),
+    hsl(var(--primary) / 0.1)
+  );
+}
+.onboarding-banner__icon {
+  background-color: hsl(var(--primary) / 0.1);
+}
+
+/* AppSidebar 导航项 */
+.nav-item--idle {
+  color: hsl(var(--muted-foreground));
+}
+.nav-item--idle:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.5);
+}
+.dark .nav-item--idle:hover {
+  background-color: hsl(var(--muted) / 0.3);
+}
+.nav-item--active {
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
+  font-weight: 500;
+}
+.nav-item--trash-active {
+  color: hsl(var(--destructive));
+  background-color: hsl(var(--destructive) / 0.08);
+}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+
+/* ResultToast 容器（从触发位置生长，配合 @starting-style + allow-discrete） */
+.toast-container {
+  position: fixed;
+  z-index: 20000;
+  width: 320px;
+  max-width: calc(100vw - 2rem);
+  max-height: 200px;
+  overflow-y: auto;
+  border-radius: var(--radius-lg);
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  backdrop-filter: blur(8px);
+  padding: 1rem;
+  pointer-events: auto;
+
+  opacity: 1;
+  transform: scale(1);
+  transform-origin: var(--origin-x, right) var(--origin-y, bottom);
+
+  transition:
+    opacity 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
+    display 220ms allow-discrete;
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+}
+.toast-container[hidden] {
+  display: block;
+  opacity: 0;
+  transform: scale(0.92);
+  pointer-events: none;
+
+  transition:
+    opacity 180ms ease-in,
+    transform 180ms ease-in,
+    display 180ms allow-discrete;
+}
+
+/* FeatureNoticeCenter 进出场（React 用 data-state 驱动） */
+@keyframes feature-notice-in {
+  from { opacity: 0; transform: translateY(-8px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.feature-notice {
+  animation: feature-notice-in 180ms ease forwards;
+}
+
+/* ============================================================
+   设置中心（settings 模块）— 从各 .vue <style> 集中迁移到全局。
+   ============================================================ */
+.settings-block {
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid hsl(var(--border) / 0.25);
+  background: hsl(var(--card));
+  box-shadow: 0 10px 24px hsl(var(--foreground) / 0.03);
+  display: flex;
+  flex-direction: column;
+}
+
+.dark .settings-block {
+  background: hsl(var(--card) / 0.55);
+  border-color: hsl(var(--border) / 0.15);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
+}
+
+.settings-block__head {
+  margin-bottom: 12px;
+}
+
+.settings-block__title {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.settings-block__desc {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: hsl(var(--muted-foreground));
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.settings-row--top {
+  align-items: flex-start;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.settings-field__label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+}
+
+.settings-section {
+  scroll-margin-top: 12px;
+}
+
+/* TOC 侧栏 */
+.settings-nav {
+  background: #ffffff;
+  border-right: 1px solid hsl(var(--border) / 0.3);
+}
+
+.dark .settings-nav {
+  background: hsl(var(--card) / 0.45);
+  border-right-color: hsl(var(--border) / 0.15);
+  backdrop-filter: blur(16px) saturate(1.2);
+  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+}
+
+.settings-nav-item {
+  border-radius: 8px;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.settings-nav-item__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.settings-nav-item--idle {
+  color: hsl(var(--muted-foreground));
+}
+
+.settings-nav-item--idle:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.5);
+}
+
+.settings-nav-item--active {
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary));
+}
+
+.dark .settings-nav-item--active {
+  color: hsl(var(--primary-foreground));
+  background: hsl(var(--primary) / 0.85);
+  box-shadow: inset 3px 0 0 0 hsl(var(--primary-foreground) / 0.6);
+}
+
+.settings-feedback {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.5);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.settings-feedback:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.75);
+}
+
+/* AI 模型选择列表项 */
+.settings-list-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  border-radius: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.settings-list-item:hover {
+  background: hsl(var(--muted) / 0.75);
+}
+
+/* 强调色样本 */
+.accent-swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 100ms ease, box-shadow 100ms ease;
+}
+
+.accent-swatch:hover {
+  transform: scale(1.12);
+}
+
+/* 外观预览（深色模式背景选择） */
+.background-preview {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.background-preview--dark {
+  background: linear-gradient(180deg, #3a3d41 0%, #2f3133 100%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
+.sky-preview {
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% -5%, rgb(25 53 84 / 0.95), transparent 52%),
+    linear-gradient(180deg, #08111c 0%, #020204 62%, #000000 100%);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    0 10px 20px rgb(0 0 0 / 0.18);
+}
+
+.sky-preview::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgb(148 201 255 / 0.18), transparent 48%);
+}
+
+.sky-preview::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: -10px;
+  width: 32px;
+  height: 1px;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0), rgb(255 255 255 / 0.92), rgb(255 255 255 / 0));
+  transform: rotate(25deg);
+  animation: sky-meteor 3.6s ease-in-out infinite;
+}
+
+.sky-preview__main {
+  position: absolute;
+  top: 8px;
+  left: 9px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgb(226 238 255 / 0.92);
+  box-shadow:
+    0 0 8px rgb(173 216 255 / 0.65),
+    0 0 14px rgb(173 216 255 / 0.3);
+  animation: sky-twinkle 2.4s ease-in-out infinite;
+}
+
+.sky-preview__dot {
+  position: absolute;
+  width: 2.5px;
+  height: 2.5px;
+  border-radius: 9999px;
+  background: rgb(225 235 255 / 0.82);
+  box-shadow: 0 0 5px rgb(173 216 255 / 0.38);
+  animation: sky-dot 2.8s ease-in-out infinite;
+}
+
+.sky-preview__dot--1 { top: 10px; right: 9px; animation-delay: 0.2s; }
+.sky-preview__dot--2 { top: 18px; left: 8px; animation-delay: 0.7s; }
+.sky-preview__dot--3 { top: 22px; right: 12px; animation-delay: 1.2s; }
+
+@keyframes sky-twinkle {
+  0%, 100% { opacity: 0.5; transform: scale(0.86); }
+  50% { opacity: 1; transform: scale(1.18); }
+}
+@keyframes sky-dot {
+  0%, 100% { opacity: 0.25; transform: scale(0.85); }
+  50% { opacity: 0.85; transform: scale(1.12); }
+}
+@keyframes sky-meteor {
+  0%, 58%, 100% { opacity: 0; transform: translate(-10px, -6px) rotate(25deg); }
+  70% { opacity: 0.9; }
+  84% { opacity: 0; transform: translate(24px, 16px) rotate(25deg); }
 }
