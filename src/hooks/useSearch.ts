@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, BookmarkLocation } from '@/types/bookmark'
-import { useBookmarkStore, selectFilteredBookmarks, TRASH_GROUP_ID } from '@/stores/bookmark'
+import {
+  useBookmarkStore,
+  selectFilteredBookmarks,
+  selectAllBookmarks,
+  selectPinnedBookmarks,
+  selectRecentBookmarks,
+  TRASH_GROUP_ID
+} from '@/stores/bookmark'
 
 /**
  * 搜索浮层 / 直输触发搜索 / 自动退出（React 版）
@@ -39,10 +46,29 @@ export function useSearch(
   const search = useBookmarkStore((s) => s.search)
   const setSearch = useBookmarkStore((s) => s.setSearch)
   const bookmarks = useBookmarkStore((s) => s.bookmarks)
-  // selectFilteredBookmarks 每次返回新数组；直接作为 zustand 选择器会让 useSyncExternalStore
-  // 的 getSnapshot 每次拿到新引用 → 无限重渲染（React error #185）。用 useShallow 做浅比较，
-  // 仅当数组内容变化才重渲染。
-  const filteredBookmarks = useBookmarkStore(useShallow(selectFilteredBookmarks))
+  const activeView = useBookmarkStore((s) => s.activeView)
+  // 各视图基础列表（未过滤搜索）。这些选择器每次返回新数组，必须用 useShallow 做浅比较，
+  // 否则 useSyncExternalStore 的 getSnapshot 每次拿到新引用 → 无限重渲染（React error #185）。
+  const groupBookmarks = useBookmarkStore(useShallow(selectFilteredBookmarks))
+  const allBookmarks = useBookmarkStore(useShallow(selectAllBookmarks))
+  const pinnedBookmarks = useBookmarkStore(useShallow(selectPinnedBookmarks))
+  const recentBookmarks = useBookmarkStore(useShallow(selectRecentBookmarks))
+
+  // 列表面板数据源随虚拟视图切换：
+  //  - group：沿用 selectFilteredBookmarks（已内含按 activeGroupId 的分组/回收站池 + 搜索过滤）
+  //  - all/pinned/recent：取对应基础列表，再套用与 selectFilteredBookmarks 一致的搜索过滤
+  const filteredBookmarks = useMemo(() => {
+    if (activeView === 'group') return groupBookmarks
+    const base =
+      activeView === 'pinned' ? pinnedBookmarks : activeView === 'recent' ? recentBookmarks : allBookmarks
+    const query = (typeof search === 'string' ? search : '').trim().toLowerCase()
+    if (!query) return base
+    return base.filter((item) => {
+      const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
+      if (haystack.includes(query)) return true
+      return !!PinyinMatch.match(haystack, query)
+    })
+  }, [activeView, groupBookmarks, allBookmarks, pinnedBookmarks, recentBookmarks, search])
 
   // 稳定保存依赖项，供监听器与回调读取最新值
   const optionsRef = useRef(options)

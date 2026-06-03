@@ -19,6 +19,9 @@ import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
 export type ViewMode = 'list' | 'grid' | 'cards'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type LightBackgroundStyle = 'white' | 'utools'
+/** 列表面板排序键（虚拟视图扁平列表）：最近使用 / 添加时间 / 名称 / 访问次数 */
+export type ListSortKey = 'recent' | 'created' | 'name' | 'visits'
+const LIST_SORT_KEYS: ListSortKey[] = ['recent', 'created', 'name', 'visits']
 
 export interface IconMatchLog {
   time: number
@@ -41,6 +44,7 @@ export interface SettingsState {
   aiCustomApiKey: string
   aiCustomModelOptions: AIModelOption[]
   homeViewMode: ViewMode
+  listSort: ListSortKey
   searchViewMode: 'list' | 'grid'
   density: Density
   accentColor: string
@@ -72,6 +76,7 @@ export interface SettingsActions {
   setAutoMatchSearchIcons: (value: boolean) => void
   setSkipFailedIconMatch: (value: boolean) => void
   setHomeViewMode: (mode: ViewMode) => void
+  setListSort: (value: ListSortKey) => void
   setDensity: (value: Density) => void
   setAccentColor: (value: string) => void
   setSearchViewMode: (mode: 'list' | 'grid') => void
@@ -98,6 +103,7 @@ const createInitialState = (): SettingsState => {
     aiCustomApiKey: defaults.customApiKey,
     aiCustomModelOptions: defaults.customModelOptions,
     homeViewMode: 'list',
+    listSort: 'recent',
     searchViewMode: 'list',
     density: 'regular',
     accentColor: 'coral',
@@ -147,6 +153,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setAutoMatchSearchIcons: (value) => set({ autoMatchSearchIcons: !!value }),
       setSkipFailedIconMatch: (value) => set({ skipFailedIconMatch: !!value }),
       setHomeViewMode: (mode) => set({ homeViewMode: mode }),
+      setListSort: (value) => set({ listSort: LIST_SORT_KEYS.includes(value) ? value : 'recent' }),
       setDensity: (value) => set({ density: ['compact', 'regular', 'comfy'].includes(value) ? value : 'regular' }),
       setAccentColor: (value) => set({ accentColor: String(value || 'coral') }),
       setSearchViewMode: (mode) => set({ searchViewMode: mode }),
@@ -172,6 +179,8 @@ export const useSettingsStore = create<SettingsStore>()(
         if (typeof state.aiSelectedModelId !== 'string' || !state.aiSelectedModelId.trim()) {
           patch.aiSelectedModelId = DEFAULT_AI_MODEL
         }
+        // 旧持久化数据无 listSort 字段时兜底为「最近使用」，保持向后兼容
+        if (!LIST_SORT_KEYS.includes(state.listSort)) patch.listSort = 'recent'
         if (typeof state.aiEnabled !== 'boolean') patch.aiEnabled = true
         if (typeof state.aiUseCustomProvider !== 'boolean') patch.aiUseCustomProvider = false
         if (typeof state.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()

@@ -33,12 +33,23 @@ export { TRASH_GROUP_ID, parseUrlParams }
  *   - 旧版 `$persist()` 强制持久化由 zustand persist 在 set 后自动落盘，等价空操作。
  */
 
+/**
+ * 虚拟视图：列表面板的数据源切换。
+ *  - 'all'    全部书签（非回收站全部）
+ *  - 'pinned' 置顶（pinned === true）
+ *  - 'recent' 最近使用（按 lastUsed 倒序）
+ *  - 'group'  跟随当前选中的分组 / 子分组（旧版默认行为）
+ * 不参与持久化（partialize 不含 activeView），属于会话级 UI 状态，避免旧数据迁移与 stale 视图。
+ */
+export type ActiveView = 'all' | 'pinned' | 'recent' | 'group'
+
 export interface BookmarkState {
   groups: Group[]
   bookmarks: Bookmark[]
   search: string
   activeGroupId: string
   activeSubGroupId: string
+  activeView: ActiveView
   isReadOnly: boolean
 }
 
@@ -50,13 +61,15 @@ type SetDataPayload = Partial<{
 }>
 
 export interface BookmarkActions {
-  // 选择 / 搜索
+  // 选择 / 搜索 / 虚拟视图
   setSearch: (value: string) => void
+  setActiveView: (view: ActiveView) => void
   setActiveGroup: (groupId: string) => void
   setActiveSubGroup: (subGroupId: string) => void
   setReadOnly: (value: boolean) => void
   selectGroup: (groupId: string, subId?: string) => void
   selectSubGroup: (subId: string) => void
+  recordBookmarkUse: (id: string) => void
   ensureValidSelection: (preferredGroupId?: string, preferredSubGroupId?: string) => void
   autoCleanTrash: () => void
   migrateFromLegacy: () => void
@@ -152,6 +165,7 @@ const createInitialState = (): BookmarkState => {
     search: '',
     activeGroupId: 'g-nav',
     activeSubGroupId: 'sg-nav-common',
+    activeView: 'all',
     isReadOnly: false
   }
 }
@@ -181,23 +195,44 @@ export const useBookmarkStore = create<BookmarkStore>()(
 
         setSearch: (value) => set({ search: typeof value === 'string' ? value : '' }),
 
+        // 切换虚拟视图。切到 all/pinned/recent 时仅改 activeView，
+        // 不动 activeGroupId/activeSubGroupId —— 分组树仍可正常展示当前选中态。
+        setActiveView: (view) => set({ activeView: view }),
+
+        // 选中分组时，列表数据源自动跟随分组（activeView = 'group'），
+        // 等价旧版只有分组列表时的默认行为。
         setActiveGroup: (groupId) => {
           const group = get().groups.find((g) => g.id === groupId)
           if (!group) return
-          set({ activeGroupId: groupId, activeSubGroupId: group.children[0]?.id ?? '' })
+          set({ activeGroupId: groupId, activeSubGroupId: group.children[0]?.id ?? '', activeView: 'group' })
         },
 
-        setActiveSubGroup: (subGroupId) => set({ activeSubGroupId: subGroupId }),
+        setActiveSubGroup: (subGroupId) => set({ activeSubGroupId: subGroupId, activeView: 'group' }),
 
         setReadOnly: (value) => set({ isReadOnly: !!value }),
 
         selectGroup: (groupId, subId) => {
           const group = get().groups.find((g) => g.id === groupId)
           const firstSub = group?.children?.[0]
-          set({ activeGroupId: groupId, activeSubGroupId: subId ?? firstSub?.id ?? '' })
+          set({ activeGroupId: groupId, activeSubGroupId: subId ?? firstSub?.id ?? '', activeView: 'group' })
         },
 
-        selectSubGroup: (subId) => set({ activeSubGroupId: subId }),
+        selectSubGroup: (subId) => set({ activeSubGroupId: subId, activeView: 'group' }),
+
+        // 记录书签使用：lastUsed = now、visits++。本地排序数据，非外部埋点。
+        // 不走 scheduleBookmarkSync（避免把高频本地使用记录推送到同步通道）。
+        recordBookmarkUse: (id) => {
+          const bookmarks = [...get().bookmarks]
+          const idx = bookmarks.findIndex((b) => b.id === id)
+          if (idx === -1) return
+          const prev = bookmarks[idx]
+          bookmarks.splice(idx, 1, {
+            ...prev,
+            lastUsed: Date.now(),
+            visits: (prev.visits ?? 0) + 1
+          })
+          set({ bookmarks })
+        },
 
         ensureValidSelection: (preferredGroupId, preferredSubGroupId) => {
           const { groups, activeGroupId, activeSubGroupId } = get()
@@ -269,7 +304,9 @@ export const useBookmarkStore = create<BookmarkStore>()(
             const bookmarks = state.bookmarks.map((b) => ({
               ...b,
               createdAt: b.createdAt || now,
-              updatedAt: b.updatedAt || now
+              updatedAt: b.updatedAt || now,
+              // 旧数据无 visits 时兜底为 0；lastUsed 保持 undefined（从未使用过）
+              visits: b.visits ?? 0
             }))
             set({ groups, bookmarks })
             get().ensureValidSelection()
@@ -286,7 +323,8 @@ export const useBookmarkStore = create<BookmarkStore>()(
                   migratedBookmarks.push({
                     ...b,
                     createdAt: b.createdAt || now,
-                    updatedAt: b.updatedAt || now
+                    updatedAt: b.updatedAt || now,
+                    visits: b.visits ?? 0
                   })
                 }
                 return b.id
@@ -1450,6 +1488,48 @@ export const selectFilteredBookmarks = (s: BookmarkStore): Bookmark[] => {
     const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
     if (haystack.includes(query)) return true
     return !!PinyinMatch.match(haystack, query)
+  })
+}
+
+/**
+ * 非回收站全部书签（去重）。
+ * 以分组树为准遍历：只有挂在非回收站子分组里的书签才算「有效」，
+ * 与 selectFilteredBookmarks 的池子口径一致。
+ */
+const collectNonTrashBookmarks = (s: BookmarkStore): Bookmark[] => {
+  const seen = new Set<string>()
+  const result: Bookmark[] = []
+  s.groups.forEach((group) => {
+    if (group.id === TRASH_GROUP_ID) return
+    group.children.forEach((sub) => {
+      sub.bookmarkIds.forEach((id) => {
+        if (seen.has(id)) return
+        const bm = s.bookmarks.find((b) => b.id === id)
+        if (bm && !bm.isDeleted) {
+          seen.add(id)
+          result.push(bm)
+        }
+      })
+    })
+  })
+  return result
+}
+
+// 全部书签视图：非回收站全部（返回数组，供 useShallow 消费）
+export const selectAllBookmarks = (s: BookmarkStore): Bookmark[] => collectNonTrashBookmarks(s)
+
+// 置顶视图：pinned === true（仍限定在非回收站范围内）
+export const selectPinnedBookmarks = (s: BookmarkStore): Bookmark[] =>
+  collectNonTrashBookmarks(s).filter((b) => b.pinned === true)
+
+// 最近使用视图：按 lastUsed 倒序，无 lastUsed 的排到末尾（保持原相对顺序）
+export const selectRecentBookmarks = (s: BookmarkStore): Bookmark[] => {
+  const list = collectNonTrashBookmarks(s)
+  return [...list].sort((a, b) => {
+    const la = a.lastUsed ?? 0
+    const lb = b.lastUsed ?? 0
+    if (la === lb) return 0
+    return lb - la
   })
 }
 
