@@ -1,1 +1,2 @@
-export { default as Checkbox } from "./Checkbox.vue"
+export { Checkbox } from "./Checkbox"
+export type { CheckboxProps } from "./Checkbox"

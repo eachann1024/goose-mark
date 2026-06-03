@@ -1,417 +1,580 @@
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 import PinyinMatch from 'pinyin-match'
-import type { Bookmark, Group, IconSource, BookmarkLocation, SubGroup } from '@/types/bookmark'
+import type { Bookmark, Group, BookmarkLocation, SubGroup, IconSource } from '@/types/bookmark'
+import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
+import {
+  TRASH_GROUP_ID,
+  uid,
+  parseUrlParams,
+  createBookmarkSeed,
+  createSeedGroups
+} from '@/stores/bookmarkSeed'
 import { bulkMatchMissing, ensureIconForBookmark } from '@/services/iconCache'
-import { utoolsStorage } from '@/lib/utoolsStorage'
-import { useSync } from '@/composables/useSync'
+import { useSync } from '@/hooks/useSync'
 import { useSettingsStore } from '@/stores/settings'
-import { trackEvent } from '@/services/analytics'
 
-const uid = () => (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `id-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`)
+export { TRASH_GROUP_ID, parseUrlParams }
 
-// 从 URL 中解析参数（保留用于其他用途）
-export const parseUrlParams = (input: string): Record<string, string> => {
-  if (!input) return {}
-  try {
-    const url = new URL(input)
-    const params: Record<string, string> = {}
-    for (const [key, value] of url.searchParams) {
-      params[key] = value
-    }
-    return params
-  } catch {
-    return {}
+/**
+ * 书签 store（Zustand）—— 完整业务版（从旧 Pinia store 等价迁移）
+ * --------------------------------------------------------------------------
+ * 数据契约（必须与旧版 Pinia store 保持一致，确保 uTools dbStorage 旧数据可直接读写）：
+ *   - 持久化 key = 'bookmark'（旧版 Pinia $id），由 piniaCompatStorage 写入裸 JSON
+ *   - 持久化字段 = groups / bookmarks / activeGroupId / activeSubGroupId
+ *   - 数据结构：Group(二级分组 children) + Bookmark(locations 多归属) + 回收站(TRASH_GROUP_ID)
+ *
+ * 迁移要点：
+ *   - 已移除全部 trackEvent 上报（保留业务逻辑）。
+ *   - 旧版 Pinia `this.xxx` 改写为 Zustand set/get 不可变更新：读 get()，
+ *     在 groups/bookmarks 深/浅拷贝上原地改写后整体 set，保证组件按引用订阅能刷新。
+ *   - schedulePush 通过 useSync.getState() 取得（旧版 useSync()）。
+ *   - 新增 setData / $patch 供 useSync / useLocalDataMirror / settings 适配器调用。
+ *   - 旧版 `$persist()` 强制持久化由 zustand persist 在 set 后自动落盘，等价空操作。
+ */
+
+export interface BookmarkState {
+  groups: Group[]
+  bookmarks: Bookmark[]
+  search: string
+  activeGroupId: string
+  activeSubGroupId: string
+  isReadOnly: boolean
+}
+
+type SetDataPayload = Partial<{
+  groups: Group[]
+  bookmarks: Bookmark[]
+  activeGroupId: string
+  activeSubGroupId: string
+}>
+
+export interface BookmarkActions {
+  // 选择 / 搜索
+  setSearch: (value: string) => void
+  setActiveGroup: (groupId: string) => void
+  setActiveSubGroup: (subGroupId: string) => void
+  setReadOnly: (value: boolean) => void
+  selectGroup: (groupId: string, subId?: string) => void
+  selectSubGroup: (subId: string) => void
+  ensureValidSelection: (preferredGroupId?: string, preferredSubGroupId?: string) => void
+  autoCleanTrash: () => void
+  migrateFromLegacy: () => void
+
+  // 查询（旧版 getter，作为方法暴露便于 .getState() 调用）
+  getBookmarkLocations: (id: string) => BookmarkLocation[]
+  isBookmarkInTrash: (bookmark: Bookmark) => boolean
+
+  // 分组
+  addGroup: (name: string) => Group
+  updateGroup: (id: string, name: string) => void
+  removeGroup: (id: string) => boolean
+  reorderGroups: (newOrder: Group[]) => void
+  findGroupByName: (name: string) => Group | null
+
+  // 子分组
+  addSubGroup: (name: string, groupId: string) => SubGroup | null
+  updateSubGroup: (groupId: string, subId: string, name: string) => void
+  removeSubGroup: (groupId: string, subId: string) => boolean
+  deleteSubGroup: (groupId: string, subGroupId: string) => boolean
+  reorderSubGroups: (groupId: string, newChildren: SubGroup[]) => void
+  moveSubToGroup: (sourceGroupId: string, subId: string, targetGroupId: string) => boolean
+  promoteSubToGroup: (sourceGroupId: string, subId: string) => Group | null
+
+  // 书签
+  addBookmark: (payload: Omit<Bookmark, 'id' | 'createdAt' | 'updatedAt'>, locations: BookmarkLocation[]) => Bookmark
+  updateBookmark: (id: string, updater: Partial<Bookmark>) => void
+  updateBookmarkLocations: (bookmarkId: string, newLocations: BookmarkLocation[]) => void
+  removeBookmark: (id: string) => void
+  removeBookmarkFromLocation: (id: string, groupId: string, subGroupId: string) => void
+  restoreBookmark: (id: string) => boolean
+  restoreBookmarkFromTrash: (id: string) => boolean
+  emptyTrash: () => void
+  reorderInSub: (groupId: string, subId: string, fromId: string, toId: string) => void
+  moveBookmarkToSubGroup: (
+    bookmarkId: string,
+    fromGroupId: string,
+    fromSubId: string,
+    toGroupId: string,
+    toSubId: string
+  ) => boolean
+  quickSaveBookmark: (url: string, title?: string, desc?: string) => Bookmark
+  getOrCreateQuickCollectGroup: () => { group: Group; subGroup: SubGroup }
+
+  // 图标
+  assignIcon: (id: string, icon: IconSource) => void
+  refreshSingleIcon: (bookmark: Bookmark) => Promise<void>
+  getMissingIconCandidates: (force?: boolean) => Bookmark[]
+  countMissingIconCandidates: (force?: boolean) => number
+  refreshMissingIcons: (force?: boolean) => Promise<{
+    total: number
+    matched: number
+    remaining: number
+    successList: string[]
+    failList: { id: string; title: string }[]
+  }>
+
+  // 同步调度
+  getShareIdsFromLocations: (locations?: BookmarkLocation[]) => string[]
+  getShareIdsFromSubGroup: (groupId: string, subId: string) => string[]
+  getShareIdsFromGroup: (groupId: string) => string[]
+  scheduleBookmarkSync: (
+    bookmarkId: string,
+    options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; content?: Bookmark | null }
+  ) => void
+  scheduleGroupSync: (
+    groupId: string,
+    options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; orderIndex?: number }
+  ) => void
+  scheduleSubGroupSync: (
+    groupId: string,
+    subId: string,
+    options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[] }
+  ) => void
+  syncAllSharedEntities: (updatedAt?: number) => void
+
+  // 快照 / 整体替换
+  loadFromSnapshot: (data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly?: boolean) => void
+  setData: (state: SetDataPayload) => void
+  $patch: (partial: Partial<BookmarkState>) => void
+}
+
+export type BookmarkStore = BookmarkState & BookmarkActions
+
+type ShareAwareGroup = Group & { shareId?: string; sourceShareId?: string; orderIndex?: number }
+type ShareAwareSubGroup = SubGroup & { shareId?: string; sourceShareId?: string; parentGroupId?: string }
+
+const createInitialState = (): BookmarkState => {
+  const { groups, bookmarks } = createBookmarkSeed()
+  return {
+    groups,
+    bookmarks,
+    search: '',
+    activeGroupId: 'g-nav',
+    activeSubGroupId: 'sg-nav-common',
+    isReadOnly: false
   }
 }
 
-export const TRASH_GROUP_ID = 'g-trash'
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
-const createSeedGroups = (): Group[] => {
-  const now = Date.now()
-  return [
-    {
-      id: 'g-nav',
-      name: '导航',
-      createdAt: now,
-      updatedAt: now,
-      children: [
-        {
-          id: 'sg-nav-common',
-          name: '常用网站',
-          bookmarkIds: [],
-          createdAt: now,
-          updatedAt: now
-        },
-        {
-          id: 'sg-nav-tools',
-          name: '实用工具',
-          bookmarkIds: [],
-          createdAt: now,
-          updatedAt: now
-        }
-      ]
-    },
-    {
-      id: 'g-ai',
-      name: 'AI 工具',
-      createdAt: now,
-      updatedAt: now,
-      children: [
-        {
-          id: 'sg-ai-chat',
-          name: '对话 AI',
-          bookmarkIds: [],
-          createdAt: now,
-          updatedAt: now
-        },
-        {
-          id: 'sg-ai-create',
-          name: '创作 AI',
-          bookmarkIds: [],
-          createdAt: now,
-          updatedAt: now
-        }
-      ]
-    },
-    {
-      id: TRASH_GROUP_ID,
-      name: '回收站',
-      createdAt: now,
-      updatedAt: now,
-      children: [
-        {
-          id: 'sg-trash',
-          name: '已删除',
-          bookmarkIds: [],
-          createdAt: now,
-          updatedAt: now
-        }
-      ]
-    }
-  ]
+const schedulePush = (
+  item: Parameters<ReturnType<typeof useSync.getState>['schedulePush']>[0],
+  options?: Parameters<ReturnType<typeof useSync.getState>['schedulePush']>[1]
+) => {
+  try {
+    useSync.getState().schedulePush(item, options)
+  } catch (error) {
+    console.warn('[Bookmark] schedulePush 失败:', error)
+  }
 }
 
-export const useBookmarkStore = defineStore('bookmark', {
-  state: () => {
-    const now = Date.now()
-    const groups = createSeedGroups()
-    const bookmarks: Bookmark[] = []
+export const useBookmarkStore = create<BookmarkStore>()(
+  persist(
+    (set, get) => {
+      // 在工作副本上原地改写后整体提交，等价旧版 Pinia 的可变 state。
+      const commit = (groups: Group[], bookmarks: Bookmark[], extra?: Partial<BookmarkState>) =>
+        set({ groups: [...groups], bookmarks: [...bookmarks], ...extra })
 
-    const addSeedBookmark = (title: string, url: string, groupId: string, subGroupId: string, tags: string[] = []) => {
-      const id = uid()
-      bookmarks.push({
-        id, title, url, desc: '', tags,
-        locations: [{ groupId, subGroupId }],
-        createdAt: now, updatedAt: now
-      })
-      return id
-    }
+      return {
+        ...createInitialState(),
 
-    const findSub = (groupId: string, subId: string) => {
-      const g = groups.find(gr => gr.id === groupId)
-      return g?.children.find(c => c.id === subId)
-    }
+        setSearch: (value) => set({ search: typeof value === 'string' ? value : '' }),
 
-    // 导航 - 常用网站
-    const navCommon = findSub('g-nav', 'sg-nav-common')
-    if (navCommon) {
-      ;[
-        { t: '百度', u: 'https://www.baidu.com' },
-        { t: 'Google', u: 'https://www.google.com' },
-        { t: '淘宝', u: 'https://www.taobao.com' },
-        { t: '京东', u: 'https://www.jd.com' },
-        { t: '微信网页版', u: 'https://wx.qq.com' },
-        { t: '12306', u: 'https://www.12306.cn' },
-        { t: '百度网盘', u: 'https://pan.baidu.com' },
-        { t: '高德地图', u: 'https://ditu.amap.com' },
-        { t: '百度地图', u: 'https://map.baidu.com' },
-        { t: '知乎', u: 'https://www.zhihu.com' },
-        { t: 'B站', u: 'https://www.bilibili.com' },
-        { t: '豆瓣', u: 'https://www.douban.com' },
-        { t: '微博', u: 'https://weibo.com' },
-        { t: '今日头条', u: 'https://www.toutiao.com' },
-        { t: '腾讯新闻', u: 'https://news.qq.com' },
-      ].forEach(b => navCommon.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-common', ['导航'])))
-    }
+        setActiveGroup: (groupId) => {
+          const group = get().groups.find((g) => g.id === groupId)
+          if (!group) return
+          set({ activeGroupId: groupId, activeSubGroupId: group.children[0]?.id ?? '' })
+        },
 
-    // 导航 - 实用工具
-    const navTools = findSub('g-nav', 'sg-nav-tools')
-    if (navTools) {
-      ;[
-        { t: '查快递', u: 'https://www.kuaidi100.com' },
-        { t: '天气查询', u: 'https://tianqi.baidu.com' },
-        { t: '携程旅行', u: 'https://www.ctrip.com' },
-        { t: '去哪儿', u: 'https://www.qunar.com' },
-        { t: '马蜂窝', u: 'https://www.mafengwo.cn' },
-        { t: '飞猪', u: 'https://www.fliggy.com' },
-        { t: '同程', u: 'https://www.ly.com' },
-        { t: '途牛', u: 'https://www.tuniu.com' },
-        { t: '穷游', u: 'https://www.qyer.com' },
-        { t: '默沙东诊疗手册', u: 'https://www.msdmanuals.cn' },
-        { t: '时光邮局', u: 'https://www.timepost.cn' },
-        { t: '国家企业信用信息公示', u: 'https://www.gsxt.gov.cn' },
-        { t: 'BOSS直聘', u: 'https://www.zhipin.com' },
-        { t: '拉勾网', u: 'https://www.lagou.com' },
-        { t: '前程无忧', u: 'https://www.51job.com' },
-      ].forEach(b => navTools.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-nav', 'sg-nav-tools', ['工具'])))
-    }
+        setActiveSubGroup: (subGroupId) => set({ activeSubGroupId: subGroupId }),
 
-    // AI - 对话 AI
-    const aiChat = findSub('g-ai', 'sg-ai-chat')
-    if (aiChat) {
-      ;[
-        { t: 'ChatGPT', u: 'https://chatgpt.com' },
-        { t: 'Claude', u: 'https://claude.ai' },
-        { t: 'Google Gemini', u: 'https://gemini.google.com' },
-        { t: 'Perplexity', u: 'https://www.perplexity.ai' },
-        { t: 'DeepSeek', u: 'https://chat.deepseek.com' },
-        { t: 'Kimi', u: 'https://www.kimi.com' },
-        { t: '通义千问', u: 'https://tongyi.aliyun.com' },
-        { t: '文心一言', u: 'https://yiyan.baidu.com' },
-        { t: '天工 AI', u: 'https://www.tiangong.cn' },
-        { t: 'Hugging Face', u: 'https://huggingface.co' },
-      ].forEach(b => aiChat.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-chat', ['AI'])))
-    }
+        setReadOnly: (value) => set({ isReadOnly: !!value }),
 
-    // AI - 创作 AI
-    const aiCreate = findSub('g-ai', 'sg-ai-create')
-    if (aiCreate) {
-      ;[
-        { t: 'Midjourney', u: 'https://www.midjourney.com' },
-        { t: 'Stable Diffusion', u: 'https://stability.ai' },
-        { t: 'DALL-E', u: 'https://openai.com/dall-e-3' },
-        { t: 'Runway', u: 'https://runwayml.com' },
-        { t: 'Sora', u: 'https://openai.com/sora' },
-        { t: 'Gamma', u: 'https://gamma.app' },
-        { t: 'Poe', u: 'https://poe.com' },
-        { t: 'Cursor', u: 'https://cursor.sh' },
-        { t: 'GitHub Copilot', u: 'https://github.com/features/copilot' },
-        { t: 'Notion AI', u: 'https://www.notion.so/product/ai' },
-      ].forEach(b => aiCreate.bookmarkIds.push(addSeedBookmark(b.t, b.u, 'g-ai', 'sg-ai-create', ['AI', '创作'])))
-    }
+        selectGroup: (groupId, subId) => {
+          const group = get().groups.find((g) => g.id === groupId)
+          const firstSub = group?.children?.[0]
+          set({ activeGroupId: groupId, activeSubGroupId: subId ?? firstSub?.id ?? '' })
+        },
 
-    return {
-      groups,
-      bookmarks,
-      search: '',
-      activeGroupId: 'g-nav',
-      activeSubGroupId: 'sg-nav-common',
-      isReadOnly: false
-    }
-  },
-  getters: {
-    currentGroup(state) {
-      return state.groups.find(g => g.id === state.activeGroupId)
-    },
-    currentSubGroup(state): { group?: Group; sub?: SubGroup } {
-      const group = state.groups.find(g => g.id === state.activeGroupId)
-      const sub = group?.children.find(c => c.id === state.activeSubGroupId)
-      return { group, sub }
-    },
-    currentBookmarks(): Bookmark[] {
-      const { sub } = this.currentSubGroup
-      if (!sub) return []
-      return sub.bookmarkIds
-        .map(id => this.bookmarks.find(b => b.id === id))
-        .filter((b): b is Bookmark => !!b && !b.isDeleted)
-    },
-    filteredBookmarks(): Bookmark[] {
-      const query = (typeof this.search === 'string' ? this.search : '').trim().toLowerCase()
+        selectSubGroup: (subId) => set({ activeSubGroupId: subId }),
 
-      const pool: Bookmark[] = []
+        ensureValidSelection: (preferredGroupId, preferredSubGroupId) => {
+          const { groups, activeGroupId, activeSubGroupId } = get()
+          const wantGroupId = preferredGroupId ?? activeGroupId
+          const wantSubGroupId = preferredSubGroupId ?? activeSubGroupId
+          if (!groups.length) {
+            set({ activeGroupId: '', activeSubGroupId: '' })
+            return
+          }
+          const preferredGroup = groups.find((g) => g.id === wantGroupId)
+          const fallbackGroup = preferredGroup || groups.find((g) => g.id !== TRASH_GROUP_ID) || groups[0]
+          if (!fallbackGroup) {
+            set({ activeGroupId: '', activeSubGroupId: '' })
+            return
+          }
+          const preferredSub = fallbackGroup.children.find((c) => c.id === wantSubGroupId)
+          const fallbackSub = preferredSub || fallbackGroup.children[0]
+          set({ activeGroupId: fallbackGroup.id, activeSubGroupId: fallbackSub?.id ?? '' })
+        },
 
-      if (this.activeGroupId === TRASH_GROUP_ID) {
-        // Trash mode: show only trash bookmarks
-        const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
-        trashGroup?.children.forEach(sub => {
-          sub.bookmarkIds.forEach(id => {
-            const bm = this.bookmarks.find(b => b.id === id)
-            if (bm && !bm.isDeleted) {
-              pool.push(bm)
-            }
-          })
-        })
-      } else {
-        // Normal mode: show all non-trash bookmarks, preserving sub-group order
-        this.groups.forEach(group => {
-          if (group.id === TRASH_GROUP_ID) return
-          group.children.forEach(sub => {
-            sub.bookmarkIds.forEach(id => {
-              const bm = this.bookmarks.find(b => b.id === id)
-              if (bm && !bm.isDeleted) {
-                pool.push(bm)
+        autoCleanTrash: () => {
+          const groups = clone(get().groups)
+          const bookmarks = [...get().bookmarks]
+          const trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
+          if (!trashGroup) return
+
+          const now = Date.now()
+          const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000
+
+          trashGroup.children.forEach((sub) => {
+            const newIds: string[] = []
+            sub.bookmarkIds.forEach((bid) => {
+              const bookmark = bookmarks.find((b) => b.id === bid)
+              if (!bookmark) return
+              if (now - bookmark.updatedAt <= THIRTY_DAYS) {
+                newIds.push(bid)
+              } else {
+                const idx = bookmarks.findIndex((b) => b.id === bid)
+                if (idx !== -1) bookmarks.splice(idx, 1)
               }
             })
-          })
-        })
-      }
-
-      if (!query) return pool
-      return pool.filter(item => {
-        const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
-        if (haystack.includes(query)) return true
-        return !!PinyinMatch.match(haystack, query)
-      })
-    },
-    getBookmarkLocations(): (id: string) => BookmarkLocation[] {
-      return (id: string) => {
-        const result: BookmarkLocation[] = []
-        this.groups.forEach(g => {
-          g.children.forEach(sub => {
-            if (sub.bookmarkIds.includes(id)) {
-              result.push({ groupId: g.id, subGroupId: sub.id })
+            if (sub.bookmarkIds.length !== newIds.length) {
+              sub.bookmarkIds = newIds
+              sub.updatedAt = now
+              trashGroup.updatedAt = now
             }
           })
-        })
-        return result
-      }
-    }
-  },
-  actions: {
-    // 自动清理回收站（超过30天）
-    autoCleanTrash() {
-      const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
-      if (!trashGroup) return
-      
-      const now = Date.now()
-      const THIRTY_DAYS = 30 * 24 * 60 * 60 * 1000
-      let changed = false
-      
-      trashGroup.children.forEach(sub => {
-        const originalLen = sub.bookmarkIds.length
-        const newIds: string[] = []
-        
-        sub.bookmarkIds.forEach(bid => {
-           const bookmark = this.bookmarks.find(b => b.id === bid)
-           // 如果书签不存在，或者已超过 30 天，则不保留
-           if (bookmark) {
-             if ((now - bookmark.updatedAt) <= THIRTY_DAYS) {
-               newIds.push(bid)
-             } else {
-               // 从 bookmarks 中移除
-               const bIdx = this.bookmarks.findIndex(b => b.id === bid)
-               if (bIdx !== -1) this.bookmarks.splice(bIdx, 1)
-             }
-           }
-        })
 
-        if (sub.bookmarkIds.length !== newIds.length) {
-          sub.bookmarkIds = newIds
-          sub.updatedAt = now
-          changed = true
-        }
-      })
-      
-      if (changed) {
-        trashGroup.updatedAt = now
-      }
-    },
+          commit(groups, bookmarks)
+        },
 
-    migrateFromLegacy() {
-      const legacyGroups = this.groups as any[]
-      const firstSub = legacyGroups[0]?.children?.[0]
-      if (!firstSub || !('bookmarks' in firstSub)) {
-        // 已经是新格式，但可能缺少时间戳，补充一下
-        const now = Date.now()
-        this.groups.forEach(g => {
-          if (!g.createdAt) g.createdAt = now
-          if (!g.updatedAt) g.updatedAt = now
-          g.children.forEach(sub => {
-            if (!sub.createdAt) sub.createdAt = now
-            if (!sub.updatedAt) sub.updatedAt = now
-          })
-        })
-        this.bookmarks.forEach(b => {
-          if (!b.createdAt) b.createdAt = now
-          if (!b.updatedAt) b.updatedAt = now
-        })
-        this.ensureValidSelection()
-        return
-      }
-
-      const migratedBookmarks: Bookmark[] = []
-      const migratedGroups: Group[] = []
-      const now = Date.now()
-
-      legacyGroups.forEach(g => {
-        const newChildren = g.children.map((sub: any) => {
-          const bookmarkIds = sub.bookmarks.map((b: Bookmark) => {
-            if (!migratedBookmarks.find(mb => mb.id === b.id)) {
-              if (!b.createdAt) b.createdAt = now
-              if (!b.updatedAt) b.updatedAt = now
-              migratedBookmarks.push(b)
-            }
-            return b.id
-          })
-          return { 
-            id: sub.id, 
-            name: sub.name, 
-            bookmarkIds, 
-            createdAt: sub.createdAt || now, 
-            updatedAt: sub.updatedAt || now 
-          }
-        })
-        migratedGroups.push({ 
-          id: g.id, 
-          name: g.name, 
-          children: newChildren, 
-          createdAt: g.createdAt || now, 
-          updatedAt: g.updatedAt || now 
-        })
-      })
-
-      this.groups = migratedGroups
-      this.bookmarks = migratedBookmarks
-      
-      if (!this.groups.find(g => g.id === TRASH_GROUP_ID)) {
-        this.groups.push({
-          id: TRASH_GROUP_ID,
-          name: '回收站',
-          createdAt: now,
-          updatedAt: now,
-          children: [
-             { id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }
-          ]
-        })
-      }
-
-      this.autoCleanTrash()
-    },
-
-    deleteSubGroup(groupId: string, subGroupId: string) {
-      const group = this.groups.find(g => g.id === groupId)
-      if (group) {
-        const index = group.children.findIndex(c => c.id === subGroupId)
-        if (index !== -1) {
-          const subGroup = group.children[index]
+        migrateFromLegacy: () => {
+          const state = get()
+          const legacyGroups = state.groups as unknown as Array<Record<string, any>>
+          const firstSub = legacyGroups[0]?.children?.[0]
           const now = Date.now()
-          
-          // 1. 收集需要移动到回收站的书签
-          const toTrash: string[] = []
-          subGroup.bookmarkIds.forEach(bid => {
-            const bookmark = this.bookmarks.find(b => b.id === bid)
-            if (bookmark) {
-              const oldLocations = bookmark.locations ? [...bookmark.locations] : []
-              bookmark.locations = bookmark.locations?.filter(loc => 
-                !(loc.groupId === groupId && loc.subGroupId === subGroupId)
-              ) || []
-              
-              if (bookmark.locations.length === 0) {
-                // 记录移入回收站前的位置
-                if (oldLocations.length > 0) {
-                  bookmark.prevLocations = oldLocations
+
+          if (!firstSub || !('bookmarks' in firstSub)) {
+            const groups = state.groups.map((g) => ({
+              ...g,
+              createdAt: g.createdAt || now,
+              updatedAt: g.updatedAt || now,
+              children: g.children.map((sub) => ({
+                ...sub,
+                createdAt: sub.createdAt || now,
+                updatedAt: sub.updatedAt || now
+              }))
+            }))
+            const bookmarks = state.bookmarks.map((b) => ({
+              ...b,
+              createdAt: b.createdAt || now,
+              updatedAt: b.updatedAt || now
+            }))
+            set({ groups, bookmarks })
+            get().ensureValidSelection()
+            return
+          }
+
+          const migratedBookmarks: Bookmark[] = []
+          const migratedGroups: Group[] = []
+
+          legacyGroups.forEach((g) => {
+            const newChildren: SubGroup[] = (g.children as Array<Record<string, any>>).map((sub) => {
+              const bookmarkIds: string[] = (sub.bookmarks as Bookmark[]).map((b) => {
+                if (!migratedBookmarks.find((mb) => mb.id === b.id)) {
+                  migratedBookmarks.push({
+                    ...b,
+                    createdAt: b.createdAt || now,
+                    updatedAt: b.updatedAt || now
+                  })
                 }
+                return b.id
+              })
+              return {
+                id: sub.id,
+                name: sub.name,
+                bookmarkIds,
+                createdAt: sub.createdAt || now,
+                updatedAt: sub.updatedAt || now
+              }
+            })
+            migratedGroups.push({
+              id: g.id,
+              name: g.name,
+              children: newChildren,
+              createdAt: g.createdAt || now,
+              updatedAt: g.updatedAt || now
+            })
+          })
+
+          if (!migratedGroups.find((g) => g.id === TRASH_GROUP_ID)) {
+            migratedGroups.push({
+              id: TRASH_GROUP_ID,
+              name: '回收站',
+              createdAt: now,
+              updatedAt: now,
+              children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
+            })
+          }
+
+          set({ groups: migratedGroups, bookmarks: migratedBookmarks })
+          get().autoCleanTrash()
+        },
+
+        getBookmarkLocations: (id) => {
+          const result: BookmarkLocation[] = []
+          get().groups.forEach((g) => {
+            g.children.forEach((sub) => {
+              if (sub.bookmarkIds.includes(id)) result.push({ groupId: g.id, subGroupId: sub.id })
+            })
+          })
+          return result
+        },
+
+        isBookmarkInTrash: (bookmark) => {
+          const inTrashByLocation =
+            Array.isArray(bookmark.locations) &&
+            bookmark.locations.some((loc) => loc.groupId === TRASH_GROUP_ID || loc.subGroupId === 'sg-trash')
+          const trashGroup = get().groups.find((g) => g.id === TRASH_GROUP_ID)
+          const inTrashByGroupIndex =
+            !!trashGroup && trashGroup.children.some((sub) => sub.bookmarkIds.includes(bookmark.id))
+          return !!inTrashByLocation || inTrashByGroupIndex
+        },
+
+        // ---- 同步辅助 ----
+        getShareIdsFromLocations: (locations = []) => {
+          const shareIds = new Set<string>()
+          locations.forEach((loc) => {
+            const group = get().groups.find((g) => g.id === loc.groupId) as ShareAwareGroup | undefined
+            if (!group) return
+            if (group.shareId) shareIds.add(group.shareId)
+            if (group.sourceShareId) shareIds.add(group.sourceShareId)
+            const sub = group.children.find((c) => c.id === loc.subGroupId) as ShareAwareSubGroup | undefined
+            if (!sub) return
+            if (sub.shareId) shareIds.add(sub.shareId)
+            if (sub.sourceShareId) shareIds.add(sub.sourceShareId)
+          })
+          return Array.from(shareIds)
+        },
+
+        getShareIdsFromSubGroup: (groupId, subId) => {
+          const group = get().groups.find((g) => g.id === groupId) as ShareAwareGroup | undefined
+          if (!group) return []
+          const sub = group.children.find((c) => c.id === subId) as ShareAwareSubGroup | undefined
+          const shareIds = new Set<string>()
+          if (group.shareId) shareIds.add(group.shareId)
+          if (group.sourceShareId) shareIds.add(group.sourceShareId)
+          if (sub?.shareId) shareIds.add(sub.shareId)
+          if (sub?.sourceShareId) shareIds.add(sub.sourceShareId)
+          return Array.from(shareIds)
+        },
+
+        getShareIdsFromGroup: (groupId) => {
+          const group = get().groups.find((g) => g.id === groupId) as ShareAwareGroup | undefined
+          if (!group) return []
+          const shareIds = new Set<string>()
+          if (group.shareId) shareIds.add(group.shareId)
+          if (group.sourceShareId) shareIds.add(group.sourceShareId)
+          group.children.forEach((child) => {
+            const sub = child as ShareAwareSubGroup
+            if (sub.shareId) shareIds.add(sub.shareId)
+            if (sub.sourceShareId) shareIds.add(sub.sourceShareId)
+          })
+          return Array.from(shareIds)
+        },
+
+        scheduleBookmarkSync: (bookmarkId, options) => {
+          const now = options?.updatedAt || Date.now()
+          const bookmark = get().bookmarks.find((b) => b.id === bookmarkId)
+          const isDeleted = !!options?.isDeleted
+          const content = options?.content ?? bookmark ?? null
+          if (!isDeleted && !content) return
+          schedulePush(
+            { itemId: bookmarkId, itemType: 'bookmark', content, isDeleted, updatedAt: now },
+            { previousShareIds: options?.previousShareIds }
+          )
+        },
+
+        scheduleGroupSync: (groupId, options) => {
+          const now = options?.updatedAt || Date.now()
+          const group = get().groups.find((g) => g.id === groupId)
+          if (options?.isDeleted) {
+            schedulePush(
+              { itemId: groupId, itemType: 'group', content: null, isDeleted: true, updatedAt: now },
+              { previousShareIds: options?.previousShareIds }
+            )
+            return
+          }
+          if (!group) return
+          const content = clone(group) as ShareAwareGroup
+          if (typeof options?.orderIndex === 'number') content.orderIndex = options.orderIndex
+          schedulePush(
+            { itemId: group.id, itemType: 'group', content, isDeleted: false, updatedAt: now },
+            { previousShareIds: options?.previousShareIds }
+          )
+        },
+
+        scheduleSubGroupSync: (groupId, subId, options) => {
+          const now = options?.updatedAt || Date.now()
+          const group = get().groups.find((g) => g.id === groupId)
+          const sub = group?.children.find((c) => c.id === subId)
+          if (options?.isDeleted) {
+            schedulePush(
+              { itemId: subId, itemType: 'subGroup', content: null, isDeleted: true, updatedAt: now },
+              { previousShareIds: options?.previousShareIds }
+            )
+            return
+          }
+          if (!group || !sub) return
+          schedulePush(
+            {
+              itemId: sub.id,
+              itemType: 'subGroup',
+              content: { ...clone(sub), parentGroupId: group.id },
+              isDeleted: false,
+              updatedAt: now
+            },
+            { previousShareIds: options?.previousShareIds }
+          )
+        },
+
+        // ---- 分组 ----
+        addGroup: (name) => {
+          const groups = clone(get().groups)
+          const now = Date.now()
+          const group: Group = {
+            id: uid(),
+            name,
+            createdAt: now,
+            updatedAt: now,
+            children: [{ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now }]
+          }
+          groups.push(group)
+          commit(groups, get().bookmarks, {
+            activeGroupId: group.id,
+            activeSubGroupId: group.children[0].id
+          })
+          get().scheduleGroupSync(group.id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === group.id) })
+          return group
+        },
+
+        updateGroup: (id, name) => {
+          const groups = clone(get().groups)
+          const group = groups.find((g) => g.id === id)
+          if (!group) return
+          const now = Date.now()
+          group.name = name
+          group.updatedAt = now
+          commit(groups, get().bookmarks)
+          get().scheduleGroupSync(id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === id) })
+        },
+
+        addSubGroup: (name, groupId) => {
+          const groups = clone(get().groups)
+          const group = groups.find((g) => g.id === groupId)
+          if (!group) return null
+          const now = Date.now()
+          const sub: SubGroup = { id: uid(), name, bookmarkIds: [], createdAt: now, updatedAt: now }
+          group.children.push(sub)
+          group.updatedAt = now
+          commit(groups, get().bookmarks, { activeSubGroupId: sub.id })
+          get().scheduleSubGroupSync(groupId, sub.id, { updatedAt: now })
+          get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
+          return sub
+        },
+
+        updateSubGroup: (groupId, subId, name) => {
+          const groups = clone(get().groups)
+          const group = groups.find((g) => g.id === groupId)
+          const sub = group?.children.find((c) => c.id === subId)
+          if (!group || !sub) return
+          const now = Date.now()
+          sub.name = name
+          sub.updatedAt = now
+          group.updatedAt = now
+          commit(groups, get().bookmarks)
+          get().scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+          get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
+        },
+
+        reorderGroups: (newOrder) => {
+          const now = Date.now()
+          const current = get().groups
+          const trash = current.find((g) => g.id === TRASH_GROUP_ID)
+          const filtered = clone(newOrder.filter((g) => g.id !== TRASH_GROUP_ID))
+          filtered.forEach((group, index) => {
+            group.updatedAt = now + index
+          })
+          const groups = trash ? [...filtered, trash] : filtered
+          commit(groups, get().bookmarks)
+          filtered.forEach((group, orderIndex) => {
+            get().scheduleGroupSync(group.id, { updatedAt: group.updatedAt, orderIndex })
+          })
+        },
+
+        reorderSubGroups: (groupId, newChildren) => {
+          const groups = clone(get().groups)
+          const group = groups.find((g) => g.id === groupId)
+          if (!group) return
+          const now = Date.now()
+          const children = clone(newChildren)
+          children.forEach((child, index) => {
+            child.updatedAt = now + index
+          })
+          group.children = children
+          group.updatedAt = now
+          commit(groups, get().bookmarks)
+          children.forEach((child) => {
+            get().scheduleSubGroupSync(groupId, child.id, { updatedAt: child.updatedAt })
+          })
+          get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
+        },
+
+        findGroupByName: (name) => get().groups.find((g) => g.name === name && g.id !== TRASH_GROUP_ID) || null,
+
+        removeGroup: (id) => {
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const idx = groups.findIndex((g) => g.id === id)
+          if (idx === -1) return false
+          const group = groups[idx]
+          const now = Date.now()
+
+          const previousGroupShareIds = get().getShareIdsFromGroup(id)
+          const previousSubShareIdsMap = new Map<string, string[]>()
+          const touchedBookmarkShareIdsMap = new Map<string, string[]>()
+
+          group.children.forEach((sub) => {
+            previousSubShareIdsMap.set(sub.id, get().getShareIdsFromSubGroup(id, sub.id))
+            sub.bookmarkIds.forEach((bid) => {
+              if (touchedBookmarkShareIdsMap.has(bid)) return
+              const bookmark = bookmarks.find((b) => b.id === bid)
+              const previousLocations = bookmark?.locations
+                ? clone(bookmark.locations)
+                : get().getBookmarkLocations(bid)
+              touchedBookmarkShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
+            })
+          })
+
+          const toTrash: string[] = []
+          group.children.forEach((sub) => {
+            sub.bookmarkIds.forEach((bid) => {
+              const bookmark = bookmarks.find((b) => b.id === bid)
+              if (!bookmark) return
+              const oldLocations = bookmark.locations ? [...bookmark.locations] : []
+              bookmark.locations = bookmark.locations?.filter((loc) => loc.groupId !== id) || []
+              if (bookmark.locations.length === 0) {
+                if (oldLocations.length > 0) bookmark.prevLocations = oldLocations
                 bookmark.updatedAt = now
                 toTrash.push(bid)
               }
-            }
+            })
           })
-          
-          // 2. 删除子分组
-          group.children.splice(index, 1)
-          group.updatedAt = now
-          
-          // 3. 将书签添加到回收站（去重）
-          let trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
+
+          groups.splice(idx, 1)
+
+          let trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
           if (!trashGroup) {
             trashGroup = {
               id: TRASH_GROUP_ID,
@@ -420,1329 +583,888 @@ export const useBookmarkStore = defineStore('bookmark', {
               updatedAt: now,
               children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
             }
-            this.groups.push(trashGroup)
+            groups.push(trashGroup)
           }
           if (trashGroup.children.length === 0) {
             trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
           }
           const trashSub = trashGroup.children[0]
-          
+
+          toTrash.forEach((bid) => {
+            if (!trashSub.bookmarkIds.includes(bid)) trashSub.bookmarkIds.push(bid)
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            if (bookmark) bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
+          })
           if (toTrash.length > 0) {
-            toTrash.forEach(bid => {
-              if (!trashSub.bookmarkIds.includes(bid)) {
-                trashSub.bookmarkIds.push(bid)
-              }
-              const bookmark = this.bookmarks.find(b => b.id === bid)
-              if (bookmark) {
-                bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
-              }
+            trashSub.updatedAt = now
+            trashGroup.updatedAt = now
+          }
+
+          let nextActiveGroupId = get().activeGroupId
+          let nextActiveSubGroupId = get().activeSubGroupId
+          if (nextActiveGroupId === id) {
+            nextActiveGroupId = groups[0]?.id ?? ''
+            nextActiveSubGroupId = groups[0]?.children[0]?.id ?? ''
+          }
+
+          commit(groups, bookmarks, { activeGroupId: nextActiveGroupId, activeSubGroupId: nextActiveSubGroupId })
+
+          touchedBookmarkShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+            get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
+          })
+          previousSubShareIdsMap.forEach((previousShareIds, subId) => {
+            get().scheduleSubGroupSync(id, subId, { isDeleted: true, updatedAt: now, previousShareIds })
+          })
+          get().scheduleGroupSync(id, { isDeleted: true, updatedAt: now, previousShareIds: previousGroupShareIds })
+          groups
+            .filter((g) => g.id !== TRASH_GROUP_ID)
+            .forEach((existingGroup, orderIndex) => {
+              get().scheduleGroupSync(existingGroup.id, { updatedAt: now, orderIndex })
+            })
+
+          return true
+        },
+
+        removeSubGroup: (groupId, subId) => {
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const group = groups.find((g) => g.id === groupId)
+          if (!group) return false
+          const idx = group.children.findIndex((c) => c.id === subId)
+          if (idx === -1) return false
+          const sub = group.children[idx]
+          const now = Date.now()
+
+          const previousSubShareIds = get().getShareIdsFromSubGroup(groupId, subId)
+          const touchedBookmarkShareIdsMap = new Map<string, string[]>()
+          sub.bookmarkIds.forEach((bid) => {
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bid)
+            touchedBookmarkShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
+          })
+
+          const toTrash: string[] = []
+          sub.bookmarkIds.forEach((bid) => {
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            if (!bookmark) return
+            bookmark.locations =
+              bookmark.locations?.filter((loc) => !(loc.groupId === groupId && loc.subGroupId === subId)) || []
+            if (bookmark.locations.length === 0) {
+              bookmark.updatedAt = now
+              toTrash.push(bid)
+            }
+          })
+
+          group.children.splice(idx, 1)
+          group.updatedAt = now
+
+          let trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
+          if (!trashGroup) {
+            trashGroup = {
+              id: TRASH_GROUP_ID,
+              name: '回收站',
+              createdAt: now,
+              updatedAt: now,
+              children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
+            }
+            groups.push(trashGroup)
+          }
+          if (trashGroup.children.length === 0) {
+            trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
+          }
+          const trashSub = trashGroup.children[0]
+
+          if (toTrash.length > 0) {
+            toTrash.forEach((bid) => {
+              if (!trashSub.bookmarkIds.includes(bid)) trashSub.bookmarkIds.push(bid)
+              const bookmark = bookmarks.find((b) => b.id === bid)
+              if (bookmark) bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
             })
             trashSub.updatedAt = now
             trashGroup.updatedAt = now
           }
-          
-          // 4. 如果删除子分组后，主分组没有子分组了，则删除主分组
-          const shouldDeleteGroup = group.children.length === 0 &&
-            group.id !== TRASH_GROUP_ID
-          
-          if (shouldDeleteGroup) {
-            if (this.activeGroupId === groupId) {
-              const otherGroup = this.groups.find(g => g.id !== groupId && g.id !== TRASH_GROUP_ID)
-              if (otherGroup) {
-                this.activeGroupId = otherGroup.id
-                this.activeSubGroupId = otherGroup.children[0]?.id || ''
-              } else {
-                const defaultGroup = this.groups.find(g => g.id === 'g-default')
-                if (defaultGroup) {
-                  this.activeGroupId = defaultGroup.id
-                  this.activeSubGroupId = defaultGroup.children[0]?.id || ''
-                }
-              }
-            }
-            const groupIndex = this.groups.findIndex(g => g.id === groupId)
-            if (groupIndex !== -1) {
-              this.groups.splice(groupIndex, 1)
-            }
-          } else {
-            if (group.children.length === 0) {
-              const newSub = { id: uid(), name: '默认', bookmarkIds: [], createdAt: now, updatedAt: now }
-              group.children.push(newSub)
-              group.updatedAt = now
-            }
-            // 无论是否新建，都尝试选中第一个（如果之前选中的是被删除的）
-            if (this.activeSubGroupId === subGroupId) {
-              this.activeSubGroupId = group.children[0]?.id || ''
-            }
+
+          if (group.children.length === 0) {
+            group.children.push({ id: uid(), name: '默认', bookmarkIds: [], createdAt: now, updatedAt: now })
+            group.updatedAt = now
           }
-          // 强制立即持久化
-          ;(this as any).$persist?.()
-          return true
-        }
-      }
-      return false
-    },
 
-    getShareIdsFromLocations(locations: BookmarkLocation[] = []) {
-      const shareIds = new Set<string>()
+          let nextActiveSubGroupId = get().activeSubGroupId
+          if (nextActiveSubGroupId === subId) nextActiveSubGroupId = group.children[0]?.id ?? ''
 
-      locations.forEach(loc => {
-        const group = this.groups.find(g => g.id === loc.groupId) as (Group & { shareId?: string; sourceShareId?: string }) | undefined
-        if (!group) return
+          commit(groups, bookmarks, { activeSubGroupId: nextActiveSubGroupId })
 
-        if (group.shareId) shareIds.add(group.shareId)
-        if (group.sourceShareId) shareIds.add(group.sourceShareId)
-
-        const sub = group.children.find(c => c.id === loc.subGroupId) as (SubGroup & { shareId?: string; sourceShareId?: string }) | undefined
-        if (!sub) return
-
-        if (sub.shareId) shareIds.add(sub.shareId)
-        if (sub.sourceShareId) shareIds.add(sub.sourceShareId)
-      })
-
-      return Array.from(shareIds)
-    },
-
-    getShareIdsFromSubGroup(groupId: string, subId: string) {
-      const group = this.groups.find(g => g.id === groupId) as (Group & { shareId?: string; sourceShareId?: string }) | undefined
-      if (!group) return []
-
-      const sub = group.children.find(c => c.id === subId) as (SubGroup & { shareId?: string; sourceShareId?: string }) | undefined
-      const shareIds = new Set<string>()
-
-      if (group.shareId) shareIds.add(group.shareId)
-      if (group.sourceShareId) shareIds.add(group.sourceShareId)
-      if (sub?.shareId) shareIds.add(sub.shareId)
-      if (sub?.sourceShareId) shareIds.add(sub.sourceShareId)
-
-      return Array.from(shareIds)
-    },
-
-    getShareIdsFromGroup(groupId: string) {
-      const group = this.groups.find(g => g.id === groupId) as (Group & { shareId?: string; sourceShareId?: string }) | undefined
-      if (!group) return []
-
-      const shareIds = new Set<string>()
-      if (group.shareId) shareIds.add(group.shareId)
-      if (group.sourceShareId) shareIds.add(group.sourceShareId)
-
-      group.children.forEach(child => {
-        const sub = child as SubGroup & { shareId?: string; sourceShareId?: string }
-        if (sub.shareId) shareIds.add(sub.shareId)
-        if (sub.sourceShareId) shareIds.add(sub.sourceShareId)
-      })
-
-      return Array.from(shareIds)
-    },
-
-    scheduleBookmarkSync(bookmarkId: string, options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; content?: Bookmark | null }) {
-      const now = options?.updatedAt || Date.now()
-      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
-      const { schedulePush } = useSync()
-      const isDeleted = !!options?.isDeleted
-      const content = options?.content ?? bookmark ?? null
-
-      if (!isDeleted && !content) return
-
-      schedulePush({
-        itemId: bookmarkId,
-        itemType: 'bookmark',
-        content,
-        isDeleted,
-        updatedAt: now
-      }, {
-        previousShareIds: options?.previousShareIds
-      })
-    },
-
-    scheduleGroupSync(groupId: string, options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; orderIndex?: number }) {
-      const now = options?.updatedAt || Date.now()
-      const group = this.groups.find(g => g.id === groupId)
-      const { schedulePush } = useSync()
-
-      if (options?.isDeleted) {
-        schedulePush({
-          itemId: groupId,
-          itemType: 'group',
-          content: null,
-          isDeleted: true,
-          updatedAt: now
-        }, {
-          previousShareIds: options?.previousShareIds
-        })
-        return
-      }
-
-      if (!group) return
-
-      const content = JSON.parse(JSON.stringify(group)) as Group & { orderIndex?: number }
-      if (typeof options?.orderIndex === 'number') {
-        content.orderIndex = options.orderIndex
-      }
-
-      schedulePush({
-        itemId: group.id,
-        itemType: 'group',
-        content,
-        isDeleted: false,
-        updatedAt: now
-      }, {
-        previousShareIds: options?.previousShareIds
-      })
-    },
-
-    scheduleSubGroupSync(groupId: string, subId: string, options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[] }) {
-      const now = options?.updatedAt || Date.now()
-      const group = this.groups.find(g => g.id === groupId)
-      const sub = group?.children.find(c => c.id === subId)
-      const { schedulePush } = useSync()
-
-      if (options?.isDeleted) {
-        schedulePush({
-          itemId: subId,
-          itemType: 'subGroup',
-          content: null,
-          isDeleted: true,
-          updatedAt: now
-        }, {
-          previousShareIds: options?.previousShareIds
-        })
-        return
-      }
-
-      if (!group || !sub) return
-
-      schedulePush({
-        itemId: sub.id,
-        itemType: 'subGroup',
-        content: {
-          ...JSON.parse(JSON.stringify(sub)),
-          parentGroupId: group.id
-        },
-        isDeleted: false,
-        updatedAt: now
-      }, {
-        previousShareIds: options?.previousShareIds
-      })
-    },
-
-    addGroup(name: string) {
-      const now = Date.now()
-      const group: Group = {
-        id: uid(),
-        name,
-        createdAt: now,
-        updatedAt: now,
-        children: [
-          {
-            id: uid(),
-            name: '子分组',
-            bookmarkIds: [],
-            createdAt: now,
-            updatedAt: now
-          }
-        ]
-      }
-      this.groups.push(group)
-      this.activeGroupId = group.id
-      this.activeSubGroupId = group.children[0].id
-      this.scheduleGroupSync(group.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === group.id) })
-      return group
-    },
-    addSubGroup(name: string, groupId: string) {
-      const group = this.groups.find(g => g.id === groupId)
-      if (!group) return null
-      const now = Date.now()
-      const sub = { id: uid(), name, bookmarkIds: [], createdAt: now, updatedAt: now }
-      group.children.push(sub)
-      group.updatedAt = now
-      this.activeSubGroupId = sub.id
-      this.scheduleSubGroupSync(groupId, sub.id, { updatedAt: now })
-      this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
-      return sub
-    },
-    updateGroup(id: string, name: string) {
-      const group = this.groups.find(g => g.id === id)
-      if (group) {
-        const now = Date.now()
-        group.name = name
-        group.updatedAt = now
-        this.scheduleGroupSync(id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === id) })
-      }
-    },
-    updateSubGroup(groupId: string, subId: string, name: string) {
-      const group = this.groups.find(g => g.id === groupId)
-      const sub = group?.children.find(c => c.id === subId)
-      if (sub) {
-        const now = Date.now()
-        sub.name = name
-        sub.updatedAt = now
-        group!.updatedAt = now
-        this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
-        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
-      }
-    },
-    setSearch(value: string) {
-      this.search = typeof value === 'string' ? value : ''
-    },
-    ensureValidSelection(preferredGroupId?: string, preferredSubGroupId?: string) {
-      preferredGroupId = preferredGroupId ?? this.activeGroupId
-      preferredSubGroupId = preferredSubGroupId ?? this.activeSubGroupId
-      if (!this.groups.length) {
-        this.activeGroupId = ''
-        this.activeSubGroupId = ''
-        return
-      }
-
-      const preferredGroup = this.groups.find(g => g.id === preferredGroupId)
-      const fallbackGroup = preferredGroup || this.groups.find(g => g.id !== TRASH_GROUP_ID) || this.groups[0]
-
-      if (!fallbackGroup) {
-        this.activeGroupId = ''
-        this.activeSubGroupId = ''
-        return
-      }
-
-      const preferredSub = fallbackGroup.children.find(c => c.id === preferredSubGroupId)
-      const fallbackSub = preferredSub || fallbackGroup.children[0]
-
-      this.activeGroupId = fallbackGroup.id
-      this.activeSubGroupId = fallbackSub?.id || ''
-    },
-    selectGroup(groupId: string, subId?: string) {
-      this.activeGroupId = groupId
-      const group = this.groups.find(g => g.id === groupId)
-      const firstSub = group?.children?.[0]
-      this.activeSubGroupId = subId ?? firstSub?.id ?? ''
-    },
-    selectSubGroup(subId: string) {
-      this.activeSubGroupId = subId
-    },
-    addBookmark(payload: Omit<Bookmark, 'id' | 'createdAt' | 'updatedAt'>, locations: BookmarkLocation[]) {
-      const now = Date.now()
-      const bookmark: Bookmark = { 
-        ...payload, 
-        id: uid(), 
-        locations,
-        createdAt: now,
-        updatedAt: now
-      }
-      this.bookmarks.push(bookmark)
-      locations.forEach(loc => {
-        const group = this.groups.find(g => g.id === loc.groupId)
-        let sub = group?.children.find(c => c.id === loc.subGroupId)
-        if (!sub && group) {
-          const created = this.addSubGroup('子分组', group.id)
-          if (created) sub = created
-        }
-        if (sub && !sub.bookmarkIds.includes(bookmark.id)) {
-          sub.bookmarkIds.push(bookmark.id)
-          sub.updatedAt = now
-          group!.updatedAt = now
-        }
-      })
-
-      this.scheduleBookmarkSync(bookmark.id, { updatedAt: now })
-      const affectedSubKeys = new Set<string>()
-      locations.forEach(loc => {
-        affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`)
-      })
-      affectedSubKeys.forEach(key => {
-        const [groupId, subId] = key.split(':')
-        if (!groupId || !subId) return
-        this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
-      })
-
-      const affectedGroupIds = new Set<string>()
-      locations.forEach(loc => affectedGroupIds.add(loc.groupId))
-      affectedGroupIds.forEach(groupId => {
-        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
-      })
-
-      trackEvent('bookmark_create_success', {
-        bookmarkId: bookmark.id,
-        locationCount: locations.length,
-        firstGroupId: locations[0]?.groupId,
-        firstSubGroupId: locations[0]?.subGroupId,
-        hasTemplate: /{[^}]+}/.test(bookmark.url),
-        allowUniversal: bookmark.allowUniversal ?? false,
-      })
-
-      return bookmark
-    },
-    updateBookmarkLocations(bookmarkId: string, newLocations: BookmarkLocation[]) {
-      const now = Date.now()
-      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
-      const previousLocations = bookmark?.locations
-        ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-        : this.getBookmarkLocations(bookmarkId)
-      const previousShareIds = this.getShareIdsFromLocations(previousLocations)
-      const newLocSet = new Set(newLocations.map(loc => `${loc.groupId}:${loc.subGroupId}`))
-      
-      this.groups.forEach(g => {
-        let groupChanged = false
-        g.children.forEach(sub => {
-          const key = `${g.id}:${sub.id}`
-          if (!newLocSet.has(key)) {
-            const originalLen = sub.bookmarkIds.length
-            sub.bookmarkIds = sub.bookmarkIds.filter(id => id !== bookmarkId)
-            if (sub.bookmarkIds.length !== originalLen) {
-              sub.updatedAt = now
-              groupChanged = true
-            }
-          }
-        })
-        if (groupChanged) g.updatedAt = now
-      })
-      
-      newLocations.forEach(loc => {
-        const group = this.groups.find(g => g.id === loc.groupId)
-        const sub = group?.children.find(c => c.id === loc.subGroupId)
-        if (!sub) return
-        if (!sub.bookmarkIds.includes(bookmarkId)) {
-          sub.bookmarkIds.push(bookmarkId)
-          sub.updatedAt = now
-          group!.updatedAt = now
-        }
-      })
-      
-      if (bookmark) {
-        bookmark.locations = newLocations
-        bookmark.updatedAt = now
-      }
-
-      const affectedSubKeys = new Set<string>()
-      previousLocations.forEach(loc => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
-      newLocations.forEach(loc => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
-
-      affectedSubKeys.forEach(key => {
-        const [groupId, subId] = key.split(':')
-        if (!groupId || !subId) return
-        this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
-      })
-
-      const affectedGroupIds = new Set<string>()
-      previousLocations.forEach(loc => affectedGroupIds.add(loc.groupId))
-      newLocations.forEach(loc => affectedGroupIds.add(loc.groupId))
-      affectedGroupIds.forEach(groupId => {
-        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
-      })
-
-      this.scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
-    },
-    updateBookmark(id: string, updater: Partial<Bookmark>) {
-      const idx = this.bookmarks.findIndex(b => b.id === id)
-      if (idx === -1) return
-
-      const bookmark = this.bookmarks[idx]
-      const now = Date.now()
-      const originalUrl = bookmark.url
-      const originalIcon = bookmark.icon
-
-      // 直接修改属性而非替换对象，保持响应式
-      Object.assign(bookmark, updater, { updatedAt: now })
-
-      if (updater.url && updater.url !== originalUrl && (!originalIcon || originalIcon.type === 'text')) {
-        this.refreshSingleIcon(bookmark)
-      }
-
-      this.scheduleBookmarkSync(bookmark.id, { updatedAt: now })
-    },
-    removeBookmark(id: string) {
-      const now = Date.now()
-      const locations = this.getBookmarkLocations(id)
-      const inTrash = locations.some(loc => loc.groupId === TRASH_GROUP_ID)
-
-      trackEvent('bookmark_delete', {
-        bookmarkId: id,
-        deleteType: inTrash ? 'permanent' : 'trash',
-        locationCount: locations.length,
-        firstGroupId: locations[0]?.groupId,
-        firstSubGroupId: locations[0]?.subGroupId,
-      })
-
-      if (inTrash) {
-        const bookmark = this.bookmarks.find(b => b.id === id)
-        const previousLocations = bookmark?.locations
-          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-          : this.getBookmarkLocations(id)
-        const previousShareIds = this.getShareIdsFromLocations(previousLocations)
-
-        this.groups.forEach(g => {
-          let groupChanged = false
-          g.children.forEach(sub => {
-            const originalLen = sub.bookmarkIds.length
-            sub.bookmarkIds = sub.bookmarkIds.filter(bid => bid !== id)
-            if (sub.bookmarkIds.length !== originalLen) {
-              sub.updatedAt = now
-              groupChanged = true
-            }
+          touchedBookmarkShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+            get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
           })
-          if (groupChanged) g.updatedAt = now
-        })
-        this.bookmarks = this.bookmarks.filter(b => b.id !== id)
-        this.scheduleBookmarkSync(id, {
-          isDeleted: true,
-          updatedAt: now,
-          previousShareIds,
-          content: null
-        })
-      } else {
-        // 软删除预留：标记 isDeleted 并移入回收站
-        const bookmark = this.bookmarks.find(b => b.id === id)
-        if (bookmark) {
-          bookmark.updatedAt = now
-          // 记录移入回收站前的位置
-          if (bookmark.locations && bookmark.locations.length > 0) {
-            bookmark.prevLocations = JSON.parse(JSON.stringify(bookmark.locations))
-          }
-          // bookmark.isDeleted = true // 暂时不开启物理隐藏，先走回收站逻辑
-          this.updateBookmarkLocations(id, [{ groupId: TRASH_GROUP_ID, subGroupId: 'sg-trash' }])
-        }
-      }
-    },
-    removeBookmarkFromLocation(id: string, groupId: string, subGroupId: string) {
-      const locations = this.getBookmarkLocations(id)
-      const remainingLocations = locations.filter(
-        loc => !(loc.groupId === groupId && loc.subGroupId === subGroupId)
-      )
-      if (remainingLocations.length > 0) {
-        this.updateBookmarkLocations(id, remainingLocations)
-      } else {
-        this.removeBookmark(id)
-      }
-    },
-    restoreBookmark(id: string) {
-      return this.restoreBookmarkFromTrash(id)
-    },
-    restoreBookmarkFromTrash(id: string) {
-      const bookmark = this.bookmarks.find(b => b.id === id)
-      if (!bookmark) return false
+          get().scheduleSubGroupSync(groupId, subId, { isDeleted: true, updatedAt: now, previousShareIds: previousSubShareIds })
+          get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
 
-      const now = Date.now()
-      const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
-      const trashSubs = trashGroup?.children ?? []
-      const previousLocations = bookmark.locations
-        ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-        : this.getBookmarkLocations(id)
-      const previousShareIds = this.getShareIdsFromLocations(previousLocations)
+          return true
+        },
 
-      let targetLocations: BookmarkLocation[] = []
+        deleteSubGroup: (groupId, subGroupId) => {
+          // 与 removeSubGroup 等价，但删空主分组时整体移除主分组（旧版 deleteSubGroup 语义）
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const group = groups.find((g) => g.id === groupId)
+          if (!group) return false
+          const index = group.children.findIndex((c) => c.id === subGroupId)
+          if (index === -1) return false
+          const subGroup = group.children[index]
+          const now = Date.now()
 
-      // 1. 优先尝试从记录的原位置还原
-      if (bookmark.prevLocations && bookmark.prevLocations.length > 0) {
-        // 过滤掉已经不存在的分组或子分组
-        targetLocations = bookmark.prevLocations.filter(loc => {
-          const group = this.groups.find(g => g.id === loc.groupId)
-          return group && group.id !== TRASH_GROUP_ID && group.children.some(c => c.id === loc.subGroupId)
-        })
-      }
-
-      // 2. 如果没有记录原位置，或原位置已失效，则还原到默认位置
-      if (targetLocations.length === 0) {
-        const defaultGroup = this.groups.find(g => g.id !== TRASH_GROUP_ID)
-        if (defaultGroup && defaultGroup.children.length > 0) {
-          targetLocations = [{ groupId: defaultGroup.id, subGroupId: defaultGroup.children[0].id }]
-        } else {
-          const createdGroups = createSeedGroups()
-          const defaultGroup = createdGroups.find(g => g.id !== TRASH_GROUP_ID)!
-          this.groups.unshift(defaultGroup)
-          targetLocations = [{ groupId: defaultGroup.id, subGroupId: defaultGroup.children[0].id }]
-        }
-      }
-
-      trashSubs.forEach(sub => {
-        sub.bookmarkIds = sub.bookmarkIds.filter(bid => bid !== id)
-        sub.updatedAt = now
-      })
-      if (trashGroup) trashGroup.updatedAt = now
-
-      bookmark.isDeleted = false
-      bookmark.updatedAt = now
-      this.updateBookmarkLocations(id, targetLocations)
-      delete bookmark.prevLocations
-      this.selectGroup(targetLocations[0].groupId, targetLocations[0].subGroupId)
-      this.scheduleBookmarkSync(id, { updatedAt: now, previousShareIds })
-      targetLocations.forEach(loc => {
-        this.scheduleSubGroupSync(loc.groupId, loc.subGroupId, { updatedAt: now })
-        this.scheduleGroupSync(loc.groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === loc.groupId) })
-      })
-      ;(this as any).$persist?.()
-      return true
-    },
-    emptyTrash() {
-      const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
-      const trashSub = trashGroup?.children[0]
-      if (!trashSub) return
-      
-      const now = Date.now()
-      const idsToRemove = [...trashSub.bookmarkIds]
-      const previousShareIdsMap = new Map<string, string[]>()
-
-      idsToRemove.forEach(id => {
-        const bookmark = this.bookmarks.find(b => b.id === id)
-        const previousLocations = bookmark?.locations
-          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-          : this.getBookmarkLocations(id)
-        previousShareIdsMap.set(id, this.getShareIdsFromLocations(previousLocations))
-      })
-
-      idsToRemove.forEach(id => {
-          trashSub.bookmarkIds = trashSub.bookmarkIds.filter(bid => bid !== id)
-          this.bookmarks = this.bookmarks.filter(b => b.id !== id)
-      })
-      trashSub.updatedAt = now
-      trashGroup!.updatedAt = now
-      
-      idsToRemove.forEach(id => {
-        this.scheduleBookmarkSync(id, {
-          isDeleted: true,
-          updatedAt: now,
-          previousShareIds: previousShareIdsMap.get(id) || [],
-          content: null
-        })
-      })
-    },
-    async refreshSingleIcon(bookmark: Bookmark) {
-      const icon = await ensureIconForBookmark(bookmark)
-      if (!icon) return
-      this.assignIcon(bookmark.id, icon)
-    },
-    isBookmarkInTrash(bookmark: Bookmark) {
-      const inTrashByLocation = Array.isArray(bookmark.locations) && bookmark.locations.some(loc =>
-        loc.groupId === TRASH_GROUP_ID || loc.subGroupId === 'sg-trash'
-      )
-
-      const trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
-      const inTrashByGroupIndex = !!trashGroup && trashGroup.children.some(sub => sub.bookmarkIds.includes(bookmark.id))
-
-      return inTrashByLocation || inTrashByGroupIndex
-    },
-    getMissingIconCandidates(force = false) {
-      const settingsStore = useSettingsStore()
-      return this.bookmarks.filter(bookmark => {
-        if (this.isBookmarkInTrash(bookmark)) return false
-        if (settingsStore.skipFailedIconMatch && bookmark.iconMatchFailedAt && !force) return false
-        return !bookmark.icon || bookmark.icon.type === 'text'
-      })
-    },
-    countMissingIconCandidates(force = false) {
-      return this.getMissingIconCandidates(force).length
-    },
-    async refreshMissingIcons(force = false) {
-      const missing = this.getMissingIconCandidates(force)
-      const result = await bulkMatchMissing(missing)
-      result.forEach((icon, id) => this.assignIcon(id, icon))
-      
-      // 收集成功和失败的书签信息
-      const successList: string[] = []
-      const failList: { id: string; title: string }[] = []
-      
-      const now = Date.now()
-      missing.forEach(bookmark => {
-        if (result.has(bookmark.id)) {
-          successList.push(bookmark.title || bookmark.url)
-          bookmark.iconMatchedAt = now
-          bookmark.iconMatchFailedAt = undefined
-          bookmark.iconMatchFailedReason = undefined
-        } else {
-          failList.push({ id: bookmark.id, title: bookmark.title || bookmark.url })
-          bookmark.iconMatchFailedAt = now
-          bookmark.iconMatchFailedReason = 'no_icon'
-        }
-      })
-      
-      return {
-        total: missing.length,
-        matched: result.size,
-        remaining: this.countMissingIconCandidates(force),
-        successList,
-        failList
-      }
-    },
-    assignIcon(id: string, icon: IconSource) {
-      const idx = this.bookmarks.findIndex(b => b.id === id)
-      if (idx !== -1) {
-        const prev = this.bookmarks[idx]
-        this.bookmarks.splice(idx, 1, {
-          ...prev,
-          icon,
-          iconMatchedAt: Date.now(),
-          iconMatchFailedAt: undefined,
-          iconMatchFailedReason: undefined,
-          updatedAt: Date.now()
-        })
-      }
-    },
-
-    // 静默生成全局搜索书签的 base64 图标缓存
-    async generateSearchIconCaches(silent = true) {
-      const settingsStore = useSettingsStore()
-      const isSearchBookmark = (bookmark: Bookmark) => {
-        if (bookmark.allowUniversal) return true
-        return /{[^}]+}/.test(bookmark.url)
-      }
-
-      const targets = this.bookmarks.filter(isSearchBookmark)
-      const pending = targets.filter(b => {
-        if (settingsStore.skipFailedIconMatch && b.iconMatchFailedAt) return false
-        if (!b.icon || b.icon.type === 'text') return true
-        return b.icon.type === 'remote' && b.icon.src && !b.icon.cache
-      })
-
-      if (pending.length === 0) {
-        if (!silent) console.log('[IconCache] 全局搜索图标已缓存，无需更新')
-        return null
-      }
-
-      if (!silent) console.log(`[IconCache] 开始为 ${pending.length} 个全局搜索书签生成图标缓存...`)
-
-      let successCount = 0
-      let failCount = 0
-      const failedTitles: string[] = []
-
-      for (const bookmark of pending) {
-        try {
-          const icon = await ensureIconForBookmark(bookmark, true)
-          if (icon && icon.type === 'remote' && icon.cache) {
-            this.assignIcon(bookmark.id, icon)
-            bookmark.iconMatchedAt = Date.now()
-            bookmark.iconMatchFailedAt = undefined
-            bookmark.iconMatchFailedReason = undefined
-            successCount++
-            if (!silent) console.log(`[IconCache] ✓ ${bookmark.title}`)
-          } else {
-            failCount++
-            bookmark.iconMatchFailedAt = Date.now()
-            bookmark.iconMatchFailedReason = 'no_icon'
-            failedTitles.push(bookmark.title || bookmark.url)
-            if (!silent) console.log(`[IconCache] ✗ ${bookmark.title} (获取失败)`)
-          }
-        } catch (e) {
-          failCount++
-          bookmark.iconMatchFailedAt = Date.now()
-          bookmark.iconMatchFailedReason = 'error'
-          failedTitles.push(bookmark.title || bookmark.url)
-          if (!silent) console.log(`[IconCache] ✗ ${bookmark.title} (错误)`)
-          if (!(e instanceof Error) || !e.message.includes('fetch')) {
-            console.warn(`[IconCache] 严重错误: ${bookmark.title}`, e)
-          }
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
-
-      if (!silent) console.log(`[IconCache] 缓存生成完成: ${successCount} 成功, ${failCount} 失败`)
-      return {
-        total: pending.length,
-        success: successCount,
-        failed: failCount,
-        failedTitles
-      }
-    },
-
-    // 静默生成所有 remote 图标的 base64 缓存
-    async generateIconCaches(silent = true) {
-      const remoteIcons = this.bookmarks.filter(b =>
-        b.icon?.type === 'remote' && b.icon.src && !b.icon.cache
-      )
-
-      if (remoteIcons.length === 0) {
-        if (!silent) console.log('[IconCache] 所有图标已缓存，无需更新')
-        return
-      }
-
-      if (!silent) console.log(`[IconCache] 开始为 ${remoteIcons.length} 个书签生成图标缓存...`)
-
-      let successCount = 0
-      let failCount = 0
-
-      for (const bookmark of remoteIcons) {
-        try {
-          // 强制重新获取以生成 base64 缓存
-          const icon = await ensureIconForBookmark(bookmark, true)
-          if (icon && icon.type === 'remote' && icon.cache) {
-            this.assignIcon(bookmark.id, icon)
-            successCount++
-            if (!silent) console.log(`[IconCache] ✓ ${bookmark.title}`)
-          } else {
-            failCount++
-            if (!silent) console.log(`[IconCache] ✗ ${bookmark.title} (获取失败)`)
-          }
-        } catch (e) {
-          failCount++
-          if (!silent) console.log(`[IconCache] ✗ ${bookmark.title} (错误)`)
-          // 只记录严重的错误
-          if (!(e instanceof Error) || !e.message.includes('fetch')) {
-            console.warn(`[IconCache] 严重错误: ${bookmark.title}`, e)
-          }
-        }
-
-        // 避免阻塞太久，每次处理后让出控制权
-        await new Promise(resolve => setTimeout(resolve, 50))
-      }
-
-      if (!silent) console.log(`[IconCache] 缓存生成完成: ${successCount} 成功, ${failCount} 失败`)
-    },
-
-    // 手动刷新图标缓存（显示详细进度）
-    async refreshIconCaches() {
-      console.log('[IconCache] 🔄 开始手动刷新图标缓存...')
-      await this.generateIconCaches(false)
-      console.log('[IconCache] ✅ 图标缓存刷新完成')
-    },
-    removeGroup(id: string) {
-      const idx = this.groups.findIndex(g => g.id === id)
-      if (idx === -1) return false
-      const group = this.groups[idx]
-      const now = Date.now()
-      const previousGroupShareIds = this.getShareIdsFromGroup(id)
-      const previousSubShareIdsMap = new Map<string, string[]>()
-      const touchedBookmarkShareIdsMap = new Map<string, string[]>()
-
-      group.children.forEach(sub => {
-        previousSubShareIdsMap.set(sub.id, this.getShareIdsFromSubGroup(id, sub.id))
-        sub.bookmarkIds.forEach(bid => {
-          if (touchedBookmarkShareIdsMap.has(bid)) return
-          const bookmark = this.bookmarks.find(b => b.id === bid)
-          const previousLocations = bookmark?.locations
-            ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-            : this.getBookmarkLocations(bid)
-          touchedBookmarkShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
-        })
-      })
-      
-      // 1. 收集需要移动到回收站的书签 ID
-      const toTrash: string[] = []
-      group.children.forEach(sub => {
-        sub.bookmarkIds.forEach(bid => {
-          const bookmark = this.bookmarks.find(b => b.id === bid)
-          if (bookmark) {
+          const toTrash: string[] = []
+          subGroup.bookmarkIds.forEach((bid) => {
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            if (!bookmark) return
             const oldLocations = bookmark.locations ? [...bookmark.locations] : []
-            // 移除当前分组的位置
-            bookmark.locations = bookmark.locations?.filter(loc => loc.groupId !== id) || []
-            // 如果书签没有其他位置了，标记为需要移动到回收站
+            bookmark.locations =
+              bookmark.locations?.filter((loc) => !(loc.groupId === groupId && loc.subGroupId === subGroupId)) || []
             if (bookmark.locations.length === 0) {
-              // 记录移入回收站前的位置
-              if (oldLocations.length > 0) {
-                bookmark.prevLocations = oldLocations
-              }
+              if (oldLocations.length > 0) bookmark.prevLocations = oldLocations
               bookmark.updatedAt = now
               toTrash.push(bid)
             }
-          }
-        })
-      })
-      
-      // 2. 删除分组
-      this.groups.splice(idx, 1)
-      
-      // 3. 将收集的书签添加到回收站（去重）
-      let trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
-      // 确保回收站分组存在
-      if (!trashGroup) {
-        trashGroup = {
-          id: TRASH_GROUP_ID,
-          name: '回收站',
-          createdAt: now,
-          updatedAt: now,
-          children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
-        }
-        this.groups.push(trashGroup)
-      }
-      // 确保回收站有子分组
-      if (trashGroup.children.length === 0) {
-        trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
-      }
-      const trashSub = trashGroup.children[0]
-      
-      toTrash.forEach(bid => {
-        // 去重：只有不在回收站中才添加
-        if (!trashSub.bookmarkIds.includes(bid)) {
-          trashSub.bookmarkIds.push(bid)
-        }
-        // 更新书签的 locations
-        const bookmark = this.bookmarks.find(b => b.id === bid)
-        if (bookmark) {
-          bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
-        }
-      })
-      if (toTrash.length > 0) {
-        trashSub.updatedAt = now
-        trashGroup.updatedAt = now
-      }
-      
-      // 4. 更新 activeGroupId
-      if (this.activeGroupId === id) {
-        this.activeGroupId = this.groups[0]?.id ?? ''
-        this.activeSubGroupId = this.groups[0]?.children[0]?.id ?? ''
-      }
+          })
 
-      touchedBookmarkShareIdsMap.forEach((previousShareIds, bookmarkId) => {
-        this.scheduleBookmarkSync(bookmarkId, {
-          updatedAt: now,
-          previousShareIds
-        })
-      })
-
-      previousSubShareIdsMap.forEach((previousShareIds, subId) => {
-        this.scheduleSubGroupSync(id, subId, {
-          isDeleted: true,
-          updatedAt: now,
-          previousShareIds
-        })
-      })
-
-      this.scheduleGroupSync(id, {
-        isDeleted: true,
-        updatedAt: now,
-        previousShareIds: previousGroupShareIds
-      })
-
-      this.groups
-        .filter(g => g.id !== TRASH_GROUP_ID)
-        .forEach((existingGroup, orderIndex) => {
-          this.scheduleGroupSync(existingGroup.id, { updatedAt: now, orderIndex })
-        })
-
-      // 强制立即持久化
-      ;(this as any).$persist?.()
-      return true
-    },
-    removeSubGroup(groupId: string, subId: string) {
-      const group = this.groups.find(g => g.id === groupId)
-      if (!group) return false
-      const idx = group.children.findIndex(c => c.id === subId)
-      if (idx === -1) return false
-      const sub = group.children[idx]
-      const now = Date.now()
-      const previousSubShareIds = this.getShareIdsFromSubGroup(groupId, subId)
-      const touchedBookmarkShareIdsMap = new Map<string, string[]>()
-      sub.bookmarkIds.forEach(bid => {
-        const bookmark = this.bookmarks.find(b => b.id === bid)
-        const previousLocations = bookmark?.locations
-          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-          : this.getBookmarkLocations(bid)
-        touchedBookmarkShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
-      })
-      
-      // 1. 收集需要移动到回收站的书签
-      const toTrash: string[] = []
-      sub.bookmarkIds.forEach(bid => {
-        const bookmark = this.bookmarks.find(b => b.id === bid)
-        if (bookmark) {
-          bookmark.locations = bookmark.locations?.filter(loc => 
-            !(loc.groupId === groupId && loc.subGroupId === subId)
-          ) || []
-          if (bookmark.locations.length === 0) {
-            bookmark.updatedAt = now
-            toTrash.push(bid)
-          }
-        }
-      })
-      
-      // 2. 删除子分组
-      group.children.splice(idx, 1)
-      group.updatedAt = now
-      
-      // 3. 将书签添加到回收站（去重）
-      let trashGroup = this.groups.find(g => g.id === TRASH_GROUP_ID)
-      if (!trashGroup) {
-        trashGroup = {
-          id: TRASH_GROUP_ID,
-          name: '回收站',
-          createdAt: now,
-          updatedAt: now,
-          children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
-        }
-        this.groups.push(trashGroup)
-      }
-      if (trashGroup.children.length === 0) {
-        trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
-      }
-      const trashSub = trashGroup.children[0]
-      
-      if (toTrash.length > 0) {
-        toTrash.forEach(bid => {
-          if (!trashSub.bookmarkIds.includes(bid)) {
-            trashSub.bookmarkIds.push(bid)
-          }
-          const bookmark = this.bookmarks.find(b => b.id === bid)
-          if (bookmark) {
-            bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
-          }
-        })
-        trashSub.updatedAt = now
-        trashGroup.updatedAt = now
-      }
-      
-      if (group.children.length === 0) {
-        const newSub = { id: uid(), name: '默认', bookmarkIds: [], createdAt: now, updatedAt: now }
-        group.children.push(newSub)
-        group.updatedAt = now
-      }
-
-      if (this.activeSubGroupId === subId) {
-        this.activeSubGroupId = group.children[0]?.id ?? ''
-      }
-
-      touchedBookmarkShareIdsMap.forEach((previousShareIds, bookmarkId) => {
-        this.scheduleBookmarkSync(bookmarkId, {
-          updatedAt: now,
-          previousShareIds
-        })
-      })
-
-      this.scheduleSubGroupSync(groupId, subId, {
-        isDeleted: true,
-        updatedAt: now,
-        previousShareIds: previousSubShareIds
-      })
-      this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
-
-      // 强制立即持久化
-      ;(this as any).$persist?.()
-      return true
-    },
-    reorderInSub(groupId: string, subId: string, fromId: string, toId: string) {
-      const group = this.groups.find(g => g.id === groupId)
-      const sub = group?.children.find(c => c.id === subId)
-      if (!sub) return
-      const fromIdx = sub.bookmarkIds.indexOf(fromId)
-      const toIdx = sub.bookmarkIds.indexOf(toId)
-      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return
-      const list = [...sub.bookmarkIds]
-      const [moved] = list.splice(fromIdx, 1)
-      list.splice(toIdx, 0, moved)
-      sub.bookmarkIds = list
-      const now = Date.now()
-      sub.updatedAt = now
-      group!.updatedAt = now
-      this.scheduleSubGroupSync(groupId, subId, { updatedAt: now })
-      this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
-    },
-    moveBookmarkToSubGroup(bookmarkId: string, fromGroupId: string, fromSubId: string, toGroupId: string, toSubId: string) {
-      if (fromGroupId === toGroupId && fromSubId === toSubId) return false
-      const fromGroup = this.groups.find(g => g.id === fromGroupId)
-      const fromSub = fromGroup?.children.find(c => c.id === fromSubId)
-      const toGroup = this.groups.find(g => g.id === toGroupId)
-      const toSub = toGroup?.children.find(c => c.id === toSubId)
-      if (!fromSub || !toSub) return false
-      if (!fromSub.bookmarkIds.includes(bookmarkId)) return false
-      const bookmark = this.bookmarks.find(b => b.id === bookmarkId)
-      const previousLocations = bookmark?.locations
-        ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-        : this.getBookmarkLocations(bookmarkId)
-      const previousShareIds = this.getShareIdsFromLocations(previousLocations)
-      const now = Date.now()
-      fromSub.bookmarkIds = fromSub.bookmarkIds.filter(id => id !== bookmarkId)
-      fromSub.updatedAt = now
-      fromGroup!.updatedAt = now
-      if (!toSub.bookmarkIds.includes(bookmarkId)) {
-        toSub.bookmarkIds.push(bookmarkId)
-        toSub.updatedAt = now
-        toGroup!.updatedAt = now
-      }
-      if (bookmark?.locations) {
-        bookmark.locations = bookmark.locations.filter(
-          loc => !(loc.groupId === fromGroupId && loc.subGroupId === fromSubId)
-        )
-        if (!bookmark.locations.some(loc => loc.groupId === toGroupId && loc.subGroupId === toSubId)) {
-          bookmark.locations.push({ groupId: toGroupId, subGroupId: toSubId })
-        }
-        bookmark.updatedAt = now
-      }
-      if (bookmark) {
-        this.scheduleBookmarkSync(bookmarkId, {
-          updatedAt: now,
-          previousShareIds
-        })
-      }
-      this.scheduleSubGroupSync(fromGroupId, fromSubId, { updatedAt: now })
-      this.scheduleSubGroupSync(toGroupId, toSubId, { updatedAt: now })
-      this.scheduleGroupSync(fromGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === fromGroupId) })
-      if (fromGroupId !== toGroupId) {
-        this.scheduleGroupSync(toGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === toGroupId) })
-      }
-      return true
-    },
-    reorderGroups(newOrder: Group[]) {
-      const now = Date.now()
-      const trash = this.groups.find(g => g.id === TRASH_GROUP_ID)
-      const filtered = newOrder.filter(g => g.id !== TRASH_GROUP_ID)
-      filtered.forEach((group, index) => {
-        group.updatedAt = now + index
-      })
-      this.groups = trash ? [...filtered, trash] : filtered
-      filtered.forEach((group, orderIndex) => {
-        this.scheduleGroupSync(group.id, { updatedAt: group.updatedAt, orderIndex })
-      })
-    },
-    reorderSubGroups(groupId: string, newChildren: Group['children']) {
-      const group = this.groups.find(g => g.id === groupId)
-      if (group) {
-        const now = Date.now()
-        newChildren.forEach((child, index) => {
-          child.updatedAt = now + index
-        })
-        group.children = newChildren
-        group.updatedAt = now
-        group.children.forEach(child => {
-          this.scheduleSubGroupSync(groupId, child.id, { updatedAt: child.updatedAt })
-        })
-        this.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === groupId) })
-      }
-    },
-    moveSubToGroup(sourceGroupId: string, subId: string, targetGroupId: string) {
-      const sourceGroup = this.groups.find(g => g.id === sourceGroupId)
-      const targetGroup = this.groups.find(g => g.id === targetGroupId)
-      if (!sourceGroup || !targetGroup) return false
-      const subIdx = sourceGroup.children.findIndex(c => c.id === subId)
-      if (subIdx === -1) return false
-      const previousSubShareIds = this.getShareIdsFromSubGroup(sourceGroupId, subId)
-      const [sub] = sourceGroup.children.splice(subIdx, 1)
-      const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
-      sub.bookmarkIds.forEach(bid => {
-        const bookmark = this.bookmarks.find(b => b.id === bid)
-        const previousLocations = bookmark?.locations
-          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-          : this.getBookmarkLocations(bid)
-        bookmarkPreviousShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
-      })
-      targetGroup.children.push(sub)
-      const now = Date.now()
-      sourceGroup.updatedAt = now
-      targetGroup.updatedAt = now
-      sub.bookmarkIds.forEach(bid => {
-        const bookmark = this.bookmarks.find(b => b.id === bid)
-        if (bookmark?.locations) {
-          bookmark.locations = bookmark.locations.map(loc => 
-            loc.groupId === sourceGroupId && loc.subGroupId === subId
-              ? { ...loc, groupId: targetGroupId }
-              : loc
-          )
-          bookmark.updatedAt = now
-        }
-      })
-      if (sourceGroup.children.length === 0) {
-        sourceGroup.children.push({ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now })
-      }
-      bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
-        this.scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
-      })
-      this.scheduleSubGroupSync(targetGroupId, subId, { updatedAt: now, previousShareIds: previousSubShareIds })
-      this.scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === sourceGroupId) })
-      this.scheduleGroupSync(targetGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === targetGroupId) })
-      return true
-    },
-    promoteSubToGroup(sourceGroupId: string, subId: string) {
-      const sourceGroup = this.groups.find(g => g.id === sourceGroupId)
-      if (!sourceGroup) return null
-      const subIdx = sourceGroup.children.findIndex(c => c.id === subId)
-      if (subIdx === -1) return null
-      const previousSubShareIds = this.getShareIdsFromSubGroup(sourceGroupId, subId)
-      const [sub] = sourceGroup.children.splice(subIdx, 1)
-      const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
-      sub.bookmarkIds.forEach(bid => {
-        const bookmark = this.bookmarks.find(b => b.id === bid)
-        const previousLocations = bookmark?.locations
-          ? JSON.parse(JSON.stringify(bookmark.locations)) as BookmarkLocation[]
-          : this.getBookmarkLocations(bid)
-        bookmarkPreviousShareIdsMap.set(bid, this.getShareIdsFromLocations(previousLocations))
-      })
-      const now = Date.now()
-      const newGroup: Group = {
-        id: uid(),
-        name: sub.name,
-        createdAt: now,
-        updatedAt: now,
-        children: [{ id: sub.id, name: '默认', bookmarkIds: sub.bookmarkIds, createdAt: sub.createdAt, updatedAt: now }]
-      }
-      const trashIdx = this.groups.findIndex(g => g.id === TRASH_GROUP_ID)
-      if (trashIdx !== -1) this.groups.splice(trashIdx, 0, newGroup)
-      else this.groups.push(newGroup)
-      sourceGroup.updatedAt = now
-      sub.bookmarkIds.forEach(bid => {
-        const bookmark = this.bookmarks.find(b => b.id === bid)
-        if (bookmark?.locations) {
-          bookmark.locations = bookmark.locations.map(loc =>
-            loc.groupId === sourceGroupId && loc.subGroupId === subId
-              ? { groupId: newGroup.id, subGroupId: sub.id }
-              : loc
-          )
-          bookmark.updatedAt = now
-        }
-      })
-      if (sourceGroup.children.length === 0) {
-        sourceGroup.children.push({ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now })
-      }
-      this.activeGroupId = newGroup.id
-      this.activeSubGroupId = sub.id
-
-      bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
-        this.scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
-      })
-
-      this.scheduleSubGroupSync(newGroup.id, sub.id, { updatedAt: now, previousShareIds: previousSubShareIds })
-      this.scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === sourceGroupId) })
-      this.scheduleGroupSync(newGroup.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === newGroup.id) })
-
-      return newGroup
-    },
-    loadFromSnapshot(data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly = false) {
-      const preferredGroupId = this.activeGroupId
-      const preferredSubGroupId = this.activeSubGroupId
-      this.groups = data.groups
-      this.bookmarks = data.bookmarks
-      this.isReadOnly = readOnly
-      this.ensureValidSelection(preferredGroupId, preferredSubGroupId)
-    },
-
-    syncAllSharedEntities(updatedAt = Date.now()) {
-      this.groups
-        .filter(group => group.id !== TRASH_GROUP_ID)
-        .forEach((group, orderIndex) => {
-          this.scheduleGroupSync(group.id, { updatedAt, orderIndex })
-        })
-
-      this.groups.forEach(group => {
-        group.children.forEach(sub => {
-          this.scheduleSubGroupSync(group.id, sub.id, { updatedAt })
-        })
-      })
-
-      this.bookmarks.forEach(bookmark => {
-        this.scheduleBookmarkSync(bookmark.id, { updatedAt })
-      })
-    },
-
-    findGroupByName(name: string): Group | null {
-      return this.groups.find(g => g.name === name && g.id !== TRASH_GROUP_ID) || null
-    },
-    
-    // 获取或创建"快速收集"分组，用于快速保存功能
-    getOrCreateQuickCollectGroup(): { group: Group; subGroup: SubGroup } {
-      const QUICK_COLLECT_NAME = '快速收集'
-      let group = this.findGroupByName(QUICK_COLLECT_NAME)
-      
-      if (!group) {
-        // 创建新分组，但不改变当前活跃分组
-        const now = Date.now()
-        const newGroup: Group = {
-          id: uid(),
-          name: QUICK_COLLECT_NAME,
-          createdAt: now,
-          updatedAt: now,
-          children: [
-            {
-              id: uid(),
-              name: '收集',
-              bookmarkIds: [],
-              createdAt: now,
-              updatedAt: now
-            }
-          ]
-        }
-        // 插入到回收站之前
-        const trashIdx = this.groups.findIndex(g => g.id === TRASH_GROUP_ID)
-        if (trashIdx !== -1) {
-          this.groups.splice(trashIdx, 0, newGroup)
-        } else {
-          this.groups.push(newGroup)
-        }
-        group = newGroup
-      }
-      
-      // 确保有子分组
-      if (!group.children || group.children.length === 0) {
-        const now = Date.now()
-        group.children = [{
-          id: uid(),
-          name: '收集',
-          bookmarkIds: [],
-          createdAt: now,
-          updatedAt: now
-        }]
-        group.updatedAt = now
-      }
-      
-      return { group, subGroup: group.children[0] }
-    },
-
-    // 快速保存书签到"快速收集"分组
-    quickSaveBookmark(url: string, title?: string, desc?: string): Bookmark {
-      const { group, subGroup } = this.getOrCreateQuickCollectGroup()
-      const now = Date.now()
-      
-      // 检查是否已存在相同 URL
-      const existingBookmark = this.bookmarks.find(b => 
-        b.url === url && !b.isDeleted
-      )
-      
-      if (existingBookmark) {
-        // 如果已存在，检查是否已在快速收集分组中
-        const alreadyInQuickCollect = subGroup.bookmarkIds.includes(existingBookmark.id)
-        if (!alreadyInQuickCollect) {
-          const previousLocations = existingBookmark.locations
-            ? JSON.parse(JSON.stringify(existingBookmark.locations)) as BookmarkLocation[]
-            : this.getBookmarkLocations(existingBookmark.id)
-          const previousShareIds = this.getShareIdsFromLocations(previousLocations)
-
-          // 添加到快速收集分组
-          subGroup.bookmarkIds.unshift(existingBookmark.id)
-          subGroup.updatedAt = now
+          group.children.splice(index, 1)
           group.updatedAt = now
-          
-          // 更新书签的 locations
-          if (!existingBookmark.locations) {
-            existingBookmark.locations = []
-          }
-          existingBookmark.locations.push({ groupId: group.id, subGroupId: subGroup.id })
-          existingBookmark.updatedAt = now
 
-          this.scheduleBookmarkSync(existingBookmark.id, { updatedAt: now, previousShareIds })
-          this.scheduleSubGroupSync(group.id, subGroup.id, { updatedAt: now })
-          this.scheduleGroupSync(group.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === group.id) })
-        }
-        return existingBookmark
-      }
-      
-      // 创建新书签
-      const bookmark: Bookmark = {
-        id: uid(),
-        title: title || url,
-        url,
-        desc: desc || '',
-        tags: [],
-        locations: [{ groupId: group.id, subGroupId: subGroup.id }],
-        createdAt: now,
-        updatedAt: now
-      }
-      
-      this.bookmarks.push(bookmark)
-      subGroup.bookmarkIds.unshift(bookmark.id)
-      subGroup.updatedAt = now
-      group.updatedAt = now
-      
-      // 异步获取图标
-      ensureIconForBookmark(bookmark).then(icon => {
-        if (icon) {
-          const b = this.bookmarks.find(x => x.id === bookmark.id)
-          if (b) {
-            b.icon = icon
-            b.updatedAt = Date.now()
+          let trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
+          if (!trashGroup) {
+            trashGroup = {
+              id: TRASH_GROUP_ID,
+              name: '回收站',
+              createdAt: now,
+              updatedAt: now,
+              children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
+            }
+            groups.push(trashGroup)
           }
+          if (trashGroup.children.length === 0) {
+            trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
+          }
+          const trashSub = trashGroup.children[0]
+          if (toTrash.length > 0) {
+            toTrash.forEach((bid) => {
+              if (!trashSub.bookmarkIds.includes(bid)) trashSub.bookmarkIds.push(bid)
+              const bookmark = bookmarks.find((b) => b.id === bid)
+              if (bookmark) bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
+            })
+            trashSub.updatedAt = now
+            trashGroup.updatedAt = now
+          }
+
+          let nextActiveGroupId = get().activeGroupId
+          let nextActiveSubGroupId = get().activeSubGroupId
+          const shouldDeleteGroup = group.children.length === 0 && group.id !== TRASH_GROUP_ID
+
+          if (shouldDeleteGroup) {
+            if (nextActiveGroupId === groupId) {
+              const otherGroup = groups.find((g) => g.id !== groupId && g.id !== TRASH_GROUP_ID)
+              if (otherGroup) {
+                nextActiveGroupId = otherGroup.id
+                nextActiveSubGroupId = otherGroup.children[0]?.id || ''
+              }
+            }
+            const groupIndex = groups.findIndex((g) => g.id === groupId)
+            if (groupIndex !== -1) groups.splice(groupIndex, 1)
+          } else {
+            if (group.children.length === 0) {
+              group.children.push({ id: uid(), name: '默认', bookmarkIds: [], createdAt: now, updatedAt: now })
+              group.updatedAt = now
+            }
+            if (nextActiveSubGroupId === subGroupId) nextActiveSubGroupId = group.children[0]?.id || ''
+          }
+
+          commit(groups, bookmarks, { activeGroupId: nextActiveGroupId, activeSubGroupId: nextActiveSubGroupId })
+          return true
+        },
+
+        moveSubToGroup: (sourceGroupId, subId, targetGroupId) => {
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const sourceGroup = groups.find((g) => g.id === sourceGroupId)
+          const targetGroup = groups.find((g) => g.id === targetGroupId)
+          if (!sourceGroup || !targetGroup) return false
+          const subIdx = sourceGroup.children.findIndex((c) => c.id === subId)
+          if (subIdx === -1) return false
+          const previousSubShareIds = get().getShareIdsFromSubGroup(sourceGroupId, subId)
+          const [sub] = sourceGroup.children.splice(subIdx, 1)
+          const now = Date.now()
+
+          const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
+          sub.bookmarkIds.forEach((bid) => {
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bid)
+            bookmarkPreviousShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
+          })
+
+          targetGroup.children.push(sub)
+          sourceGroup.updatedAt = now
+          targetGroup.updatedAt = now
+          sub.bookmarkIds.forEach((bid) => {
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            if (bookmark?.locations) {
+              bookmark.locations = bookmark.locations.map((loc) =>
+                loc.groupId === sourceGroupId && loc.subGroupId === subId ? { ...loc, groupId: targetGroupId } : loc
+              )
+              bookmark.updatedAt = now
+            }
+          })
+          if (sourceGroup.children.length === 0) {
+            sourceGroup.children.push({ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now })
+          }
+
+          commit(groups, bookmarks)
+
+          bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+            get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
+          })
+          get().scheduleSubGroupSync(targetGroupId, subId, { updatedAt: now, previousShareIds: previousSubShareIds })
+          get().scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === sourceGroupId) })
+          get().scheduleGroupSync(targetGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === targetGroupId) })
+          return true
+        },
+
+        promoteSubToGroup: (sourceGroupId, subId) => {
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const sourceGroup = groups.find((g) => g.id === sourceGroupId)
+          if (!sourceGroup) return null
+          const subIdx = sourceGroup.children.findIndex((c) => c.id === subId)
+          if (subIdx === -1) return null
+          const previousSubShareIds = get().getShareIdsFromSubGroup(sourceGroupId, subId)
+          const [sub] = sourceGroup.children.splice(subIdx, 1)
+          const now = Date.now()
+
+          const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
+          sub.bookmarkIds.forEach((bid) => {
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bid)
+            bookmarkPreviousShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
+          })
+
+          const newGroup: Group = {
+            id: uid(),
+            name: sub.name,
+            createdAt: now,
+            updatedAt: now,
+            children: [{ id: sub.id, name: '默认', bookmarkIds: sub.bookmarkIds, createdAt: sub.createdAt, updatedAt: now }]
+          }
+          const trashIdx = groups.findIndex((g) => g.id === TRASH_GROUP_ID)
+          if (trashIdx !== -1) groups.splice(trashIdx, 0, newGroup)
+          else groups.push(newGroup)
+          sourceGroup.updatedAt = now
+
+          sub.bookmarkIds.forEach((bid) => {
+            const bookmark = bookmarks.find((b) => b.id === bid)
+            if (bookmark?.locations) {
+              bookmark.locations = bookmark.locations.map((loc) =>
+                loc.groupId === sourceGroupId && loc.subGroupId === subId ? { groupId: newGroup.id, subGroupId: sub.id } : loc
+              )
+              bookmark.updatedAt = now
+            }
+          })
+          if (sourceGroup.children.length === 0) {
+            sourceGroup.children.push({ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now })
+          }
+
+          commit(groups, bookmarks, { activeGroupId: newGroup.id, activeSubGroupId: sub.id })
+
+          bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
+            get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
+          })
+          get().scheduleSubGroupSync(newGroup.id, sub.id, { updatedAt: now, previousShareIds: previousSubShareIds })
+          get().scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === sourceGroupId) })
+          get().scheduleGroupSync(newGroup.id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === newGroup.id) })
+          return newGroup
+        },
+
+        // ---- 书签 ----
+        addBookmark: (payload, locations) => {
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const now = Date.now()
+          const bookmark: Bookmark = { ...payload, id: uid(), locations, createdAt: now, updatedAt: now }
+          bookmarks.push(bookmark)
+
+          locations.forEach((loc) => {
+            const group = groups.find((g) => g.id === loc.groupId)
+            let sub = group?.children.find((c) => c.id === loc.subGroupId)
+            if (!sub && group) {
+              const created: SubGroup = { id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now }
+              group.children.push(created)
+              sub = created
+            }
+            if (sub && group && !sub.bookmarkIds.includes(bookmark.id)) {
+              sub.bookmarkIds.push(bookmark.id)
+              sub.updatedAt = now
+              group.updatedAt = now
+            }
+          })
+
+          commit(groups, bookmarks)
+
+          get().scheduleBookmarkSync(bookmark.id, { updatedAt: now })
+          const affectedSubKeys = new Set<string>()
+          locations.forEach((loc) => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
+          affectedSubKeys.forEach((key) => {
+            const [groupId, subId] = key.split(':')
+            if (groupId && subId) get().scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+          })
+          const affectedGroupIds = new Set<string>()
+          locations.forEach((loc) => affectedGroupIds.add(loc.groupId))
+          affectedGroupIds.forEach((groupId) => {
+            get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
+          })
+          return bookmark
+        },
+
+        updateBookmark: (id, updater) => {
+          const bookmarks = clone(get().bookmarks)
+          const idx = bookmarks.findIndex((b) => b.id === id)
+          if (idx === -1) return
+          const bookmark = bookmarks[idx]
+          const now = Date.now()
+          const originalUrl = bookmark.url
+          const originalIcon = bookmark.icon
+          Object.assign(bookmark, updater, { updatedAt: now })
+          commit(get().groups, bookmarks)
+
+          if (updater.url && updater.url !== originalUrl && (!originalIcon || originalIcon.type === 'text')) {
+            void get().refreshSingleIcon(bookmark)
+          }
+          get().scheduleBookmarkSync(bookmark.id, { updatedAt: now })
+        },
+
+        updateBookmarkLocations: (bookmarkId, newLocations) => {
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const now = Date.now()
+          const bookmark = bookmarks.find((b) => b.id === bookmarkId)
+          const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bookmarkId)
+          const previousShareIds = get().getShareIdsFromLocations(previousLocations)
+          const newLocSet = new Set(newLocations.map((loc) => `${loc.groupId}:${loc.subGroupId}`))
+
+          groups.forEach((g) => {
+            let groupChanged = false
+            g.children.forEach((sub) => {
+              const key = `${g.id}:${sub.id}`
+              if (!newLocSet.has(key)) {
+                const originalLen = sub.bookmarkIds.length
+                sub.bookmarkIds = sub.bookmarkIds.filter((id) => id !== bookmarkId)
+                if (sub.bookmarkIds.length !== originalLen) {
+                  sub.updatedAt = now
+                  groupChanged = true
+                }
+              }
+            })
+            if (groupChanged) g.updatedAt = now
+          })
+
+          newLocations.forEach((loc) => {
+            const group = groups.find((g) => g.id === loc.groupId)
+            const sub = group?.children.find((c) => c.id === loc.subGroupId)
+            if (!sub || !group) return
+            if (!sub.bookmarkIds.includes(bookmarkId)) {
+              sub.bookmarkIds.push(bookmarkId)
+              sub.updatedAt = now
+              group.updatedAt = now
+            }
+          })
+
+          if (bookmark) {
+            bookmark.locations = newLocations
+            bookmark.updatedAt = now
+          }
+
+          commit(groups, bookmarks)
+
+          const affectedSubKeys = new Set<string>()
+          previousLocations.forEach((loc) => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
+          newLocations.forEach((loc) => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
+          affectedSubKeys.forEach((key) => {
+            const [groupId, subId] = key.split(':')
+            if (groupId && subId) get().scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+          })
+          const affectedGroupIds = new Set<string>()
+          previousLocations.forEach((loc) => affectedGroupIds.add(loc.groupId))
+          newLocations.forEach((loc) => affectedGroupIds.add(loc.groupId))
+          affectedGroupIds.forEach((groupId) => {
+            get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
+          })
+          get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
+        },
+
+        removeBookmark: (id) => {
+          const now = Date.now()
+          const locations = get().getBookmarkLocations(id)
+          const inTrash = locations.some((loc) => loc.groupId === TRASH_GROUP_ID)
+
+          if (inTrash) {
+            const groups = clone(get().groups)
+            let bookmarks = clone(get().bookmarks)
+            const bookmark = bookmarks.find((b) => b.id === id)
+            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : locations
+            const previousShareIds = get().getShareIdsFromLocations(previousLocations)
+
+            groups.forEach((g) => {
+              let groupChanged = false
+              g.children.forEach((sub) => {
+                const originalLen = sub.bookmarkIds.length
+                sub.bookmarkIds = sub.bookmarkIds.filter((bid) => bid !== id)
+                if (sub.bookmarkIds.length !== originalLen) {
+                  sub.updatedAt = now
+                  groupChanged = true
+                }
+              })
+              if (groupChanged) g.updatedAt = now
+            })
+            bookmarks = bookmarks.filter((b) => b.id !== id)
+            commit(groups, bookmarks)
+            get().scheduleBookmarkSync(id, { isDeleted: true, updatedAt: now, previousShareIds, content: null })
+          } else {
+            const bookmarks = clone(get().bookmarks)
+            const bookmark = bookmarks.find((b) => b.id === id)
+            if (bookmark) {
+              bookmark.updatedAt = now
+              if (bookmark.locations && bookmark.locations.length > 0) {
+                bookmark.prevLocations = clone(bookmark.locations)
+              }
+              commit(get().groups, bookmarks)
+              get().updateBookmarkLocations(id, [{ groupId: TRASH_GROUP_ID, subGroupId: 'sg-trash' }])
+            }
+          }
+        },
+
+        removeBookmarkFromLocation: (id, groupId, subGroupId) => {
+          const locations = get().getBookmarkLocations(id)
+          const remainingLocations = locations.filter(
+            (loc) => !(loc.groupId === groupId && loc.subGroupId === subGroupId)
+          )
+          if (remainingLocations.length > 0) {
+            get().updateBookmarkLocations(id, remainingLocations)
+          } else {
+            get().removeBookmark(id)
+          }
+        },
+
+        restoreBookmark: (id) => get().restoreBookmarkFromTrash(id),
+
+        restoreBookmarkFromTrash: (id) => {
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const bookmark = bookmarks.find((b) => b.id === id)
+          if (!bookmark) return false
+          const now = Date.now()
+          const trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
+          const trashSubs = trashGroup?.children ?? []
+          const previousLocations = bookmark.locations ? clone(bookmark.locations) : get().getBookmarkLocations(id)
+          const previousShareIds = get().getShareIdsFromLocations(previousLocations)
+
+          let targetLocations: BookmarkLocation[] = []
+          if (bookmark.prevLocations && bookmark.prevLocations.length > 0) {
+            targetLocations = bookmark.prevLocations.filter((loc) => {
+              const group = groups.find((g) => g.id === loc.groupId)
+              return group && group.id !== TRASH_GROUP_ID && group.children.some((c) => c.id === loc.subGroupId)
+            })
+          }
+          if (targetLocations.length === 0) {
+            const defaultGroup = groups.find((g) => g.id !== TRASH_GROUP_ID)
+            if (defaultGroup && defaultGroup.children.length > 0) {
+              targetLocations = [{ groupId: defaultGroup.id, subGroupId: defaultGroup.children[0].id }]
+            } else {
+              const createdGroups = createSeedGroups()
+              const seedGroup = createdGroups.find((g) => g.id !== TRASH_GROUP_ID)!
+              groups.unshift(seedGroup)
+              targetLocations = [{ groupId: seedGroup.id, subGroupId: seedGroup.children[0].id }]
+            }
+          }
+
+          trashSubs.forEach((sub) => {
+            sub.bookmarkIds = sub.bookmarkIds.filter((bid) => bid !== id)
+            sub.updatedAt = now
+          })
+          if (trashGroup) trashGroup.updatedAt = now
+
+          bookmark.isDeleted = false
+          bookmark.updatedAt = now
+          delete bookmark.prevLocations
+
+          // 先提交移出回收站的中间态，再用 updateBookmarkLocations 落定目标位置
+          commit(groups, bookmarks)
+          get().updateBookmarkLocations(id, targetLocations)
+          get().selectGroup(targetLocations[0].groupId, targetLocations[0].subGroupId)
+          get().scheduleBookmarkSync(id, { updatedAt: now, previousShareIds })
+          targetLocations.forEach((loc) => {
+            get().scheduleSubGroupSync(loc.groupId, loc.subGroupId, { updatedAt: now })
+            get().scheduleGroupSync(loc.groupId, {
+              updatedAt: now,
+              orderIndex: get().groups.findIndex((g) => g.id === loc.groupId)
+            })
+          })
+          return true
+        },
+
+        emptyTrash: () => {
+          const groups = clone(get().groups)
+          let bookmarks = clone(get().bookmarks)
+          const trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
+          const trashSub = trashGroup?.children[0]
+          if (!trashSub || !trashGroup) return
+          const now = Date.now()
+          const idsToRemove = [...trashSub.bookmarkIds]
+          const previousShareIdsMap = new Map<string, string[]>()
+          idsToRemove.forEach((id) => {
+            const bookmark = bookmarks.find((b) => b.id === id)
+            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(id)
+            previousShareIdsMap.set(id, get().getShareIdsFromLocations(previousLocations))
+          })
+          idsToRemove.forEach((id) => {
+            trashSub.bookmarkIds = trashSub.bookmarkIds.filter((bid) => bid !== id)
+            bookmarks = bookmarks.filter((b) => b.id !== id)
+          })
+          trashSub.updatedAt = now
+          trashGroup.updatedAt = now
+          commit(groups, bookmarks)
+          idsToRemove.forEach((id) => {
+            get().scheduleBookmarkSync(id, {
+              isDeleted: true,
+              updatedAt: now,
+              previousShareIds: previousShareIdsMap.get(id) || [],
+              content: null
+            })
+          })
+        },
+
+        reorderInSub: (groupId, subId, fromId, toId) => {
+          const groups = clone(get().groups)
+          const group = groups.find((g) => g.id === groupId)
+          const sub = group?.children.find((c) => c.id === subId)
+          if (!sub || !group) return
+          const fromIdx = sub.bookmarkIds.indexOf(fromId)
+          const toIdx = sub.bookmarkIds.indexOf(toId)
+          if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return
+          const list = [...sub.bookmarkIds]
+          const [moved] = list.splice(fromIdx, 1)
+          list.splice(toIdx, 0, moved)
+          sub.bookmarkIds = list
+          const now = Date.now()
+          sub.updatedAt = now
+          group.updatedAt = now
+          commit(groups, get().bookmarks)
+          get().scheduleSubGroupSync(groupId, subId, { updatedAt: now })
+          get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
+        },
+
+        moveBookmarkToSubGroup: (bookmarkId, fromGroupId, fromSubId, toGroupId, toSubId) => {
+          if (fromGroupId === toGroupId && fromSubId === toSubId) return false
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const fromGroup = groups.find((g) => g.id === fromGroupId)
+          const fromSub = fromGroup?.children.find((c) => c.id === fromSubId)
+          const toGroup = groups.find((g) => g.id === toGroupId)
+          const toSub = toGroup?.children.find((c) => c.id === toSubId)
+          if (!fromSub || !toSub || !fromGroup || !toGroup) return false
+          if (!fromSub.bookmarkIds.includes(bookmarkId)) return false
+          const bookmark = bookmarks.find((b) => b.id === bookmarkId)
+          const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bookmarkId)
+          const previousShareIds = get().getShareIdsFromLocations(previousLocations)
+          const now = Date.now()
+          fromSub.bookmarkIds = fromSub.bookmarkIds.filter((id) => id !== bookmarkId)
+          fromSub.updatedAt = now
+          fromGroup.updatedAt = now
+          if (!toSub.bookmarkIds.includes(bookmarkId)) {
+            toSub.bookmarkIds.push(bookmarkId)
+            toSub.updatedAt = now
+            toGroup.updatedAt = now
+          }
+          if (bookmark?.locations) {
+            bookmark.locations = bookmark.locations.filter(
+              (loc) => !(loc.groupId === fromGroupId && loc.subGroupId === fromSubId)
+            )
+            if (!bookmark.locations.some((loc) => loc.groupId === toGroupId && loc.subGroupId === toSubId)) {
+              bookmark.locations.push({ groupId: toGroupId, subGroupId: toSubId })
+            }
+            bookmark.updatedAt = now
+          }
+          commit(groups, bookmarks)
+          if (bookmark) get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
+          get().scheduleSubGroupSync(fromGroupId, fromSubId, { updatedAt: now })
+          get().scheduleSubGroupSync(toGroupId, toSubId, { updatedAt: now })
+          get().scheduleGroupSync(fromGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === fromGroupId) })
+          if (fromGroupId !== toGroupId) {
+            get().scheduleGroupSync(toGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === toGroupId) })
+          }
+          return true
+        },
+
+        getOrCreateQuickCollectGroup: () => {
+          const QUICK_COLLECT_NAME = '快速收集'
+          const existing = get().findGroupByName(QUICK_COLLECT_NAME)
+          if (existing && existing.children.length > 0) {
+            return { group: existing, subGroup: existing.children[0] }
+          }
+          const groups = clone(get().groups)
+          const now = Date.now()
+          let group = groups.find((g) => g.name === QUICK_COLLECT_NAME && g.id !== TRASH_GROUP_ID)
+          if (!group) {
+            const newGroup: Group = {
+              id: uid(),
+              name: QUICK_COLLECT_NAME,
+              createdAt: now,
+              updatedAt: now,
+              children: [{ id: uid(), name: '收集', bookmarkIds: [], createdAt: now, updatedAt: now }]
+            }
+            const trashIdx = groups.findIndex((g) => g.id === TRASH_GROUP_ID)
+            if (trashIdx !== -1) groups.splice(trashIdx, 0, newGroup)
+            else groups.push(newGroup)
+            group = newGroup
+          }
+          if (!group.children || group.children.length === 0) {
+            group.children = [{ id: uid(), name: '收集', bookmarkIds: [], createdAt: now, updatedAt: now }]
+            group.updatedAt = now
+          }
+          commit(groups, get().bookmarks)
+          return { group, subGroup: group.children[0] }
+        },
+
+        quickSaveBookmark: (url, title, desc) => {
+          const { group, subGroup } = get().getOrCreateQuickCollectGroup()
+          const now = Date.now()
+          const groups = clone(get().groups)
+          const bookmarks = clone(get().bookmarks)
+          const liveGroup = groups.find((g) => g.id === group.id)!
+          const liveSub = liveGroup.children.find((c) => c.id === subGroup.id)!
+
+          const existingBookmark = bookmarks.find((b) => b.url === url && !b.isDeleted)
+          if (existingBookmark) {
+            const alreadyInQuickCollect = liveSub.bookmarkIds.includes(existingBookmark.id)
+            if (!alreadyInQuickCollect) {
+              const previousLocations = existingBookmark.locations
+                ? clone(existingBookmark.locations)
+                : get().getBookmarkLocations(existingBookmark.id)
+              const previousShareIds = get().getShareIdsFromLocations(previousLocations)
+              liveSub.bookmarkIds.unshift(existingBookmark.id)
+              liveSub.updatedAt = now
+              liveGroup.updatedAt = now
+              if (!existingBookmark.locations) existingBookmark.locations = []
+              existingBookmark.locations.push({ groupId: liveGroup.id, subGroupId: liveSub.id })
+              existingBookmark.updatedAt = now
+              commit(groups, bookmarks)
+              get().scheduleBookmarkSync(existingBookmark.id, { updatedAt: now, previousShareIds })
+              get().scheduleSubGroupSync(liveGroup.id, liveSub.id, { updatedAt: now })
+              get().scheduleGroupSync(liveGroup.id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === liveGroup.id) })
+            }
+            return existingBookmark
+          }
+
+          const bookmark: Bookmark = {
+            id: uid(),
+            title: title || url,
+            url,
+            desc: desc || '',
+            tags: [],
+            locations: [{ groupId: liveGroup.id, subGroupId: liveSub.id }],
+            createdAt: now,
+            updatedAt: now
+          }
+          bookmarks.push(bookmark)
+          liveSub.bookmarkIds.unshift(bookmark.id)
+          liveSub.updatedAt = now
+          liveGroup.updatedAt = now
+          commit(groups, bookmarks)
+
+          void ensureIconForBookmark(bookmark).then((icon) => {
+            if (icon) get().assignIcon(bookmark.id, icon)
+          })
+
+          get().scheduleBookmarkSync(bookmark.id, { updatedAt: now })
+          get().scheduleSubGroupSync(liveGroup.id, liveSub.id, { updatedAt: now })
+          get().scheduleGroupSync(liveGroup.id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === liveGroup.id) })
+          return bookmark
+        },
+
+        // ---- 图标 ----
+        assignIcon: (id, icon) => {
+          const bookmarks = [...get().bookmarks]
+          const idx = bookmarks.findIndex((b) => b.id === id)
+          if (idx === -1) return
+          const prev = bookmarks[idx]
+          bookmarks.splice(idx, 1, {
+            ...prev,
+            icon,
+            iconMatchedAt: Date.now(),
+            iconMatchFailedAt: undefined,
+            iconMatchFailedReason: undefined,
+            updatedAt: Date.now()
+          })
+          set({ bookmarks })
+        },
+
+        refreshSingleIcon: async (bookmark) => {
+          const icon = await ensureIconForBookmark(bookmark)
+          if (!icon) return
+          get().assignIcon(bookmark.id, icon)
+        },
+
+        getMissingIconCandidates: (force = false) => {
+          const settingsStore = useSettingsStore.getState()
+          return get().bookmarks.filter((bookmark) => {
+            if (get().isBookmarkInTrash(bookmark)) return false
+            if (settingsStore.skipFailedIconMatch && bookmark.iconMatchFailedAt && !force) return false
+            return !bookmark.icon || bookmark.icon.type === 'text'
+          })
+        },
+
+        countMissingIconCandidates: (force = false) => get().getMissingIconCandidates(force).length,
+
+        refreshMissingIcons: async (force = false) => {
+          const missing = get().getMissingIconCandidates(force)
+          const result = await bulkMatchMissing(missing)
+          result.forEach((icon, id) => get().assignIcon(id, icon))
+
+          const successList: string[] = []
+          const failList: { id: string; title: string }[] = []
+          const now = Date.now()
+
+          const bookmarks = clone(get().bookmarks)
+          missing.forEach((bookmark) => {
+            const live = bookmarks.find((b) => b.id === bookmark.id)
+            if (result.has(bookmark.id)) {
+              successList.push(bookmark.title || bookmark.url)
+              if (live) {
+                live.iconMatchedAt = now
+                live.iconMatchFailedAt = undefined
+                live.iconMatchFailedReason = undefined
+              }
+            } else {
+              failList.push({ id: bookmark.id, title: bookmark.title || bookmark.url })
+              if (live) {
+                live.iconMatchFailedAt = now
+                live.iconMatchFailedReason = 'no_icon'
+              }
+            }
+          })
+          set({ bookmarks })
+
+          return {
+            total: missing.length,
+            matched: result.size,
+            remaining: get().countMissingIconCandidates(force),
+            successList,
+            failList
+          }
+        },
+
+        syncAllSharedEntities: (updatedAt = Date.now()) => {
+          get()
+            .groups.filter((group) => group.id !== TRASH_GROUP_ID)
+            .forEach((group, orderIndex) => {
+              get().scheduleGroupSync(group.id, { updatedAt, orderIndex })
+            })
+          get().groups.forEach((group) => {
+            group.children.forEach((sub) => {
+              get().scheduleSubGroupSync(group.id, sub.id, { updatedAt })
+            })
+          })
+          get().bookmarks.forEach((bookmark) => {
+            get().scheduleBookmarkSync(bookmark.id, { updatedAt })
+          })
+        },
+
+        // ---- 快照 / 整体替换 ----
+        loadFromSnapshot: (data, readOnly = false) => {
+          const preferredGroupId = get().activeGroupId
+          const preferredSubGroupId = get().activeSubGroupId
+          set({ groups: data.groups, bookmarks: data.bookmarks, isReadOnly: readOnly })
+          get().ensureValidSelection(preferredGroupId, preferredSubGroupId)
+        },
+
+        setData: (state) => set(state),
+
+        $patch: (partial) => set(partial)
+      }
+    },
+    {
+      name: 'bookmark',
+      storage: createPiniaCompatStorage<BookmarkStore>(),
+      partialize: (state) =>
+        ({
+          groups: state.groups,
+          bookmarks: state.bookmarks,
+          activeGroupId: state.activeGroupId,
+          activeSubGroupId: state.activeSubGroupId
+        }) as BookmarkStore
+    }
+  )
+)
+
+// ---- 查询选择器（等价旧版 getters，供组件以 useBookmarkStore(selector) 使用）----
+
+export const selectCurrentGroup = (s: BookmarkStore): Group | undefined =>
+  s.groups.find((g) => g.id === s.activeGroupId)
+
+export const selectCurrentSubGroup = (s: BookmarkStore): { group?: Group; sub?: SubGroup } => {
+  const group = s.groups.find((g) => g.id === s.activeGroupId)
+  const sub = group?.children.find((c) => c.id === s.activeSubGroupId)
+  return { group, sub }
+}
+
+export const selectCurrentBookmarks = (s: BookmarkStore): Bookmark[] => {
+  const { sub } = selectCurrentSubGroup(s)
+  if (!sub) return []
+  return sub.bookmarkIds
+    .map((id) => s.bookmarks.find((b) => b.id === id))
+    .filter((b): b is Bookmark => !!b && !b.isDeleted)
+}
+
+export const selectFilteredBookmarks = (s: BookmarkStore): Bookmark[] => {
+  const query = (typeof s.search === 'string' ? s.search : '').trim().toLowerCase()
+  const pool: Bookmark[] = []
+
+  if (s.activeGroupId === TRASH_GROUP_ID) {
+    const trashGroup = s.groups.find((g) => g.id === TRASH_GROUP_ID)
+    trashGroup?.children.forEach((sub) => {
+      sub.bookmarkIds.forEach((id) => {
+        const bm = s.bookmarks.find((b) => b.id === id)
+        if (bm && !bm.isDeleted) pool.push(bm)
+      })
+    })
+  } else {
+    s.groups.forEach((group) => {
+      if (group.id === TRASH_GROUP_ID) return
+      group.children.forEach((sub) => {
+        sub.bookmarkIds.forEach((id) => {
+          const bm = s.bookmarks.find((b) => b.id === id)
+          if (bm && !bm.isDeleted) pool.push(bm)
+        })
+      })
+    })
+  }
+
+  if (!query) return pool
+  return pool.filter((item) => {
+    const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
+    if (haystack.includes(query)) return true
+    return !!PinyinMatch.match(haystack, query)
+  })
+}
+
+export const selectBookmarkLocations =
+  (s: BookmarkStore) =>
+  (id: string): BookmarkLocation[] => {
+    const result: BookmarkLocation[] = []
+    s.groups.forEach((g) => {
+      g.children.forEach((sub) => {
+        if (sub.bookmarkIds.includes(id)) {
+          result.push({ groupId: g.id, subGroupId: sub.id })
         }
       })
-      
-      this.scheduleBookmarkSync(bookmark.id, { updatedAt: now })
-      this.scheduleSubGroupSync(group.id, subGroup.id, { updatedAt: now })
-      this.scheduleGroupSync(group.id, { updatedAt: now, orderIndex: this.groups.findIndex(g => g.id === group.id) })
-      
-      return bookmark
-    },
-  },
-  persist: {
-    storage: utoolsStorage,
-    pick: ['groups', 'bookmarks', 'activeGroupId', 'activeSubGroupId'],
-  },
-})
+    })
+    return result
+  }
+
+export { uid }

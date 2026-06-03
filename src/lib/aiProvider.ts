@@ -1,5 +1,7 @@
-import { createOpenAICompatible } from '@ai-sdk/openai-compatible'
-import { generateText } from 'ai'
+// 注意：@ai-sdk/openai-compatible 与 ai 体积较大，仅在真正发起自定义 AI 调用时才需要。
+// 本模块被 stores/settings 在启动期静态引入（取默认配置/归一化模型列表），若在此顶层
+// 静态导入会把整个 AI SDK 图打进启动包。故改为在 runCustomText 内 await import() 懒加载，
+// 使 ai-sdk 拆到独立 chunk、按需加载（见 vite.config.ts codeSplitting 的 vendor-ai-sdk 组）。
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { getAvailableUToolsAiModels, isUToolsAiSupported, resolvePreferredUToolsModel } from '@/lib/utoolsAi'
 
@@ -433,6 +435,12 @@ async function runCustomText(settings: AISettingsLike, messages: AIMessage[]) {
       isCustomModel: true
     })
   }
+
+  // 懒加载 AI SDK：仅在真正调用时拉取，保持启动包轻量。
+  const [{ createOpenAICompatible }, { generateText }] = await Promise.all([
+    import('@ai-sdk/openai-compatible'),
+    import('ai')
+  ])
 
   const model = createOpenAICompatible({
     baseURL: settings.customBaseURL.trim() || getDefaultBaseURL(),

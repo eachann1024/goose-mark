@@ -1,0 +1,255 @@
+/**
+ * bookmarks.css —— 书签业务组件样式
+ * --------------------------------------------------------------------------
+ * 旧版各 .vue 组件的 <style scoped> 汇总（去 scoped，靠类名隔离）。React 组件
+ * 顶部 import 本文件一次即可。token 与选择器与旧版保持一致，确保视觉等价。
+ */
+
+/* ====================== SubGroupItem ====================== */
+.subgroup-btn {
+  color: hsl(var(--muted-foreground));
+  background-color: transparent;
+}
+.subgroup-btn--idle:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.8);
+}
+.subgroup-btn--active {
+  color: hsl(var(--background));
+  font-weight: 500;
+  background-color: hsl(var(--foreground));
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.1);
+}
+.dark .subgroup-btn--idle:hover {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+}
+.dark .subgroup-btn--active {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+  box-shadow: 0 2px 10px hsl(var(--foreground) / 0.12);
+}
+.subgroup-btn--drag-over {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--primary) / 0.1);
+  box-shadow: inset 0 0 0 2px hsl(var(--primary) / 0.55);
+}
+.dark .subgroup-btn--drag-over {
+  color: hsl(var(--primary));
+}
+.subgroup-btn:focus,
+.subgroup-btn:focus-visible,
+.subgroup-btn:focus-within,
+.subgroup-btn:active {
+  outline: none !important;
+  box-shadow: none !important;
+  --tw-ring-offset-shadow: 0 0 #0000 !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+  --tw-ring-color: transparent !important;
+}
+
+/* ====================== GroupTabs ====================== */
+.group-tab-btn {
+  color: hsl(var(--muted-foreground));
+  background-color: transparent;
+}
+.group-tab-btn:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.8);
+}
+.group-tab-btn[data-active='true'] {
+  color: hsl(var(--background));
+  background-color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground));
+  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.1);
+}
+.dark .group-tab-btn:hover {
+  color: hsl(var(--accent-foreground));
+  background-color: hsl(var(--accent));
+}
+.dark .group-tab-btn[data-active='true'] {
+  color: hsl(var(--primary-foreground));
+  background-color: hsl(var(--primary));
+  border-color: hsl(var(--primary));
+  box-shadow: 0 2px 10px hsl(var(--primary) / 0.16);
+}
+.group-action-btn--searching {
+  border-color: hsl(var(--primary));
+  color: hsl(var(--primary));
+  background-color: hsl(var(--primary) / 0.1);
+}
+.group-action-btn--danger-active {
+  background-color: hsl(var(--destructive) / 0.1);
+}
+
+/* ====================== SubGroupNav ====================== */
+.subgroup-nav-item--idle {
+  color: hsl(var(--muted-foreground));
+}
+.subgroup-nav-item--idle:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.4);
+}
+.dark .subgroup-nav-item--idle:hover {
+  background-color: hsl(var(--muted) / 0.2);
+}
+.subgroup-nav-item--active {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.7);
+  font-weight: 500;
+}
+.dark .subgroup-nav-item--active {
+  background-color: hsl(var(--muted) / 0.4);
+}
+.subgroup-nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: 0 2px 2px 0;
+  background-color: hsl(var(--primary));
+}
+
+/* ====================== SubGroupSidebar ====================== */
+.group-nav-item--idle {
+  color: hsl(var(--muted-foreground));
+}
+.group-nav-item--idle:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.4);
+}
+.dark .group-nav-item--idle:hover {
+  background-color: hsl(var(--muted) / 0.2);
+}
+.group-nav-item--active {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.7);
+  font-weight: 500;
+}
+.dark .group-nav-item--active {
+  background-color: hsl(var(--muted) / 0.4);
+}
+.group-nav-item--active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 14px;
+  border-radius: 0 2px 2px 0;
+  background-color: hsl(var(--primary));
+}
+
+/* hide scrollbar helper for module asides */
+.bm-no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.bm-no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+/* ====================== BookmarksList ====================== */
+.bookmark-list-item:hover {
+  background-color: hsl(var(--muted) / 0.5);
+}
+.dark .bookmark-list-item:hover {
+  background-color: hsl(var(--muted) / 0.3);
+}
+.bookmark-list-item.is-selected {
+  background-color: hsl(var(--primary) / 0.08);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.22);
+}
+.dark .bookmark-list-item.is-selected {
+  background-color: hsl(var(--primary) / 0.12);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.3);
+}
+.bookmark-list-item.is-selected:hover {
+  background-color: hsl(var(--primary) / 0.12);
+}
+.dark .bookmark-list-item.is-selected:hover {
+  background-color: hsl(var(--primary) / 0.16);
+}
+.bookmark-list-item.bookmark-card-item:hover {
+  background-color: hsl(var(--muted) / 0.4);
+}
+.dark .bookmark-list-item.bookmark-card-item:hover {
+  background-color: hsl(var(--muted) / 0.25);
+}
+.bookmark-list-item.bookmark-card-item.is-selected {
+  background-color: hsl(var(--primary) / 0.05);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.45), 0 1px 3px hsl(var(--shadow) / 0.08);
+  border-color: hsl(var(--primary) / 0.45);
+}
+.dark .bookmark-list-item.bookmark-card-item.is-selected {
+  background-color: hsl(var(--primary) / 0.08);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.5), 0 1px 3px hsl(var(--shadow) / 0.12);
+  border-color: hsl(var(--primary) / 0.5);
+}
+.bookmark-list-item.bookmark-card-item.is-selected:hover {
+  background-color: hsl(var(--primary) / 0.08);
+}
+.dark .bookmark-list-item.bookmark-card-item.is-selected:hover {
+  background-color: hsl(var(--primary) / 0.12);
+}
+
+/* ====================== BookmarksGrid (drag states) ====================== */
+.bookmark-drag-ghost {
+  opacity: 0.4;
+  background: hsl(var(--primary) / 0.08);
+  border-radius: var(--radius-xl);
+  border: 2px dashed hsl(var(--primary) / 0.4) !important;
+}
+.bookmark-drag-chosen {
+  opacity: 1;
+  transform: scale(1.03) rotate(1deg);
+  filter: drop-shadow(0 12px 40px hsl(var(--primary) / 0.2));
+  z-index: 100;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  border-radius: var(--radius-xl);
+  background: transparent;
+}
+.bookmark-card-wrapper {
+  transition: transform 0.2s ease;
+}
+.bookmark-add-card:hover {
+  background-color: hsl(var(--primary) / 0.1);
+}
+
+/* ====================== SearchOverlay ====================== */
+.search-overlay {
+  background-color: hsl(var(--background) / 0.96);
+}
+
+/* ====================== BookmarkCard ====================== */
+.bookmark-card--selected {
+  border-color: hsl(var(--primary) / 0.35);
+  background-color: hsl(var(--primary) / 0.08);
+  box-shadow: 0 4px 16px hsl(var(--primary) / 0.08), 0 0 0 1px hsl(var(--primary) / 0.25);
+}
+.bookmark-card--selected-search {
+  border-color: hsl(var(--primary) / 0.25);
+  background-color: hsl(var(--primary) / 0.05);
+  box-shadow: 0 4px 12px hsl(var(--primary) / 0.06), 0 0 0 1px hsl(var(--primary) / 0.18);
+}
+.dark .bookmark-card--hoverable:hover {
+  background-color: hsl(var(--card));
+}
+.bookmark-card__locate-btn:hover {
+  background-color: hsl(var(--foreground) / 0.1) !important;
+}
+@keyframes snake-border {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -1000;
+  }
+}
+.animate-snake-border {
+  animation: snake-border 3s linear infinite;
+}
