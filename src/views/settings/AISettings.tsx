@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import { Check, ChevronDown } from 'lucide-react'
 import type { AIModelOption } from '@/lib/aiProvider'
 import {
@@ -28,7 +29,10 @@ type AnyModel = UToolsAiModel | AIModelOption
  */
 export default function AISettings() {
   const s = useSettingsStore()
-  const aiSettings = useSettingsStore(selectAiSettings)
+  // selectAiSettings 返回新对象字面量；不做浅比较时 getSnapshot 每次拿到新引用，
+  // React 19 useSyncExternalStore 会判定快照持续变化 → Maximum update depth exceeded（整树崩溃成白屏）。
+  // 与 useSearch / useBookmarkForm 同理，用 useShallow 浅比较。
+  const aiSettings = useSettingsStore(useShallow(selectAiSettings))
   const { isUTools } = useAppState()
   const showToast = useUIManager((u) => u.showToast)
 
