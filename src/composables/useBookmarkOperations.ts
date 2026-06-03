@@ -40,6 +40,21 @@ export function useBookmarkOperations() {
     return type === 'detach' || type === 'browser'
   }
 
+  const isTauriRuntime = () =>
+    typeof window !== 'undefined' &&
+    (!!(window as any).__TAURI__ || !!(window as any).__TAURI_INTERNALS__)
+
+  // 非 uTools 环境下打开外链：Tauri 用系统浏览器，普通浏览器用 window.open
+  const openExternalUrl = (url: string) => {
+    if (isTauriRuntime()) {
+      import('@tauri-apps/plugin-shell')
+        .then(({ open }) => open(url))
+        .catch(() => window.open(url, '_blank'))
+      return
+    }
+    openExternalUrl(url)
+  }
+
   // Actions
   const notifyCopySuccess = () => {
     showToast({
@@ -211,7 +226,7 @@ export function useBookmarkOperations() {
       }
       return
     }
-    window.open(url, '_blank')
+    openExternalUrl(url)
   }
 
   const openUrlInUtoolsBrowser = (url: string) => {
@@ -238,7 +253,7 @@ export function useBookmarkOperations() {
       }
       return
     }
-    window.open(url, '_blank')
+    openExternalUrl(url)
   }
 
   const handleRemove = (bookmark: Bookmark) => {

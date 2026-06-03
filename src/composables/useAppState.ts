@@ -21,6 +21,11 @@ const isDark = useDark({
 })
 const toggleDark = useToggle(isDark)
 const isUTools = ref(typeof window !== 'undefined' && !!window.utools)
+// Tauri 桌面环境检测（与 uTools 互斥；独立浏览器模式则两者皆 false）
+const isTauri = ref(
+  typeof window !== 'undefined' &&
+  (!!(window as any).__TAURI__ || !!(window as any).__TAURI_INTERNALS__)
+)
 
 // 持久化 tab 状态
 if (typeof localStorage !== 'undefined') {
@@ -39,6 +44,7 @@ export function useAppState() {
     isDark,
     toggleDark,
     isUTools,
+    isTauri,
     isMac,
   }
 }

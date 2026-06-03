@@ -24,6 +24,7 @@ const props = defineProps<{
   clickableIcon?: boolean
   sections?: BookmarkSection[]
   loading?: boolean
+  variant?: 'list' | 'cards'
 }>()
 
 const emit = defineEmits<{
@@ -221,7 +222,7 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
           </div>
 
           <!-- Section Bookmarks -->
-          <ul class="flex flex-col">
+          <ul :class="variant === 'cards' ? 'flex flex-col gap-[10px] px-3 pb-1' : 'flex flex-col'">
             <li
               v-for="(bookmark, localIdx) in section.bookmarks"
               :key="bookmark.id + '-' + section.anchorId"
@@ -229,11 +230,16 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
               :data-bookmark-id="bookmark.id"
               :data-active="selectedIndex === getGlobalIndex(sectionStartIndices[sectionIdx], localIdx)"
               :draggable="!hasSections"
-              class="bookmark-list-item group relative flex items-start gap-3 px-3 py-2.5 rounded-lg cursor-pointer select-none transition-colors duration-150"
-              :class="{
-                'is-selected': selectedIndex === getGlobalIndex(sectionStartIndices[sectionIdx], localIdx),
-                'ring-1 ring-primary/30': highlightedId === bookmark.id,
-              }"
+              class="bookmark-list-item group relative cursor-pointer select-none transition-colors duration-150"
+              :class="[
+                variant === 'cards'
+                  ? 'bookmark-card-item flex items-center gap-[13px] px-[14px] py-3 rounded-xl bg-card border border-border shadow-sm'
+                  : 'flex items-start gap-3 px-3 py-2.5 rounded-lg',
+                {
+                  'is-selected': selectedIndex === getGlobalIndex(sectionStartIndices[sectionIdx], localIdx),
+                  'is-highlighted ring-1 ring-primary/30': highlightedId === bookmark.id,
+                }
+              ]"
               @click="emit('select', getGlobalIndex(sectionStartIndices[sectionIdx], localIdx))"
               @dblclick="emit('open', bookmark)"
               @contextmenu.prevent="emit('contextmenu', $event, bookmark)"
@@ -260,67 +266,55 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
 
               <!-- Icon -->
               <div
-                class="shrink-0 mt-0.5"
-                :class="{ 'cursor-pointer': props.clickableIcon }"
+                :class="[
+                  'shrink-0',
+                  variant === 'cards' ? '' : 'mt-0.5',
+                  { 'cursor-pointer': props.clickableIcon }
+                ]"
                 @click="handleIconClick($event, bookmark)"
               >
                 <BookmarkIcon
                   :icon="bookmark.icon"
                   :fallback-text="bookmark.title"
-                  size="md"
+                  :size="variant === 'cards' ? 'md' : 'md'"
                 />
               </div>
 
               <!-- Content -->
-              <div class="flex-1 min-w-0 flex flex-col gap-1">
-                <div class="flex items-center justify-between">
+              <div class="flex-1 min-w-0 flex flex-col" :class="variant === 'cards' ? 'gap-0.5' : 'gap-1'">
+                <!-- Title row (list: justify-between for inline actions; cards: just left-aligned) -->
+                <div :class="variant === 'cards' ? 'flex items-center gap-2 min-w-0' : 'flex items-center justify-between'">
                   <div class="flex items-center gap-2 min-w-0">
-                    <span class="text-sm font-medium text-foreground truncate">
+                    <span :class="variant === 'cards' ? 'text-[14px] font-semibold text-foreground truncate' : 'text-sm font-medium text-foreground truncate'">
                       {{ bookmark.title }}
                     </span>
-                    <span v-if="bookmark.pinned" class="i-ph-push-pin-thin text-primary text-[10px] shrink-0" />
+                    <span v-if="bookmark.pinned" class="i-ph-push-pin text-primary text-[11px] shrink-0" />
                   </div>
-                  <!-- Hover Actions (moved into content area for alignment) -->
+                  <!-- List mode inline hover actions (in title row, original behavior) -->
                   <div
+                    v-if="variant !== 'cards'"
                     class="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                     @click.stop
                   >
                     <Tooltip>
                       <TooltipTrigger as-child>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          class="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          @click.stop="emit('open', bookmark)"
-                        >
+                        <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('open', bookmark)">
                           <ExternalLink class="w-3.5 h-3.5" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent><p>打开</p></TooltipContent>
                     </Tooltip>
-
                     <Tooltip>
                       <TooltipTrigger as-child>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          class="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          @click.stop="emit('edit', bookmark)"
-                        >
+                        <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('edit', bookmark)">
                           <Edit3 class="w-3.5 h-3.5" />
                         </Button>
                       </TooltipTrigger>
                       <TooltipContent><p>编辑</p></TooltipContent>
                     </Tooltip>
-
                     <Tooltip>
                       <TooltipTrigger as-child>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          class="h-7 w-7 text-muted-foreground hover:text-destructive"
-                          @click.stop="emit('remove', bookmark)"
-                        >
+                        <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-destructive" @click.stop="emit('remove', bookmark)">
                           <Trash2 class="w-3.5 h-3.5" />
                         </Button>
                       </TooltipTrigger>
@@ -328,14 +322,66 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
                     </Tooltip>
                   </div>
                 </div>
-                <div class="text-xs text-muted-foreground/70 font-mono truncate">
+                <!-- Desc (cards mode: 2-line clamp) -->
+                <div
+                  v-if="variant === 'cards' && bookmark.desc"
+                  class="text-[12px] text-muted-foreground leading-[1.45] line-clamp-2"
+                >{{ renderDesc(bookmark.desc) }}</div>
+                <!-- Domain -->
+                <div class="text-[10.5px] text-muted-foreground/70 font-mono truncate">
                   {{ getDomain(bookmark.url) }}
                 </div>
+                <!-- Desc for list mode -->
                 <div
-                  v-if="bookmark.desc"
+                  v-if="variant !== 'cards' && bookmark.desc"
                   class="bookmark-desc-rendered text-[12px] text-muted-foreground/80 leading-relaxed mt-0.5 whitespace-pre-wrap"
                 >{{ renderDesc(bookmark.desc) }}</div>
               </div>
+
+              <!-- Cards mode right side: tags + hover actions -->
+              <template v-if="variant === 'cards'">
+                <!-- Tags (visible when not hovering, max 2) -->
+                <div
+                  v-if="bookmark.tags && bookmark.tags.length > 0"
+                  class="shrink-0 flex items-center gap-1 group-hover:hidden"
+                >
+                  <span
+                    v-for="tag in bookmark.tags.slice(0, 2)"
+                    :key="tag"
+                    class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] bg-muted text-muted-foreground"
+                  >{{ tag }}</span>
+                </div>
+                <!-- Hover actions (cards mode, replaces tags on hover) -->
+                <div
+                  class="shrink-0 hidden group-hover:flex items-center gap-0.5"
+                  @click.stop
+                >
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('open', bookmark)">
+                        <ExternalLink class="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>打开</p></TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('edit', bookmark)">
+                        <Edit3 class="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>编辑</p></TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger as-child>
+                      <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-destructive" @click.stop="emit('remove', bookmark)">
+                        <Trash2 class="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent><p>删除</p></TooltipContent>
+                  </Tooltip>
+                </div>
+              </template>
             </li>
           </ul>
         </div>
@@ -344,7 +390,7 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
 
     <!-- Flat list mode (search overlay / legacy) -->
     <template v-else>
-      <ul class="flex flex-col py-1">
+      <ul :class="variant === 'cards' ? 'flex flex-col gap-[10px] px-3 py-3' : 'flex flex-col py-1'">
         <li
           v-for="(bookmark, index) in bookmarks"
           :key="bookmark.id"
@@ -352,11 +398,16 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
           :data-bookmark-id="bookmark.id"
           :data-active="selectedIndex === index"
           draggable="true"
-          class="bookmark-list-item group relative flex items-start gap-3 px-3 py-2.5 rounded-lg cursor-pointer select-none transition-colors duration-150 border-b border-border/5 last:border-b-0"
-          :class="{
-            'is-selected': selectedIndex === index,
-            'ring-1 ring-primary/30': highlightedId === bookmark.id,
-          }"
+          class="bookmark-list-item group relative cursor-pointer select-none transition-colors duration-150"
+          :class="[
+            variant === 'cards'
+              ? 'bookmark-card-item flex items-center gap-[13px] px-[14px] py-3 rounded-xl bg-card border border-border shadow-sm'
+              : 'flex items-start gap-3 px-3 py-2.5 rounded-lg border-b border-border/5 last:border-b-0',
+            {
+              'is-selected': selectedIndex === index,
+              'is-highlighted ring-1 ring-primary/30': highlightedId === bookmark.id,
+            }
+          ]"
           @click="emit('select', index)"
           @dblclick="emit('open', bookmark)"
           @contextmenu.prevent="emit('contextmenu', $event, bookmark)"
@@ -383,8 +434,11 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
 
           <!-- Icon -->
           <div
-            class="shrink-0 mt-0.5"
-            :class="{ 'cursor-pointer': props.clickableIcon }"
+            :class="[
+              'shrink-0',
+              variant === 'cards' ? '' : 'mt-0.5',
+              { 'cursor-pointer': props.clickableIcon }
+            ]"
             @click="handleIconClick($event, bookmark)"
           >
             <BookmarkIcon
@@ -395,55 +449,40 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
           </div>
 
           <!-- Content -->
-          <div class="flex-1 min-w-0 flex flex-col gap-1">
-            <div class="flex items-center justify-between">
+          <div class="flex-1 min-w-0 flex flex-col" :class="variant === 'cards' ? 'gap-0.5' : 'gap-1'">
+            <!-- Title row -->
+            <div :class="variant === 'cards' ? 'flex items-center gap-2 min-w-0' : 'flex items-center justify-between'">
               <div class="flex items-center gap-2 min-w-0">
-                <span class="text-sm font-medium text-foreground truncate">
+                <span :class="variant === 'cards' ? 'text-[14px] font-semibold text-foreground truncate' : 'text-sm font-medium text-foreground truncate'">
                   {{ bookmark.title }}
                 </span>
                 <span v-if="bookmark.pinned" class="i-ph-push-pin-thin text-primary text-[10px] shrink-0" />
               </div>
-              <!-- Hover Actions -->
+              <!-- List mode inline hover actions -->
               <div
+                v-if="variant !== 'cards'"
                 class="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                 @click.stop
               >
                 <Tooltip>
                   <TooltipTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7 text-muted-foreground hover:text-foreground"
-                      @click.stop="emit('open', bookmark)"
-                    >
+                    <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('open', bookmark)">
                       <ExternalLink class="w-3.5 h-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent><p>打开</p></TooltipContent>
                 </Tooltip>
-
                 <Tooltip>
                   <TooltipTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7 text-muted-foreground hover:text-foreground"
-                      @click.stop="emit('edit', bookmark)"
-                    >
+                    <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('edit', bookmark)">
                       <Edit3 class="w-3.5 h-3.5" />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent><p>编辑</p></TooltipContent>
                 </Tooltip>
-
                 <Tooltip>
                   <TooltipTrigger as-child>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      class="h-7 w-7 text-muted-foreground hover:text-destructive"
-                      @click.stop="emit('remove', bookmark)"
-                    >
+                    <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-destructive" @click.stop="emit('remove', bookmark)">
                       <Trash2 class="w-3.5 h-3.5" />
                     </Button>
                   </TooltipTrigger>
@@ -451,15 +490,67 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
                 </Tooltip>
               </div>
             </div>
-            <div class="text-xs text-muted-foreground/70 font-mono truncate">
+            <!-- Desc (cards: 2-line clamp) -->
+            <div
+              v-if="variant === 'cards' && bookmark.desc"
+              class="text-[12px] text-muted-foreground leading-[1.45] line-clamp-2"
+            >{{ renderDesc(bookmark.desc) }}</div>
+            <!-- Domain -->
+            <div class="text-[10.5px] text-muted-foreground/70 font-mono truncate">
               {{ getDomain(bookmark.url) }}
             </div>
+            <!-- Desc (list mode) -->
             <div
-              v-if="bookmark.desc"
+              v-if="variant !== 'cards' && bookmark.desc"
               class="bookmark-desc-rendered text-[12px] text-muted-foreground/80 leading-relaxed mt-0.5"
               v-html="renderDesc(bookmark.desc)"
             />
           </div>
+
+          <!-- Cards mode right side: tags + hover actions -->
+          <template v-if="variant === 'cards'">
+            <!-- Tags (visible when not hovering, max 2) -->
+            <div
+              v-if="bookmark.tags && bookmark.tags.length > 0"
+              class="shrink-0 flex items-center gap-1 group-hover:hidden"
+            >
+              <span
+                v-for="tag in bookmark.tags.slice(0, 2)"
+                :key="tag"
+                class="inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] bg-muted text-muted-foreground"
+              >{{ tag }}</span>
+            </div>
+            <!-- Hover actions (replaces tags on hover) -->
+            <div
+              class="shrink-0 hidden group-hover:flex items-center gap-0.5"
+              @click.stop
+            >
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('open', bookmark)">
+                    <ExternalLink class="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>打开</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-foreground" @click.stop="emit('edit', bookmark)">
+                    <Edit3 class="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>编辑</p></TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger as-child>
+                  <Button variant="ghost" size="icon" class="h-7 w-7 text-muted-foreground hover:text-destructive" @click.stop="emit('remove', bookmark)">
+                    <Trash2 class="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent><p>删除</p></TooltipContent>
+              </Tooltip>
+            </div>
+          </template>
         </li>
       </ul>
     </template>
@@ -480,6 +571,7 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
 </template>
 
 <style scoped>
+/* ── List mode hover/selected ── */
 .bookmark-list-item:hover {
   background-color: hsl(var(--muted) / 0.5);
 }
@@ -504,6 +596,37 @@ const hasSections = computed(() => !!props.sections && props.sections.length > 0
 
 .dark .bookmark-list-item.is-selected:hover {
   background-color: hsl(var(--primary) / 0.16);
+}
+
+/* ── Cards mode overrides ── */
+/* Cards: bg-card is set via Tailwind, hover lightens it */
+.bookmark-list-item.bookmark-card-item:hover {
+  background-color: hsl(var(--muted) / 0.4);
+}
+
+.dark .bookmark-list-item.bookmark-card-item:hover {
+  background-color: hsl(var(--muted) / 0.25);
+}
+
+/* Cards selected: primary tint + ring */
+.bookmark-list-item.bookmark-card-item.is-selected {
+  background-color: hsl(var(--primary) / 0.05);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.45), 0 1px 3px hsl(var(--shadow) / 0.08);
+  border-color: hsl(var(--primary) / 0.45);
+}
+
+.dark .bookmark-list-item.bookmark-card-item.is-selected {
+  background-color: hsl(var(--primary) / 0.08);
+  box-shadow: 0 0 0 1px hsl(var(--primary) / 0.50), 0 1px 3px hsl(var(--shadow) / 0.12);
+  border-color: hsl(var(--primary) / 0.50);
+}
+
+.bookmark-list-item.bookmark-card-item.is-selected:hover {
+  background-color: hsl(var(--primary) / 0.08);
+}
+
+.dark .bookmark-list-item.bookmark-card-item.is-selected:hover {
+  background-color: hsl(var(--primary) / 0.12);
 }
 
 .bookmark-desc-rendered :deep(p) {

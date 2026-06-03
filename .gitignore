@@ -9,3 +9,5 @@ bun.lock
 .trae
 .claude/worktrees/
 CHANGELOG.md
+.playwright-mcp/
+src-tauri/target/

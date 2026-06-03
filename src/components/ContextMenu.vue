@@ -95,67 +95,86 @@ watch(
 <template>
   <div
     ref="menu"
-    class="context-menu fixed z-[10000] min-w-[160px] bg-white/90 dark:bg-[#1a1c20]/90 backdrop-blur-md rounded-xl shadow-xl border border-white/10 p-1.5 flex flex-col gap-1 text-sm animate-fade-in"
+    class="context-menu fixed z-[10000] w-[224px] bg-popover border border-border rounded-[11px] shadow-lg p-[5px] flex flex-col animate-pop-in"
     :style="menuStyle"
     :class="{ 'pointer-events-none': !isPositioned }"
     @click.stop
     @contextmenu.prevent
   >
     <template v-if="!isTrash">
-      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('open')">
-        <span class="i-ph-arrow-square-out-thin text-muted" />
+      <!-- 打开链接 -->
+      <button class="menu-item" @click="handleAction('open')">
+        <span class="i-ph-arrow-square-out menu-icon" />
         <span>打开链接</span>
-      </Button>
+      </button>
 
-      <Button v-if="isUTools" variant="ghost" class="menu-item justify-start" @click="handleAction('openInUtoolsBrowser')">
-        <span class="i-ph-globe-thin text-muted" />
+      <!-- uTools 浏览器打开（条件渲染） -->
+      <button v-if="isUTools" class="menu-item" @click="handleAction('openInUtoolsBrowser')">
+        <span class="i-ph-globe menu-icon" />
         <span>使用 uTools 浏览器打开</span>
-      </Button>
+      </button>
 
-      <Button variant="ghost" class="menu-item justify-start" @click="handleAction('copy')">
-        <span class="i-ph-copy-thin text-muted" />
+      <!-- 复制链接 -->
+      <button class="menu-item" @click="handleAction('copy')">
+        <span class="i-ph-copy menu-icon" />
         <span>复制链接</span>
-      </Button>
+      </button>
 
-      <Button
-        variant="ghost"
-        class="menu-item justify-start"
+      <!-- 复制描述 -->
+      <button
+        class="menu-item"
         :disabled="!hasDescription"
         @click="handleAction('copyDescription')"
       >
-        <span class="i-ph-article-thin text-muted" />
+        <span class="i-ph-article menu-icon" />
         <span>复制描述</span>
-      </Button>
-  
+      </button>
+
       <template v-if="!readonly">
-        <div class="h-px bg-white/10 mx-1" />
+        <div class="menu-divider" />
 
-        <Button variant="ghost" class="menu-item justify-start" @click="handleAction('edit')">
-          <span class="i-ph-pencil-simple-thin text-muted" />
+        <!-- 编辑 -->
+        <button class="menu-item" @click="handleAction('edit')">
+          <span class="i-ph-pencil-simple menu-icon" />
           <span>编辑</span>
-        </Button>
+        </button>
 
-        <div class="h-px bg-white/10 mx-1" />
-        
-        <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
-          <span class="i-ph-trash-thin" />
-          <span>移除</span>
-        </Button>
+        <!-- 置顶切换 -->
+        <button class="menu-item" @click="handleAction('pin')">
+          <span class="i-ph-push-pin menu-icon" />
+          <span>置顶</span>
+        </button>
+
+        <!-- 在分组中定位 -->
+        <button class="menu-item" @click="handleAction('locate')">
+          <span class="i-ph-folder menu-icon" />
+          <span>在分组中定位</span>
+        </button>
+
+        <div class="menu-divider" />
+
+        <!-- 移到回收站（danger） -->
+        <button class="menu-item menu-item--danger" @click="handleAction('remove')">
+          <span class="i-ph-trash menu-icon" />
+          <span>移到回收站</span>
+        </button>
       </template>
     </template>
 
     <template v-else>
-      <Button variant="ghost" class="menu-item justify-start text-primary" @click="handleAction('restore')">
-        <span class="i-ph-arrow-counter-clockwise-thin" />
+      <!-- 还原 -->
+      <button class="menu-item" @click="handleAction('restore')">
+        <span class="i-ph-arrow-bend-up-left menu-icon" />
         <span>还原</span>
-      </Button>
+      </button>
 
-      <div class="h-px bg-white/10 mx-1" />
+      <div class="menu-divider" />
 
-      <Button variant="ghost" class="menu-item justify-start text-red-500 hover:!text-red-600 hover:!bg-red-500/10" @click="handleAction('remove')">
-        <span class="i-ph-trash-simple-thin" />
+      <!-- 彻底删除（danger） -->
+      <button class="menu-item menu-item--danger" @click="handleAction('remove')">
+        <span class="i-ph-trash menu-icon" />
         <span>彻底删除</span>
-      </Button>
+      </button>
     </template>
   </div>
 </template>
@@ -164,13 +183,41 @@ watch(
 @reference "../assets/index.css";
 
 .menu-item {
-  @apply flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-[var(--fg)] transition-colors text-left w-full;
+  @apply flex items-center gap-[9px] h-[30px] px-[10px] rounded-[7px]
+         text-[13px] text-foreground text-left w-full
+         transition-colors cursor-default select-none
+         hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed;
 }
-.animate-fade-in {
-  animation: fadeIn 0.1s ease-out;
+
+.menu-item--danger {
+  @apply text-destructive hover:bg-destructive/10;
 }
-@keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.98); }
-  to { opacity: 1; transform: scale(1); }
+
+.menu-icon {
+  @apply w-4 shrink-0 text-[14px] text-muted-foreground;
+}
+
+/* danger 项图标跟随文字颜色 */
+.menu-item--danger .menu-icon {
+  @apply text-destructive;
+}
+
+.menu-divider {
+  @apply h-px bg-border my-[4px] mx-[6px];
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-pop-in {
+  animation: pop-in 0.12s ease-out forwards;
 }
 </style>

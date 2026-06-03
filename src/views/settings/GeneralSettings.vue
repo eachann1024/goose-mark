@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ACCENT_PRESETS } from '@/constants/accent'
+
 const settingsStore = useSettingsStore()
 
 const { isUTools, isDark } = useAppState()
@@ -10,9 +12,22 @@ const easterEggEnabled = computed({
   }
 })
 
-const viewModeOptions: Array<{ value: 'list' | 'grid'; label: string }> = [
+const viewModeOptions: Array<{ value: 'list' | 'grid' | 'cards'; label: string }> = [
+  { value: 'list', label: '列表' },
+  { value: 'grid', label: '卡片' },
+  { value: 'cards', label: '画报' }
+]
+
+// 搜索结果仅支持列表 / 卡片两态（画报模式仅主页可用）
+const searchViewModeOptions: Array<{ value: 'list' | 'grid'; label: string }> = [
   { value: 'list', label: '列表' },
   { value: 'grid', label: '卡片' }
+]
+
+const densityOptions: Array<{ value: 'compact' | 'regular' | 'comfy'; label: string }> = [
+  { value: 'compact', label: '紧凑' },
+  { value: 'regular', label: '常规' },
+  { value: 'comfy', label: '舒适' }
 ]
 
 const gridColumnsOptions = [2, 3, 4, 5]
@@ -60,7 +75,7 @@ const handleGridColumnsChange = (value: string | number) => {
           </div>
           <div class="flex gap-2 shrink-0">
             <Button
-              v-for="opt in viewModeOptions"
+              v-for="opt in searchViewModeOptions"
               :key="`search-${opt.value}`"
               size="sm"
               :variant="settingsStore.searchViewMode === opt.value ? 'default' : 'ghost'"
@@ -102,9 +117,57 @@ const handleGridColumnsChange = (value: string | number) => {
             @update:model-value="(checked: boolean) => settingsStore.setPreviewPanelCollapsed(checked)"
           />
         </div>
+
+        <div class="settings-row">
+          <div class="space-y-0.5">
+            <div class="text-sm font-medium">信息密度</div>
+            <div class="text-xs text-muted-foreground">控制列表/卡片中书签条目的行高与间距</div>
+          </div>
+          <div class="flex gap-2 shrink-0">
+            <Button
+              v-for="opt in densityOptions"
+              :key="opt.value"
+              size="sm"
+              :variant="settingsStore.density === opt.value ? 'default' : 'ghost'"
+              class="h-8 min-w-16 px-3"
+              @click="settingsStore.setDensity(opt.value)"
+            >
+              {{ opt.label }}
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
 
+    <!-- 强调色 -->
+    <div class="settings-block">
+      <div class="settings-block__head">
+        <h3 class="settings-block__title">强调色</h3>
+        <p class="settings-block__desc">主操作按钮、选中状态、链接等使用的颜色</p>
+      </div>
+      <div class="settings-row">
+        <div class="space-y-0.5">
+          <div class="text-sm font-medium">主题颜色</div>
+          <div class="text-xs text-muted-foreground">选中项目将带有环形描边高亮</div>
+        </div>
+        <div class="flex gap-2.5 shrink-0">
+          <button
+            v-for="preset in ACCENT_PRESETS"
+            :key="preset.id"
+            type="button"
+            :title="preset.name"
+            class="accent-swatch"
+            :style="{
+              background: preset.swatch,
+              boxShadow: settingsStore.accentColor === preset.id
+                ? `0 0 0 2px hsl(var(--background)), 0 0 0 4px ${preset.swatch}`
+                : 'none'
+            }"
+            @click="settingsStore.setAccentColor(preset.id)"
+          />
+        </div>
+      </div>
+    </div>
 
     <!-- 外观 -->
     <div v-if="isDark" class="settings-block">
@@ -168,6 +231,20 @@ const handleGridColumnsChange = (value: string | number) => {
 </template>
 
 <style scoped>
+.accent-swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 9999px;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 100ms ease, box-shadow 100ms ease;
+}
+
+.accent-swatch:hover {
+  transform: scale(1.12);
+}
+
 .background-preview {
   width: 2.5rem;
   height: 2.5rem;

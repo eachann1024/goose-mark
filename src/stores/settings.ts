@@ -30,8 +30,12 @@ export const useSettingsStore = defineStore('settings', {
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     ...createAIState(),
-    homeViewMode: 'list' as 'list' | 'grid',
+    homeViewMode: 'list' as 'list' | 'grid' | 'cards',
     searchViewMode: 'list' as 'list' | 'grid',
+    // 信息密度（紧凑 / 常规 / 舒适），驱动 <html data-density>
+    density: 'regular' as 'compact' | 'regular' | 'comfy',
+    // 自定义强调色（预设名；'coral' 为默认珊瑚，留空走 CSS 默认）
+    accentColor: 'coral' as string,
     previewPanelWidth: 256,
     previewPanelCollapsed: false,
     previewPanelDescEditing: false,
@@ -144,9 +148,17 @@ export const useSettingsStore = defineStore('settings', {
       this.skipFailedIconMatch = !!value
       trackEvent('settings_change', { settingKey: 'skipFailedIconMatch', value: this.skipFailedIconMatch })
     },
-    setHomeViewMode(mode: 'list' | 'grid') {
+    setHomeViewMode(mode: 'list' | 'grid' | 'cards') {
       this.homeViewMode = mode
       trackEvent('settings_change', { settingKey: 'homeViewMode', value: mode })
+    },
+    setDensity(value: 'compact' | 'regular' | 'comfy') {
+      this.density = ['compact', 'regular', 'comfy'].includes(value) ? value : 'regular'
+      trackEvent('settings_change', { settingKey: 'density', value: this.density })
+    },
+    setAccentColor(value: string) {
+      this.accentColor = String(value || 'coral')
+      trackEvent('settings_change', { settingKey: 'accentColor', value: this.accentColor })
     },
     setSearchViewMode(mode: 'list' | 'grid') {
       this.searchViewMode = mode
