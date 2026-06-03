@@ -10,13 +10,13 @@ import QuickSaveDialog from '@/components/QuickSaveDialog.vue'
 import StarryBackground from '@/components/StarryBackground.vue'
 import BookmarksList from '@/components/bookmarks/BookmarksList.vue'
 import BookmarkPreview from '@/components/bookmarks/BookmarkPreview.vue'
-import SubGroupNav from '@/components/bookmarks/SubGroupNav.vue'
 import { parseHtmlBookmarks, isHtmlBookmarkFile } from '@/lib/htmlBookmarkParser'
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { ensureIconForBookmark, fetchPageMeta } from '@/services/iconCache'
 import { parseJsonImportText, applyImportDataToStore } from '@/composables/useImportExport'
 import { useCategoryEditor } from '@/composables/useCategoryEditor'
 import { trackEvent } from '@/services/analytics'
+import { getAccentPreset } from '@/constants/accent'
 
 // Stores
 const store = useBookmarkStore()
@@ -271,8 +271,8 @@ let syncTimeout: NodeJS.Timeout | null = null
 // Shared State
 const selectedIndex = ref(-1)
 
-// View Mode: list (default) or grid (persisted independently from search view mode)
-const viewMode = ref<'list' | 'grid'>(settingsStore.homeViewMode)
+// View Mode: list (default) / grid / cards (persisted independently from search view mode)
+const viewMode = ref<'list' | 'grid' | 'cards'>(settingsStore.homeViewMode)
 let viewModePersistTimer: ReturnType<typeof setTimeout> | null = null
 watch(viewMode, (mode) => {
   if (viewModePersistTimer) clearTimeout(viewModePersistTimer)
@@ -356,6 +356,26 @@ watch(isDark, (value) => {
   lastTrackedThemeMode.value = nextMode
   trackEvent('theme_mode_change', { themeMode: nextMode })
 }, { immediate: true })
+
+// 信息密度：同步到 <html data-density>，驱动 --row-h / --gap / --pad
+watchEffect(() => {
+  document.documentElement.setAttribute('data-density', settingsStore.density)
+})
+
+// 自定义强调色：运行时覆盖 --primary / --ring（随明暗模式取对应值）
+watchEffect(() => {
+  const preset = getAccentPreset(settingsStore.accentColor)
+  const root = document.documentElement
+  if (preset.id === 'coral') {
+    // 默认珊瑚：清除覆盖，回落到 index.css 的 :root/.dark 默认值
+    root.style.removeProperty('--primary')
+    root.style.removeProperty('--ring')
+    return
+  }
+  const value = isDark.value ? preset.dark : preset.light
+  root.style.setProperty('--primary', value)
+  root.style.setProperty('--ring', value)
+})
 
 const canUseSubInput = computed(() => {
   if (!isUTools.value) return false
@@ -1683,11 +1703,12 @@ const handleLocate = async (bookmark: Bookmark) => {
         </div>
       </div>
 
-      <!-- View Toggle -->
+      <!-- View Toggle: 列表 / 网格 / 卡片 -->
       <div class="flex items-center gap-0.5 bg-muted/30 rounded-lg p-0.5">
         <button
           class="h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors"
           :class="viewMode === 'list' ? 'bg-background text-foreground shadow-sm ring-1 ring-border font-medium' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'"
+          title="列表视图"
           @click="viewMode = 'list'; tab = 'bookmarks'"
         >
           <span class="i-ph-list-thin text-base" />
@@ -1695,9 +1716,18 @@ const handleLocate = async (bookmark: Bookmark) => {
         <button
           class="h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors"
           :class="viewMode === 'grid' ? 'bg-background text-foreground shadow-sm ring-1 ring-border font-medium' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'"
+          title="网格视图"
           @click="viewMode = 'grid'; tab = 'bookmarks'"
         >
           <span class="i-ph-squares-four-thin text-base" />
+        </button>
+        <button
+          class="h-7 w-7 flex items-center justify-center rounded-md text-xs transition-colors"
+          :class="viewMode === 'cards' ? 'bg-background text-foreground shadow-sm ring-1 ring-border font-medium' : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'"
+          title="卡片视图"
+          @click="viewMode = 'cards'; tab = 'bookmarks'"
+        >
+          <span class="i-ph-rows-thin text-base" />
         </button>
       </div>
 
@@ -1761,14 +1791,15 @@ const handleLocate = async (bookmark: Bookmark) => {
     <!-- Main Content -->
     <main v-if="tab === 'bookmarks'" class="flex-1 min-h-0 flex overflow-hidden select-none">
       <!-- Left Sidebar: list=group outline, grid=sub-group nav -->
-      <SubGroupSidebar
-        v-if="viewMode === 'list'"
+      <AppSidebar
         :active-anchor-id="activeAnchorId"
+        :is-u-tools="isUTools"
+        :is-settings="false"
         @scroll-to="scrollToSection"
         @edit-group="openGroupEditor"
         @focus-search="focusMainSearchInput(true)"
+        @open-settings="tab = 'settings'"
       />
-      <SubGroupNav v-else-if="viewMode === 'grid' && !isTrashActive" />
 
       <!-- Center: Bookmark List/Grid + Bottom Status -->
       <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -1786,7 +1817,8 @@ const handleLocate = async (bookmark: Bookmark) => {
 
           <KeepAlive>
             <BookmarksList
-              v-if="viewMode === 'list'"
+              v-if="viewMode === 'list' || viewMode === 'cards'"
+              :variant="viewMode === 'cards' ? 'cards' : 'list'"
               :bookmarks="activeBookmarks"
               :selected-index="selectedIndex"
               :is-trash-active="isTrashActive"
@@ -1795,7 +1827,7 @@ const handleLocate = async (bookmark: Bookmark) => {
               :highlighted-id="highlightedBookmarkId"
               :sections="searchViewOpen || isTrashActive ? undefined : bookmarkSections"
               :loading="isLoading"
-              :clickable-icon="!previewPanelCollapsed"
+              :clickable-icon="!previewPanelCollapsed && viewMode === 'list'"
               @select="handleBookmarkSelect"
               @remove="handleRemove"
               @edit="openEdit"

@@ -53,6 +53,15 @@ module.exports = {
   				DEFAULT: 'hsl(var(--card))',
   				foreground: 'hsl(var(--card-foreground))'
   			},
+  			ai: {
+  				DEFAULT: 'hsl(var(--ai))',
+  				subtle: 'hsl(var(--ai-subtle))',
+  				bright: 'hsl(var(--ai-bright))'
+  			},
+  			success: {
+  				DEFAULT: 'hsl(var(--success))',
+  				subtle: 'hsl(var(--success-subtle))'
+  			},
   			chart: {
   				'1': 'hsl(var(--chart-1))',
   				'2': 'hsl(var(--chart-2))',

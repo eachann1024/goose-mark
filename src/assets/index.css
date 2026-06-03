@@ -2,37 +2,51 @@
 @import "tailwindcss";
 @config "../../tailwind.config.js";
 
+/* 衬线标题字体（仅标题使用；加载失败回退系统 Georgia / Songti SC） */
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&family=Noto+Serif+SC:wght@400;500;600;700&display=swap');
+
+  /* ============================================================
+     配色：暖象牙纸 + 珊瑚强调 + AI 紫 + 衬线标题（goose-run 风格）
+     主色 --primary 由深蓝近黑改为珊瑚 #d97757；AI 触点用紫 #7c52e0。
+     ============================================================ */
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 48 33.3% 97.1%;        /* 暖象牙纸 #faf9f5 */
+    --foreground: 30 3.3% 11.8%;
     font-family: 'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 48 25% 92.2%;                /* 暖奶油 #f0eee6 */
+    --card-foreground: 30 3.3% 11.8%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 30 3.3% 11.8%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 15 63.1% 59.6%;           /* 珊瑚 #d97757 */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 51 22% 88.4%;
+    --secondary-foreground: 30 3.3% 11.8%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 48 25% 92.2%;
+    --muted-foreground: 53 3.8% 40.8%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 51 22% 88.4%;
+    --accent-foreground: 30 3.3% 11.8%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 6 48.4% 47.8%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 220 12% 88%;
-    --input: 220 12% 88%;
-    --ring: 222.2 84% 4.9%;
+    --border: 46 20.6% 87.6%;
+    --input: 46 20.6% 87.6%;
+    --ring: 15 63.1% 59.6%;
 
-    --radius: 0.5rem;
+    /* AI 紫（珊瑚留给主操作/选中/链接，AI 触点用紫） */
+    --ai: 258 69.6% 60%;                 /* #7c52e0 */
+    --ai-subtle: 260 100% 95.9%;
+    --ai-bright: 269 72.2% 78.8%;
+    --success: 149 67.6% 29%;
+    --success-subtle: 139 40% 92.2%;
+
+    --radius: 0.875rem;                  /* 14px */
     --radius-sm: calc(var(--radius) - 4px);
     --radius-md: calc(var(--radius) - 2px);
     --radius-lg: var(--radius);
@@ -40,6 +54,14 @@
     --radius-2xl: calc(var(--radius) + 8px);
     --radius-3xl: calc(var(--radius) + 16px);
     --radius-full: 9999px;
+
+    /* 标题衬线栈 */
+    --font-serif: "Newsreader", "Noto Serif SC", Georgia, "Songti SC", serif;
+
+    /* 密度驱动（由 <html data-density> 覆盖；默认 regular） */
+    --row-h: 40px;
+    --gap: 10px;
+    --pad: 16px;
 
     --chart-1: 12 76% 61%;
 
@@ -54,40 +76,51 @@
 
   /* Force dark mode variables when .dark class is present on html/body */
   .dark {
-    --background: 210 4% 19%; /* #2F3133 */
-    --foreground: 210 40% 98%;
+    --background: 60 2.7% 14.5%;         /* 中性暖炭灰 #262624（非棕色） */
+    --foreground: 48 33.3% 97.1%;
 
-    --card: 210 6% 23%; /* #3A3C3E - 4% 亮度提升，与背景形成层次 */
-    --card-foreground: 210 40% 98%;
+    --card: 60 2.1% 18.4%;
+    --card-foreground: 48 33.3% 97.1%;
 
-    --popover: 210 7% 25%; /* #404244 - 弹出层稍亮 */
-    --popover-foreground: 210 40% 98%;
+    --popover: 45 3.6% 22%;
+    --popover-foreground: 48 33.3% 97.1%;
 
-    /* Keep primary distinct in dark mode if needed, effectively white text on black bg */
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 19 67.5% 62.5%;           /* 珊瑚（暗色提亮）#e0875f */
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 5% 21%; /* #36383A - 次要背景介于两者之间 */
-    --secondary-foreground: 210 40% 98%;
+    --secondary: 45 3.6% 22%;
+    --secondary-foreground: 48 33.3% 97.1%;
 
-    --muted: 210 5% 21%;
-    --muted-foreground: 215 20.2% 65.1%;
+    --muted: 60 2.1% 18.4%;
+    --muted-foreground: 48 6.5% 69.8%;
 
-    --accent: 210 10% 35%; /* #505357 - 强调元素，更强的对比度 */
-    --accent-foreground: 210 40% 98%;
+    --accent: 45 3.6% 22%;
+    --accent-foreground: 48 33.3% 97.1%;
 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 3 57.2% 57.8%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 220 6% 32%; /* 提亮边框，降低灰感 */
-    --input: 220 6% 32%;
-    --ring: 212.7 26.8% 83.9%;
+    --border: 60 3.3% 23.5%;
+    --input: 60 3.3% 23.5%;
+    --ring: 19 67.5% 62.5%;
+
+    --ai: 255 91.7% 76.3%;               /* #a78bfa（暗色提亮紫） */
+    --ai-subtle: 254 25.5% 20%;
+    --ai-bright: 269 76% 85.3%;
+    --success: 149 60% 38%;
+    --success-subtle: 150 35% 12%;
+
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
     --chart-3: 30 80% 55%;
     --chart-4: 280 65% 60%;
     --chart-5: 340 75% 55%;
   }
+
+  /* 密度变体（compact / regular / comfy） */
+  [data-density="compact"] { --row-h: 36px; --gap: 8px;  --pad: 13px; }
+  [data-density="regular"] { --row-h: 40px; --gap: 10px; --pad: 16px; }
+  [data-density="comfy"]   { --row-h: 46px; --gap: 14px; --pad: 20px; }
 
 /* Support system preference via media query if no class is present? 
    Tailwind 'class' mode disables media query support unless we handle it manually or simple @media (prefers-color-scheme: dark) { :root { ... } } 
@@ -119,28 +152,19 @@ body {
   --tw-ring-shadow: 0 0 #0000 !important;
   --tw-ring-color: transparent !important;
 }
-/* 允许所有元素选中，特定 UI 组件除外 */
+/* 默认全局禁用文本选中，提升原生应用感（避免主界面误拖选） */
 * {
-  -webkit-user-select: auto;
-  user-select: auto;
-}
-
-/* 禁用 UI 元素的选中，提升原生感 */
-button, 
-[role="button"],
-[role="tab"],
-.no-select,
-.bookmark-card-wrapper,
-header {
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* 确保输入框始终可选中 */
-input, 
-textarea, 
-[contenteditable="true"], 
-[contenteditable=""] {
+/* 仅放开输入类元素与显式标记可选的内容 */
+input,
+textarea,
+[contenteditable="true"],
+[contenteditable=""],
+.select-text,
+.user-select-text {
   -webkit-user-select: text !important;
   user-select: text !important;
 }
@@ -152,7 +176,7 @@ textarea {
 
 /* 全局文字选中样式 */
 ::selection {
-  background: hsl(var(--primary) / 0.2);
+  background: hsl(var(--primary) / 0.22);
 }
 
 /* 全局 placeholder 样式 - 确保优先级高于 color: inherit */
@@ -197,4 +221,27 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 input[type="number"] {
   -moz-appearance: textfield; /* Firefox */
+}
+
+/* ============================================================
+   标题衬线（正文仍 DM Sans）— 命中应用标题 / 设置 / 弹窗 / 详情标题
+   ============================================================ */
+#app h1, #app h2, #app h3,
+.font-serif-title,
+.bookmark-preview__title,
+.settings-block__title,
+.bookmark-form__title {
+  font-family: var(--font-serif);
+  letter-spacing: -0.005em;
+}
+
+/* ============================================================
+   AI 紫 hook — 珊瑚留给主操作/选中/链接，AI 触点改紫。
+   给元素加 class="ai-accent"（文字变紫）或 "ai-accent-bg"（紫底白字）。
+   ============================================================ */
+.ai-accent { color: hsl(var(--ai)) !important; }
+.ai-accent-bg { background: hsl(var(--ai)) !important; color: #fff !important; }
+.ai-accent-subtle {
+  background: hsl(var(--ai-subtle)) !important;
+  border-color: hsl(var(--ai) / 0.25) !important;
 }

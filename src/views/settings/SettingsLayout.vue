@@ -17,12 +17,12 @@ interface SettingsSection {
 const { localModeMenuDotVisible, markLocalModeSettingsVisited } = useFeatureNoticeCenter()
 
 const sections: SettingsSection[] = [
-  { id: 'general', label: '通用设置', icon: 'i-mdi-cog-outline', component: GeneralSettings },
-  { id: 'ai', label: 'AI 助手', icon: 'i-mdi-sparkles', component: AISettings },
-  { id: 'categories', label: '分组管理', icon: 'i-mdi-folder-outline', component: CategoryManager },
-  { id: 'data', label: '导入与备份', icon: 'i-mdi-database-outline', component: DataSettings },
-  { id: 'local-mode', label: '浏览器拓展', icon: 'i-mdi-database-sync-outline', component: LocalModeSettings },
-  { id: 'about', label: '帮助与统计', icon: 'i-mdi-information-outline', component: AboutSettings },
+  { id: 'general', label: '通用设置', icon: 'i-ph-gear', component: GeneralSettings },
+  { id: 'ai', label: 'AI 助手', icon: 'i-ph-sparkle', component: AISettings },
+  { id: 'categories', label: '分组管理', icon: 'i-ph-folder', component: CategoryManager },
+  { id: 'data', label: '导入与备份', icon: 'i-ph-database', component: DataSettings },
+  { id: 'local-mode', label: '浏览器拓展', icon: 'i-ph-cloud-arrow-up', component: LocalModeSettings },
+  { id: 'about', label: '帮助与统计', icon: 'i-ph-info', component: AboutSettings },
 ]
 
 const activeSectionId = ref('general')
@@ -117,7 +117,7 @@ const openFeedback = () => {
         class="settings-feedback mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold"
         @click="openFeedback"
       >
-        <span class="i-mdi-message-alert-outline text-base" />
+        <span class="i-ph-chat-circle-dots text-base" />
         <span>快速反馈</span>
       </button>
     </nav>
