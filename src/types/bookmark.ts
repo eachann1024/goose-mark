@@ -23,7 +23,12 @@ export interface Bookmark {
   iconMatchedAt?: number
   iconMatchFailedAt?: number
   iconMatchFailedReason?: string
-  
+
+  // 本地使用排序数据（非外部埋点）：驱动「最近使用」虚拟视图与访问次数排序。
+  // 旧数据无此字段时按 undefined / 0 处理，向后兼容。
+  lastUsed?: number  // 最后一次打开的时间戳（ms）
+  visits?: number    // 累计访问次数，默认 0
+
   // 元数据字段，用于增量同步与离线冲突解决
   createdAt: number
   updatedAt: number

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Folder, Search, Settings, Trash2 } from 'lucide-react'
+import { ChevronDown, Clock, Folder, Layers, Search, Settings, Star, Trash2 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import type { ActiveView } from '@/stores/bookmark'
 import { cn } from '@/lib/utils'
 
 /**
@@ -47,8 +49,10 @@ export function AppSidebar({
   const bookmarks = useBookmarkStore((s) => s.bookmarks)
   const activeGroupId = useBookmarkStore((s) => s.activeGroupId)
   const activeSubGroupId = useBookmarkStore((s) => s.activeSubGroupId)
+  const activeView = useBookmarkStore((s) => s.activeView)
   const setActiveGroup = useBookmarkStore((s) => s.setActiveGroup)
   const setActiveSubGroup = useBookmarkStore((s) => s.setActiveSubGroup)
+  const setActiveView = useBookmarkStore((s) => s.setActiveView)
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
@@ -98,7 +102,30 @@ export function AppSidebar({
     [bookmarks, trashIds]
   )
 
+  // 置顶计数：非回收站且 pinned === true
+  const pinnedCount = useMemo(
+    () => bookmarks.filter((b) => !b.isDeleted && !trashIds.has(b.id) && b.pinned === true).length,
+    [bookmarks, trashIds]
+  )
+
+  // 最近使用计数：非回收站且曾经使用过（有 lastUsed）
+  const recentCount = useMemo(
+    () => bookmarks.filter((b) => !b.isDeleted && !trashIds.has(b.id) && !!b.lastUsed).length,
+    [bookmarks, trashIds]
+  )
+
   const isTrashActive = activeGroupId === TRASH_GROUP_ID
+
+  // 虚拟视图固定项（仅在非回收站、非设置时高亮）
+  const virtualViews: { key: Exclude<ActiveView, 'group'>; label: string; icon: LucideIcon; count: number }[] = [
+    { key: 'all', label: '全部书签', icon: Layers, count: totalCount },
+    { key: 'pinned', label: '置顶', icon: Star, count: pinnedCount },
+    { key: 'recent', label: '最近使用', icon: Clock, count: recentCount }
+  ]
+
+  // 虚拟视图激活：activeView 命中且未进回收站/设置
+  const isViewActive = (key: Exclude<ActiveView, 'group'>) =>
+    !isSettings && !isTrashActive && activeView === key
 
   const toggleGroup = (groupId: string) => {
     setExpanded((prev) => ({ ...prev, [groupId]: !prev[groupId] }))
@@ -115,10 +142,15 @@ export function AppSidebar({
     onScrollTo?.(anchorId)
   }
 
+  // 与虚拟视图互斥：仅当 activeView === 'group' 时分组项才高亮
   const isGroupActive = (groupId: string) =>
-    !isSettings && activeGroupId === groupId && !isTrashActive
+    !isSettings && activeView === 'group' && activeGroupId === groupId && !isTrashActive
   const isSubActive = (groupId: string, subId: string) =>
-    !isSettings && activeGroupId === groupId && activeSubGroupId === subId && !isTrashActive
+    !isSettings &&
+    activeView === 'group' &&
+    activeGroupId === groupId &&
+    activeSubGroupId === subId &&
+    !isTrashActive
 
   return (
     <aside
@@ -147,7 +179,7 @@ export function AppSidebar({
         >
           <Search className="size-[15px]" />
           <span className="text-[13px] flex-1 text-left truncate">
-            {isUTools ? '在主输入框搜索' : '搜索书签…'}
+            {isUTools ? '在主输入框搜索' : '搜索全部书签'}
           </span>
           {!isUTools && (
             <kbd className="text-[10px] font-mono text-muted-foreground/60 bg-muted/60 rounded px-1 py-0.5">
@@ -159,7 +191,28 @@ export function AppSidebar({
 
       {/* 分组树 */}
       <nav className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2 pt-1 pb-2">
-        <div className="px-2 pb-1 pt-1 text-[10.5px] font-mono font-semibold uppercase tracking-wider text-muted-foreground/50">
+        {/* 虚拟视图：全部书签 / 置顶 / 最近使用（固定在分组树之上） */}
+        <div className="flex flex-col gap-0.5 pb-1">
+          {virtualViews.map(({ key, label, icon: Icon, count }) => (
+            <button
+              key={key}
+              type="button"
+              className={cn(
+                'nav-item w-full flex items-center gap-2 px-2 h-8 rounded-md text-left transition-colors',
+                isViewActive(key) ? 'nav-item--active' : 'nav-item--idle'
+              )}
+              onClick={() => setActiveView(key)}
+            >
+              <Icon className="size-[15px] shrink-0 opacity-80" />
+              <span className="flex-1 truncate text-[13px] font-medium">{label}</span>
+              {count > 0 && (
+                <span className="text-[11px] font-mono text-muted-foreground/50 tabular-nums">{count}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        <div className="px-2 pb-1 pt-2 text-[10.5px] font-mono font-semibold uppercase tracking-wider text-muted-foreground/50">
           分组
         </div>
         {tree.map((group) => (
@@ -224,7 +277,9 @@ export function AppSidebar({
           type="button"
           className={cn(
             'nav-item w-full flex items-center gap-2 px-2 h-8 rounded-md text-left transition-colors mt-2',
-            isTrashActive ? 'nav-item--trash-active' : 'nav-item--idle'
+            !isSettings && isTrashActive && activeView === 'group'
+              ? 'nav-item--trash-active'
+              : 'nav-item--idle'
           )}
           onClick={() => setActiveGroup(TRASH_GROUP_ID)}
         >

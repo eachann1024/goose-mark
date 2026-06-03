@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, List, LayoutGrid, StretchHorizontal, Plus, Settings, Sun, Moon } from 'lucide-react'
+import { ChevronLeft, Settings, Sun, Moon } from 'lucide-react'
 import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
@@ -40,6 +40,7 @@ import BookmarksGrid from '@/components/bookmarks/BookmarksGrid'
 import BookmarkPreview from '@/components/bookmarks/BookmarkPreview'
 import BookmarkFormDialog from '@/components/bookmarks/BookmarkFormDialog'
 import SearchOverlay, { type SearchOverlayHandle } from '@/components/bookmarks/SearchOverlay'
+import BookmarkListHeader, { type ListSort } from '@/components/bookmarks/BookmarkListHeader'
 import SettingsLayout from '@/views/settings/SettingsLayout'
 
 /**
@@ -128,6 +129,7 @@ function App() {
   const storeSearch = useBookmarkStore((s) => s.search)
   const activeGroupId = useBookmarkStore((s) => s.activeGroupId)
   const activeSubGroupId = useBookmarkStore((s) => s.activeSubGroupId)
+  const activeView = useBookmarkStore((s) => s.activeView)
 
   const settings = useSettingsStore()
   const recordUse = useStatsStore((s) => s.recordUse)
@@ -196,6 +198,9 @@ function App() {
 
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [viewMode, setViewMode] = useState<ViewMode>(settings.homeViewMode)
+  // 列表面板排序：持久化到 settings.listSort，默认「最近使用」，仅作用于虚拟视图的扁平列表。
+  const listSort = settings.listSort as ListSort
+  const setListSort = useCallback((value: ListSort) => useSettingsStore.getState().setListSort(value), [])
   const [isLoading, setIsLoading] = useState(true)
   const [activeAnchorId, setActiveAnchorId] = useState('')
   const [highlightedBookmarkId, setHighlightedBookmarkId] = useState<string | null>(null)
@@ -330,11 +335,38 @@ function App() {
   const searchViewOpenRef = useRef(false)
   searchViewOpenRef.current = searchViewOpen
 
-  // View-aware bookmarks：列表用全部，网格用当前子分组
+  // 虚拟视图（all/pinned/recent）的扁平列表是否启用排序：非搜索、非分组视图
+  const sortApplies = !searchViewOpen && activeView !== 'group'
+
+  // 按 listSort 排序：仅用于虚拟视图扁平列表，不改变分组视图的手动顺序
+  const applyListSort = useCallback(
+    (list: Bookmark[]): Bookmark[] => {
+      if (!sortApplies) return list
+      const sorted = [...list]
+      switch (listSort) {
+        case 'recent':
+          sorted.sort((a, b) => (b.lastUsed ?? 0) - (a.lastUsed ?? 0))
+          break
+        case 'created':
+          sorted.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
+          break
+        case 'name':
+          sorted.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'zh-Hans-CN'))
+          break
+        case 'visits':
+          sorted.sort((a, b) => (b.visits ?? 0) - (a.visits ?? 0))
+          break
+      }
+      return sorted
+    },
+    [sortApplies, listSort]
+  )
+
+  // View-aware bookmarks：列表用全部（按排序），网格用当前子分组
   const visibleBookmarks = useMemo<Bookmark[]>(() => {
     if (viewMode === 'grid' && tab === 'bookmarks' && !searchViewOpen) return currentBookmarks
-    return activeBookmarks
-  }, [viewMode, tab, searchViewOpen, currentBookmarks, activeBookmarks])
+    return applyListSort(activeBookmarks)
+  }, [viewMode, tab, searchViewOpen, currentBookmarks, activeBookmarks, applyListSort])
   const visibleBookmarksRef = useRef(visibleBookmarks)
   visibleBookmarksRef.current = visibleBookmarks
 
@@ -1581,6 +1613,32 @@ function App() {
     }
   }, [bookmarks, viewMode, isTrashActive, searchViewOpen, activeGroup, currentSubGroup, visibleBookmarks, activeBookmarks])
 
+  // ---- 列表面板头：当前视图标题 ----
+  const currentViewTitle = useMemo(() => {
+    if (searchViewOpen) return '搜索结果'
+    if (isTrashActive && activeView === 'group') return '回收站'
+    switch (activeView) {
+      case 'all':
+        return '全部书签'
+      case 'pinned':
+        return '置顶'
+      case 'recent':
+        return '最近使用'
+      case 'group':
+      default:
+        if (shouldShowSubs && currentSubGroup) {
+          return `${activeGroup?.name ?? ''} / ${currentSubGroup.name}`
+        }
+        return activeGroup?.name ?? '全部书签'
+    }
+  }, [searchViewOpen, isTrashActive, activeView, shouldShowSubs, currentSubGroup, activeGroup])
+
+  // 列表面板头项数：与底部状态栏 current 口径一致（当前列表项数）
+  const listHeaderCount = useMemo(() => {
+    if (viewMode === 'grid' && !isTrashActive && !searchViewOpen) return visibleBookmarks.length
+    return activeBookmarks.length
+  }, [viewMode, isTrashActive, searchViewOpen, visibleBookmarks, activeBookmarks])
+
   // ==================================================================
   // 渲染
   // ==================================================================
@@ -1639,66 +1697,8 @@ function App() {
         className="app-container relative z-10 min-h-screen h-screen flex flex-col overflow-hidden bg-background text-foreground transition-all duration-500"
         onContextMenu={(e) => e.preventDefault()}
       >
-        {/* 顶部工具栏 */}
-        <header className="shrink-0 z-30 flex items-center gap-3 px-4 py-3 border-b border-border/30">
-          {!isUTools && (
-            <div className="flex-1 flex items-center gap-2">
-              <div className="relative flex-1">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground/40">
-                  <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <circle cx="11" cy="11" r="7" />
-                    <path d="m20 20-3-3" strokeLinecap="round" />
-                  </svg>
-                </span>
-                <input
-                  value={storeSearch}
-                  onChange={(e) => useBookmarkStore.getState().setSearch(e.target.value)}
-                  type="text"
-                  placeholder="搜索书签..."
-                  className="w-full h-9 pl-9 pr-3 text-sm bg-muted/40 rounded-lg border-0 outline-none focus:ring-1 focus:ring-primary/30 placeholder:text-muted-foreground/40 transition-all"
-                  onKeyDown={handleLocalSearchKey}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* 视图切换 */}
-          <div className="flex items-center gap-0.5 bg-muted/30 rounded-lg p-0.5">
-            {([
-              ['list', List, '列表视图'],
-              ['grid', LayoutGrid, '网格视图'],
-              ['cards', StretchHorizontal, '卡片视图']
-            ] as const).map(([mode, Ico, label]) => (
-              <button
-                key={mode}
-                className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors ${
-                  viewMode === mode
-                    ? 'bg-background text-foreground shadow-sm ring-1 ring-border'
-                    : 'text-muted-foreground/60 hover:text-foreground hover:bg-muted/50'
-                }`}
-                title={label}
-                onClick={() => {
-                  setViewMode(mode)
-                  setTab('bookmarks')
-                }}
-              >
-                <Ico className="size-[15px]" />
-              </button>
-            ))}
-          </div>
-
-          {/* 新建（珊瑚强调按钮） */}
-          <button
-            className="h-8 inline-flex items-center gap-1.5 pl-2.5 pr-3 rounded-lg bg-primary text-primary-foreground text-[12.5px] font-semibold shadow-sm hover:brightness-105 active:brightness-95 transition-all"
-            onClick={() => openAdd()}
-            title="新建书签"
-          >
-            <Plus className="size-[15px]" />
-            新建
-          </button>
-
-          <div className="h-5 w-px bg-border/50" />
-
+        {/* 顶部工具栏（搜索移至侧栏、视图切换/新建移至列表面板头；此处仅保留全局：设置 + 明暗） */}
+        <header className="shrink-0 z-30 flex items-center justify-end gap-1 px-4 py-2 border-b border-border/30">
           <button
             className={`h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors ${
               tab === 'settings' ? 'bg-muted text-foreground' : ''
@@ -1761,6 +1761,20 @@ function App() {
             />
 
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              {/* 列表面板头：视图名 + 项数 + 筛选/排序/视图切换/新建 */}
+              <BookmarkListHeader
+                title={currentViewTitle}
+                count={listHeaderCount}
+                viewMode={viewMode}
+                sort={listSort}
+                sortEnabled={sortApplies}
+                onSortChange={setListSort}
+                onViewModeChange={(mode) => {
+                  setViewMode(mode)
+                  setTab('bookmarks')
+                }}
+                onCreate={() => openAdd()}
+              />
               <div
                 ref={contentScrollRef}
                 className="flex-1 min-h-0 overflow-y-auto px-4 py-2 custom-scroll"
@@ -1773,13 +1787,15 @@ function App() {
                 {viewMode === 'list' || viewMode === 'cards' ? (
                   <BookmarksList
                     variant={viewMode === 'cards' ? 'cards' : 'list'}
-                    bookmarks={activeBookmarks}
+                    bookmarks={visibleBookmarks}
                     selectedIndex={selectedIndex}
                     isTrashActive={isTrashActive}
                     showCommandHints={showCmdHints}
                     hintKeyById={hintKeyById}
                     highlightedId={highlightedBookmarkId}
-                    sections={searchViewOpen || isTrashActive ? undefined : bookmarkSections}
+                    sections={
+                      searchViewOpen || isTrashActive || activeView !== 'group' ? undefined : bookmarkSections
+                    }
                     loading={isLoading}
                     clickableIcon={!previewPanelCollapsed && viewMode === 'list'}
                     onSelect={handleBookmarkSelect}
