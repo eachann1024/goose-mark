@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import PinyinMatch from 'pinyin-match'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 
@@ -42,20 +43,28 @@ const serializeBookmark = (bookmark: Bookmark, store = getStore()) => ({
   inTrash: store.isBookmarkInTrash(bookmark)
 })
 
-const serializeSubGroup = (sub: Group['children'][number]) => ({
+const serializeSubGroup = (sub: Group['children'][number], includeBookmarks = false, store = getStore()) => ({
   id: sub.id,
   name: sub.name,
   bookmarkCount: sub.bookmarkIds.length,
-  bookmarkIds: [...sub.bookmarkIds]
+  bookmarkIds: [...sub.bookmarkIds],
+  ...(includeBookmarks
+    ? {
+        bookmarks: sub.bookmarkIds
+          .map((id) => store.bookmarks.find((b) => b.id === id))
+          .filter((b): b is Bookmark => !!b)
+          .map((b) => serializeBookmark(b, store))
+      }
+    : {})
 })
 
-const serializeGroup = (group: Group) => ({
+const serializeGroup = (group: Group, includeBookmarks = false, store = getStore()) => ({
   id: group.id,
   name: group.name,
   isTrash: group.id === TRASH_GROUP_ID,
   createdAt: group.createdAt,
   updatedAt: group.updatedAt,
-  subGroups: group.children.map(serializeSubGroup)
+  subGroups: group.children.map((sub) => serializeSubGroup(sub, includeBookmarks, store))
 })
 
 const findBookmark = (id: string): Bookmark | undefined => getStore().bookmarks.find((b) => b.id === id)
@@ -84,14 +93,22 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
   const store = getStore()
 
   switch (tool) {
-    case 'get_bookmark_tree':
-      return { groups: store.groups.map(serializeGroup) }
+    case 'get_bookmark_tree': {
+      // plugin.json 契约：includeBookmarks 默认 true，includeTrash 默认 false。
+      const includeBookmarks = params.includeBookmarks !== false
+      const includeTrash = !!params.includeTrash
+      return {
+        groups: store.groups
+          .filter((g) => (includeTrash ? true : g.id !== TRASH_GROUP_ID))
+          .map((g) => serializeGroup(g, includeBookmarks, store))
+      }
+    }
 
     case 'list_groups':
       return {
         groups: store.groups
           .filter((g) => (params.includeTrash ? true : g.id !== TRASH_GROUP_ID))
-          .map(serializeGroup)
+          .map((g) => serializeGroup(g, false, store))
       }
 
     case 'list_bookmarks': {
@@ -107,18 +124,36 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
           )
         })
       }
-      return { bookmarks: pool.map((b) => serializeBookmark(b, store)) }
+      // plugin.json 契约：limit 默认 100（1-500），offset 默认 0。
+      const total = pool.length
+      const limit = Math.min(500, Math.max(1, Math.round(num(params.limit, 100))))
+      const offset = Math.max(0, Math.round(num(params.offset, 0)))
+      const page = pool.slice(offset, offset + limit)
+      return { total, limit, offset, bookmarks: page.map((b) => serializeBookmark(b, store)) }
     }
 
     case 'search_bookmarks': {
       const query = str(params.query).trim().toLowerCase()
-      const limit = num(params.limit, 50)
+      const limit = Math.min(200, Math.max(1, Math.round(num(params.limit, 50))))
+      const groupId = str(params.groupId)
+      const subGroupId = str(params.subGroupId)
+      const includeTrash = !!params.includeTrash
       if (!query) return { bookmarks: [] }
       const matched = store.bookmarks
-        .filter((b) => !store.isBookmarkInTrash(b))
+        .filter((b) => includeTrash || !store.isBookmarkInTrash(b))
+        .filter((b) => {
+          // plugin.json 契约：可选 groupId/subGroupId 限制搜索范围。
+          if (!groupId && !subGroupId) return true
+          const locs = store.getBookmarkLocations(b.id)
+          return locs.some(
+            (loc) => (!groupId || loc.groupId === groupId) && (!subGroupId || loc.subGroupId === subGroupId)
+          )
+        })
         .filter((b) => {
           const haystack = [b.title, b.desc ?? '', b.url, (b.tags ?? []).join(' ')].join(' ').toLowerCase()
-          return haystack.includes(query)
+          // 工具描述承诺拼音搜索：先做子串匹配，再回退拼音匹配（与应用内搜索一致）。
+          if (haystack.includes(query)) return true
+          return !!PinyinMatch.match(haystack, query)
         })
         .slice(0, limit)
       return { bookmarks: matched.map((b) => serializeBookmark(b, store)) }
@@ -204,7 +239,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
           url,
           desc: str(params.desc),
           tags: Array.isArray(params.tags) ? (params.tags as string[]).map(String) : [],
-          pinned: false,
+          pinned: !!params.pinned,
           allowUniversal: !!params.allowUniversal
         },
         resolvedLocations
@@ -220,6 +255,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       if (typeof params.url === 'string') patch.url = params.url
       if (typeof params.desc === 'string') patch.desc = params.desc
       if (Array.isArray(params.tags)) patch.tags = (params.tags as string[]).map(String)
+      if (typeof params.pinned === 'boolean') patch.pinned = params.pinned
       if (typeof params.allowUniversal === 'boolean') patch.allowUniversal = params.allowUniversal
       store.updateBookmark(id, patch)
       const updated = findBookmark(id)
