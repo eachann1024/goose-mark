@@ -1736,26 +1736,28 @@ function App() {
         className="app-container relative z-10 min-h-screen h-screen flex flex-col overflow-hidden bg-background text-foreground transition-all duration-500"
         onContextMenu={(e) => e.preventDefault()}
       >
-        {/* 顶部工具栏（搜索移至侧栏、视图切换/新建移至列表面板头；此处仅保留全局：设置 + 明暗） */}
-        <header className="shrink-0 z-30 flex items-center justify-end gap-1 px-4 py-2 border-b border-border/30">
-          <button
-            className={`h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors ${
-              tab === 'settings' ? 'bg-muted text-foreground' : ''
-            }`}
-            onClick={() => setTab(tab === 'settings' ? 'bookmarks' : 'settings')}
-            title="设置"
-          >
-            <Settings className="size-[17px]" />
-          </button>
+        {/* 全局快捷入口：悬浮放置，避免占用整条顶部空间 */}
+        {!isUTools && (
+          <div className="absolute right-3 top-2 z-40 flex items-center gap-1">
+            <button
+              className={`h-8 w-8 flex items-center justify-center rounded-lg bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground hover:bg-muted/60 transition-colors ${
+                tab === 'settings' ? 'bg-muted text-foreground' : ''
+              }`}
+              onClick={() => setTab(tab === 'settings' ? 'bookmarks' : 'settings')}
+              title="设置"
+            >
+              <Settings className="size-[17px]" />
+            </button>
 
-          <button
-            className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
-            onClick={() => toggleDark()}
-            title="切换明暗"
-          >
-            {isDark ? <Sun className="size-[17px]" /> : <Moon className="size-[17px]" />}
-          </button>
-        </header>
+            <button
+              className="h-8 w-8 flex items-center justify-center rounded-lg bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground hover:bg-muted/60 transition-colors"
+              onClick={() => toggleDark()}
+              title="切换明暗"
+            >
+              {isDark ? <Sun className="size-[17px]" /> : <Moon className="size-[17px]" />}
+            </button>
+          </div>
+        )}
 
         {/* 搜索浮层 */}
         <SearchOverlay
@@ -1894,7 +1896,7 @@ function App() {
             </div>
 
             {/* 右侧预览栏（仅列表模式、非回收站） */}
-            {!isTrashActive && viewMode === 'list' && (
+            {!isUTools && !isTrashActive && viewMode === 'list' && (
               <>
                 {!previewPanelCollapsed && (
                   <div
