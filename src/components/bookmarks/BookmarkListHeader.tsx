@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import { ArrowUpDown, Check, Filter, LayoutGrid, List, Plus, StretchHorizontal } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { ArrowUpDown, Check, Filter, LayoutGrid, List, Plus, StretchHorizontal, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +21,12 @@ const SORT_OPTIONS: { value: ListSort; label: string }[] = [
   { value: 'visits', label: '访问次数' }
 ]
 
+/** 标签筛选选项：tag 名 + 当前视图内出现次数 */
+export interface TagFilterOption {
+  tag: string
+  count: number
+}
+
 export interface BookmarkListHeaderProps {
   /** 当前视图标题（如「全部书签」「置顶」「最近使用」「工作 / 常用」「回收站」） */
   title: string
@@ -30,6 +36,14 @@ export interface BookmarkListHeaderProps {
   sort: ListSort
   /** 排序是否可用（分组视图按手动顺序展示时禁用） */
   sortEnabled?: boolean
+  /** 当前视图（过滤前）出现过的全部 tag + 计数，已去重，调用方排序 */
+  tagOptions: TagFilterOption[]
+  /** 已选中的 tag（任一匹配 OR） */
+  selectedTags: string[]
+  /** 切换单个 tag 的选中态 */
+  onToggleTag: (tag: string) => void
+  /** 一键清除全部 tag 过滤 */
+  onClearTags: () => void
   onSortChange: (sort: ListSort) => void
   onViewModeChange: (mode: 'list' | 'grid' | 'cards') => void
   onCreate: () => void
@@ -47,12 +61,18 @@ export function BookmarkListHeader({
   viewMode,
   sort,
   sortEnabled = true,
+  tagOptions,
+  selectedTags,
+  onToggleTag,
+  onClearTags,
   onSortChange,
   onViewModeChange,
   onCreate
 }: BookmarkListHeaderProps) {
   const [sortOpen, setSortOpen] = useState(false)
   const sortRef = useRef<HTMLDivElement | null>(null)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const filterRef = useRef<HTMLDivElement | null>(null)
 
   // 点击外部 / Escape 关闭排序菜单
   useEffect(() => {
@@ -71,7 +91,27 @@ export function BookmarkListHeader({
     }
   }, [sortOpen])
 
+  // 点击外部 / Escape 关闭筛选浮层
+  useEffect(() => {
+    if (!filterOpen) return
+    const onPointer = (e: MouseEvent) => {
+      if (filterRef.current && !filterRef.current.contains(e.target as Node)) setFilterOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFilterOpen(false)
+    }
+    document.addEventListener('mousedown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [filterOpen])
+
   const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? '最近使用'
+  const selectedSet = useMemo(() => new Set(selectedTags), [selectedTags])
+  const hasActiveFilter = selectedTags.length > 0
+  const filterDisabled = tagOptions.length === 0 && !hasActiveFilter
 
   return (
     <div className="shrink-0 flex items-center gap-3 px-4 h-14 border-b border-border/30 select-none">
@@ -85,14 +125,79 @@ export function BookmarkListHeader({
 
       <div className="flex-1" />
 
-      {/* 漏斗筛选（占位入口，后续接筛选浮层） */}
-      <button
-        type="button"
-        className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors"
-        title="筛选"
-      >
-        <Filter className="size-[15px]" />
-      </button>
+      {/* 漏斗筛选（按标签多选，任一匹配 OR） */}
+      <div ref={filterRef} className="relative">
+        <button
+          type="button"
+          disabled={filterDisabled}
+          className={cn(
+            'relative h-8 w-8 flex items-center justify-center rounded-lg transition-colors',
+            'disabled:opacity-40 disabled:pointer-events-none',
+            hasActiveFilter
+              ? 'text-primary bg-primary/10 hover:bg-primary/15'
+              : 'text-muted-foreground/70 hover:text-foreground hover:bg-muted/40',
+            filterOpen && !hasActiveFilter && 'bg-muted/50 text-foreground'
+          )}
+          title={hasActiveFilter ? `已按 ${selectedTags.length} 个标签筛选` : '按标签筛选'}
+          onClick={() => setFilterOpen((v) => !v)}
+        >
+          <Filter className="size-[15px]" />
+          {hasActiveFilter && (
+            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
+          )}
+        </button>
+        {filterOpen && (
+          <div className="absolute right-0 top-[calc(100%+4px)] z-40 w-[220px] rounded-[10px] border border-border bg-popover shadow-lg">
+            <div className="flex items-center justify-between gap-2 px-3 h-9 border-b border-border/40">
+              <span className="font-serif-title text-[13px] text-foreground">按标签筛选</span>
+              {hasActiveFilter && (
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground hover:text-primary transition-colors"
+                  onClick={onClearTags}
+                  title="清除筛选"
+                >
+                  <X className="size-[12px]" />
+                  清除
+                </button>
+              )}
+            </div>
+            <div className="max-h-[280px] overflow-y-auto custom-scroll p-1">
+              {tagOptions.length === 0 ? (
+                <div className="px-2.5 py-6 text-center text-[12px] text-muted-foreground/60">
+                  当前视图暂无标签
+                </div>
+              ) : (
+                tagOptions.map((opt) => {
+                  const checked = selectedSet.has(opt.tag)
+                  return (
+                    <button
+                      key={opt.tag}
+                      type="button"
+                      className={cn(
+                        'w-full flex items-center gap-2 h-8 px-2 rounded-md text-[13px] text-left transition-colors',
+                        checked ? 'text-foreground bg-muted/50' : 'text-foreground hover:bg-muted'
+                      )}
+                      onClick={() => onToggleTag(opt.tag)}
+                    >
+                      <span
+                        className={cn(
+                          'shrink-0 size-[15px] flex items-center justify-center rounded-[4px] border transition-colors',
+                          checked ? 'bg-primary border-primary text-primary-foreground' : 'border-border'
+                        )}
+                      >
+                        {checked && <Check className="size-[11px]" strokeWidth={3} />}
+                      </span>
+                      <span className="flex-1 truncate">{opt.tag}</span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground/50 tabular-nums">{opt.count}</span>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 排序下拉 */}
       <div ref={sortRef} className="relative">

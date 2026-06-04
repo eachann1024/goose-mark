@@ -40,7 +40,7 @@ import BookmarksGrid from '@/components/bookmarks/BookmarksGrid'
 import BookmarkPreview from '@/components/bookmarks/BookmarkPreview'
 import BookmarkFormDialog from '@/components/bookmarks/BookmarkFormDialog'
 import SearchOverlay, { type SearchOverlayHandle } from '@/components/bookmarks/SearchOverlay'
-import BookmarkListHeader, { type ListSort } from '@/components/bookmarks/BookmarkListHeader'
+import BookmarkListHeader, { type ListSort, type TagFilterOption } from '@/components/bookmarks/BookmarkListHeader'
 import SettingsLayout from '@/views/settings/SettingsLayout'
 
 /**
@@ -198,6 +198,8 @@ function App() {
 
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [viewMode, setViewMode] = useState<ViewMode>(settings.homeViewMode)
+  // 标签筛选（会话级，不持久化）：选中的 tag 作为「任一匹配 OR」过滤条件，叠加在当前视图列表上
+  const [tagFilter, setTagFilter] = useState<string[]>([])
   // 列表面板排序：持久化到 settings.listSort，默认「最近使用」，仅作用于虚拟视图的扁平列表。
   const listSort = settings.listSort as ListSort
   const setListSort = useCallback((value: ListSort) => useSettingsStore.getState().setListSort(value), [])
@@ -362,13 +364,47 @@ function App() {
     [sortApplies, listSort]
   )
 
-  // View-aware bookmarks：列表用全部（按排序），网格用当前子分组
-  const visibleBookmarks = useMemo<Bookmark[]>(() => {
+  // View-aware bookmarks（过滤前）：列表用全部（按排序），网格用当前子分组
+  const baseVisibleBookmarks = useMemo<Bookmark[]>(() => {
     if (viewMode === 'grid' && tab === 'bookmarks' && !searchViewOpen) return currentBookmarks
     return applyListSort(activeBookmarks)
   }, [viewMode, tab, searchViewOpen, currentBookmarks, activeBookmarks, applyListSort])
+
+  // 当前视图（过滤前）出现过的全部 tag + 计数，去重并按计数降序、同计数按名称
+  const tagOptions = useMemo<TagFilterOption[]>(() => {
+    const counts = new Map<string, number>()
+    for (const b of baseVisibleBookmarks) {
+      for (const raw of b.tags ?? []) {
+        const tag = raw.trim()
+        if (!tag) continue
+        counts.set(tag, (counts.get(tag) ?? 0) + 1)
+      }
+    }
+    return Array.from(counts, ([tag, count]) => ({ tag, count })).sort(
+      (a, b) => b.count - a.count || a.tag.localeCompare(b.tag, 'zh-Hans-CN')
+    )
+  }, [baseVisibleBookmarks])
+
+  // 选中的 tag 中仍存在于当前视图的部分（视图切换后自动剔除失效项），作为实际生效的过滤条件
+  const effectiveTagFilter = useMemo(() => {
+    if (tagFilter.length === 0) return tagFilter
+    const available = new Set(tagOptions.map((o) => o.tag))
+    return tagFilter.filter((t) => available.has(t))
+  }, [tagFilter, tagOptions])
+
+  // 应用 tag 过滤（任一匹配 OR），叠加在当前视图列表上 —— 复用同一 visibleBookmarks 管道
+  const visibleBookmarks = useMemo<Bookmark[]>(() => {
+    if (effectiveTagFilter.length === 0) return baseVisibleBookmarks
+    const wanted = new Set(effectiveTagFilter)
+    return baseVisibleBookmarks.filter((b) => (b.tags ?? []).some((t) => wanted.has(t.trim())))
+  }, [baseVisibleBookmarks, effectiveTagFilter])
   const visibleBookmarksRef = useRef(visibleBookmarks)
   visibleBookmarksRef.current = visibleBookmarks
+
+  const toggleTagFilter = useCallback((tag: string) => {
+    setTagFilter((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]))
+  }, [])
+  const clearTagFilter = useCallback(() => setTagFilter([]), [])
 
   const selectedBookmark = useMemo(() => {
     if (selectedIndex < 0 || selectedIndex >= visibleBookmarks.length) return null
@@ -1114,6 +1150,11 @@ function App() {
     setSelectedIndex(visibleBookmarksRef.current.length > 0 ? 0 : -1)
   }, [viewMode])
 
+  // 标签过滤变化时重置选中索引，避免过滤后索引越界导致键盘导航/预览错位
+  useEffect(() => {
+    setSelectedIndex(visibleBookmarksRef.current.length > 0 ? 0 : -1)
+  }, [effectiveTagFilter])
+
   // 选中分组变化：重置选中、隐藏命令提示、更新标题
   useEffect(() => {
     setSelectedIndex(visibleBookmarksRef.current.length > 0 ? 0 : -1)
@@ -1608,10 +1649,11 @@ function App() {
     return {
       groupName: isTrashActive ? '回收站' : '全部书签',
       subName: '',
-      current: activeBookmarks.length,
+      // 与中间列表实际展示口径一致（叠加标签过滤后的数量）
+      current: visibleBookmarks.length,
       total
     }
-  }, [bookmarks, viewMode, isTrashActive, searchViewOpen, activeGroup, currentSubGroup, visibleBookmarks, activeBookmarks])
+  }, [bookmarks, viewMode, isTrashActive, searchViewOpen, activeGroup, currentSubGroup, visibleBookmarks])
 
   // ---- 列表面板头：当前视图标题 ----
   const currentViewTitle = useMemo(() => {
@@ -1633,11 +1675,8 @@ function App() {
     }
   }, [searchViewOpen, isTrashActive, activeView, shouldShowSubs, currentSubGroup, activeGroup])
 
-  // 列表面板头项数：与底部状态栏 current 口径一致（当前列表项数）
-  const listHeaderCount = useMemo(() => {
-    if (viewMode === 'grid' && !isTrashActive && !searchViewOpen) return visibleBookmarks.length
-    return activeBookmarks.length
-  }, [viewMode, isTrashActive, searchViewOpen, visibleBookmarks, activeBookmarks])
+  // 列表面板头项数：与底部状态栏 current 口径一致（当前实际展示项数，含标签过滤）
+  const listHeaderCount = visibleBookmarks.length
 
   // ==================================================================
   // 渲染
@@ -1768,6 +1807,10 @@ function App() {
                 viewMode={viewMode}
                 sort={listSort}
                 sortEnabled={sortApplies}
+                tagOptions={tagOptions}
+                selectedTags={effectiveTagFilter}
+                onToggleTag={toggleTagFilter}
+                onClearTags={clearTagFilter}
                 onSortChange={setListSort}
                 onViewModeChange={(mode) => {
                   setViewMode(mode)
