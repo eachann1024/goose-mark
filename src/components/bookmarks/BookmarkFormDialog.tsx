@@ -101,8 +101,8 @@ export function BookmarkFormDialog({ onClose }: BookmarkFormDialogProps) {
       </header>
 
       {/* Form Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scroll">
-        <div className="bookmark-form__canvas flex w-full flex-col gap-5 px-6 pb-28 pt-4">
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scroll px-6">
+        <div className="bookmark-form__canvas mx-auto flex w-full max-w-[760px] flex-col gap-5 pb-28 pt-4">
           {/* 1. URL Input with Inline AI Button */}
           <section className="bookmark-form__section bookmark-form__url-section">
             <label className="bookmark-form__label">链接 / 模板</label>

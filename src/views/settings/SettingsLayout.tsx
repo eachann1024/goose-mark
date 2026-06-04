@@ -143,7 +143,7 @@ export default function SettingsLayout() {
 
       {/* Main Content: all sections laid out vertically */}
       <main className="flex-1 overflow-y-auto px-4 pb-8 pt-2 custom-scroll">
-        <div className="max-w-[680px] space-y-6">
+        <div className="w-full max-w-none space-y-6 pr-1">
           {sections.map((section) => {
             const Icon = section.icon
             const Component = section.component
