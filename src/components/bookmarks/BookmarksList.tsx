@@ -227,7 +227,7 @@ export function BookmarksList({
           'bookmark-list-item group relative cursor-pointer select-none transition-colors duration-150',
           isCards
             ? 'bookmark-card-item flex items-center gap-[13px] px-[14px] py-3 rounded-xl bg-card border border-border shadow-sm'
-            : 'flex items-start gap-3 px-3 py-2.5 rounded-lg',
+            : 'flex items-start gap-3 px-3 py-2.5 rounded-xl',
           isSelected && 'is-selected',
           isHighlighted && 'is-highlighted ring-1 ring-primary/30'
         )}
@@ -243,7 +243,7 @@ export function BookmarksList({
       >
         {/* Command Hint */}
         {showCommandHints && hintKeyById?.[bookmark.id] && (
-          <span className="absolute -left-1 -top-1 z-10 h-5 min-w-[20px] px-1.5 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold shadow">
+          <span className="absolute left-0 top-0 z-10 h-5 min-w-[20px] -translate-x-1/3 -translate-y-1/3 px-1.5 flex items-center justify-center rounded-full bg-primary text-primary-foreground text-[10px] font-bold shadow">
             {hintKeyById[bookmark.id]}
           </span>
         )}
@@ -421,7 +421,7 @@ export function BookmarksList({
                 <span className="text-[10px] text-muted-foreground/30">·</span>
                 <span className="text-[10px] text-muted-foreground/50">{section.subGroupName}</span>
               </div>
-              <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 pb-1' : 'flex flex-col'}>
+              <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 pb-1' : 'flex flex-col gap-1 px-2 py-1'}>
                 {section.bookmarks.map((bookmark, localIdx) =>
                   renderItem(bookmark, sectionStartIndices[sectionIdx] + localIdx, '-' + section.anchorId)
                 )}
@@ -430,7 +430,7 @@ export function BookmarksList({
           ))}
         </div>
       ) : (
-        <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 py-3' : 'flex flex-col py-1'}>
+        <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 py-3' : 'flex flex-col gap-1 px-2 py-1'}>
           {bookmarks.map((bookmark, index) => renderItem(bookmark, index))}
         </ul>
       )}
