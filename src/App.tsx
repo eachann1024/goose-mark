@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, Settings, Sun, Moon } from 'lucide-react'
+import { ChevronLeft } from 'lucide-react'
 import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
@@ -1635,26 +1635,6 @@ function App() {
     void localSearchInputRef
   }, [searchViewOpen, localSearchInputRef])
 
-  // ---- 状态栏信息 ----
-  const statusBarInfo = useMemo(() => {
-    const total = bookmarks.filter((b) => !useBookmarkStore.getState().isBookmarkInTrash(b)).length
-    if (viewMode === 'grid' && !isTrashActive && !searchViewOpen) {
-      return {
-        groupName: activeGroup?.name ?? '',
-        subName: currentSubGroup?.name ?? '',
-        current: visibleBookmarks.length,
-        total
-      }
-    }
-    return {
-      groupName: isTrashActive ? '回收站' : '全部书签',
-      subName: '',
-      // 与中间列表实际展示口径一致（叠加标签过滤后的数量）
-      current: visibleBookmarks.length,
-      total
-    }
-  }, [bookmarks, viewMode, isTrashActive, searchViewOpen, activeGroup, currentSubGroup, visibleBookmarks])
-
   // ---- 列表面板头：当前视图标题 ----
   const currentViewTitle = useMemo(() => {
     if (searchViewOpen) return '搜索结果'
@@ -1736,29 +1716,6 @@ function App() {
         className="app-container relative z-10 min-h-screen h-screen flex flex-col overflow-hidden bg-background text-foreground transition-all duration-500"
         onContextMenu={(e) => e.preventDefault()}
       >
-        {/* 全局快捷入口：悬浮放置，避免占用整条顶部空间 */}
-        {!isUTools && (
-          <div className="absolute right-3 top-2 z-40 flex items-center gap-1">
-            <button
-              className={`h-8 w-8 flex items-center justify-center rounded-lg bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground hover:bg-muted/60 transition-colors ${
-                tab === 'settings' ? 'bg-muted text-foreground' : ''
-              }`}
-              onClick={() => setTab(tab === 'settings' ? 'bookmarks' : 'settings')}
-              title="设置"
-            >
-              <Settings className="size-[17px]" />
-            </button>
-
-            <button
-              className="h-8 w-8 flex items-center justify-center rounded-lg bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:text-foreground hover:bg-muted/60 transition-colors"
-              onClick={() => toggleDark()}
-              title="切换明暗"
-            >
-              {isDark ? <Sun className="size-[17px]" /> : <Moon className="size-[17px]" />}
-            </button>
-          </div>
-        )}
-
         {/* 搜索浮层 */}
         <SearchOverlay
           ref={searchOverlayRef}
@@ -1799,6 +1756,8 @@ function App() {
               onEditGroup={openGroupEditor}
               onFocusSearch={() => focusMainSearchInput(true)}
               onOpenSettings={() => setTab('settings')}
+              isDark={isDark}
+              onToggleDark={toggleDark}
             />
 
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -1822,7 +1781,7 @@ function App() {
               />
               <div
                 ref={contentScrollRef}
-                className="flex-1 min-h-0 overflow-y-auto px-4 py-2 custom-scroll"
+                className="flex-1 min-h-0 overflow-y-auto px-2 py-2 custom-scroll"
                 onScroll={debouncedSaveScroll}
               >
                 {!isTrashActive && !storeSearch && (
@@ -1872,25 +1831,6 @@ function App() {
                     onEmptyTrash={emptyTrash}
                     onLocate={handleLocate}
                   />
-                )}
-              </div>
-
-              {/* 底部状态栏 */}
-              <div className="shrink-0 flex items-center justify-between px-4 py-2 border-t border-border/20 text-[11px] text-muted-foreground/50 select-none">
-                {isLoading ? (
-                  <>
-                    <div className="h-3 w-16 bg-muted/50 rounded animate-pulse" />
-                    <div className="h-3 w-10 bg-muted/50 rounded animate-pulse" />
-                  </>
-                ) : (
-                  <>
-                    <span>
-                      {statusBarInfo.subName ? `${statusBarInfo.groupName} / ${statusBarInfo.subName}` : statusBarInfo.groupName}
-                    </span>
-                    <span className="tabular-nums">
-                      {statusBarInfo.current} / {statusBarInfo.total}
-                    </span>
-                  </>
                 )}
               </div>
             </div>

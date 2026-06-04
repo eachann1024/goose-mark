@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Clock, Folder, Layers, Search, Settings, Star, Trash2 } from 'lucide-react'
+import { ChevronDown, Clock, Folder, Layers, Moon, Search, Settings, Star, Sun, Trash2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import type { ActiveView } from '@/stores/bookmark'
+import { Image } from '@/components/ui/image'
 import { cn } from '@/lib/utils'
 
 /**
@@ -23,6 +24,8 @@ export interface AppSidebarProps {
   onEditGroup?: (groupId: string) => void
   onFocusSearch?: () => void
   onOpenSettings?: () => void
+  isDark?: boolean
+  onToggleDark?: () => void
 }
 
 interface TreeSub {
@@ -43,7 +46,9 @@ export function AppSidebar({
   isSettings,
   onScrollTo,
   onFocusSearch,
-  onOpenSettings
+  onOpenSettings,
+  isDark,
+  onToggleDark
 }: AppSidebarProps) {
   const groups = useBookmarkStore((s) => s.groups)
   const bookmarks = useBookmarkStore((s) => s.bookmarks)
@@ -161,7 +166,7 @@ export function AppSidebar({
     >
       {/* 品牌头部 */}
       <div className="shrink-0 px-3.5 pt-3.5 pb-2 flex items-center gap-2.5 select-none">
-        <img src="/logo.png" alt="logo" className="w-[26px] h-[26px] rounded-md shrink-0" />
+        <Image src="logo.png" alt="logo" width={26} height={26} fallback="none" className="shrink-0 rounded-md bg-transparent" />
         <div className="min-w-0 leading-tight">
           <div className="text-[13.5px] font-semibold text-foreground truncate">鹅的书签</div>
           <div className="text-[10px] font-mono tracking-wider text-muted-foreground/60 truncate">
@@ -300,6 +305,14 @@ export function AppSidebar({
           onClick={() => onOpenSettings?.()}
         >
           <Settings className="size-4" />
+        </button>
+        <button
+          type="button"
+          className="h-7 w-7 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+          title="切换明暗"
+          onClick={() => onToggleDark?.()}
+        >
+          {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </button>
         <div className="flex-1" />
         <span className="text-[11px] font-mono text-muted-foreground/50 tabular-nums">
