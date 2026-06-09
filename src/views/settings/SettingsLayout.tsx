@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ComponentType } from 'react'
 import {
+  ArrowLeft,
   Settings,
   Sparkles,
   Folder,
@@ -10,6 +11,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import { useFeatureNoticeCenter } from '@/hooks/useFeatureNoticeCenter'
+import { useAppTabStore } from '@/hooks/useAppState'
 import GeneralSettings from './GeneralSettings'
 import AISettings from './AISettings'
 import CategoryManager from './CategoryManager'
@@ -51,6 +53,8 @@ export default function SettingsLayout() {
   const markLocalModeSettingsVisited = useFeatureNoticeCenter(
     (f) => f.markLocalModeSettingsVisited
   )
+  // 返回书签视图（uTools 模式顶部无原生返回，设置页必须自带返回入口）
+  const setTab = useAppTabStore((s) => s.setTab)
 
   const [activeSectionId, setActiveSectionId] = useState('general')
   const isScrollingRef = useRef(false)
@@ -106,8 +110,18 @@ export default function SettingsLayout() {
   return (
     <div className="settings-layout flex h-full min-h-0">
       {/* Sticky TOC Sidebar */}
-      <nav className="settings-nav flex w-36 shrink-0 flex-col px-1.5 py-2">
-        <div className="flex-1 space-y-0.5">
+      <nav className="settings-nav flex w-[158px] shrink-0 flex-col px-2 py-3">
+        {/* 返回书签：设置页唯一的返回入口（uTools 模式顶部无原生返回） */}
+        <button
+          type="button"
+          className="settings-back mb-1.5 flex w-full items-center gap-[9px] rounded-[var(--radius-sm)] px-[11px] py-[9px] text-left text-[12.5px] font-semibold"
+          onClick={() => setTab('bookmarks')}
+        >
+          <ArrowLeft className="size-[15px] shrink-0" />
+          <span className="truncate">返回书签</span>
+        </button>
+
+        <div className="flex-1 space-y-[3px]">
           {sections.map((section) => {
             const Icon = section.icon
             const active = activeSectionId === section.id
@@ -115,12 +129,12 @@ export default function SettingsLayout() {
               <button
                 key={section.id}
                 type="button"
-                className={`settings-nav-item flex w-full items-center gap-2 px-2.5 py-2 text-left text-xs font-medium ${
+                className={`settings-nav-item flex w-full items-center gap-[9px] px-[11px] py-[9px] text-left text-[12.5px] font-medium ${
                   active ? 'settings-nav-item--active' : 'settings-nav-item--idle'
                 }`}
                 onClick={() => scrollToSection(section.id)}
               >
-                <Icon className="settings-nav-item__icon size-4" />
+                <Icon className="settings-nav-item__icon size-[15px]" />
                 <span className="flex min-w-0 items-center gap-1.5">
                   <span className="truncate">{section.label}</span>
                   {section.id === 'local-mode' && localModeMenuDotVisible && (
@@ -133,7 +147,7 @@ export default function SettingsLayout() {
         </div>
         <button
           type="button"
-          className="settings-feedback mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-xs font-semibold"
+          className="settings-feedback mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-[11px] py-[9px] text-[12.5px] font-semibold"
           onClick={openFeedback}
         >
           <MessageCircle className="size-4" />
@@ -142,8 +156,8 @@ export default function SettingsLayout() {
       </nav>
 
       {/* Main Content: all sections laid out vertically */}
-      <main className="flex-1 overflow-y-auto px-4 pb-8 pt-2 custom-scroll">
-        <div className="w-full max-w-none space-y-6 pr-1">
+      <main className="flex-1 overflow-y-auto px-[30px] pb-[34px] pt-[18px] custom-scroll">
+        <div className="w-full max-w-[760px] space-y-6">
           {sections.map((section) => {
             const Icon = section.icon
             const Component = section.component
@@ -153,9 +167,9 @@ export default function SettingsLayout() {
                 id={`settings-section-${section.id}`}
                 className="settings-section"
               >
-                <div className="mb-2 flex items-center gap-2 px-1">
-                  <Icon className="size-4 text-muted-foreground/60" />
-                  <h2 className="text-sm font-semibold text-foreground">
+                <div className="mb-3 flex items-center gap-2">
+                  <Icon className="size-[17px] text-muted-foreground/60" />
+                  <h2 className="font-serif-title text-[17px] font-semibold text-foreground">
                     {section.label}
                   </h2>
                 </div>

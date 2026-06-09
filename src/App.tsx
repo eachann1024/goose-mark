@@ -337,8 +337,11 @@ function App() {
   const searchViewOpenRef = useRef(false)
   searchViewOpenRef.current = searchViewOpen
 
-  // 虚拟视图（all/pinned/recent）的扁平列表是否启用排序：非搜索、非分组视图
+  // 虚拟视图（all）的扁平列表是否启用排序：非搜索、非分组视图
   const sortApplies = !searchViewOpen && activeView !== 'group'
+
+  // 列表头排序下拉仅在「全部书签」视图展示：非搜索、非分组、非回收站
+  const showSortHeader = !searchViewOpen && activeView === 'all' && !isTrashActive
 
   // 按 listSort 排序：仅用于虚拟视图扁平列表，不改变分组视图的手动顺序
   const applyListSort = useCallback(
@@ -635,6 +638,16 @@ function App() {
     },
     [tab, canUseSubInput, syncDefaultSearchInputValue, focusDefaultSearchInput, isUTools, focusUToolsNativeInput]
   )
+
+  // PC（非 uTools）模式：点击搜索入口 / ⌘K → 打开搜索浮层；uTools 模式沿用原生输入框聚焦逻辑
+  const handleActivateSearch = useCallback(() => {
+    if (tab !== 'bookmarks') setTab('bookmarks')
+    if (canUseSubInput() || isUTools) {
+      focusMainSearchInput(true)
+      return
+    }
+    openSearchView({ selectText: true })
+  }, [tab, setTab, canUseSubInput, isUTools, focusMainSearchInput, openSearchView])
 
   const activateSearchInputOnly = useCallback(
     (forceRemount = false) => {
@@ -1265,6 +1278,18 @@ function App() {
     })
   }, [searchViewOpen, canUseSubInput, isUTools, focusMainSearchInput])
 
+  // ⌘K / Ctrl+K 全局快捷键：打开搜索浮层（uTools 模式聚焦原生输入框）
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isCmdK = (e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')
+      if (!isCmdK) return
+      e.preventDefault()
+      handleActivateSearch()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [handleActivateSearch])
+
   // 书签数据变化 → 同步 uTools 特性
   useEffect(() => {
     if (!window.utools || isSyncPausedRef.current) return
@@ -1754,7 +1779,7 @@ function App() {
               isSettings={false}
               onScrollTo={scrollToSection}
               onEditGroup={openGroupEditor}
-              onFocusSearch={() => focusMainSearchInput(true)}
+              onFocusSearch={handleActivateSearch}
               onOpenSettings={() => setTab('settings')}
               isDark={isDark}
               onToggleDark={toggleDark}
@@ -1763,11 +1788,13 @@ function App() {
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {/* 列表面板头：视图名 + 项数 + 筛选/排序/视图切换/新建 */}
               <BookmarkListHeader
+                isUTools={isUTools}
                 title={currentViewTitle}
                 count={listHeaderCount}
                 viewMode={viewMode}
                 sort={listSort}
                 sortEnabled={sortApplies}
+                showSort={showSortHeader}
                 tagOptions={tagOptions}
                 selectedTags={effectiveTagFilter}
                 onToggleTag={toggleTagFilter}

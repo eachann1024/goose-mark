@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import App from './App'
+// 首页改造：以「鹅的书签 · 配色改造预览」为新首页（旧业务壳 App.tsx 暂保留在仓库，未删除）。
+import HomePage from './views/home/HomePage'
 import './assets/index.css'
 import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
@@ -24,6 +25,6 @@ if (!container) {
 
 createRoot(container).render(
   <StrictMode>
-    <App />
+    <HomePage />
   </StrictMode>
 )

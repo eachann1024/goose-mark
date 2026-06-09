@@ -336,25 +336,38 @@ input[type="number"] {
   background-color: hsl(var(--primary) / 0.1);
 }
 
-/* AppSidebar 导航项 */
+/* AppSidebar 导航项 —— 对齐设计稿：hover 中性微暗(surface-2)、active 珊瑚浅染(accent-tint) */
+.nav-item {
+  transition: background-color 120ms ease, color 120ms ease;
+}
 .nav-item--idle {
-  color: hsl(var(--muted-foreground));
+  color: hsl(var(--foreground));
 }
 .nav-item--idle:hover {
   color: hsl(var(--foreground));
-  background-color: hsl(var(--muted) / 0.5);
+  background-color: hsl(var(--muted) / 0.85);
 }
 .dark .nav-item--idle:hover {
-  background-color: hsl(var(--muted) / 0.3);
+  background-color: hsl(var(--muted) / 0.55);
+}
+/* 子项 idle 文字淡一档（对齐设计稿 text-2）；hover/active 仍由上面规则接管 */
+.nav-item--sub.nav-item--idle {
+  color: hsl(var(--muted-foreground));
+}
+.nav-item--sub.nav-item--idle:hover {
+  color: hsl(var(--foreground));
 }
 .nav-item--active {
   color: hsl(var(--primary));
-  background-color: hsl(var(--primary) / 0.1);
+  background-color: hsl(var(--primary) / 0.12);
   font-weight: 500;
+}
+.dark .nav-item--active {
+  background-color: hsl(var(--primary) / 0.2);
 }
 .nav-item--trash-active {
   color: hsl(var(--destructive));
-  background-color: hsl(var(--destructive) / 0.08);
+  background-color: hsl(var(--destructive) / 0.1);
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
@@ -477,7 +490,7 @@ input[type="number"] {
 
 /* TOC 侧栏 */
 .settings-nav {
-  background: #ffffff;
+  background: hsl(var(--card) / 0.6);
   border-right: 1px solid hsl(var(--border) / 0.3);
 }
 
@@ -489,7 +502,7 @@ input[type="number"] {
 }
 
 .settings-nav-item {
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   transition: background-color 120ms ease, color 120ms ease;
 }
 
@@ -500,24 +513,48 @@ input[type="number"] {
   flex-shrink: 0;
 }
 
+/* 对齐「配色改造预览」设置导航：idle 次级文字、hover 奶油面、active 珊瑚实底 */
 .settings-nav-item--idle {
   color: hsl(var(--muted-foreground));
 }
 
 .settings-nav-item--idle:hover {
   color: hsl(var(--foreground));
-  background: hsl(var(--muted) / 0.5);
+  background: hsl(var(--card));
+}
+
+.dark .settings-nav-item--idle:hover {
+  background: hsl(var(--accent));
 }
 
 .settings-nav-item--active {
   color: hsl(var(--primary-foreground));
   background: hsl(var(--primary));
+  font-weight: 500;
 }
 
 .dark .settings-nav-item--active {
   color: hsl(var(--primary-foreground));
-  background: hsl(var(--primary) / 0.85);
-  box-shadow: inset 3px 0 0 0 hsl(var(--primary-foreground) / 0.6);
+  background: hsl(var(--primary));
+}
+
+.settings-back {
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted) / 0.4);
+  transition: color 120ms ease, background-color 120ms ease;
+}
+
+.settings-back:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--muted) / 0.7);
+}
+
+.dark .settings-back {
+  background: hsl(var(--muted) / 0.3);
+}
+
+.dark .settings-back:hover {
+  background: hsl(var(--muted) / 0.55);
 }
 
 .settings-feedback {
@@ -528,7 +565,7 @@ input[type="number"] {
 
 .settings-feedback:hover {
   color: hsl(var(--foreground));
-  background: hsl(var(--muted) / 0.75);
+  background: hsl(var(--muted) / 0.95);
 }
 
 /* AI 模型选择列表项 */

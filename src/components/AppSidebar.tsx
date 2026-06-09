@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Clock, Folder, Layers, Moon, Search, Settings, Star, Sun, Trash2 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
+import { ChevronDown, Folder, Layers, Moon, Search, Settings, Sun, Trash2 } from 'lucide-react'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import type { ActiveView } from '@/stores/bookmark'
 import { Image } from '@/components/ui/image'
@@ -107,25 +106,11 @@ export function AppSidebar({
     [bookmarks, trashIds]
   )
 
-  // 置顶计数：非回收站且 pinned === true
-  const pinnedCount = useMemo(
-    () => bookmarks.filter((b) => !b.isDeleted && !trashIds.has(b.id) && b.pinned === true).length,
-    [bookmarks, trashIds]
-  )
-
-  // 最近使用计数：非回收站且曾经使用过（有 lastUsed）
-  const recentCount = useMemo(
-    () => bookmarks.filter((b) => !b.isDeleted && !trashIds.has(b.id) && !!b.lastUsed).length,
-    [bookmarks, trashIds]
-  )
-
   const isTrashActive = activeGroupId === TRASH_GROUP_ID
 
   // 虚拟视图固定项（仅在非回收站、非设置时高亮）
-  const virtualViews: { key: Exclude<ActiveView, 'group'>; label: string; icon: LucideIcon; count: number }[] = [
-    { key: 'all', label: '全部书签', icon: Layers, count: totalCount },
-    { key: 'pinned', label: '置顶', icon: Star, count: pinnedCount },
-    { key: 'recent', label: '最近使用', icon: Clock, count: recentCount }
+  const virtualViews: { key: Exclude<ActiveView, 'group'>; label: string; icon: typeof Layers; count: number }[] = [
+    { key: 'all', label: '全部书签', icon: Layers, count: totalCount }
   ]
 
   // 虚拟视图激活：activeView 命中且未进回收站/设置
@@ -161,21 +146,22 @@ export function AppSidebar({
     <aside
       className={cn(
         'app-sidebar shrink-0 flex flex-col bg-card/40 border-r border-border/40',
-        isUTools ? 'w-[208px]' : 'w-[228px]'
+        isUTools ? 'w-[208px]' : 'w-[244px]'
       )}
     >
-      {/* 品牌头部 */}
-      <div className="shrink-0 px-3.5 pt-3.5 pb-2 flex items-center gap-2.5 select-none">
+      {/* 品牌头部（与 PC 一致显示 logo） */}
+      <div className={cn('shrink-0 px-3.5 pb-2 flex items-center gap-2.5 select-none', 'pt-[13px]')}>
         <Image src="logo.png" alt="logo" width={26} height={26} fallback="none" className="shrink-0 rounded-md bg-transparent" />
         <div className="min-w-0 leading-tight">
           <div className="text-[13.5px] font-semibold text-foreground truncate">鹅的书签</div>
           <div className="text-[10px] font-mono tracking-wider text-muted-foreground/60 truncate">
-            {isUTools ? 'uTools 插件' : 'GOOSE MARKS'}
+            GOOSE MARKS
           </div>
         </div>
       </div>
 
-      {/* 搜索触发 */}
+      {/* 搜索触发（uTools 走原生主输入框，应用内不再重复展示） */}
+      {!isUTools && (
       <div className="shrink-0 px-3 pt-1 pb-2">
         <button
           type="button"
@@ -183,33 +169,30 @@ export function AppSidebar({
           onClick={() => onFocusSearch?.()}
         >
           <Search className="size-[15px]" />
-          <span className="text-[13px] flex-1 text-left truncate">
-            {isUTools ? '在主输入框搜索' : '搜索全部书签'}
-          </span>
-          {!isUTools && (
-            <kbd className="text-[10px] font-mono text-muted-foreground/60 bg-muted/60 rounded px-1 py-0.5">
-              ⌘K
-            </kbd>
-          )}
+          <span className="text-[13px] flex-1 text-left truncate">搜索全部书签</span>
+          <kbd className="text-[10px] font-mono text-muted-foreground/60 bg-muted/60 rounded px-1 py-0.5">
+            ⌘K
+          </kbd>
         </button>
       </div>
+      )}
 
       {/* 分组树 */}
-      <nav className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-2 pt-1 pb-2">
-        {/* 虚拟视图：全部书签 / 置顶 / 最近使用（固定在分组树之上） */}
-        <div className="flex flex-col gap-0.5 pb-1">
+      <nav className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-3 pt-0.5 pb-2 flex flex-col gap-px">
+        {/* 虚拟视图：全部书签 */}
+        <div className="flex flex-col gap-px pb-1">
           {virtualViews.map(({ key, label, icon: Icon, count }) => (
             <button
               key={key}
               type="button"
               className={cn(
-                'nav-item w-full flex items-center gap-2 px-2 h-8 rounded-md text-left transition-colors',
+                'nav-item w-full flex items-center gap-[9px] px-[9px] h-8 rounded-[7px] text-left transition-colors',
                 isViewActive(key) ? 'nav-item--active' : 'nav-item--idle'
               )}
               onClick={() => setActiveView(key)}
             >
               <Icon className="size-[15px] shrink-0 opacity-80" />
-              <span className="flex-1 truncate text-[13px] font-medium">{label}</span>
+              <span className="flex-1 truncate text-[13.5px] font-medium">{label}</span>
               {count > 0 && (
                 <span className="text-[11px] font-mono text-muted-foreground/50 tabular-nums">{count}</span>
               )}
@@ -217,7 +200,7 @@ export function AppSidebar({
           ))}
         </div>
 
-        <div className="px-2 pb-1 pt-2 text-[10.5px] font-mono font-semibold uppercase tracking-wider text-muted-foreground/50">
+        <div className="px-[9px] pt-3.5 pb-1.5 text-[10.5px] font-mono font-semibold uppercase tracking-wider text-muted-foreground/50">
           分组
         </div>
         {tree.map((group) => (
@@ -226,13 +209,13 @@ export function AppSidebar({
             <button
               type="button"
               className={cn(
-                'nav-item w-full flex items-center gap-2 px-2 h-8 rounded-md text-left transition-colors',
+                'nav-item w-full flex items-center gap-[9px] px-[9px] h-8 rounded-[7px] text-left transition-colors',
                 isGroupActive(group.id) ? 'nav-item--active' : 'nav-item--idle'
               )}
               onClick={() => selectGroup(group.id)}
             >
               <Folder className="size-[15px] shrink-0 opacity-80" />
-              <span className="flex-1 truncate text-[13px] font-medium">{group.name}</span>
+              <span className="flex-1 truncate text-[13.5px] font-medium">{group.name}</span>
               {group.count > 0 && (
                 <span className="text-[11px] font-mono text-muted-foreground/50 tabular-nums">
                   {group.count}
@@ -253,14 +236,16 @@ export function AppSidebar({
             </button>
             {/* 二级子分组 */}
             {expanded[group.id] && group.children.length > 0 && (
-              <div className="ml-[15px] pl-2.5 border-l border-border/50 my-0.5 flex flex-col gap-0.5">
+              <div className="ml-[17px] pl-[9px] border-l border-border/50 my-0.5 flex flex-col gap-px">
                 {group.children.map((sub) => (
                   <button
                     key={sub.id}
                     type="button"
                     className={cn(
                       'nav-item flex items-center gap-2 px-2 h-7 rounded-md text-left transition-colors',
-                      isSubActive(group.id, sub.id) ? 'nav-item--active' : 'nav-item--idle'
+                      isSubActive(group.id, sub.id)
+                        ? 'nav-item--active'
+                        : 'nav-item--idle nav-item--sub'
                     )}
                     onClick={() => selectSub(group.id, sub.id, sub.anchorId)}
                   >
@@ -281,7 +266,7 @@ export function AppSidebar({
         <button
           type="button"
           className={cn(
-            'nav-item w-full flex items-center gap-2 px-2 h-8 rounded-md text-left transition-colors mt-2',
+            'nav-item w-full flex items-center gap-[9px] px-[9px] h-8 rounded-[7px] text-left transition-colors mt-2',
             !isSettings && isTrashActive && activeView === 'group'
               ? 'nav-item--trash-active'
               : 'nav-item--idle'
@@ -289,7 +274,7 @@ export function AppSidebar({
           onClick={() => setActiveGroup(TRASH_GROUP_ID)}
         >
           <Trash2 className="size-[15px] shrink-0 opacity-80" />
-          <span className="flex-1 truncate text-[13px]">回收站</span>
+          <span className="flex-1 truncate text-[13.5px]">回收站</span>
         </button>
       </nav>
 
