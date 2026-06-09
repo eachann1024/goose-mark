@@ -7,7 +7,6 @@ import {
   Copy,
   FileText,
   Pencil,
-  Pin,
   Folder,
   Trash2,
   CornerUpLeft
@@ -47,7 +46,7 @@ export interface ContextMenuProps {
 const EDGE_GAP = 8
 
 const ITEM_CLASS =
-  'flex items-center gap-[9px] h-[30px] px-[10px] rounded-[7px] text-[13px] text-foreground text-left w-full transition-colors cursor-default select-none hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed'
+  'flex items-center gap-[9px] h-[30px] px-[10px] rounded-[7px] text-[13px] text-foreground text-left w-full transition-colors cursor-default select-none outline-none hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent'
 const DANGER_ITEM_CLASS = 'text-destructive hover:bg-destructive/10'
 const ICON_CLASS = 'w-4 shrink-0 size-[14px] text-muted-foreground'
 const DANGER_ICON_CLASS = 'w-4 shrink-0 size-[14px] text-destructive'
@@ -194,7 +193,6 @@ export function ContextMenu({
             <>
               <div className={DIVIDER_CLASS} />
               <MenuItem icon={Pencil} label="编辑" onClick={() => handleAction('edit')} />
-              <MenuItem icon={Pin} label="置顶" onClick={() => handleAction('pin')} />
               <MenuItem icon={Folder} label="在分组中定位" onClick={() => handleAction('locate')} />
               <div className={DIVIDER_CLASS} />
               <MenuItem

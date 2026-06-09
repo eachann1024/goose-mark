@@ -226,8 +226,8 @@ export function BookmarksList({
         className={cn(
           'bookmark-list-item group relative cursor-pointer select-none transition-colors duration-150',
           isCards
-            ? 'bookmark-card-item flex items-center gap-[13px] px-[14px] py-3 rounded-xl bg-card border border-border shadow-sm'
-            : 'flex items-start gap-3 px-3 py-2.5 rounded-xl',
+            ? 'bookmark-card-item flex items-center gap-[13px] px-[14px] py-3 rounded-[11px] bg-card border border-border shadow-sm'
+            : 'flex items-start gap-[11px] px-2.5 py-2 rounded-lg',
           isSelected && 'is-selected',
           isHighlighted && 'is-highlighted ring-1 ring-primary/30'
         )}
@@ -264,7 +264,7 @@ export function BookmarksList({
                 className={
                   isCards
                     ? 'text-[14px] font-semibold text-foreground truncate'
-                    : 'text-sm font-medium text-foreground truncate'
+                    : 'text-[13.5px] font-medium text-foreground truncate'
                 }
               >
                 {bookmark.title}
@@ -280,7 +280,7 @@ export function BookmarksList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    className="h-[26px] w-[26px] text-muted-foreground hover:text-foreground"
                     onClick={(e) => {
                       e.stopPropagation()
                       onOpen?.(bookmark)
@@ -293,7 +293,7 @@ export function BookmarksList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                    className="h-[26px] w-[26px] text-muted-foreground hover:text-foreground"
                     onClick={(e) => {
                       e.stopPropagation()
                       onEdit?.(bookmark)
@@ -306,7 +306,7 @@ export function BookmarksList({
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    className="h-[26px] w-[26px] text-muted-foreground hover:text-destructive"
                     onClick={(e) => {
                       e.stopPropagation()
                       onRemove?.(bookmark)
@@ -324,9 +324,9 @@ export function BookmarksList({
               {renderDesc(bookmark.desc)}
             </div>
           )}
-          <div className="text-[10.5px] text-muted-foreground/70 font-mono truncate">{getDomain(bookmark.url)}</div>
+          <div className="text-[11.5px] text-muted-foreground/70 font-mono truncate">{getDomain(bookmark.url)}</div>
           {!isCards && bookmark.desc && (
-            <div className="bookmark-desc-rendered text-[12px] text-muted-foreground/80 leading-relaxed mt-0.5 whitespace-pre-wrap">
+            <div className="bookmark-desc-rendered text-[12px] text-muted-foreground/80 leading-[1.5] mt-px whitespace-pre-wrap">
               {renderDesc(bookmark.desc)}
             </div>
           )}
@@ -352,7 +352,7 @@ export function BookmarksList({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  className="h-[26px] w-[26px] text-muted-foreground hover:text-foreground"
                   onClick={(e) => {
                     e.stopPropagation()
                     onOpen?.(bookmark)
@@ -365,7 +365,7 @@ export function BookmarksList({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  className="h-[26px] w-[26px] text-muted-foreground hover:text-foreground"
                   onClick={(e) => {
                     e.stopPropagation()
                     onEdit?.(bookmark)
@@ -378,7 +378,7 @@ export function BookmarksList({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  className="h-[26px] w-[26px] text-muted-foreground hover:text-destructive"
                   onClick={(e) => {
                     e.stopPropagation()
                     onRemove?.(bookmark)
@@ -421,7 +421,7 @@ export function BookmarksList({
                 <span className="text-[10px] text-muted-foreground/30">·</span>
                 <span className="text-[10px] text-muted-foreground/50">{section.subGroupName}</span>
               </div>
-              <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 pb-1' : 'flex flex-col gap-1 px-2 py-1'}>
+              <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 pb-1' : 'flex flex-col gap-px px-1.5 py-1'}>
                 {section.bookmarks.map((bookmark, localIdx) =>
                   renderItem(bookmark, sectionStartIndices[sectionIdx] + localIdx, '-' + section.anchorId)
                 )}
@@ -430,7 +430,7 @@ export function BookmarksList({
           ))}
         </div>
       ) : (
-        <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 py-3' : 'flex flex-col gap-1 px-2 py-1'}>
+        <ul className={variant === 'cards' ? 'flex flex-col gap-[10px] px-3 py-3' : 'flex flex-col gap-px px-1.5 py-1'}>
           {bookmarks.map((bookmark, index) => renderItem(bookmark, index))}
         </ul>
       )}

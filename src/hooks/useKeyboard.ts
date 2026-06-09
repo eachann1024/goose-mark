@@ -143,7 +143,9 @@ export function useKeyboard(params: UseKeyboardParams) {
       if (e.ctrlKey) return
 
       const active = document.activeElement as HTMLElement
-      if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) return
+      const isInInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)
+      // 搜索浮层打开时，允许方向键从输入框内穿透，用于上下选中结果
+      if (isInInput && !p.searchViewOpen) return
 
       const key = e.key
       const bookmarks = p.activeBookmarks
