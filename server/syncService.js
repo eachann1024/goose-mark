@@ -76,18 +76,46 @@ export async function pushItems(shareId, items) {
  * @param {string} shareId 
  * @param {number} since - 时间戳 (cursor)
  */
-export async function pullItems(shareId, since = 0) {
-  const result = await pool.query(
-    `SELECT item_id, item_type, content, is_deleted, updated_at, client_id 
-     FROM sync_items 
-     WHERE share_id = $1 AND updated_at > $2
-     ORDER BY updated_at ASC
-     LIMIT 1000`, // 分页限制
-    [shareId, since]
-  )
-  
+export async function pullItems(shareId, since = 0, sinceId = null) {
+  const PAGE_LIMIT = 1000
+  // 复合游标 (updated_at, item_id)：单时间戳游标在页边界落在一批同毫秒记录中间时，
+  // 下一页 updated_at > T 会永久跳过剩余的同毫秒记录；而无上限的平局扩展又会让
+  // 响应大小失控（批量操作可产生上万条同毫秒记录）。复合游标既不跳记录又严格有界。
+  //
+  // 版本兼容：sinceId === null 表示旧客户端（请求里没有 sinceId 参数），
+  // 必须保持原 `updated_at > since` 语义——若对旧客户端也启用复合谓词，
+  // 它存完 lastUpdatedAt 后下一轮会反复重收 since 时刻的记录（≥1000 条同毫秒时
+  // 还会被前缀饿死，永远拉不到更晚数据）。新客户端始终显式携带 sinceId（可为空串）。
+  // 多取 1 条用于精确判断 hasMore（避免恰好整页时误报还有更多）。
+  const useCompoundCursor = sinceId !== null && sinceId !== undefined
+  const result = useCompoundCursor
+    ? await pool.query(
+        `SELECT item_id, item_type, content, is_deleted, updated_at, client_id
+         FROM sync_items
+         WHERE share_id = $1
+           AND (updated_at > $2 OR (updated_at = $2 AND item_id > $3))
+         ORDER BY updated_at ASC, item_id ASC
+         LIMIT $4`,
+        [shareId, since, sinceId, PAGE_LIMIT + 1]
+      )
+    : await pool.query(
+        `SELECT item_id, item_type, content, is_deleted, updated_at, client_id
+         FROM sync_items
+         WHERE share_id = $1 AND updated_at > $2
+         ORDER BY updated_at ASC, item_id ASC
+         LIMIT $3`,
+        [shareId, since, PAGE_LIMIT + 1]
+      )
+
+  let rows = result.rows
+  let hasMore = false
+  if (rows.length > PAGE_LIMIT) {
+    hasMore = true
+    rows = rows.slice(0, PAGE_LIMIT)
+  }
+
   // 转换 row 格式
-  const items = result.rows.map(row => ({
+  const items = rows.map(row => ({
     itemId: row.item_id,
     itemType: row.item_type,
     content: row.content,
@@ -96,10 +124,13 @@ export async function pullItems(shareId, since = 0) {
     clientId: row.client_id
   }))
 
+  const lastRow = rows.length > 0 ? rows[rows.length - 1] : null
   return {
     items,
-    hasMore: items.length === 1000,
-    lastUpdatedAt: items.length > 0 ? items[items.length - 1].updatedAt : since
+    hasMore,
+    lastUpdatedAt: lastRow ? parseInt(lastRow.updated_at) : since,
+    // 复合游标的第二维：客户端下一页携带，保证同毫秒批量记录不跳不爆
+    lastItemId: lastRow ? lastRow.item_id : (sinceId ?? '')
   }
 }
 

@@ -6,6 +6,14 @@ const want = process.argv[2];
 const NAMES = { darwin: "macOS", win32: "Windows", linux: "Linux" };
 const cur = process.platform;
 
+if (!want) {
+  console.error(
+    `用法：node scripts/guard-platform.mjs <darwin|win32|linux>\n` +
+      `  缺少目标平台参数。`
+  );
+  process.exit(1);
+}
+
 if (cur !== want) {
   console.error(
     `✗ 此命令需在 ${NAMES[want] ?? want} 上运行，当前宿主为 ${NAMES[cur] ?? cur}。\n` +

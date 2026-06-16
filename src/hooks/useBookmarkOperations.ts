@@ -111,8 +111,8 @@ export function useBookmarkOperations() {
   }, [])
 
   const copyBookmarkUrl = useCallback(
-    async (bookmark: Bookmark) => {
-      if (!bookmark || !bookmark.url) return
+    async (bookmark: Bookmark): Promise<boolean> => {
+      if (!bookmark || !bookmark.url) return false
       const copied = await copyText(bookmark.url, notifyCopySuccess)
       if (!copied) {
         showToast({
@@ -121,6 +121,7 @@ export function useBookmarkOperations() {
           variant: 'error'
         })
       }
+      return copied
     },
     [copyText, notifyCopySuccess, showToast]
   )
@@ -253,10 +254,38 @@ export function useBookmarkOperations() {
     openExternalUrl(url)
   }, [])
 
-  const handleRemove = useCallback((bookmark: Bookmark) => {
-    // 只从当前位置移除书签（如果还有其他位置则保留书签）
+  const handleRemove = useCallback((bookmark: Bookmark, location?: { groupId: string; subGroupId: string }) => {
     const store = useBookmarkStore.getState()
-    store.removeBookmarkFromLocation(bookmark.id, store.activeGroupId, store.activeSubGroupId)
+
+    // 若调用方传入了明确位置，优先使用
+    if (location?.groupId && location?.subGroupId && location.groupId !== TRASH_GROUP_ID) {
+      store.removeBookmarkFromLocation(bookmark.id, location.groupId, location.subGroupId)
+      return
+    }
+
+    // 优先用书签自身的 locations 找第一个非回收站位置
+    const locations = Array.isArray(bookmark.locations) && bookmark.locations.length > 0
+      ? bookmark.locations
+      : store.getBookmarkLocations(bookmark.id)  // 旧数据可能无 locations 字段，回退查 store
+
+    const validLoc = locations.find(
+      (loc) => loc.groupId && loc.groupId !== TRASH_GROUP_ID
+    )
+
+    if (validLoc?.groupId != null && validLoc?.subGroupId != null) {
+      store.removeBookmarkFromLocation(bookmark.id, validLoc.groupId, validLoc.subGroupId)
+    } else {
+      // 最终兜底：遍历 groups 找第一个包含该书签的位置
+      outer: for (const g of store.groups) {
+        if (g.id === TRASH_GROUP_ID) continue
+        for (const s of (g.children ?? [])) {
+          if ((s.bookmarkIds ?? []).includes(bookmark.id)) {
+            store.removeBookmarkFromLocation(bookmark.id, g.id, s.id)
+            break outer
+          }
+        }
+      }
+    }
   }, [])
 
   const emptyTrash = useCallback(() => {

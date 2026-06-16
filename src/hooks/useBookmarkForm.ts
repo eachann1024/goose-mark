@@ -67,6 +67,7 @@ interface BookmarkFormState {
   isSaving: boolean
   iconLoading: boolean
   iconFetchFailed: boolean
+  iconFetchPhase: 'idle' | 'loading' | 'success' | 'failed'
   isTitleDirty: boolean
   isDescDirty: boolean
   originalUrl: string
@@ -83,7 +84,7 @@ interface BookmarkFormState {
 const initialDraft = (): DraftState => ({ title: '', url: '', desc: '', allowUniversal: false })
 
 /** 模块级共享表单状态（等价旧版 createSharedComposable 的单例 state） */
-const useBookmarkFormStore = create<BookmarkFormState>((set) => ({
+export const useBookmarkFormStore = create<BookmarkFormState>((set) => ({
   showAdd: false,
   modalTitle: '新建书签',
   editingId: '',
@@ -96,6 +97,7 @@ const useBookmarkFormStore = create<BookmarkFormState>((set) => ({
   isSaving: false,
   iconLoading: false,
   iconFetchFailed: false,
+  iconFetchPhase: 'idle' as const,
   isTitleDirty: false,
   isDescDirty: false,
   originalUrl: '',
@@ -192,12 +194,16 @@ const generateMetadataDirect = async (input: {
   const res = await runAIText(getActiveAiSettings(), messages)
   const match = res.match(/\{[\s\S]*\}/)
   const jsonStr = match ? match[0] : res
-  const data = JSON.parse(jsonStr)
-  return {
-    title: String(data.title || '').trim(),
-    desc: String(data.desc || '').trim(),
-    source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
-    usedNetworkFallback: params.forceNetworkFallback
+  try {
+    const data = JSON.parse(jsonStr)
+    return {
+      title: String(data.title || '').trim(),
+      desc: String(data.desc || '').trim(),
+      source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
+      usedNetworkFallback: params.forceNetworkFallback
+    }
+  } catch {
+    return null
   }
 }
 
@@ -320,6 +326,10 @@ const enqueueMetadataHydration = (
 
 // URL 变更后取图标的防抖定时器（模块级单例）
 let urlFetchTimer: ReturnType<typeof setTimeout> | null = null
+// 单调递增请求序号，用于丢弃乱序响应（慢请求覆盖后输入 URL 的竞态保护）
+let urlFetchRequestId = 0
+// askAI 请求代际计数器：区分同 URL 的并发请求与跨表单会话的在途请求
+let askAiRequestId = 0
 
 export function useBookmarkForm() {
   const form = useBookmarkFormStore(
@@ -340,7 +350,9 @@ export function useBookmarkForm() {
       isSuggestingCategory: s.isSuggestingCategory,
       aiError: s.aiError,
       categorySuggestion: s.categorySuggestion,
-      originalBeforeAI: s.originalBeforeAI
+      originalBeforeAI: s.originalBeforeAI,
+      isTitleDirty: s.isTitleDirty,
+      isDescDirty: s.isDescDirty
     }))
   )
   const set = useBookmarkFormStore((s) => s.set)
@@ -409,7 +421,12 @@ export function useBookmarkForm() {
       clearTimeout(urlFetchTimer)
       urlFetchTimer = null
     }
-    set({ iconLoading: false, iconFetchFailed: false })
+    // 递增代际计数器，使所有在途的图标/AI 响应作废：
+    // 关表单再打开同 URL 的另一表单时，旧会话的慢响应不能写进新会话。
+    // 在途请求作废后其 finally 不再清 isGenerating，这里一并兜底重置。
+    urlFetchRequestId++
+    askAiRequestId++
+    set({ iconLoading: false, iconFetchFailed: false, iconFetchPhase: 'idle', isGenerating: false })
   }, [set])
 
   const openAdd = useCallback(() => {
@@ -472,8 +489,14 @@ export function useBookmarkForm() {
 
       addBehaviorLog('ask-ai', draft.url)
       set({ isGenerating: true, aiError: '' })
+      // 代际校验：requestId 区分同 URL 的并发请求/跨会话请求，URL 校验作第二道防线
+      const thisAskAiId = ++askAiRequestId
+      const askAiUrl = draft.url
       try {
         const res = await generateMetadataDirect({ url: draft.url, title: draft.title, desc: draft.desc })
+        // 已有更新的请求发起，或用户已切换 URL：丢弃本次 AI 生成结果
+        if (thisAskAiId !== askAiRequestId) return
+        if (useBookmarkFormStore.getState().draft.url !== askAiUrl) return
         if (res) {
           const patch: Partial<DraftState> = {}
           if (res.title) patch.title = res.title
@@ -481,12 +504,14 @@ export function useBookmarkForm() {
           if (Object.keys(patch).length) patchDraft(patch)
         }
       } catch (error) {
+        if (thisAskAiId !== askAiRequestId) return
         const message = resolveErrorMessage(error, '生成')
         set({ aiError: message })
         if (showNotify) notify(message)
         set({ formError: message })
       } finally {
-        set({ isGenerating: false })
+        // 只有仍是最新请求时才清 isGenerating，避免旧请求先结束误关新请求的加载态
+        if (thisAskAiId === askAiRequestId) set({ isGenerating: false })
       }
     },
     [set, patchDraft]
@@ -505,6 +530,8 @@ export function useBookmarkForm() {
   }, [patchDraft])
 
   const onTitleInput = useCallback(() => set({ isTitleDirty: true }), [set])
+  const takeOverTitle = useCallback(() => set({ isTitleDirty: true }), [set])
+  const takeOverDesc = useCallback(() => set({ isDescDirty: true }), [set])
   const onDescInput = useCallback(
     (val: string) => {
       set({ isDescDirty: true })
@@ -580,18 +607,31 @@ ${groupsDescription}
       ])
 
       const match = res.match(/\{[\s\S]*\}/)
-      const data = JSON.parse(match ? match[0] : res)
-      const matchedGroup = existingGroups.find(
-        (group) =>
-          group.name === data.groupName || group.name.includes(data.groupName) || data.groupName?.includes(group.name)
-      )
+      let data: Record<string, unknown>
+      try {
+        data = JSON.parse(match ? match[0] : res)
+      } catch {
+        showToast({ title: 'AI 返回格式异常，请重试', variant: 'warning' })
+        return
+      }
+      // groupName 为空字符串时 includes('') 会误选第一个分组，trim 后为空视为无建议（问题6）
+      const groupNameStr = typeof data.groupName === 'string' ? data.groupName.trim() : ''
+      const matchedGroup = groupNameStr
+        ? (existingGroups.find((group) => group.name === groupNameStr) ??
+            existingGroups.find(
+              (group) =>
+                group.name.includes(groupNameStr) || groupNameStr.includes(group.name)
+            ))
+        : undefined
 
       if (matchedGroup) {
         const matchedSubGroup = data.subGroupName
-          ? matchedGroup.subGroups.find(
-              (s) =>
-                s.name === data.subGroupName || s.name.includes(data.subGroupName) || data.subGroupName.includes(s.name)
-            )
+          ? (matchedGroup.subGroups.find((s) => s.name === data.subGroupName) ??
+              matchedGroup.subGroups.find(
+                (s) =>
+                  typeof data.subGroupName === 'string' &&
+                  (s.name.includes(data.subGroupName as string) || (data.subGroupName as string).includes(s.name))
+              ))
           : matchedGroup.subGroups[0]
 
         const result: CategorySuggestionState = {
@@ -600,10 +640,9 @@ ${groupsDescription}
           subGroupId: matchedSubGroup?.id || matchedGroup.subGroups[0]?.id || '',
           subGroupName: matchedSubGroup?.name || matchedGroup.subGroups[0]?.name || '',
           confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
-          reason: data.reason || '基于 URL 内容推荐'
+          reason: typeof data.reason === 'string' ? data.reason : '基于 URL 内容推荐'
         }
         set({ categorySuggestion: result })
-        applyCategorySuggestion({ silent: true, keepSuggestion: false })
       } else {
         showToast({ title: '未找到合适的分类建议', variant: 'info' })
       }
@@ -641,7 +680,7 @@ ${groupsDescription}
       try {
         const locationsToSave = resolveLocationsForSave()
         if (locationsToSave.length === 0) {
-          set({ formError: '当前没有可用分类' })
+          set({ formError: '请选择分类' })
           return
         }
 
@@ -724,45 +763,73 @@ ${groupsDescription}
 
     if (!val) {
       resetPendingIconFetch()
-      set({ previewIcon: null })
+      set({ previewIcon: null, iconLoading: false, iconFetchPhase: 'idle' })
       if (!isTitleDirty) patchDraft({ title: '' })
       if (!isDescDirty) patchDraft({ desc: '' })
       return
     }
 
-    if (!isTitleDirty) patchDraft({ title: '' })
+    if (!isTitleDirty && !editingId) patchDraft({ title: '' })
 
     // 编辑模式下：URL 未变化则跳过自动取图标/标题
     if (editingId && val === originalUrl) return
 
     if (urlFetchTimer) clearTimeout(urlFetchTimer)
+    // 每次发起前递增 id，响应回来后校验是否仍是最新请求
+    const thisRequestId = ++urlFetchRequestId
+    // 排定抓取即进入加载态（含防抖等待期）：标题/描述流光从输入完地址就开始，
+    // 避免快速响应时加载态一闪而过
+    set({ iconLoading: true, iconFetchFailed: false, iconFetchPhase: 'loading' })
     urlFetchTimer = setTimeout(async () => {
       urlFetchTimer = null
-      set({ iconLoading: true, iconFetchFailed: false })
       try {
-        const fetched = await fetchAndCacheIcon(val, true)
+        const fetched = await Promise.race([
+          fetchAndCacheIcon(val, true),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
+        ])
         const latest = useBookmarkFormStore.getState()
+        // 双重校验：(1) 请求 id 仍是最新；(2) 当前 draft.url 与发起时一致
+        // 任一不满足说明用户已切换 URL，丢弃本次响应
+        if (thisRequestId !== urlFetchRequestId || latest.draft.url !== val) return
         if (fetched) {
           const newIcon = toIconSource(fetched)
           set({
             previewIcon: newIcon,
-            iconFetchFailed: fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src)
+            iconFetchFailed: fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src),
+            iconFetchPhase: 'success'
           })
           const fetchedTitle = typeof fetched.title === 'string' ? fetched.title.trim() : ''
-          if (fetchedTitle && !latest.isTitleDirty && !isHostLikeTitle(fetchedTitle, val)) {
+          const titleUsable = !!fetchedTitle && !isHostLikeTitle(fetchedTitle, val)
+          if (titleUsable && !latest.isTitleDirty) {
             patchDraft({ title: fetchedTitle })
           }
           if (fetched.description && !latest.isDescDirty) patchDraft({ desc: fetched.description })
+          // 流光结束但有字段没拿到：告知原因，引导手动填写（用户接管的字段不计入）
+          const missing = [
+            !titleUsable && !latest.isTitleDirty ? '标题' : '',
+            !fetched.description && !latest.isDescDirty ? '描述' : ''
+          ].filter(Boolean)
+          if (missing.length > 0) {
+            showToast({
+              title: `未能获取${missing.join('和')}：站点未提供该信息或访问受限，请手动填写`,
+              variant: 'info'
+            })
+          }
         } else {
-          set({ previewIcon: buildTextIconFromValue(val), iconFetchFailed: true })
+          set({ previewIcon: buildTextIconFromValue(val), iconFetchFailed: true, iconFetchPhase: 'failed' })
           if (!latest.draft.title.trim()) {
-            showToast({ title: '未能自动获取标题，请手动输入。', variant: 'info' })
+            showToast({ title: '未能获取标题和描述：站点无响应或返回为空，请手动填写', variant: 'info' })
           }
         }
       } catch {
-        set({ previewIcon: buildTextIconFromValue(val), iconFetchFailed: true })
+        // 代际校验：旧会话的失败响应不覆盖新表单
+        const latestOnCatch = useBookmarkFormStore.getState()
+        if (thisRequestId !== urlFetchRequestId || latestOnCatch.draft.url !== val) return
+        set({ previewIcon: buildTextIconFromValue(val), iconFetchFailed: true, iconFetchPhase: 'failed' })
+        showToast({ title: '获取网页信息失败：网络异常或站点拒绝访问，请手动填写标题和描述', variant: 'warning' })
       } finally {
-        set({ iconLoading: false })
+        // iconLoading 只在请求仍有效时才关闭（已被新请求接管则不干扰）
+        if (thisRequestId === urlFetchRequestId) set({ iconLoading: false })
       }
     }, 1000)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -781,18 +848,25 @@ ${groupsDescription}
         previewIcon: null,
         showCategorySelector: false,
         iconLoading: false,
+        iconFetchPhase: 'idle' as const,
         editingId: '',
         iconFetchFailed: false,
         formError: '',
         isSaving: false,
+        isGenerating: false,
         originalBeforeAI: null,
         categorySuggestion: null,
-        originalUrl: ''
+        originalUrl: '',
+        isTitleDirty: false,
+        isDescDirty: false
       })
       if (urlFetchTimer) {
         clearTimeout(urlFetchTimer)
         urlFetchTimer = null
       }
+      // 关表单即作废所有在途的图标/AI 请求，防止慢响应写入下一次表单会话
+      urlFetchRequestId++
+      askAiRequestId++
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.showAdd])
@@ -823,6 +897,8 @@ ${groupsDescription}
     undoDesc,
     onTitleInput,
     onDescInput,
+    takeOverTitle,
+    takeOverDesc,
     askCategorySuggestion,
     applyCategorySuggestion,
     dismissCategorySuggestion,

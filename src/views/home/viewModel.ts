@@ -101,9 +101,9 @@ export function buildHomeGroups(groups: Group[], bookmarks: Bookmark[]): HomeGro
         const b = byId.get(bid)
         if (b && !b.isDeleted) items.push(toItem(b))
       }
-      if (items.length) subs.push({ id: sub.id, name: sub.name, items })
+      subs.push({ id: sub.id, name: sub.name, items })
     }
-    if (subs.length) out.push({ id: g.id, name: g.name, subs })
+    out.push({ id: g.id, name: g.name, subs })
   }
   return out
 }

@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from 'react'
+import type React from 'react'
 import { ImageOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -17,8 +18,15 @@ export interface ImageProps {
   className?: string
   /** 失败兜底：'icon' 显示破图图标（默认），'none' 留空。 */
   fallback?: 'icon' | 'none'
+  /**
+   * bare=true：只渲染 <img>，不包外层 div。
+   * 适用于外层容器已管理尺寸/圆角/背景的场景（如 .fav）。
+   * 失败时渲染 null（等价 fallback='none'）。
+   */
+  bare?: boolean
   onError?: () => void
   onLoad?: () => void
+  onContextMenu?: React.MouseEventHandler<HTMLImageElement>
 }
 
 const toLength = (v?: string | number): string | undefined =>
@@ -31,8 +39,10 @@ export function Image({
   height,
   className,
   fallback = 'icon',
+  bare = false,
   onError,
   onLoad,
+  onContextMenu,
 }: ImageProps) {
   const [hasError, setHasError] = useState(false)
   const [hasLoaded, setHasLoaded] = useState(false)
@@ -52,6 +62,22 @@ export function Image({
   const handleLoad = () => {
     setHasLoaded(true)
     onLoad?.()
+  }
+
+  if (bare) {
+    return (!hasError && src)
+      ? (
+        <img
+          src={src}
+          alt={alt}
+          className={cn('w-full h-full object-cover', className)}
+          style={style}
+          onError={handleError}
+          onLoad={handleLoad}
+          onContextMenu={onContextMenu}
+        />
+      )
+      : null
   }
 
   return (

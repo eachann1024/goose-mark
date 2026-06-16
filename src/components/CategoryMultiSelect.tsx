@@ -89,7 +89,7 @@ export function CategoryMultiSelect({
                   const selected = isSelected(group.id, sub.id)
                   return (
                     <button
-                      key={sub.id}
+                      key={`${group.id}-${sub.id}`}
                       type="button"
                       className={cn(
                         'subgroup-chip flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] transition-all',
@@ -160,7 +160,8 @@ export function CategoryMultiSelect({
             </button>
             <button
               type="button"
-              className="h-8 w-16 inline-flex items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors"
+              disabled={value.length === 0}
+              className="h-8 w-16 inline-flex items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               onClick={onClose}
             >
               确定
