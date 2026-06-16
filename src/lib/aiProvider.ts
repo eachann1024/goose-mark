@@ -128,8 +128,17 @@ export function getDefaultBaseURL() {
 }
 
 async function readErrorMessage(response: Response) {
+  // 一次性读取 body，避免二次消费导致空串或异常
+  let raw: string
   try {
-    const payload = await response.json()
+    raw = await response.text()
+  } catch {
+    return null
+  }
+
+  // 优先从 JSON 字段提取可读错误信息
+  try {
+    const payload = JSON.parse(raw)
     if (typeof payload?.error === 'string' && payload.error.trim()) {
       return payload.error.trim()
     }
@@ -140,15 +149,13 @@ async function readErrorMessage(response: Response) {
       return payload.message.trim()
     }
   } catch {
-    // ignore non-json responses
+    // 非 JSON 响应，直接使用原始文本
   }
 
-  try {
-    const text = await response.text()
-    return text.trim() || null
-  } catch {
-    return null
-  }
+  // 兜底：返回原始文本截断（防止超长错误页面）
+  const trimmed = raw.trim()
+  if (!trimmed) return null
+  return trimmed.length > 300 ? trimmed.slice(0, 300) + '…' : trimmed
 }
 
 function getApiKeyMissingMessage() {
@@ -354,29 +361,42 @@ function isInvalidJsonResponseError(error: unknown) {
 
 async function runCustomOpenAICompatibleText(settings: AISettingsLike, messages: AIMessage[], selectedModelId: string) {
   const baseURL = settings.customBaseURL.trim() || getDefaultBaseURL()
-  const response = await fetch(getOpenAIChatCompletionsUrl(baseURL), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${settings.customApiKey.trim()}`,
-      'Content-Type': 'application/json',
-      Accept: 'application/json, text/event-stream, text/plain, */*'
-    },
-    body: JSON.stringify({
-      model: selectedModelId,
-      messages: normalizeMessages(messages),
-      stream: false
+  // 文本生成最多等待 30 秒，防止错误地址永久挂起（含响应体读取阶段）
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 30_000)
+  try {
+    const response = await fetch(getOpenAIChatCompletionsUrl(baseURL), {
+      signal: controller.signal,
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${settings.customApiKey.trim()}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream, text/plain, */*'
+      },
+      body: JSON.stringify({
+        model: selectedModelId,
+        messages: normalizeMessages(messages),
+        stream: false
+      })
     })
-  })
 
-  if (!response.ok) {
-    const detail = await readErrorMessage(response)
-    if (response.status === 401 || response.status === 403) {
-      throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
+    if (!response.ok) {
+      const detail = await readErrorMessage(response)
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
+      }
+      throw new Error(detail || `调用自定义 AI 失败（${response.status}）`)
     }
-    throw new Error(detail || `调用自定义 AI 失败（${response.status}）`)
-  }
 
-  return readCustomOpenAIResponse(response)
+    return await readCustomOpenAIResponse(response)
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') {
+      throw new Error('请求超时，请检查供应商地址是否可达')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 async function runUToolsText(settings: AISettingsLike, messages: AIMessage[]) {
@@ -547,31 +567,44 @@ export async function fetchCustomAIModels(config: {
     throw new Error(getApiKeyMissingMessage())
   }
 
-  const response = await fetch(getOpenAIModelsUrl(baseURL), {
-    headers: {
-      Authorization: `Bearer ${apiKey}`
+  // 模型列表接口最多等待 15 秒，防止错误地址永久挂起（含响应体读取阶段）
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15_000)
+  try {
+    const response = await fetch(getOpenAIModelsUrl(baseURL), {
+      signal: controller.signal,
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      }
+    })
+
+    if (!response.ok) {
+      const detail = await readErrorMessage(response)
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
+      }
+      throw new Error(detail || `读取模型列表失败（${response.status}）`)
     }
-  })
 
-  if (!response.ok) {
-    const detail = await readErrorMessage(response)
-    if (response.status === 401 || response.status === 403) {
-      throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
+    const payload = await response.json()
+    const rawModels = Array.isArray(payload?.data) ? payload.data : []
+    const models = rawModels
+      .map((item: unknown) => normalizeModelOption(item))
+      .filter((item: AIModelOption | null): item is AIModelOption => Boolean(item))
+
+    if (!models.length) {
+      throw new Error('未读取到可用模型')
     }
-    throw new Error(detail || `读取模型列表失败（${response.status}）`)
+
+    return models
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') {
+      throw new Error('请求超时，请检查供应商地址是否可达')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
   }
-
-  const payload = await response.json()
-  const rawModels = Array.isArray(payload?.data) ? payload.data : []
-  const models = rawModels
-    .map((item: unknown) => normalizeModelOption(item))
-    .filter((item: AIModelOption | null): item is AIModelOption => Boolean(item))
-
-  if (!models.length) {
-    throw new Error('未读取到可用模型')
-  }
-
-  return models
 }
 
 export async function runAIText(settings: AISettingsLike, messages: AIMessage[]) {
@@ -585,12 +618,6 @@ export async function runAIText(settings: AISettingsLike, messages: AIMessage[])
     : runUToolsText(settings, messages)
 }
 
-export async function getAvailableAIModels(settings: AISettingsLike) {
-  if (settings.useCustomProvider) {
-    return settings.customModelOptions
-  }
-  return getAvailableUToolsAiModels()
-}
 
 export function getDefaultAISettings() {
   return {

@@ -89,7 +89,6 @@ export interface BookmarkActions {
   addSubGroup: (name: string, groupId: string) => SubGroup | null
   updateSubGroup: (groupId: string, subId: string, name: string) => void
   removeSubGroup: (groupId: string, subId: string) => boolean
-  deleteSubGroup: (groupId: string, subGroupId: string) => boolean
   reorderSubGroups: (groupId: string, newChildren: SubGroup[]) => void
   moveSubToGroup: (sourceGroupId: string, subId: string, targetGroupId: string) => boolean
   promoteSubToGroup: (sourceGroupId: string, subId: string) => Group | null
@@ -171,6 +170,21 @@ const createInitialState = (): BookmarkState => {
 }
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
+
+/**
+ * 解析书签当前归属位置列表。
+ * 旧数据可能缺少 locations 字段（undefined），此时回退到遍历索引计算。
+ * 确保后续过滤逻辑不会把「仍有其他归属」的书签误判为无归属进回收站。
+ */
+const resolveBookmarkLocations = (
+  bookmark: Bookmark,
+  getByIndex: (id: string) => BookmarkLocation[]
+): BookmarkLocation[] => {
+  if (Array.isArray(bookmark.locations) && bookmark.locations.length > 0) {
+    return clone(bookmark.locations)
+  }
+  return getByIndex(bookmark.id)
+}
 
 const schedulePush = (
   item: Parameters<ReturnType<typeof useSync.getState>['schedulePush']>[0],
@@ -588,8 +602,9 @@ export const useBookmarkStore = create<BookmarkStore>()(
             sub.bookmarkIds.forEach((bid) => {
               if (touchedBookmarkShareIdsMap.has(bid)) return
               const bookmark = bookmarks.find((b) => b.id === bid)
-              const previousLocations = bookmark?.locations
-                ? clone(bookmark.locations)
+              // 空数组也回退索引：locations=[] 时 previousShareIds 不能算成空集
+              const previousLocations = bookmark
+                ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
                 : get().getBookmarkLocations(bid)
               touchedBookmarkShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
             })
@@ -600,8 +615,10 @@ export const useBookmarkStore = create<BookmarkStore>()(
             sub.bookmarkIds.forEach((bid) => {
               const bookmark = bookmarks.find((b) => b.id === bid)
               if (!bookmark) return
-              const oldLocations = bookmark.locations ? [...bookmark.locations] : []
-              bookmark.locations = bookmark.locations?.filter((loc) => loc.groupId !== id) || []
+              // 用 resolveBookmarkLocations 兜住旧数据 locations 为 undefined 的情况
+              const currentLocations = resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
+              const oldLocations = currentLocations
+              bookmark.locations = currentLocations.filter((loc) => loc.groupId !== id)
               if (bookmark.locations.length === 0) {
                 if (oldLocations.length > 0) bookmark.prevLocations = oldLocations
                 bookmark.updatedAt = now
@@ -677,7 +694,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
           const touchedBookmarkShareIdsMap = new Map<string, string[]>()
           sub.bookmarkIds.forEach((bid) => {
             const bookmark = bookmarks.find((b) => b.id === bid)
-            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bid)
+            const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bid)
             touchedBookmarkShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
           })
 
@@ -685,8 +702,11 @@ export const useBookmarkStore = create<BookmarkStore>()(
           sub.bookmarkIds.forEach((bid) => {
             const bookmark = bookmarks.find((b) => b.id === bid)
             if (!bookmark) return
-            bookmark.locations =
-              bookmark.locations?.filter((loc) => !(loc.groupId === groupId && loc.subGroupId === subId)) || []
+            // 用 resolveBookmarkLocations 兜住旧数据 locations 为 undefined 的情况
+            const currentLocations = resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
+            bookmark.locations = currentLocations.filter(
+              (loc) => !(loc.groupId === groupId && loc.subGroupId === subId)
+            )
             if (bookmark.locations.length === 0) {
               bookmark.updatedAt = now
               toTrash.push(bid)
@@ -741,85 +761,6 @@ export const useBookmarkStore = create<BookmarkStore>()(
           return true
         },
 
-        deleteSubGroup: (groupId, subGroupId) => {
-          // 与 removeSubGroup 等价，但删空主分组时整体移除主分组（旧版 deleteSubGroup 语义）
-          const groups = clone(get().groups)
-          const bookmarks = clone(get().bookmarks)
-          const group = groups.find((g) => g.id === groupId)
-          if (!group) return false
-          const index = group.children.findIndex((c) => c.id === subGroupId)
-          if (index === -1) return false
-          const subGroup = group.children[index]
-          const now = Date.now()
-
-          const toTrash: string[] = []
-          subGroup.bookmarkIds.forEach((bid) => {
-            const bookmark = bookmarks.find((b) => b.id === bid)
-            if (!bookmark) return
-            const oldLocations = bookmark.locations ? [...bookmark.locations] : []
-            bookmark.locations =
-              bookmark.locations?.filter((loc) => !(loc.groupId === groupId && loc.subGroupId === subGroupId)) || []
-            if (bookmark.locations.length === 0) {
-              if (oldLocations.length > 0) bookmark.prevLocations = oldLocations
-              bookmark.updatedAt = now
-              toTrash.push(bid)
-            }
-          })
-
-          group.children.splice(index, 1)
-          group.updatedAt = now
-
-          let trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
-          if (!trashGroup) {
-            trashGroup = {
-              id: TRASH_GROUP_ID,
-              name: '回收站',
-              createdAt: now,
-              updatedAt: now,
-              children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
-            }
-            groups.push(trashGroup)
-          }
-          if (trashGroup.children.length === 0) {
-            trashGroup.children.push({ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now })
-          }
-          const trashSub = trashGroup.children[0]
-          if (toTrash.length > 0) {
-            toTrash.forEach((bid) => {
-              if (!trashSub.bookmarkIds.includes(bid)) trashSub.bookmarkIds.push(bid)
-              const bookmark = bookmarks.find((b) => b.id === bid)
-              if (bookmark) bookmark.locations = [{ groupId: TRASH_GROUP_ID, subGroupId: trashSub.id }]
-            })
-            trashSub.updatedAt = now
-            trashGroup.updatedAt = now
-          }
-
-          let nextActiveGroupId = get().activeGroupId
-          let nextActiveSubGroupId = get().activeSubGroupId
-          const shouldDeleteGroup = group.children.length === 0 && group.id !== TRASH_GROUP_ID
-
-          if (shouldDeleteGroup) {
-            if (nextActiveGroupId === groupId) {
-              const otherGroup = groups.find((g) => g.id !== groupId && g.id !== TRASH_GROUP_ID)
-              if (otherGroup) {
-                nextActiveGroupId = otherGroup.id
-                nextActiveSubGroupId = otherGroup.children[0]?.id || ''
-              }
-            }
-            const groupIndex = groups.findIndex((g) => g.id === groupId)
-            if (groupIndex !== -1) groups.splice(groupIndex, 1)
-          } else {
-            if (group.children.length === 0) {
-              group.children.push({ id: uid(), name: '默认', bookmarkIds: [], createdAt: now, updatedAt: now })
-              group.updatedAt = now
-            }
-            if (nextActiveSubGroupId === subGroupId) nextActiveSubGroupId = group.children[0]?.id || ''
-          }
-
-          commit(groups, bookmarks, { activeGroupId: nextActiveGroupId, activeSubGroupId: nextActiveSubGroupId })
-          return true
-        },
-
         moveSubToGroup: (sourceGroupId, subId, targetGroupId) => {
           const groups = clone(get().groups)
           const bookmarks = clone(get().bookmarks)
@@ -835,7 +776,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
           const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
           sub.bookmarkIds.forEach((bid) => {
             const bookmark = bookmarks.find((b) => b.id === bid)
-            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bid)
+            const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bid)
             bookmarkPreviousShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
           })
 
@@ -844,8 +785,10 @@ export const useBookmarkStore = create<BookmarkStore>()(
           targetGroup.updatedAt = now
           sub.bookmarkIds.forEach((bid) => {
             const bookmark = bookmarks.find((b) => b.id === bid)
-            if (bookmark?.locations) {
-              bookmark.locations = bookmark.locations.map((loc) =>
+            if (bookmark) {
+              // 用 resolveBookmarkLocations 取真实位置（兼容旧数据 locations=[]）
+              const currentLocations = resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
+              bookmark.locations = currentLocations.map((loc) =>
                 loc.groupId === sourceGroupId && loc.subGroupId === subId ? { ...loc, groupId: targetGroupId } : loc
               )
               bookmark.updatedAt = now
@@ -880,7 +823,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
           const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
           sub.bookmarkIds.forEach((bid) => {
             const bookmark = bookmarks.find((b) => b.id === bid)
-            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bid)
+            const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bid)
             bookmarkPreviousShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
           })
 
@@ -898,8 +841,10 @@ export const useBookmarkStore = create<BookmarkStore>()(
 
           sub.bookmarkIds.forEach((bid) => {
             const bookmark = bookmarks.find((b) => b.id === bid)
-            if (bookmark?.locations) {
-              bookmark.locations = bookmark.locations.map((loc) =>
+            if (bookmark) {
+              // 用 resolveBookmarkLocations 取真实位置（兼容旧数据 locations=[]）
+              const currentLocations = resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
+              bookmark.locations = currentLocations.map((loc) =>
                 loc.groupId === sourceGroupId && loc.subGroupId === subId ? { groupId: newGroup.id, subGroupId: sub.id } : loc
               )
               bookmark.updatedAt = now
@@ -982,7 +927,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
           const bookmarks = clone(get().bookmarks)
           const now = Date.now()
           const bookmark = bookmarks.find((b) => b.id === bookmarkId)
-          const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bookmarkId)
+          const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bookmarkId)
           const previousShareIds = get().getShareIdsFromLocations(previousLocations)
           const newLocSet = new Set(newLocations.map((loc) => `${loc.groupId}:${loc.subGroupId}`))
 
@@ -1045,7 +990,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
             const groups = clone(get().groups)
             let bookmarks = clone(get().bookmarks)
             const bookmark = bookmarks.find((b) => b.id === id)
-            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : locations
+            const previousLocations = bookmark && Array.isArray(bookmark.locations) && bookmark.locations.length > 0 ? clone(bookmark.locations) : locations
             const previousShareIds = get().getShareIdsFromLocations(previousLocations)
 
             groups.forEach((g) => {
@@ -1099,7 +1044,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
           const now = Date.now()
           const trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
           const trashSubs = trashGroup?.children ?? []
-          const previousLocations = bookmark.locations ? clone(bookmark.locations) : get().getBookmarkLocations(id)
+          const previousLocations = resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
           const previousShareIds = get().getShareIdsFromLocations(previousLocations)
 
           let targetLocations: BookmarkLocation[] = []
@@ -1157,7 +1102,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
           const previousShareIdsMap = new Map<string, string[]>()
           idsToRemove.forEach((id) => {
             const bookmark = bookmarks.find((b) => b.id === id)
-            const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(id)
+            const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(id)
             previousShareIdsMap.set(id, get().getShareIdsFromLocations(previousLocations))
           })
           idsToRemove.forEach((id) => {
@@ -1208,7 +1153,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
           if (!fromSub || !toSub || !fromGroup || !toGroup) return false
           if (!fromSub.bookmarkIds.includes(bookmarkId)) return false
           const bookmark = bookmarks.find((b) => b.id === bookmarkId)
-          const previousLocations = bookmark?.locations ? clone(bookmark.locations) : get().getBookmarkLocations(bookmarkId)
+          const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bookmarkId)
           const previousShareIds = get().getShareIdsFromLocations(previousLocations)
           const now = Date.now()
           fromSub.bookmarkIds = fromSub.bookmarkIds.filter((id) => id !== bookmarkId)
@@ -1219,13 +1164,16 @@ export const useBookmarkStore = create<BookmarkStore>()(
             toSub.updatedAt = now
             toGroup.updatedAt = now
           }
-          if (bookmark?.locations) {
-            bookmark.locations = bookmark.locations.filter(
+          if (bookmark) {
+            // 用 resolveBookmarkLocations 取真实位置（兼容旧数据 locations=[]）
+            const currentLocations = resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
+            const filtered = currentLocations.filter(
               (loc) => !(loc.groupId === fromGroupId && loc.subGroupId === fromSubId)
             )
-            if (!bookmark.locations.some((loc) => loc.groupId === toGroupId && loc.subGroupId === toSubId)) {
-              bookmark.locations.push({ groupId: toGroupId, subGroupId: toSubId })
+            if (!filtered.some((loc) => loc.groupId === toGroupId && loc.subGroupId === toSubId)) {
+              filtered.push({ groupId: toGroupId, subGroupId: toSubId })
             }
+            bookmark.locations = filtered
             bookmark.updatedAt = now
           }
           commit(groups, bookmarks)
@@ -1274,22 +1222,42 @@ export const useBookmarkStore = create<BookmarkStore>()(
           const now = Date.now()
           const groups = clone(get().groups)
           const bookmarks = clone(get().bookmarks)
-          const liveGroup = groups.find((g) => g.id === group.id)!
-          const liveSub = liveGroup.children.find((c) => c.id === subGroup.id)!
+          const liveGroup = groups.find((g) => g.id === group.id)
+          const liveSub = liveGroup?.children.find((c) => c.id === subGroup.id)
+          if (!liveGroup || !liveSub) {
+            console.warn('[quickSaveBookmark] 快速收集分组未找到，尝试重新创建')
+            const { group: retryGroup, subGroup: retrySub } = get().getOrCreateQuickCollectGroup()
+            const retryLiveGroup = get().groups.find((g) => g.id === retryGroup.id)
+            const retryLiveSub = retryLiveGroup?.children.find((c) => c.id === retrySub.id)
+            if (!retryLiveGroup || !retryLiveSub) {
+              console.warn('[quickSaveBookmark] 快速收集分组创建失败，放弃保存')
+              const fallback: Bookmark = {
+                id: uid(),
+                title: title || url,
+                url,
+                desc: desc || '',
+                tags: [],
+                locations: [],
+                createdAt: now,
+                updatedAt: now
+              }
+              return fallback
+            }
+            return get().quickSaveBookmark(url, title, desc)
+          }
 
           const existingBookmark = bookmarks.find((b) => b.url === url && !b.isDeleted)
           if (existingBookmark) {
             const alreadyInQuickCollect = liveSub.bookmarkIds.includes(existingBookmark.id)
             if (!alreadyInQuickCollect) {
-              const previousLocations = existingBookmark.locations
-                ? clone(existingBookmark.locations)
-                : get().getBookmarkLocations(existingBookmark.id)
+              // 用 resolveBookmarkLocations 取真实位置（兼容旧数据 locations=[]）
+              const previousLocations = resolveBookmarkLocations(existingBookmark, get().getBookmarkLocations)
               const previousShareIds = get().getShareIdsFromLocations(previousLocations)
               liveSub.bookmarkIds.unshift(existingBookmark.id)
               liveSub.updatedAt = now
               liveGroup.updatedAt = now
-              if (!existingBookmark.locations) existingBookmark.locations = []
-              existingBookmark.locations.push({ groupId: liveGroup.id, subGroupId: liveSub.id })
+              // 基于真实位置合并新位置，确保原有索引归属不丢失
+              existingBookmark.locations = [...previousLocations, { groupId: liveGroup.id, subGroupId: liveSub.id }]
               existingBookmark.updatedAt = now
               commit(groups, bookmarks)
               get().scheduleBookmarkSync(existingBookmark.id, { updatedAt: now, previousShareIds })
@@ -1429,13 +1397,31 @@ export const useBookmarkStore = create<BookmarkStore>()(
     {
       name: 'bookmark',
       storage: createPiniaCompatStorage<BookmarkStore>(),
+      // 持久化数据优先：防止水合前种子 state 在 merge 时污染已保存书签
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<BookmarkState> | undefined
+        if (!saved || (!saved.groups && !saved.bookmarks)) return current
+        return {
+          ...current,
+          ...saved,
+          groups: saved.groups ?? current.groups,
+          bookmarks: saved.bookmarks ?? current.bookmarks,
+          activeGroupId: saved.activeGroupId ?? current.activeGroupId,
+          activeSubGroupId: saved.activeSubGroupId ?? current.activeSubGroupId
+        }
+      },
       partialize: (state) =>
         ({
           groups: state.groups,
           bookmarks: state.bookmarks,
           activeGroupId: state.activeGroupId,
           activeSubGroupId: state.activeSubGroupId
-        }) as BookmarkStore
+        }) as BookmarkStore,
+      // 必须在 storage 水合完成后再做格式迁移，避免对种子数据写盘覆盖用户书签
+      onRehydrateStorage: () => (state, error) => {
+        if (error || !state) return
+        useBookmarkStore.getState().migrateFromLegacy()
+      }
     }
   )
 )
@@ -1485,7 +1471,7 @@ export const selectFilteredBookmarks = (s: BookmarkStore): Bookmark[] => {
 
   if (!query) return pool
   return pool.filter((item) => {
-    const haystack = [item.title, item.desc ?? '', item.url, item.tags.join(' ')].join(' ').toLowerCase()
+    const haystack = [item.title, item.desc ?? '', item.url, (item.tags ?? []).join(' ')].join(' ').toLowerCase()
     if (haystack.includes(query)) return true
     return !!PinyinMatch.match(haystack, query)
   })

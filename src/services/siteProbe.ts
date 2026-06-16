@@ -104,7 +104,12 @@ export const probeUrl = async (url: string, timeoutMs = 3000): Promise<ProbeResu
     }
   }
 
-  const get = await nodeRequest(target, 'GET', timeoutMs)
+  // 总预算制：GET 的超时 = 剩余预算，不足 300ms 则直接返回超时，避免最坏 2× timeout
+  const remaining = timeoutMs - (performance.now() - started)
+  if (remaining < 300) {
+    return { url, ok: false, elapsed: performance.now() - started, method: 'GET', reason: 'timeout' }
+  }
+  const get = await nodeRequest(target, 'GET', remaining)
   const elapsed = performance.now() - started
   if (!get) return { url, ok: false, elapsed, method: 'GET', reason: 'timeout' }
   return { url, ok: get.ok, status: get.status, elapsed, method: 'GET' }

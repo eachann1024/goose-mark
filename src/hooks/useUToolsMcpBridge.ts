@@ -175,7 +175,10 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       if (/{[^}]+}/.test(url) && query) url = url.replace(/{[^}]+}/g, encodeURIComponent(query))
       if (!/^https?:\/\//i.test(url)) url = 'https://' + url
       const utoolsApi = window.utools as unknown as { shellOpenExternal?: (u: string) => void } | undefined
-      utoolsApi?.shellOpenExternal?.(url)
+      if (!utoolsApi?.shellOpenExternal) {
+        return { ok: false, error: '当前环境不支持打开链接' }
+      }
+      utoolsApi.shellOpenExternal(url)
       return { ok: true, url }
     }
 
@@ -183,7 +186,11 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       const name = str(params.name)
       if (!name) throw new Error('分组名称不能为空')
       const group = store.addGroup(name)
-      return { group: serializeGroup(group) }
+      const firstSubGroupName = str(params.firstSubGroupName)
+      if (firstSubGroupName && group.children[0]) {
+        store.updateSubGroup(group.id, group.children[0].id, firstSubGroupName)
+      }
+      return { group: serializeGroup(getStore().groups.find((g) => g.id === group.id) ?? group) }
     }
 
     case 'update_group': {

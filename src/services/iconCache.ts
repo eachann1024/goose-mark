@@ -402,7 +402,7 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
 
   // uTools 环境优先用内置浏览器获取图标
   if (typeof window !== 'undefined' && window.utools) {
-    const utoolsResult = await fetchIconFromUToolsBrowser(targetUrl)
+    const utoolsResult = await withTimeout(fetchIconFromUToolsBrowser(targetUrl), 6000)
     if (utoolsResult) {
       fetchedMeta = {
         title: utoolsResult.title || null,
@@ -469,15 +469,23 @@ export const ensureIconForBookmark = async (bookmark: Bookmark, force = false): 
 
 export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<string, IconSource>> => {
   const result = new Map<string, IconSource>()
+  const missing = bookmarks.filter((b) => !b.icon || b.icon.type === 'text')
+  const CONCURRENCY = 6
 
-  for (const bookmark of bookmarks) {
-    if (!bookmark.icon || bookmark.icon.type === 'text') {
+  // 并发限制池：每次最多 CONCURRENCY 个并发 fetch
+  let index = 0
+  const worker = async () => {
+    while (index < missing.length) {
+      const bookmark = missing[index++]
       const icon = await fetchAndCacheIcon(bookmark.url)
       if (icon) {
         result.set(bookmark.id, icon)
       }
     }
   }
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, missing.length) }, () => worker())
+  await Promise.all(workers)
 
   return result
 }

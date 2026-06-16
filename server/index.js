@@ -95,10 +95,12 @@ fastify.post('/api/sync/:shareId/push', {
 fastify.get('/api/sync/:shareId/pull', async (request, reply) => {
   try {
     const { shareId } = request.params
-    const { since } = request.query
-    
+    const { since, sinceId } = request.query
+
+    // sinceId 参数缺失 → 旧客户端，传 null 走原 updated_at > since 语义；
+    // 显式携带（含空串）→ 新客户端，走复合游标
     const sinceTs = parseInt(since) || 0
-    const result = await pullItems(shareId, sinceTs)
+    const result = await pullItems(shareId, sinceTs, typeof sinceId === 'string' ? sinceId : null)
     return result
   } catch (err) {
     request.log.error(err)

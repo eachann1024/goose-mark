@@ -4,16 +4,17 @@ if (typeof window !== 'undefined') {
     window.utools = utools
 
     const WINDOW_HEIGHT_STORAGE_KEY = 'settings'
-    const DEFAULT_WINDOW_HEIGHT = 800
     const MIN_WINDOW_HEIGHT = 460
     const MAX_WINDOW_HEIGHT = 900
 
     const clampWindowHeight = (height) => {
       const numericHeight = Number(height)
-      if (!Number.isFinite(numericHeight)) return DEFAULT_WINDOW_HEIGHT
+      if (!Number.isFinite(numericHeight)) return null
       return Math.min(MAX_WINDOW_HEIGHT, Math.max(MIN_WINDOW_HEIGHT, Math.round(numericHeight)))
     }
 
+    // 仅当 settings 里确实存有历史 windowHeight 时才应用；
+    // 无存值时返回 null，不调用 setExpendHeight，高度交还 plugin.json 配置控制。
     const readStoredWindowHeight = () => {
       let rawValue = null
 
@@ -29,18 +30,20 @@ if (typeof window !== 'undefined') {
         } catch {}
       }
 
-      if (!rawValue) return DEFAULT_WINDOW_HEIGHT
+      if (!rawValue) return null
 
       try {
         const parsed = JSON.parse(rawValue)
-        return clampWindowHeight(parsed?.windowHeight)
+        if (parsed?.windowHeight == null) return null
+        return clampWindowHeight(parsed.windowHeight)
       } catch {
-        return DEFAULT_WINDOW_HEIGHT
+        return null
       }
     }
 
     if (typeof utools.setExpendHeight === 'function') {
-      utools.setExpendHeight(readStoredWindowHeight())
+      const storedHeight = readStoredWindowHeight()
+      if (storedHeight != null) utools.setExpendHeight(storedHeight)
     }
 
     const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
@@ -143,6 +146,9 @@ if (typeof window !== 'undefined') {
       })
     }
 
+    // 挂载 uTools 顶部 subInput 搜索框（placeholder '搜索书签...'），
+    // 用户在 subInput 输入时 dispatch UTOOLS_INPUT_EVENT 通知渲染层；
+    // __gooseMarksSuppressNextChange / __gooseMarksLastAppValue 防回环。
     const mountDefaultSearchInput = (focus = true) => {
       if (typeof utools.setSubInput !== 'function') return
       utools.setSubInput(({ text }) => {
@@ -150,7 +156,6 @@ if (typeof window !== 'undefined') {
           window.__gooseMarksSuppressNextChange = false
           return
         }
-
         window.dispatchEvent(new CustomEvent(UTOOLS_INPUT_EVENT, {
           detail: { text },
         }))
@@ -216,6 +221,7 @@ if (typeof window !== 'undefined') {
       })
     }
 
+    // 渲染层 → subInput 同步（带 suppress 标记防回环）
     window.addEventListener(UTOOLS_SYNC_EVENT, (event) => {
       const detail = event.detail || {}
       const text = typeof detail.text === 'string' ? detail.text : ''
@@ -227,6 +233,7 @@ if (typeof window !== 'undefined') {
       }
     })
 
+    // 重挂 subInput 并回填上次搜索值（渲染层初始化/布局切换时触发）
     window.addEventListener(UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT, () => {
       mountDefaultSearchInput(true)
       if (typeof utools.setSubInputValue === 'function') {

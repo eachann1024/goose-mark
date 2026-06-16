@@ -32,4 +32,17 @@ watch('src', { recursive: true }, (_eventType, filename) => {
   timer = setTimeout(build, 400)
 })
 
-console.log('👀 正在监视 src/ 目录变化...\n')
+// 监视 preload 目录
+watch('preload', { recursive: true }, (_eventType, filename) => {
+  if (!filename) return
+  if (timer) clearTimeout(timer)
+  timer = setTimeout(build, 400)
+})
+
+// 监视 plugin.json（单文件，fs.watch 直接传文件路径）
+watch('plugin.json', (_eventType) => {
+  if (timer) clearTimeout(timer)
+  timer = setTimeout(build, 400)
+})
+
+console.log('👀 正在监视 src/、preload/、plugin.json 变化...\n')

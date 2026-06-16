@@ -12,3 +12,11 @@ CHANGELOG.md
 .playwright-mcp/
 src-tauri/target/
 .design-check/
+.claude/launch.json
+.env
+.env.*
+/[0-9][0-9]-*.png
+goose-polish/
+goose-shots-r2/
+goose-shots3/
+qa-screenshots/

@@ -1,9 +1,13 @@
+import type React from 'react'
 import type { LucideIcon } from 'lucide-react'
 import {
   Search, List, LayoutGrid, Plus, Settings, MoonStar, Sun, Trash2, Pin, X,
   ArrowLeft, FileText, Sparkles, WandSparkles, Lightbulb, Check, ExternalLink,
   Globe, Copy, Pencil, Folder, Database, RefreshCw, Info, MessageSquare,
-  Upload, Download, Cpu, ChevronDown, Inbox
+  Upload, Download, Cpu, ChevronDown, ChevronRight, Inbox, Loader, AlertCircle,
+  RotateCcw, CheckCircle, SearchX, MoreHorizontal, ChevronUp, ArrowRight,
+  ArrowUpToLine, Link2, ClipboardPaste, GitMerge, Layers, Bookmark, Eye,
+  RotateCw, ArrowUpRight
 } from 'lucide-react'
 
 /**
@@ -41,17 +45,37 @@ const MAP: Record<string, LucideIcon> = {
   download: Download,
   cpu: Cpu,
   'chevron-down': ChevronDown,
-  inbox: Inbox
+  'chevron-right': ChevronRight,
+  inbox: Inbox,
+  loader: Loader,
+  'alert-circle': AlertCircle,
+  'rotate-ccw': RotateCcw,
+  'check-circle': CheckCircle,
+  'search-x': SearchX,
+  'more-horizontal': MoreHorizontal,
+  'chevron-up': ChevronUp,
+  'arrow-right': ArrowRight,
+  'arrow-up-to-line': ArrowUpToLine,
+  link: Link2,
+  paste: ClipboardPaste,
+  merge: GitMerge,
+  layers: Layers,
+  bookmark: Bookmark,
+  eye: Eye,
+  rotate: RotateCw,
+  'arrow-up-right': ArrowUpRight,
+  message: MessageSquare,
 }
 
 export interface IcoProps {
   name: keyof typeof MAP | string
   className?: string
+  style?: React.CSSProperties
 }
 
 /** 渲染一个 lucide 图标，尺寸继承父级 font-size（width/height = 1em，见 home.css）。 */
-export function Ico({ name, className }: IcoProps) {
+export function Ico({ name, className, style }: IcoProps) {
   const Cmp = MAP[name]
   if (!Cmp) return null
-  return <Cmp className={['lucide', className].filter(Boolean).join(' ')} />
+  return <Cmp className={['lucide', className].filter(Boolean).join(' ')} style={style} />
 }

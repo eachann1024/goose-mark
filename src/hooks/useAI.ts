@@ -203,7 +203,13 @@ export function useAI() {
 
         const match = res.match(/\{[\s\S]*\}/)
         const jsonStr = match ? match[0] : res
-        const data = JSON.parse(jsonStr)
+        let data: Record<string, unknown>
+        try {
+          data = JSON.parse(jsonStr) as Record<string, unknown>
+        } catch (parseErr) {
+          console.warn('[AI] generateMetadata JSON.parse 失败，原始内容片段:', jsonStr.slice(0, 200), parseErr)
+          return null
+        }
         const result = {
           title: String(data.title || '').trim(),
           desc: String(data.desc || '').trim(),
@@ -296,22 +302,30 @@ ${avoidCurrentTip}
 
         const match = res.match(/\{[\s\S]*\}/)
         const jsonStr = match ? match[0] : res
-        const data = JSON.parse(jsonStr)
+        let data: Record<string, unknown>
+        try {
+          data = JSON.parse(jsonStr) as Record<string, unknown>
+        } catch (parseErr) {
+          console.warn('[AI] suggestCategory JSON.parse 失败，原始内容片段:', jsonStr.slice(0, 200), parseErr)
+          return null
+        }
 
+        const dataGroupName = typeof data.groupName === 'string' ? data.groupName : ''
+        const dataSubGroupName = typeof data.subGroupName === 'string' ? data.subGroupName : ''
         const matchedGroup = existingGroups.find(
           (group) =>
-            group.name === data.groupName ||
-            group.name.includes(data.groupName) ||
-            data.groupName.includes(group.name)
+            group.name === dataGroupName ||
+            group.name.includes(dataGroupName) ||
+            dataGroupName.includes(group.name)
         )
         if (!matchedGroup) return null
 
-        const matchedSubGroup = data.subGroupName
+        const matchedSubGroup = dataSubGroupName
           ? matchedGroup.subGroups.find(
               (subGroup) =>
-                subGroup.name === data.subGroupName ||
-                subGroup.name.includes(data.subGroupName) ||
-                data.subGroupName.includes(subGroup.name)
+                subGroup.name === dataSubGroupName ||
+                subGroup.name.includes(dataSubGroupName) ||
+                dataSubGroupName.includes(subGroup.name)
             )
           : matchedGroup.subGroups[0]
 
@@ -321,7 +335,7 @@ ${avoidCurrentTip}
           subGroupId: matchedSubGroup?.id || matchedGroup.subGroups[0]?.id || '',
           subGroupName: matchedSubGroup?.name || matchedGroup.subGroups[0]?.name || '',
           confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
-          reason: data.reason || '基于 URL 内容推荐'
+          reason: typeof data.reason === 'string' ? data.reason : '基于 URL 内容推荐'
         } satisfies CategorySuggestion
 
         return result

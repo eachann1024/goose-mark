@@ -112,7 +112,8 @@ const asNumber = (value: unknown): number | null => {
 
 const toTs = (value: unknown, fallback: number) => {
   const parsed = asNumber(value)
-  if (!parsed || parsed <= 0) return fallback
+  // 允许 0 作为合法时间戳（如 Unix epoch），只排除 null、非有限数、负数
+  if (parsed === null || !Number.isFinite(parsed) || parsed < 0) return fallback
   return parsed < 1e12 ? Math.round(parsed * 1000) : Math.round(parsed)
 }
 
@@ -344,24 +345,39 @@ export const applyImportDataToStore = (
     bookmarks: store.bookmarks.length
   }
 
+  // afterData 引用合并后的实际数据，用于准确统计新增数——
+  // store.setData 是同步的但 store 对象是调用时的旧快照，setData 后读 store.groups/bookmarks 仍是旧值。
+  let afterData: ImportData
+
   if (mode === 'overwrite') {
     const cloned = cloneImportData(incomingData)
     syncBookmarkLocations(cloned.groups, cloned.bookmarks)
+    afterData = cloned
     store.setData({
       groups: cloned.groups,
       bookmarks: cloned.bookmarks
     })
   } else {
+    // merge 模式：先拷贝 store 当前数据作为 target，合并后通过 setData 提交，避免原地 mutate 绕过 zustand
+    const target: ImportData = {
+      groups: JSON.parse(JSON.stringify(store.groups)) as Group[],
+      bookmarks: JSON.parse(JSON.stringify(store.bookmarks)) as Bookmark[]
+    }
     const cloned = cloneImportData(incomingData)
-    mergeImportData(store, cloned)
-    syncBookmarkLocations(store.groups, store.bookmarks)
+    mergeImportData(target, cloned)
+    syncBookmarkLocations(target.groups, target.bookmarks)
+    afterData = target
+    store.setData({
+      groups: target.groups,
+      bookmarks: target.bookmarks
+    })
   }
 
   ensureStoreSelection(store)
 
   const after = {
-    groups: store.groups.length,
-    bookmarks: store.bookmarks.length
+    groups: afterData.groups.length,
+    bookmarks: afterData.bookmarks.length
   }
 
   return {

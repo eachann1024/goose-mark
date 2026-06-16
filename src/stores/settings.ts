@@ -18,19 +18,10 @@ import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
 
 export type ViewMode = 'list' | 'grid' | 'cards'
 export type Density = 'compact' | 'regular' | 'comfy'
-export type LightBackgroundStyle = 'white' | 'utools'
-/** 列表面板排序键（虚拟视图扁平列表）：最近使用 / 添加时间 / 名称 / 访问次数 */
-export type ListSortKey = 'recent' | 'created' | 'name' | 'visits'
-const LIST_SORT_KEYS: ListSortKey[] = ['recent', 'created', 'name', 'visits']
-
-export interface IconMatchLog {
-  time: number
-  scope: 'search' | 'missing'
-  total: number
-  success: number
-  failed: number
-  failedTitles: string[]
-}
+/** 宫格图标尺寸：小 38px / 中 46px / 大 56px */
+export type GridIconSize = 'small' | 'medium' | 'large'
+/** 彩蛋背景样式 */
+export type EasterEggVariant = 'starry' | 'blackhole'
 
 export interface SettingsState {
   gridColumns: number
@@ -44,20 +35,21 @@ export interface SettingsState {
   aiCustomApiKey: string
   aiCustomModelOptions: AIModelOption[]
   homeViewMode: ViewMode
-  listSort: ListSortKey
-  searchViewMode: 'list' | 'grid'
   density: Density
-  accentColor: string
-  previewPanelWidth: number
-  previewPanelCollapsed: boolean
-  previewPanelDescEditing: boolean
-  onboardingDismissed: boolean
   easterEggEnabled: boolean
-  useSolidBackground: boolean
-  lightBackgroundStyle: LightBackgroundStyle
-  autoMatchSearchIcons: boolean
+  /** 彩蛋背景样式：星空或黑洞 */
+  easterEggVariant: EasterEggVariant
   skipFailedIconMatch: boolean
-  iconMatchLogs: IconMatchLog[]
+  /** uTools 面板连贯模式：再次唤起时保留上次搜索和浏览位置 */
+  panelContinuous: boolean
+  /** 列表模式：显示书签描述 */
+  listShowDescription: boolean
+  /** 列表模式：显示书签标签 */
+  listShowTags: boolean
+  /** 宫格模式：图标大小 */
+  gridIconSize: GridIconSize
+  /** AI 快捷保存：控制 ai_quick_save uTools 特性是否注册 */
+  aiQuickSaveEnabled: boolean
 }
 
 export interface SettingsActions {
@@ -69,22 +61,16 @@ export interface SettingsActions {
   setAiSelectedModelId: (value: string | null) => void
   setAiCustomProviderEnabled: (value: boolean) => void
   saveAiCustomConfig: (config: { baseURL: string; apiKey: string; modelOptions: AIModelOption[] }) => void
-  dismissOnboarding: () => void
   setEasterEggEnabled: (value: boolean) => void
-  setUseSolidBackground: (value: boolean) => void
-  setLightBackgroundStyle: (value: LightBackgroundStyle) => void
-  setAutoMatchSearchIcons: (value: boolean) => void
+  setEasterEggVariant: (value: EasterEggVariant) => void
   setSkipFailedIconMatch: (value: boolean) => void
   setHomeViewMode: (mode: ViewMode) => void
-  setListSort: (value: ListSortKey) => void
   setDensity: (value: Density) => void
-  setAccentColor: (value: string) => void
-  setSearchViewMode: (mode: 'list' | 'grid') => void
-  setPreviewPanelWidth: (width: number) => void
-  setPreviewPanelCollapsed: (value: boolean) => void
-  setPreviewPanelDescEditing: (value: boolean) => void
-  addIconMatchLog: (payload: IconMatchLog) => void
-  clearIconMatchLogs: () => void
+  setPanelContinuous: (value: boolean) => void
+  setListShowDescription: (value: boolean) => void
+  setListShowTags: (value: boolean) => void
+  setGridIconSize: (value: GridIconSize) => void
+  setAiQuickSaveEnabled: (value: boolean) => void
 }
 
 export type SettingsStore = SettingsState & SettingsActions
@@ -103,20 +89,15 @@ const createInitialState = (): SettingsState => {
     aiCustomApiKey: defaults.customApiKey,
     aiCustomModelOptions: defaults.customModelOptions,
     homeViewMode: 'list',
-    listSort: 'recent',
-    searchViewMode: 'list',
     density: 'regular',
-    accentColor: 'coral',
-    previewPanelWidth: 256,
-    previewPanelCollapsed: false,
-    previewPanelDescEditing: false,
-    onboardingDismissed: false,
     easterEggEnabled: true,
-    useSolidBackground: false,
-    lightBackgroundStyle: 'utools',
-    autoMatchSearchIcons: true,
+    easterEggVariant: 'starry' as EasterEggVariant,
     skipFailedIconMatch: true,
-    iconMatchLogs: []
+    panelContinuous: false,
+    listShowDescription: true,
+    listShowTags: true,
+    gridIconSize: 'medium',
+    aiQuickSaveEnabled: true
   }
 }
 
@@ -146,31 +127,45 @@ export const useSettingsStore = create<SettingsStore>()(
           aiSelectedModelId: nextSelected
         })
       },
-      dismissOnboarding: () => set({ onboardingDismissed: true }),
       setEasterEggEnabled: (value) => set({ easterEggEnabled: !!value }),
-      setUseSolidBackground: (value) => set({ useSolidBackground: !!value }),
-      setLightBackgroundStyle: (value) => set({ lightBackgroundStyle: value === 'utools' ? 'utools' : 'white' }),
-      setAutoMatchSearchIcons: (value) => set({ autoMatchSearchIcons: !!value }),
+      setEasterEggVariant: (value) => set({ easterEggVariant: ['starry', 'blackhole'].includes(value) ? value : 'starry' }),
       setSkipFailedIconMatch: (value) => set({ skipFailedIconMatch: !!value }),
       setHomeViewMode: (mode) => set({ homeViewMode: mode }),
-      setListSort: (value) => set({ listSort: LIST_SORT_KEYS.includes(value) ? value : 'recent' }),
       setDensity: (value) => set({ density: ['compact', 'regular', 'comfy'].includes(value) ? value : 'regular' }),
-      setAccentColor: (value) => set({ accentColor: String(value || 'coral') }),
-      setSearchViewMode: (mode) => set({ searchViewMode: mode }),
-      setPreviewPanelWidth: (width) => set({ previewPanelWidth: Math.min(400, Math.max(200, Math.round(width))) }),
-      setPreviewPanelCollapsed: (value) => set({ previewPanelCollapsed: !!value }),
-      setPreviewPanelDescEditing: (value) => set({ previewPanelDescEditing: !!value }),
-      addIconMatchLog: (payload) => set({ iconMatchLogs: [payload, ...get().iconMatchLogs].slice(0, 50) }),
-      clearIconMatchLogs: () => set({ iconMatchLogs: [] })
+      setPanelContinuous: (value) => set({ panelContinuous: !!value }),
+      setListShowDescription: (value) => set({ listShowDescription: !!value }),
+      setListShowTags: (value) => set({ listShowTags: !!value }),
+      setGridIconSize: (value) => set({ gridIconSize: ['small', 'medium', 'large'].includes(value) ? value : 'medium' }),
+      setAiQuickSaveEnabled: (value) => set({ aiQuickSaveEnabled: !!value })
     }),
     {
       name: 'settings', // 持久化 key（与旧版 Pinia $id 一致）
-      storage: createPiniaCompatStorage<SettingsStore>(),
-      // 旧版 persist.omit: ['localMirrorDirectory'] —— 用 partialize 排除
-      partialize: (state) => {
-        const { localMirrorDirectory: _omit, ...rest } = state
-        return rest as SettingsStore
-      },
+      // 用 any 绕过 storage 泛型与 partialize 返回类型的推断冲突（功能等价，运行时 setItem 只序列化 state）
+      storage: createPiniaCompatStorage<any>(),
+      // 显式数据字段白名单 partialize：排除 localMirrorDirectory（旧版 omit）及所有 actions（函数无需持久化），
+      // 同时防止已删除字段（如 accentColor、searchViewMode、previewPanelWidth 等旧 UI 体系字段）
+      // 通过 zustand persist 浅合并回流并再次写入 localStorage —— 旧数据水合时多余键无害，写回时被丢弃。
+      partialize: (state) => ({
+        gridColumns: state.gridColumns,
+        autoCloseWindow: state.autoCloseWindow,
+        preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
+        aiEnabled: state.aiEnabled,
+        aiSelectedModelId: state.aiSelectedModelId,
+        aiUseCustomProvider: state.aiUseCustomProvider,
+        aiCustomBaseURL: state.aiCustomBaseURL,
+        aiCustomApiKey: state.aiCustomApiKey,
+        aiCustomModelOptions: state.aiCustomModelOptions,
+        homeViewMode: state.homeViewMode,
+        density: state.density,
+        easterEggEnabled: state.easterEggEnabled,
+        easterEggVariant: state.easterEggVariant,
+        skipFailedIconMatch: state.skipFailedIconMatch,
+        panelContinuous: state.panelContinuous,
+        listShowDescription: state.listShowDescription,
+        listShowTags: state.listShowTags,
+        gridIconSize: state.gridIconSize,
+        aiQuickSaveEnabled: state.aiQuickSaveEnabled,
+      }),
       // 旧版 persist.afterHydrate —— 字段兜底归一化
       onRehydrateStorage: () => (state) => {
         if (!state) return
@@ -179,12 +174,17 @@ export const useSettingsStore = create<SettingsStore>()(
         if (typeof state.aiSelectedModelId !== 'string' || !state.aiSelectedModelId.trim()) {
           patch.aiSelectedModelId = DEFAULT_AI_MODEL
         }
-        // 旧持久化数据无 listSort 字段时兜底为「最近使用」，保持向后兼容
-        if (!LIST_SORT_KEYS.includes(state.listSort)) patch.listSort = 'recent'
         if (typeof state.aiEnabled !== 'boolean') patch.aiEnabled = true
         if (typeof state.aiUseCustomProvider !== 'boolean') patch.aiUseCustomProvider = false
         if (typeof state.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()
         if (typeof state.aiCustomApiKey !== 'string') patch.aiCustomApiKey = ''
+        if (typeof state.panelContinuous !== 'boolean') patch.panelContinuous = false
+        if (typeof state.listShowDescription !== 'boolean') patch.listShowDescription = true
+        if (typeof state.listShowTags !== 'boolean') patch.listShowTags = true
+        if (!['small', 'medium', 'large'].includes(state.gridIconSize)) patch.gridIconSize = 'medium'
+        if (typeof state.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
+        if (!['starry', 'blackhole'].includes(state.easterEggVariant)) patch.easterEggVariant = 'starry'
+        if (typeof state.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = true
 
         const rawModelOptions = Array.isArray(state.aiCustomModelOptions) ? state.aiCustomModelOptions : null
         if (!rawModelOptions) {
