@@ -7,7 +7,7 @@ import {
   Upload, Download, Cpu, ChevronDown, ChevronRight, Inbox, Loader, AlertCircle,
   RotateCcw, CheckCircle, SearchX, MoreHorizontal, ChevronUp, ArrowRight,
   ArrowUpToLine, Link2, ClipboardPaste, GitMerge, Layers, Bookmark, Eye,
-  RotateCw, ArrowUpRight
+  RotateCw, ArrowUpRight, Minus
 } from 'lucide-react'
 
 /**
@@ -20,6 +20,7 @@ const MAP: Record<string, LucideIcon> = {
   list: List,
   'layout-grid': LayoutGrid,
   plus: Plus,
+  minus: Minus,
   settings: Settings,
   'moon-star': MoonStar,
   sun: Sun,

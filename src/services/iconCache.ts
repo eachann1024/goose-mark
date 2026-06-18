@@ -13,7 +13,7 @@ const getIconApiBase = () => {
 const ICON_API_URL = getIconApiBase() ? `${getIconApiBase()}/api/icon` : ''
 const isDataUrl = (value: string) => value.startsWith('data:image/')
 const FAVICON_COOLDOWN_MS = 10 * 60 * 1000
-const ICON_FETCH_TIMEOUT_MS = 12000
+const ICON_FETCH_TIMEOUT_MS = 4000
 const faviconOriginCooldowns = new Map<string, number>()
 
 const shouldCooldownStatus = (status: number) => status >= 400 && status < 500
@@ -100,7 +100,7 @@ export const fetchAsDataUrl = async (url: string): Promise<string | null> => {
 const isHtmlDocument = async (url: string): Promise<boolean> => {
   if (!url) return false
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 8000)
+  const timer = setTimeout(() => controller.abort(), 4000)
   try {
     const response = await fetch(url, {
       signal: controller.signal,
@@ -402,7 +402,7 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
 
   // uTools 环境优先用内置浏览器获取图标
   if (typeof window !== 'undefined' && window.utools) {
-    const utoolsResult = await withTimeout(fetchIconFromUToolsBrowser(targetUrl), 6000)
+    const utoolsResult = await withTimeout(fetchIconFromUToolsBrowser(targetUrl), 4000)
     if (utoolsResult) {
       fetchedMeta = {
         title: utoolsResult.title || null,
