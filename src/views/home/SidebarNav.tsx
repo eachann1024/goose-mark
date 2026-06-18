@@ -2,7 +2,7 @@
  * SidebarNav —— 侧栏导航（分组 + 子分组 + 回收站）
  * 包含：
  *  - 右键菜单 / hover ⋯ 按钮（分组/子分组编辑操作）
- *  - 内联重命名 / 新建子分组 / 新建一级分组
+ *  - 内联重命名 / 新建子分组（一级分组的新建已移至顶栏 Tab 栏）
  *  - 排序（上移/下移）、移动、提升为一级分组、删除（带二次确认）
  *
  * 警告：本文件对 TDZ 极度敏感。所有 const/useCallback 必须严格按使用顺序声明，
@@ -141,7 +141,6 @@ type EditingState =
   | { kind: 'renameGroup'; groupId: string }
   | { kind: 'renameSub'; groupId: string; subId: string }
   | { kind: 'newSub'; groupId: string }
-  | { kind: 'newGroup' }
   | null
 
 // ── Props ────────────────────────────────────────────────────────────────────
@@ -185,7 +184,6 @@ export default function SidebarNav({
   // ── store actions ─────────────────────────────────────────────────────────
   const updateGroup = useBookmarkStore((s) => s.updateGroup)
   const removeGroup = useBookmarkStore((s) => s.removeGroup)
-  const addGroup = useBookmarkStore((s) => s.addGroup)
   const addSubGroup = useBookmarkStore((s) => s.addSubGroup)
   const updateSubGroup = useBookmarkStore((s) => s.updateSubGroup)
   const removeSubGroup = useBookmarkStore((s) => s.removeSubGroup)
@@ -352,11 +350,9 @@ export default function SidebarNav({
       if (val && val !== orig) updateSubGroup(editing.groupId, editing.subId, val)
     } else if (editing.kind === 'newSub') {
       if (val) addSubGroup(val, editing.groupId)
-    } else if (editing.kind === 'newGroup') {
-      if (val) addGroup(val)
     }
     cancelEditing()
-  }, [editing, inputVal, homeGroups, updateGroup, updateSubGroup, addSubGroup, addGroup, cancelEditing])
+  }, [editing, inputVal, homeGroups, updateGroup, updateSubGroup, addSubGroup, cancelEditing])
 
   // ── input 键盘处理 ────────────────────────────────────────────────────────
   const onInputKeyDown = useCallback(
@@ -401,12 +397,6 @@ export default function SidebarNav({
     },
     [closeMenu]
   )
-
-  const startNewGroup = useCallback(() => {
-    closeMenu()
-    setInputVal('')
-    setEditing({ kind: 'newGroup' })
-  }, [closeMenu])
 
   // ── 排序操作（操作 store 原始 groups） ───────────────────────────────────
   const moveGroupUp = useCallback(
@@ -713,7 +703,17 @@ export default function SidebarNav({
 
           return (
             <div className="grp" key={g.id}>
-              {/* 子分组列表（一级分组标题行已移至顶栏 Tab，此处不再渲染） */}
+              {/* 子分组分区标题：hover 右侧浮现 + 就地新建（一级分组标题已移至顶栏 Tab） */}
+              <div className="sub-sec-head">
+                <span className="sub-sec-title">子分组</span>
+                <button
+                  className="sub-sec-add"
+                  title="新建子分组"
+                  onClick={() => startNewSub(g.id)}
+                >
+                  <Ico name="plus" />
+                </button>
+              </div>
               <DndContext
                 sensors={subSensors}
                 collisionDetection={closestCenter}
@@ -768,41 +768,9 @@ export default function SidebarNav({
                   />
                 </div>
               )}
-
-              {/* 新建子分组弱化入口（替代原 grp-label 里的 + 按钮） */}
-              {editing?.kind !== 'newSub' && (
-                <button className="sidebar-add-sub" onClick={() => startNewSub(g.id)}>
-                  <Ico name="plus" />
-                  新建子分组
-                </button>
-              )}
             </div>
           )
         })}
-
-        {/* 新建一级分组 inline input（出现在分组列表末尾） */}
-        {editing?.kind === 'newGroup' && (
-          <div className="grp">
-            <div className="grp-label grp-label-editing">
-              <span className="dot" />
-              <input
-                ref={inputRef}
-                className="sidebar-inline-input"
-                placeholder="分组名称…"
-                value={inputVal}
-                onChange={(e) => setInputVal(e.target.value)}
-                onKeyDown={onInputKeyDown}
-                onBlur={onInputBlur}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* 新建一级分组入口（常显弱化按钮） */}
-        <button className="sidebar-add-group" onClick={startNewGroup}>
-          <Ico name="plus" />
-          新建分组
-        </button>
 
         {/* 回收站 */}
         <button
