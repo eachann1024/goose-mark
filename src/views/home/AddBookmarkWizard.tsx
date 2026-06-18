@@ -157,15 +157,8 @@ export default function AddBookmarkWizard({
     }
   }, [askAI, canUseAi])
 
-  // 自动推进①：Step 0 地址合法且稳定（停顿/粘贴）→ 自动进入下一步
-  // 抓取已在 hook 内随 URL 自动起跑，这里只负责「往前走」。手动返回过则不再自动推进。
-  useEffect(() => {
-    if (isEdit || step !== 0) return
-    if (manualNavRef.current) return
-    if (!isValidUrlLike(draft.url)) return
-    const t = window.setTimeout(() => startRecognize(), 650)
-    return () => window.clearTimeout(t)
-  }, [draft.url, step, isEdit, startRecognize])
+  // Step 0 不再做「停顿自动前进」：抓取仍随 URL 在 hook 内自动起跑，但「往前走」只由
+  // 显式动作驱动（粘贴 / 回车 / 下一步按钮），避免自动跳转打断用户选中/编辑 URL（全选等）。
 
   // 自动推进②：AI 识别步完成 → 自动进入「确认并归类」（失败则停在识别步给手动/重试）
   useEffect(() => {
@@ -676,11 +669,10 @@ function ConfirmStep({
           >
             {iconLoading ? (
               <span className="icon-countdown">
-                <svg viewBox="0 0 36 36" className="icon-countdown-ring">
-                  <circle className="icon-countdown-track" cx="18" cy="18" r="16" />
-                  <circle className="icon-countdown-fill" cx="18" cy="18" r="16" />
+                <svg viewBox="0 0 60 60" className="icon-countdown-ring" preserveAspectRatio="none">
+                  <rect className="icon-countdown-track" x="1.25" y="1.25" width="57.5" height="57.5" rx="13.75" pathLength={100} />
+                  <rect className="icon-countdown-fill" x="1.25" y="1.25" width="57.5" height="57.5" rx="13.75" pathLength={100} />
                 </svg>
-                <Ico name="loader" className="icon-countdown-spin" />
               </span>
             ) : previewIconUrl ? (
               <Image bare src={previewIconUrl} alt="" />

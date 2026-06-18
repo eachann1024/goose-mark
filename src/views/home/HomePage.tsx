@@ -1769,13 +1769,14 @@ function BookmarkCard({
   subId?: string
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
+  const fullDescription = useSettingsStore((s) => s.listFullDescription)
   const showTags = useSettingsStore((s) => s.listShowTags)
   return (
     <div className={`card${selected ? ' sel' : ''}`} style={style} data-item-id={item.id} data-group-id={groupId} data-sub-id={subId} onClick={onClick}>
       <Fav item={item} />
       <div className="meta">
         <div className="ttl">{item.ttl}</div>
-        {showDescription && item.dsc && <div className="dsc">{item.dsc}</div>}
+        {showDescription && item.dsc && <div className={`dsc${fullDescription ? ' full' : ''}`}>{item.dsc}</div>}
         {showTags && item.tags.length > 0 && (
           <div className="tags">
             {item.tags.map((tag) => (
@@ -2118,11 +2119,10 @@ function FormPage({ editItem, onBack }: { editItem: HomeItem | null; onBack: () 
                 >
                   {iconLoading ? (
                     <span className="icon-countdown">
-                      <svg viewBox="0 0 36 36" className="icon-countdown-ring">
-                        <circle className="icon-countdown-track" cx="18" cy="18" r="16" />
-                        <circle className="icon-countdown-fill" cx="18" cy="18" r="16" />
+                      <svg viewBox="0 0 72 72" className="icon-countdown-ring" preserveAspectRatio="none">
+                        <rect className="icon-countdown-track" x="1.25" y="1.25" width="69.5" height="69.5" rx="12.75" pathLength={100} />
+                        <rect className="icon-countdown-fill" x="1.25" y="1.25" width="69.5" height="69.5" rx="12.75" pathLength={100} />
                       </svg>
-                      <Ico name="loader" className="icon-countdown-spin" />
                     </span>
                   ) : previewIconUrl ? (
                     <Image bare src={previewIconUrl} alt="" />
@@ -2385,6 +2385,8 @@ function SettingsContent({
   const setGridIconSize = useSettingsStore((s) => s.setGridIconSize)
   const listShowDescription = useSettingsStore((s) => s.listShowDescription)
   const setListShowDescription = useSettingsStore((s) => s.setListShowDescription)
+  const listFullDescription = useSettingsStore((s) => s.listFullDescription)
+  const setListFullDescription = useSettingsStore((s) => s.setListFullDescription)
   const listShowTags = useSettingsStore((s) => s.listShowTags)
   const setListShowTags = useSettingsStore((s) => s.setListShowTags)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
@@ -2604,6 +2606,13 @@ function SettingsContent({
             <div
               className={`switch${listShowDescription ? ' on' : ''}`}
               onClick={() => setListShowDescription(!listShowDescription)}
+            />
+          </div>
+          <div className={`set-row${listShowDescription ? '' : ' is-off'}`} aria-disabled={!listShowDescription}>
+            <div><div className="rt">完整显示描述</div><div className="rd">描述完整换行展示，不截断为单行省略号</div></div>
+            <div
+              className={`switch${listFullDescription ? ' on' : ''}`}
+              onClick={() => listShowDescription && setListFullDescription(!listFullDescription)}
             />
           </div>
           <div className="set-row">
