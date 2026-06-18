@@ -490,17 +490,37 @@
 .goose-home .nav-item-editing { cursor:default; }
 .goose-home .nav-item-editing .sidebar-inline-input { font-size:12.5px; padding:2px 5px; }
 
-/* 新建分组 / 新建子分组入口（常显弱化，hover 恢复） */
-.goose-home .sidebar-add-group,
-.goose-home .sidebar-add-sub {
-  display:flex; align-items:center; gap:6px; padding:6px 8px; width:100%;
-  border-radius:var(--radius-sm); font-size:12px; color:var(--fg-faint);
-  text-align:left; transition:color .12s, background .12s;
+/* 顶栏「新建主分组」+：虚线胶囊，hover 染上 accent */
+.goose-home .tab-add {
+  flex-shrink:0; display:flex; align-items:center; justify-content:center;
+  width:28px; height:28px; padding:0;
+  color:var(--fg-faint); background:transparent;
+  border:1px dashed var(--border); border-radius:var(--radius-md);
+  cursor:pointer; transition:color .15s, background-color .15s, border-color .15s;
 }
-.goose-home .sidebar-add-group:hover,
-.goose-home .sidebar-add-sub:hover { color:var(--fg); background:var(--surface); }
-.goose-home .sidebar-add-group .lucide,
-.goose-home .sidebar-add-sub .lucide { font-size:12px; }
+.goose-home .tab-add:hover {
+  color:var(--accent); background:var(--accent-subtle); border-color:var(--accent);
+}
+.goose-home .tab-add .lucide { font-size:14px; }
+
+/* 子分组分区标题：弱化标题 + hover 才浮现的 + */
+.goose-home .sub-sec-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:2px 8px 4px; user-select:none;
+}
+.goose-home .sub-sec-title {
+  font-size:11px; font-weight:600; letter-spacing:.04em;
+  color:var(--fg-faint); text-transform:uppercase;
+}
+.goose-home .sub-sec-add {
+  display:flex; align-items:center; justify-content:center;
+  width:20px; height:20px; padding:0; border-radius:var(--radius-sm);
+  color:var(--fg-faint); background:transparent;
+  opacity:0; cursor:pointer; transition:opacity .12s, color .12s, background .12s;
+}
+.goose-home .sub-sec-head:hover .sub-sec-add { opacity:1; }
+.goose-home .sub-sec-add:hover { color:var(--accent); background:var(--accent-subtle); }
+.goose-home .sub-sec-add .lucide { font-size:13px; }
 
 /* 侧栏浮动菜单（fixed 定位版，复用 ctx-menu 样式基础） */
 .goose-home .sidebar-ctx-menu { flex-direction:column; }

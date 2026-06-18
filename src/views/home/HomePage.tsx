@@ -171,6 +171,7 @@ export default function HomePage() {
   const reorderGroups = useBookmarkStore((s) => s.reorderGroups)
   const updateGroup = useBookmarkStore((s) => s.updateGroup)
   const removeGroup = useBookmarkStore((s) => s.removeGroup)
+  const addGroup = useBookmarkStore((s) => s.addGroup)
 
   // 1.【致命】uTools MCP 桥接：让 plugin.json 声明的工具能从 React 端读写书签数据
   useUToolsMcpBridge()
@@ -465,6 +466,29 @@ export default function HomePage() {
   const [tabRenameVal, setTabRenameVal] = useState('')
   const tabMenuRef = useRef<HTMLDivElement>(null)
   const tabRenameRef = useRef<HTMLInputElement>(null)
+
+  // ---- 新建主分组：顶栏 Tab 末尾 + → 就地内联输入 ----
+  const [tabAdding, setTabAdding] = useState(false)
+  const [tabAddVal, setTabAddVal] = useState('')
+  const tabAddRef = useRef<HTMLInputElement>(null)
+
+  const startTabAdd = useCallback(() => {
+    setTabAdding(true)
+    setTabAddVal('')
+    requestAnimationFrame(() => tabAddRef.current?.focus())
+  }, [])
+
+  const commitTabAdd = useCallback(() => {
+    if (!tabAdding) return
+    const name = tabAddVal.trim()
+    if (name) {
+      const g = addGroup(name) // addGroup 内部已切到新分组并选中首个子分组
+      if (screen === 'trash' || screen === 'settings') setScreen(view)
+      if (isSearching) clearSearch()
+      void g
+    }
+    setTabAdding(false)
+  }, [tabAdding, tabAddVal, addGroup, screen, view, isSearching, clearSearch])
 
   const openTabCtx = useCallback((e: React.MouseEvent, groupId: string) => {
     e.preventDefault()
@@ -1435,6 +1459,25 @@ export default function HomePage() {
                       onTabContextMenu={(e) => openTabCtx(e, g.id)}
                     />
                   )
+                )}
+                {/* 新建主分组：+ 虚线胶囊 → 就地内联输入 */}
+                {tabAdding ? (
+                  <input
+                    ref={tabAddRef}
+                    className="group-tab-rename"
+                    placeholder="分组名称…"
+                    value={tabAddVal}
+                    onChange={(e) => setTabAddVal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') commitTabAdd()
+                      else if (e.key === 'Escape') setTabAdding(false)
+                    }}
+                    onBlur={commitTabAdd}
+                  />
+                ) : (
+                  <button className="tab-add" title="新建分组" onClick={startTabAdd}>
+                    <Ico name="plus" />
+                  </button>
                 )}
               </div>
             </SortableContext>
