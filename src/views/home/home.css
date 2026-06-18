@@ -418,6 +418,20 @@
 .goose-home .ai-fld-hint.err { color:var(--danger); }
 .goose-home .ai-prov-fields .select-native { max-width:none; width:100%; }
 .goose-home .btn.btn-ai[disabled] { opacity:.55; cursor:default; }
+.goose-home .ai-fld-row .lucide.spin { animation: spin 1s linear infinite; }
+
+/* AI 配置主体：总开关之外的所有项；未启用时整体禁用置灰 */
+.goose-home .set-ai-body.is-off { opacity:.42; pointer-events:none; filter:saturate(.6); }
+/* 跨 wrapper 维持分隔线：总开关行与主体首行之间、主体内各行之间 */
+.goose-home .set-row + .set-ai-body,
+.goose-home .set-ai-body .set-row + .set-row,
+.goose-home .set-ai-body .ai-prov-label,
+.goose-home .set-ai-body > .set-row:first-child {
+  border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent);
+}
+/* prov 卡片/字段区紧跟开关行时无需额外上线（label 已承担分隔） */
+.goose-home .set-ai-body .ai-prov-grid,
+.goose-home .set-ai-body .ai-prov-fields { border-top:none; }
 
 /* compact density 覆盖：收紧卡片和网格间距 */
 .goose-home[data-density='compact'] .card { padding:7px 14px; }
@@ -801,29 +815,8 @@
 .goose-home .gm-url-paste:hover { color:var(--fg); background:var(--surface-hover); }
 .goose-home .gm-url-paste .lucide { font-size:13px; }
 .goose-home .gm-capture-hint { font-size:11.5px; color:var(--fg-faint); margin-top:10px; line-height:1.5; }
-.goose-home .gm-demo { margin-top:22px; }
+/* gm-demo-cap 复用于「实时预览」标签 */
 .goose-home .gm-demo-cap { font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; color:var(--fg-faint); text-transform:uppercase; margin-bottom:9px; }
-.goose-home .gm-demo-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.goose-home .gm-demo-item {
-  display:flex; flex-direction:column; gap:3px; padding:9px 12px; border-radius:11px; border:1px solid var(--border);
-  background:var(--surface); text-align:left; transition:all .12s;
-}
-.goose-home .gm-demo-item:hover { border-color:color-mix(in srgb,var(--accent) 40%,transparent); }
-.goose-home .gm-demo-item.on { background:var(--accent-subtle); border-color:color-mix(in srgb,var(--accent) 45%,transparent); }
-.goose-home .gm-demo-label { font-family:var(--font-mono); font-size:12px; font-weight:500; color:var(--fg); }
-.goose-home .gm-demo-item.on .gm-demo-label { color:var(--accent-hover); }
-.goose-home .gm-demo-note { font-size:11px; color:var(--fg-muted); }
-.goose-home .gm-quick { margin-top:20px; padding:14px; border-radius:13px; background:var(--ai-subtle); border:1px solid color-mix(in srgb,var(--ai) 22%,transparent); }
-.goose-home .gm-quick-head { display:flex; align-items:center; gap:7px; margin-bottom:9px; }
-.goose-home .gm-quick-head .lucide { font-size:14px; color:var(--ai); }
-.goose-home .gm-quick-title { font-size:12px; font-weight:600; color:var(--ai); }
-.goose-home .gm-quick-sub { font-size:11px; color:var(--fg-muted); }
-.goose-home .gm-quick-row { display:flex; gap:8px; }
-.goose-home .gm-quick-row input {
-  flex:1; height:36px; border-radius:9px; border:1px solid color-mix(in srgb,var(--ai) 22%,transparent);
-  background:var(--input); color:var(--fg); font-size:12.5px; padding:0 11px; outline:none;
-}
-.goose-home .gm-quick-row input:focus { border-color:var(--ai); }
 
 /* ---- Step 1 识别 ---- */
 .goose-home .gm-recog { width:100%; max-width:580px; margin:0 auto; }

@@ -500,7 +500,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
             name,
             createdAt: now,
             updatedAt: now,
-            children: [{ id: uid(), name: '子分组', bookmarkIds: [], createdAt: now, updatedAt: now }]
+            children: [{ id: uid(), name: '分组一', bookmarkIds: [], createdAt: now, updatedAt: now }]
           }
           groups.push(group)
           commit(groups, get().bookmarks, {
@@ -1269,7 +1269,9 @@ export const useBookmarkStore = create<BookmarkStore>()(
 
           const bookmark: Bookmark = {
             id: uid(),
-            title: title || url,
+            // 标题留空（而非塞 URL）：列表/卡片本就 `title || url` 兜底显示，
+            // 留空才能让后台元信息水合（enqueueMetadataHydration 的 shouldHydrateTitle 守卫）放行补全真实标题
+            title: title || '',
             url,
             desc: desc || '',
             tags: [],

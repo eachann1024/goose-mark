@@ -12,7 +12,7 @@ import type { HomeItem } from './viewModel'
  * 沉浸式三步新建/编辑书签向导
  * --------------------------------------------------------------------------
  * 按 Anthropic 设计稿（goose-redesign）重构新建书签流程：
- *   Step 0 捕获链接 —— URL 大输入 + 粘贴 + 演示链接 + 对话式快存提示
+ *   Step 0 捕获链接 —— URL 大输入 + 粘贴
  *   Step 1 智能识别 —— 进度环 + 三阶段轨道（连接/抓取/AI 整理）+ 实时预览 + 优雅失败
  *   Step 2 确认并归类 —— 身份卡（图标/标题/简介）+ AI 推荐分类 + 多位置选择
  *
@@ -32,13 +32,6 @@ const STEPS: { k: string; label: string; icon: string }[] = [
   { k: 'capture', label: '捕获链接', icon: 'link' },
   { k: 'recognize', label: '智能识别', icon: 'loader' },
   { k: 'confirm', label: '确认并归类', icon: 'folder' },
-]
-
-const DEMO_LINKS = [
-  { label: 'Dribbble', url: 'https://dribbble.com', note: '设计灵感 · UI 参考' },
-  { label: 'GitHub', url: 'https://github.com', note: '开发 · 代码托管' },
-  { label: 'Linear', url: 'https://linear.app', note: '效率 · 项目管理' },
-  { label: 'Claude', url: 'https://claude.ai', note: 'AI 工具 · 对话' },
 ]
 
 const isValidUrlLike = (s: string) => /\./.test(s.trim()) || /{[^}]+}/.test(s)
@@ -88,7 +81,8 @@ export default function AddBookmarkWizard({
   const [step, setStep] = useState<Step>(editItem ? 2 : 0)
   // 失败兜底：手动填写后进入 Step 2 即便没识别到也允许编辑
   const [manualFallback, setManualFallback] = useState(false)
-  const [quick, setQuick] = useState('')
+  // 用户一旦手动「上一步」返回，就关闭自动推进，改由按钮驱动，避免被来回弹回
+  const manualNavRef = useRef(false)
 
   const titleFetching = iconLoading && !isTitleDirty
   const descFetching = iconLoading && !isDescDirty
@@ -117,6 +111,7 @@ export default function AddBookmarkWizard({
       openAdd()
       setStep(0)
       setManualFallback(false)
+      manualNavRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editItemId])
@@ -151,13 +146,35 @@ export default function AddBookmarkWizard({
   // ---- 动作 ----
   const startRecognize = useCallback(() => {
     setManualFallback(false)
-    setStep(1)
-    // hook 内部 useEffect 已对 draft.url 变化自动防抖抓取；这里仅在可用时叠加 AI 预填
+    // hook 内部 useEffect 已对 draft.url 变化自动防抖抓取（与是否进入识别步无关）
     if (canUseAi) {
-      // 给抓取留出起步时间，再触发 AI 整理（与设计稿「先抓取后 AI」一致）
+      // AI 开启：进入识别步展示三阶段进度，并叠加 AI 整理（先抓取后 AI）
+      setStep(1)
       window.setTimeout(() => askAI(false), 50)
+    } else {
+      // AI 关闭：没有可展示的识别工作，直接进确认；抓取在确认卡里边抓边填
+      setStep(2)
     }
   }, [askAI, canUseAi])
+
+  // 自动推进①：Step 0 地址合法且稳定（停顿/粘贴）→ 自动进入下一步
+  // 抓取已在 hook 内随 URL 自动起跑，这里只负责「往前走」。手动返回过则不再自动推进。
+  useEffect(() => {
+    if (isEdit || step !== 0) return
+    if (manualNavRef.current) return
+    if (!isValidUrlLike(draft.url)) return
+    const t = window.setTimeout(() => startRecognize(), 650)
+    return () => window.clearTimeout(t)
+  }, [draft.url, step, isEdit, startRecognize])
+
+  // 自动推进②：AI 识别步完成 → 自动进入「确认并归类」（失败则停在识别步给手动/重试）
+  useEffect(() => {
+    if (isEdit || step !== 1) return
+    if (manualNavRef.current) return
+    if (recogStatus !== 'done') return
+    const t = window.setTimeout(() => setStep(2), 600)
+    return () => window.clearTimeout(t)
+  }, [step, isEdit, recogStatus])
 
   const setUrl = useCallback(
     (url: string) => {
@@ -174,18 +191,6 @@ export default function AddBookmarkWizard({
       /* 剪贴板不可用时静默 */
     }
   }, [setUrl])
-
-  // 对话式快存：本项目无独立 NLP 解析后端，降级为「把整句作为 AI 预填上下文」——
-  // 仍走真实 askAI，不伪造解析结果
-  const handleQuick = useCallback(() => {
-    if (!quick.trim()) return
-    // 尝试从句中提取 URL；提取不到则把整句填入 URL 框由用户补全
-    const m = quick.match(/https?:\/\/[^\s]+/) || quick.match(/[\w-]+\.[\w.]+(?:\/[^\s]*)?/)
-    if (m) {
-      setUrl(m[0])
-      startRecognize()
-    }
-  }, [quick, setUrl, startRecognize])
 
   const toConfirm = useCallback(() => setStep(2), [])
 
@@ -209,11 +214,22 @@ export default function AddBookmarkWizard({
   const handleDeleteClick = useCallback(() => requestDelete(), [requestDelete])
 
   const goPrev = useCallback(() => {
-    if (step === 2 && !isEdit) setStep(manualFallback ? 0 : 1)
-    else if (step === 1) setStep(0)
-  }, [step, isEdit, manualFallback])
+    // 一旦手动返回，关闭自动推进，后续完全由按钮驱动
+    manualNavRef.current = true
+    if (step === 2 && !isEdit) {
+      // AI 开启且非兜底 → 回识别步；AI 关闭或手动兜底 → 直接回捕获链接
+      setStep(canUseAi && !manualFallback ? 1 : 0)
+    } else if (step === 1) {
+      setStep(0)
+    }
+  }, [step, isEdit, manualFallback, canUseAi])
 
-  const railSteps = isEdit ? STEPS.filter((s) => s.k === 'confirm') : STEPS
+  // AI 关闭时没有独立的识别步（抓取在确认卡里边抓边填），轨道收成两步
+  const railSteps = useMemo(() => {
+    if (isEdit) return STEPS.filter((s) => s.k === 'confirm')
+    if (canUseAi) return STEPS
+    return STEPS.filter((s) => s.k !== 'recognize')
+  }, [isEdit, canUseAi])
   const railActiveIdx = isEdit ? 2 : step
 
   return (
@@ -256,10 +272,6 @@ export default function AddBookmarkWizard({
               setUrl={setUrl}
               onStart={startRecognize}
               onPaste={handlePaste}
-              quick={quick}
-              setQuick={setQuick}
-              onQuick={handleQuick}
-              canUseAi={canUseAi}
             />
           )}
           {step === 1 && (
@@ -332,8 +344,7 @@ export default function AddBookmarkWizard({
               onClick={startRecognize}
               disabled={!isValidUrlLike(draft.url)}
             >
-              <Ico name="sparkles" />
-              开始智能识别
+              下一步
               <Ico name="arrow-right" />
             </button>
           )}
@@ -370,19 +381,11 @@ function CaptureStep({
   setUrl,
   onStart,
   onPaste,
-  quick,
-  setQuick,
-  onQuick,
-  canUseAi,
 }: {
   url: string
   setUrl: (v: string) => void
   onStart: () => void
   onPaste: () => void
-  quick: string
-  setQuick: (v: string) => void
-  onQuick: () => void
-  canUseAi: boolean
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
@@ -394,7 +397,7 @@ function CaptureStep({
     <div className="gm-capture">
       <div className="gm-capture-head">
         <h1>添加一个书签</h1>
-        <p>粘贴链接，剩下的标题、简介、图标和分类都交给我</p>
+        <p>粘贴或输入网址，自动识别标题、图标与简介，下一步确认归类</p>
       </div>
 
       <div className="gm-url-big ring">
@@ -417,46 +420,6 @@ function CaptureStep({
       {/{[^}]+}/.test(url) && (
         <div className="gm-capture-hint">
           URL 含 {'{query}'} 可作为模板，呼出后直接输入关键词跳转
-        </div>
-      )}
-
-      <div className="gm-demo">
-        <div className="gm-demo-cap">试试这些链接</div>
-        <div className="gm-demo-grid">
-          {DEMO_LINKS.map((d) => (
-            <button
-              key={d.url}
-              className={`gm-demo-item${url === d.url ? ' on' : ''}`}
-              onClick={() => setUrl(d.url)}
-            >
-              <span className="gm-demo-label">{d.label}</span>
-              <span className="gm-demo-note">{d.note}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {canUseAi && (
-        <div className="gm-quick">
-          <div className="gm-quick-head">
-            <Ico name="message" />
-            <span className="gm-quick-title">对话式快存</span>
-            <span className="gm-quick-sub">含网址的一句话即可</span>
-          </div>
-          <div className="gm-quick-row">
-            <input
-              value={quick}
-              onChange={(e) => setQuick(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') onQuick()
-              }}
-              placeholder="例如：把 dribbble.com 存到设计灵感里"
-            />
-            <button className="btn btn-ai" onClick={onQuick}>
-              <Ico name="sparkles" />
-              解析
-            </button>
-          </div>
         </div>
       )}
     </div>
@@ -701,7 +664,7 @@ function ConfirmStep({
     <div className="gm-confirm">
       <div className="gm-confirm-head">
         <h2>确认并归类</h2>
-        <p>AI 已填好内容，确认无误、选好位置即可保存</p>
+        <p>{canUseAi ? 'AI 已填好内容，确认无误、选好位置即可保存' : '确认信息、选好位置即可保存'}</p>
       </div>
 
       {/* 身份卡 */}
@@ -824,8 +787,8 @@ function ConfirmStep({
         </div>
       )}
 
-      {/* 多位置选择（复用真实 CategoryMultiSelect inline） */}
-      <div className="gm-cat-select">
+      {/* 多位置选择（复用真实 CategoryMultiSelect inline）；form-category-select 让 chip 套用 home.css token，避免落回原始 Tailwind 类在深色下露白条/橙块 */}
+      <div className="gm-cat-select form-category-select">
         <CategoryMultiSelect inline value={draftLocations} onChange={setLocations} />
       </div>
     </div>

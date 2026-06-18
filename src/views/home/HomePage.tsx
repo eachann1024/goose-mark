@@ -23,7 +23,7 @@ import { useUToolsMcpBridge } from '@/hooks/useUToolsMcpBridge'
 import { useUTools } from '@/hooks/useUTools'
 import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from '@/hooks/useImportExport'
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
-import { useBookmarkForm, useBookmarkFormStore } from '@/hooks/useBookmarkForm'
+import { useBookmarkForm, useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookmarkForm'
 import { useUIManager } from '@/hooks/useUIManager'
 import { useStatsStore } from '@/stores/stats'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
@@ -39,7 +39,8 @@ import GroupManagePage from './GroupManagePage'
 import AboutPage from './AboutPage'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
-import { DEFAULT_AI_MODEL } from '@/constants/ai'
+import { DEFAULT_AI_MODEL, AI_PROVIDER_PRESETS } from '@/constants/ai'
+import { fetchCustomAIModels } from '@/lib/aiProvider'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import './home.css'
 
@@ -1086,8 +1087,17 @@ export default function HomePage() {
       const finalUrl = normalizeQuickUrl(urlToSave)
       if (finalUrl) {
         const bookmark = store.quickSaveBookmark(finalUrl)
-        // ai_quick_save 差异说明：旧版会先 AI 生成标题/描述再保存；
-        // 新 UI 先按普通快存保存（标题异步由元数据水合补全），保证功能不丢
+        // 复用表单的后台元信息水合：快存先即时落库（标题以 URL 兜底显示），随后抓取真实
+        // 标题/简介补全；ai_quick_save 变体追加 AI 整理（AI 不可用时自动降级为仅抓取）。
+        // 仅新建（标题为空）时触发，去重命中的既有书签不重复抓取。
+        if (!bookmark.title) {
+          enqueueMetadataHydration(bookmark.id, {
+            url: finalUrl,
+            initialTitle: '',
+            initialDesc: '',
+            forceAi: code === AI_QUICK_SAVE_FEATURE_CODE
+          })
+        }
         fireToastRef.current(`已保存：${bookmark.title || urlToSave}`)
         window.utools?.outPlugin()
       } else {
@@ -2343,7 +2353,13 @@ function SettingsContent({
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
   const aiUseCustomProvider = useSettingsStore((s) => s.aiUseCustomProvider)
+  const setAiCustomProviderEnabled = useSettingsStore((s) => s.setAiCustomProviderEnabled)
+  const aiProviderPreset = useSettingsStore((s) => s.aiProviderPreset)
+  const setAiProviderPreset = useSettingsStore((s) => s.setAiProviderPreset)
+  const aiCustomBaseURL = useSettingsStore((s) => s.aiCustomBaseURL)
+  const aiCustomApiKey = useSettingsStore((s) => s.aiCustomApiKey)
   const aiCustomModelOptions = useSettingsStore((s) => s.aiCustomModelOptions)
+  const saveAiCustomConfig = useSettingsStore((s) => s.saveAiCustomConfig)
   const aiQuickSaveEnabled = useSettingsStore((s) => s.aiQuickSaveEnabled)
   const setAiQuickSaveEnabled = useSettingsStore((s) => s.setAiQuickSaveEnabled)
   const windowHeight = useSettingsStore((s) => s.windowHeight)
@@ -2353,6 +2369,42 @@ function SettingsContent({
   const modelOptions = aiUseCustomProvider && aiCustomModelOptions.length > 0
     ? aiCustomModelOptions
     : [{ id: DEFAULT_AI_MODEL, label: DEFAULT_AI_MODEL }]
+
+  // 自定义供应商：API Key 本地草稿 + 拉取模型列表状态（BaseURL 跟随预置，custom 时可编辑）
+  const [apiKeyDraft, setApiKeyDraft] = useState(aiCustomApiKey)
+  const [customUrlDraft, setCustomUrlDraft] = useState(aiCustomBaseURL)
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [modelFetchHint, setModelFetchHint] = useState<{ ok: boolean; msg: string } | null>(null)
+  // 切换供应商预置后，把草稿与 store 对齐（store 已在 setAiProviderPreset 里填好 BaseURL）
+  useEffect(() => {
+    setCustomUrlDraft(aiCustomBaseURL)
+  }, [aiCustomBaseURL])
+  useEffect(() => {
+    setApiKeyDraft(aiCustomApiKey)
+  }, [aiCustomApiKey])
+
+  // 选预置：custom 用草稿地址，其余用预置内置地址
+  const effectiveBaseURL = aiProviderPreset === 'custom' ? customUrlDraft : aiCustomBaseURL
+
+  const handleFetchModels = useCallback(async () => {
+    const baseURL = effectiveBaseURL.trim()
+    const apiKey = apiKeyDraft.trim()
+    if (!apiKey) {
+      setModelFetchHint({ ok: false, msg: '请先填写 API Key' })
+      return
+    }
+    setFetchingModels(true)
+    setModelFetchHint(null)
+    try {
+      const models = await fetchCustomAIModels({ baseURL, apiKey })
+      saveAiCustomConfig({ baseURL, apiKey, modelOptions: models })
+      setModelFetchHint({ ok: true, msg: `已获取 ${models.length} 个模型` })
+    } catch (err) {
+      setModelFetchHint({ ok: false, msg: err instanceof Error ? err.message : '获取模型列表失败' })
+    } finally {
+      setFetchingModels(false)
+    }
+  }, [effectiveBaseURL, apiKeyDraft, saveAiCustomConfig])
 
   // 主题：外观 seg 与 HomePage themePref 联动
   const themeSeg: '跟随' | '明亮' | '暗黑' =
@@ -2546,6 +2598,7 @@ function SettingsContent({
       <div className="set-section" id="set-ai">
         <h2><Ico name="sparkles" />AI 助手</h2>
         <div className="set-card">
+          {/* 第一项：总开关。关闭后下方全部禁用置灰 */}
           <div className="set-row">
             <div><div className="rt">启用 AI 智能整理</div><div className="rd">自动预填标题、描述并推荐分类</div></div>
             <div
@@ -2553,24 +2606,95 @@ function SettingsContent({
               onClick={() => setAiEnabled(!aiEnabled)}
             />
           </div>
-          <div className="set-row">
-            <div><div className="rt">模型</div><div className="rd">用于生成元数据的对话模型</div></div>
-            <div className="select select-native">
-              <Ico name="cpu" />
-              <select
-                value={aiSelectedModelId || DEFAULT_AI_MODEL}
-                onChange={(e) => setAiSelectedModelId(e.target.value)}
-              >
-                {modelOptions.map((m) => (
-                  <option key={m.id} value={m.id}>{m.label || m.id}</option>
-                ))}
-              </select>
-              <Ico name="chevron-down" />
+
+          {/* 下方所有 AI 配置：未启用时整体禁用置灰（pointer-events:none + 降透明度） */}
+          <div className={`set-ai-body${aiEnabled ? '' : ' is-off'}`} aria-disabled={!aiEnabled}>
+            <div className="set-row">
+              <div><div className="rt">自定义供应商</div><div className="rd">用 OpenAI 协议端点替代 uTools 内置 AI</div></div>
+              <div
+                className={`switch ai${aiUseCustomProvider ? ' on' : ''}`}
+                onClick={() => aiEnabled && setAiCustomProviderEnabled(!aiUseCustomProvider)}
+              />
             </div>
-          </div>
-          <div className="set-row">
-            <div><div className="rt">AI 快捷保存</div><div className="rd">全局快捷键直接由 AI 整理并保存当前网址</div></div>
-            <div className={`switch ai${aiQuickSaveEnabled ? ' on' : ''}`} onClick={() => setAiQuickSaveEnabled(!aiQuickSaveEnabled)} />
+
+            {aiUseCustomProvider && (
+              <>
+                <div className="ai-prov-label">选择供应商</div>
+                <div className="ai-prov-grid">
+                  {AI_PROVIDER_PRESETS.map((p) => (
+                    <div
+                      key={p.id}
+                      className={`ai-prov-card${aiProviderPreset === p.id ? ' on' : ''}`}
+                      onClick={() => aiEnabled && setAiProviderPreset(p.id)}
+                    >
+                      <div className="ai-prov-name"><span className="ai-prov-dot" />{p.label}</div>
+                      <div className="ai-prov-url">{p.hint}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="ai-prov-fields">
+                  {aiProviderPreset === 'custom' && (
+                    <div>
+                      <label className="ai-fld-lbl">Base URL（OpenAI 兼容）</label>
+                      <input
+                        className="ai-fld-input"
+                        value={customUrlDraft}
+                        placeholder="https://api.example.com/v1"
+                        onChange={(e) => setCustomUrlDraft(e.target.value)}
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="ai-fld-lbl">API Key</label>
+                    <div className="ai-fld-row">
+                      <input
+                        className="ai-fld-input"
+                        type="password"
+                        value={apiKeyDraft}
+                        placeholder="sk-..."
+                        onChange={(e) => setApiKeyDraft(e.target.value)}
+                      />
+                      <button
+                        className="btn btn-ai"
+                        style={{ height: 36, whiteSpace: 'nowrap', flexShrink: 0 }}
+                        disabled={fetchingModels || !apiKeyDraft.trim()}
+                        onClick={handleFetchModels}
+                      >
+                        <Ico name={fetchingModels ? 'loader' : 'refresh-cw'} className={fetchingModels ? 'spin' : ''} />
+                        {fetchingModels ? '获取中…' : '拉取模型'}
+                      </button>
+                    </div>
+                    {modelFetchHint && (
+                      <div className={`ai-fld-hint ${modelFetchHint.ok ? 'ok' : 'err'}`}>
+                        <Ico name={modelFetchHint.ok ? 'check-circle' : 'alert-circle'} />
+                        {modelFetchHint.msg}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="set-row">
+              <div><div className="rt">模型</div><div className="rd">用于生成元数据的对话模型</div></div>
+              <div className="select select-native">
+                <Ico name="cpu" />
+                <select
+                  value={aiSelectedModelId || DEFAULT_AI_MODEL}
+                  onChange={(e) => setAiSelectedModelId(e.target.value)}
+                >
+                  {modelOptions.map((m) => (
+                    <option key={m.id} value={m.id}>{m.label || m.id}</option>
+                  ))}
+                </select>
+                <Ico name="chevron-down" />
+              </div>
+            </div>
+            <div className="set-row">
+              <div><div className="rt">AI 快捷保存</div><div className="rd">全局快捷键直接由 AI 整理并保存当前网址</div></div>
+              <div className={`switch ai${aiQuickSaveEnabled ? ' on' : ''}`} onClick={() => aiEnabled && setAiQuickSaveEnabled(!aiQuickSaveEnabled)} />
+            </div>
           </div>
         </div>
       </div>
