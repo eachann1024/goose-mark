@@ -228,6 +228,8 @@
 .goose-home .card .ttl { font-family:var(--font-serif); font-weight:600; font-size:15px; color:var(--fg); line-height:1.25;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .goose-home .card .dsc { font-size:11.5px; color:var(--fg-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+/* 完整显示描述：多行换行，不再单行省略 */
+.goose-home .card .dsc.full { white-space:normal; overflow:visible; text-overflow:clip; line-height:1.45; word-break:break-word; }
 .goose-home .card .tags { display:flex; flex-wrap:nowrap; gap:4px; overflow:hidden; margin-top:1px; }
 .goose-home .card .tag { font-size:10px; line-height:1.4; padding:0 5px; border-radius:4px;
   background:color-mix(in srgb,var(--accent) 12%,transparent); color:var(--accent); white-space:nowrap; flex-shrink:0; }
@@ -422,6 +424,8 @@
 
 /* AI 配置主体：总开关之外的所有项；未启用时整体禁用置灰 */
 .goose-home .set-ai-body.is-off { opacity:.42; pointer-events:none; filter:saturate(.6); }
+/* 子项联动禁用（如「完整显示描述」依赖「显示描述」开启） */
+.goose-home .set-row.is-off { opacity:.42; pointer-events:none; filter:saturate(.6); }
 /* 跨 wrapper 维持分隔线：总开关行与主体首行之间、主体内各行之间 */
 .goose-home .set-row + .set-ai-body,
 .goose-home .set-ai-body .set-row + .set-row,
@@ -733,13 +737,12 @@
 }
 .goose-home .tpl-banner-exit:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--fg); }
 
-/* ---- 图标预览：倒计时进度环 ---- */
+/* ---- 图标预览：沿圆角外框的倒计时描边（看门狗倒计时） ---- */
 .goose-home .icon-countdown { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-.goose-home .icon-countdown-ring { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.goose-home .icon-countdown-ring { position: absolute; inset: 0; width: 100%; height: 100%; }
 .goose-home .icon-countdown-track { fill: none; stroke: var(--border); stroke-width: 2.5; opacity: .4; }
-.goose-home .icon-countdown-fill { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100.5; stroke-dashoffset: 0; animation: icon-countdown-deplete 8s linear forwards; }
-@keyframes icon-countdown-deplete { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 100.5; } }
-.goose-home .icon-countdown-spin { width: 40%; height: 40%; opacity: .55; animation: spin 1s linear infinite; }
+.goose-home .icon-countdown-fill { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: 0; animation: icon-countdown-deplete 8s linear forwards; }
+@keyframes icon-countdown-deplete { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 100; } }
 
 /* ---- 图标预览：抓取成功/失败动画 ---- */
 .goose-home .fav.bigfav.fetch-success { animation: fetch-pop .42s cubic-bezier(.34,1.56,.64,1); }

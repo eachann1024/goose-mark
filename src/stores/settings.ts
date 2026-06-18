@@ -47,6 +47,8 @@ export interface SettingsState {
   panelContinuous: boolean
   /** 列表模式：显示书签描述 */
   listShowDescription: boolean
+  /** 列表模式：描述完整展示（多行换行，不单行省略） */
+  listFullDescription: boolean
   /** 列表模式：显示书签标签 */
   listShowTags: boolean
   /** 宫格模式：图标大小 */
@@ -82,6 +84,7 @@ export interface SettingsActions {
   setDensity: (value: Density) => void
   setPanelContinuous: (value: boolean) => void
   setListShowDescription: (value: boolean) => void
+  setListFullDescription: (value: boolean) => void
   setListShowTags: (value: boolean) => void
   setGridIconSize: (value: GridIconSize) => void
   setAiQuickSaveEnabled: (value: boolean) => void
@@ -112,6 +115,7 @@ const createInitialState = (): SettingsState => {
     skipFailedIconMatch: true,
     panelContinuous: false,
     listShowDescription: true,
+    listFullDescription: true,
     listShowTags: true,
     gridIconSize: 'medium',
     aiQuickSaveEnabled: true,
@@ -161,6 +165,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setDensity: (value) => set({ density: ['compact', 'regular', 'comfy'].includes(value) ? value : 'regular' }),
       setPanelContinuous: (value) => set({ panelContinuous: !!value }),
       setListShowDescription: (value) => set({ listShowDescription: !!value }),
+      setListFullDescription: (value) => set({ listFullDescription: !!value }),
       setListShowTags: (value) => set({ listShowTags: !!value }),
       setGridIconSize: (value) => set({ gridIconSize: ['small', 'medium', 'large'].includes(value) ? value : 'medium' }),
       setAiQuickSaveEnabled: (value) => set({ aiQuickSaveEnabled: !!value }),
@@ -198,6 +203,7 @@ export const useSettingsStore = create<SettingsStore>()(
         skipFailedIconMatch: state.skipFailedIconMatch,
         panelContinuous: state.panelContinuous,
         listShowDescription: state.listShowDescription,
+        listFullDescription: state.listFullDescription,
         listShowTags: state.listShowTags,
         gridIconSize: state.gridIconSize,
         aiQuickSaveEnabled: state.aiQuickSaveEnabled,
@@ -221,6 +227,7 @@ export const useSettingsStore = create<SettingsStore>()(
         if (typeof state.aiCustomApiKey !== 'string') patch.aiCustomApiKey = ''
         if (typeof state.panelContinuous !== 'boolean') patch.panelContinuous = false
         if (typeof state.listShowDescription !== 'boolean') patch.listShowDescription = true
+        if (typeof state.listFullDescription !== 'boolean') patch.listFullDescription = true
         if (typeof state.listShowTags !== 'boolean') patch.listShowTags = true
         if (!['small', 'medium', 'large'].includes(state.gridIconSize)) patch.gridIconSize = 'medium'
         if (typeof state.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
