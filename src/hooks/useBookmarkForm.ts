@@ -259,7 +259,8 @@ const shouldHydrateDesc = (initialDesc: string, currentDesc?: string) =>
 // 后台元信息补全任务（模块级，跨实例共享 job 表，等价旧版单例）
 const hydrationJobIds = new Map<string, number>()
 
-const enqueueMetadataHydration = (
+// 导出供 uTools 快速收集复用：快存只落 URL，标题/简介靠这套后台水合补全（与表单流程同一实现）
+export const enqueueMetadataHydration = (
   bookmarkId: string,
   options: { url: string; initialTitle: string; initialDesc: string; forceAi?: boolean }
 ) => {
