@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import { DEFAULT_AI_MODEL } from '@/constants/ai'
+import type { AIProviderPreset } from '@/constants/ai'
+import { DEFAULT_AI_MODEL, getPresetMeta, resolvePresetByBaseURL } from '@/constants/ai'
 import type { AIModelOption, AISettingsLike } from '@/lib/aiProvider'
 import { getDefaultAISettings, getDefaultBaseURL, normalizeAIModelOptions } from '@/lib/aiProvider'
 import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
@@ -31,6 +32,8 @@ export interface SettingsState {
   aiEnabled: boolean
   aiSelectedModelId: string
   aiUseCustomProvider: boolean
+  /** 当前选中的 OpenAI 协议供应商预置（仅 aiUseCustomProvider 为 true 时生效） */
+  aiProviderPreset: AIProviderPreset
   aiCustomBaseURL: string
   aiCustomApiKey: string
   aiCustomModelOptions: AIModelOption[]
@@ -50,7 +53,16 @@ export interface SettingsState {
   gridIconSize: GridIconSize
   /** AI 快捷保存：控制 ai_quick_save uTools 特性是否注册 */
   aiQuickSaveEnabled: boolean
+  /** uTools 主窗口展开高度（px），preload 启动时读取并 setExpendHeight 恢复 */
+  windowHeight: number
 }
+
+/** uTools 窗口高度范围（与 preload.cjs 的 clampWindowHeight 保持一致） */
+export const WINDOW_HEIGHT_MIN = 460
+export const WINDOW_HEIGHT_MAX = 900
+export const WINDOW_HEIGHT_DEFAULT = 600
+const clampWindowHeight = (h: number) =>
+  Math.min(WINDOW_HEIGHT_MAX, Math.max(WINDOW_HEIGHT_MIN, Math.round(h)))
 
 export interface SettingsActions {
   setGridColumns: (value: number) => void
@@ -60,6 +72,8 @@ export interface SettingsActions {
   setAiEnabled: (value: boolean) => void
   setAiSelectedModelId: (value: string | null) => void
   setAiCustomProviderEnabled: (value: boolean) => void
+  /** 选择供应商预置：非 custom 时自动填入对应 BaseURL 并清空已缓存模型（供应商变了，旧模型列表失效） */
+  setAiProviderPreset: (preset: AIProviderPreset) => void
   saveAiCustomConfig: (config: { baseURL: string; apiKey: string; modelOptions: AIModelOption[] }) => void
   setEasterEggEnabled: (value: boolean) => void
   setEasterEggVariant: (value: EasterEggVariant) => void
@@ -71,6 +85,8 @@ export interface SettingsActions {
   setListShowTags: (value: boolean) => void
   setGridIconSize: (value: GridIconSize) => void
   setAiQuickSaveEnabled: (value: boolean) => void
+  /** 设置 uTools 窗口高度：持久化 + 即时 setExpendHeight 应用 */
+  setWindowHeight: (value: number) => void
 }
 
 export type SettingsStore = SettingsState & SettingsActions
@@ -85,10 +101,11 @@ const createInitialState = (): SettingsState => {
     aiEnabled: defaults.enabled,
     aiSelectedModelId: defaults.selectedModelId ?? DEFAULT_AI_MODEL,
     aiUseCustomProvider: defaults.useCustomProvider,
+    aiProviderPreset: 'glm',
     aiCustomBaseURL: defaults.customBaseURL,
     aiCustomApiKey: defaults.customApiKey,
     aiCustomModelOptions: defaults.customModelOptions,
-    homeViewMode: 'list',
+    homeViewMode: 'grid',
     density: 'regular',
     easterEggEnabled: true,
     easterEggVariant: 'starry' as EasterEggVariant,
@@ -97,7 +114,8 @@ const createInitialState = (): SettingsState => {
     listShowDescription: true,
     listShowTags: true,
     gridIconSize: 'medium',
-    aiQuickSaveEnabled: true
+    aiQuickSaveEnabled: true,
+    windowHeight: WINDOW_HEIGHT_DEFAULT
   }
 }
 
@@ -113,6 +131,15 @@ export const useSettingsStore = create<SettingsStore>()(
       setAiEnabled: (value) => set({ aiEnabled: !!value }),
       setAiSelectedModelId: (value) => set({ aiSelectedModelId: String(value || '').trim() || DEFAULT_AI_MODEL }),
       setAiCustomProviderEnabled: (value) => set({ aiUseCustomProvider: !!value }),
+      setAiProviderPreset: (preset) => {
+        const meta = getPresetMeta(preset)
+        // 切换供应商即清空上一供应商缓存的模型列表（避免误用），custom 保留用户已填的 baseURL
+        set({
+          aiProviderPreset: preset,
+          aiCustomBaseURL: preset === 'custom' ? get().aiCustomBaseURL : meta.baseURL,
+          aiCustomModelOptions: []
+        })
+      },
       saveAiCustomConfig: (config) => {
         const modelOptions = normalizeAIModelOptions(config.modelOptions)
         const current = get()
@@ -136,7 +163,15 @@ export const useSettingsStore = create<SettingsStore>()(
       setListShowDescription: (value) => set({ listShowDescription: !!value }),
       setListShowTags: (value) => set({ listShowTags: !!value }),
       setGridIconSize: (value) => set({ gridIconSize: ['small', 'medium', 'large'].includes(value) ? value : 'medium' }),
-      setAiQuickSaveEnabled: (value) => set({ aiQuickSaveEnabled: !!value })
+      setAiQuickSaveEnabled: (value) => set({ aiQuickSaveEnabled: !!value }),
+      setWindowHeight: (value) => {
+        const next = clampWindowHeight(value)
+        set({ windowHeight: next })
+        // 即时应用到 uTools 主窗口（preload 仅负责启动恢复，运行时调整由这里驱动）
+        try {
+          window.utools?.setExpendHeight?.(next)
+        } catch {}
+      }
     }),
     {
       name: 'settings', // 持久化 key（与旧版 Pinia $id 一致）
@@ -152,6 +187,7 @@ export const useSettingsStore = create<SettingsStore>()(
         aiEnabled: state.aiEnabled,
         aiSelectedModelId: state.aiSelectedModelId,
         aiUseCustomProvider: state.aiUseCustomProvider,
+        aiProviderPreset: state.aiProviderPreset,
         aiCustomBaseURL: state.aiCustomBaseURL,
         aiCustomApiKey: state.aiCustomApiKey,
         aiCustomModelOptions: state.aiCustomModelOptions,
@@ -165,6 +201,7 @@ export const useSettingsStore = create<SettingsStore>()(
         listShowTags: state.listShowTags,
         gridIconSize: state.gridIconSize,
         aiQuickSaveEnabled: state.aiQuickSaveEnabled,
+        windowHeight: state.windowHeight,
       }),
       // 旧版 persist.afterHydrate —— 字段兜底归一化
       onRehydrateStorage: () => (state) => {
@@ -177,6 +214,10 @@ export const useSettingsStore = create<SettingsStore>()(
         if (typeof state.aiEnabled !== 'boolean') patch.aiEnabled = true
         if (typeof state.aiUseCustomProvider !== 'boolean') patch.aiUseCustomProvider = false
         if (typeof state.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()
+        // 预置字段兜底：旧数据无此字段时，从已存 baseURL 反查推断；非法值同样回退推断
+        if (!['glm', 'glm-coding', 'deepseek', 'custom'].includes(state.aiProviderPreset as string)) {
+          patch.aiProviderPreset = resolvePresetByBaseURL(patch.aiCustomBaseURL ?? state.aiCustomBaseURL ?? '')
+        }
         if (typeof state.aiCustomApiKey !== 'string') patch.aiCustomApiKey = ''
         if (typeof state.panelContinuous !== 'boolean') patch.panelContinuous = false
         if (typeof state.listShowDescription !== 'boolean') patch.listShowDescription = true

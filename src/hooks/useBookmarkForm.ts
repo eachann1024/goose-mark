@@ -326,6 +326,11 @@ const enqueueMetadataHydration = (
 
 // URL 变更后取图标的防抖定时器（模块级单例）
 let urlFetchTimer: ReturnType<typeof setTimeout> | null = null
+// 加载态看门狗：兜底强制关闭 iconLoading。防止快速连续改 URL 时，旧 timer 被 clearTimeout、
+// 代际计数器又被并发逻辑（关表单/重置）额外递增，使最新 timer 回调因 id 不匹配而 return，
+// 导致 iconLoading 永远停在 true、识别环一直转的竞态。
+let iconLoadingWatchdog: ReturnType<typeof setTimeout> | null = null
+const ICON_LOADING_WATCHDOG_MS = 6000
 // 单调递增请求序号，用于丢弃乱序响应（慢请求覆盖后输入 URL 的竞态保护）
 let urlFetchRequestId = 0
 // askAI 请求代际计数器：区分同 URL 的并发请求与跨表单会话的在途请求
@@ -346,6 +351,7 @@ export function useBookmarkForm() {
       isSaving: s.isSaving,
       iconLoading: s.iconLoading,
       iconFetchFailed: s.iconFetchFailed,
+      iconFetchPhase: s.iconFetchPhase,
       isGenerating: s.isGenerating,
       isSuggestingCategory: s.isSuggestingCategory,
       aiError: s.aiError,
@@ -420,6 +426,10 @@ export function useBookmarkForm() {
     if (urlFetchTimer) {
       clearTimeout(urlFetchTimer)
       urlFetchTimer = null
+    }
+    if (iconLoadingWatchdog) {
+      clearTimeout(iconLoadingWatchdog)
+      iconLoadingWatchdog = null
     }
     // 递增代际计数器，使所有在途的图标/AI 响应作废：
     // 关表单再打开同 URL 的另一表单时，旧会话的慢响应不能写进新会话。
@@ -780,12 +790,26 @@ ${groupsDescription}
     // 排定抓取即进入加载态（含防抖等待期）：标题/描述流光从输入完地址就开始，
     // 避免快速响应时加载态一闪而过
     set({ iconLoading: true, iconFetchFailed: false, iconFetchPhase: 'loading' })
+    // 启动加载态看门狗：即便本次请求回调因代际竞态被丢弃，也保证加载态在总预算后强制落定，
+    // 识别环不会无限转。正常回调会在 finally 里清掉它。
+    if (iconLoadingWatchdog) clearTimeout(iconLoadingWatchdog)
+    iconLoadingWatchdog = setTimeout(() => {
+      iconLoadingWatchdog = null
+      const s = useBookmarkFormStore.getState()
+      if (!s.iconLoading) return
+      set({
+        iconLoading: false,
+        previewIcon: s.previewIcon ?? buildTextIconFromValue(val),
+        iconFetchFailed: !s.previewIcon,
+        iconFetchPhase: s.iconFetchPhase === 'success' ? 'success' : 'failed'
+      })
+    }, ICON_LOADING_WATCHDOG_MS)
     urlFetchTimer = setTimeout(async () => {
       urlFetchTimer = null
       try {
         const fetched = await Promise.race([
           fetchAndCacheIcon(val, true),
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
         ])
         const latest = useBookmarkFormStore.getState()
         // 双重校验：(1) 请求 id 仍是最新；(2) 当前 draft.url 与发起时一致
@@ -829,9 +853,16 @@ ${groupsDescription}
         showToast({ title: '获取网页信息失败：网络异常或站点拒绝访问，请手动填写标题和描述', variant: 'warning' })
       } finally {
         // iconLoading 只在请求仍有效时才关闭（已被新请求接管则不干扰）
-        if (thisRequestId === urlFetchRequestId) set({ iconLoading: false })
+        if (thisRequestId === urlFetchRequestId) {
+          set({ iconLoading: false })
+          // 本次请求正常落定，撤销看门狗兜底
+          if (iconLoadingWatchdog) {
+            clearTimeout(iconLoadingWatchdog)
+            iconLoadingWatchdog = null
+          }
+        }
       }
-    }, 1000)
+    }, 400)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftUrl])
 
@@ -863,6 +894,10 @@ ${groupsDescription}
       if (urlFetchTimer) {
         clearTimeout(urlFetchTimer)
         urlFetchTimer = null
+      }
+      if (iconLoadingWatchdog) {
+        clearTimeout(iconLoadingWatchdog)
+        iconLoadingWatchdog = null
       }
       // 关表单即作废所有在途的图标/AI 请求，防止慢响应写入下一次表单会话
       urlFetchRequestId++

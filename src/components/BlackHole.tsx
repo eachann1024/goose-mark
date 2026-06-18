@@ -33,8 +33,12 @@
  * @prop brightness    - 整体亮度 0~2，默认 1；作背景时可调低（0.6~0.8）避免喧宾夺主
  * @prop interactive   - 开启后鼠标位置对相机做 ±0.15 rad 缓动倾斜，默认 false
  * @prop paused        - 暂停渲染循环（保留最后一帧），默认 false
- * @prop maxFps        - 渲染帧率上限，默认 0（不限帧，跟随显示器刷新率，最流畅）；
- *                       低性能设备场景可传 30 等值降低 GPU 负载
+ * @prop maxFps        - 渲染帧率上限。不传则跟随画质档位（low30/medium45/high60）。
+ *                       传入则覆盖档位值；0 = 不限帧（跟随显示器刷新率）
+ * @prop quality       - 画质档位，默认 'auto'：探测设备性能定初判档 + 运行时实测
+ *                       帧率兜底降档（办公电脑/核显自动降到流畅档）。也可强制
+ *                       'low'|'medium'|'high'，强制时不再自动降档。
+ *                       注：resolutionScale/maxFps 不传时由档位决定；传入则覆盖。
  */
 
 import { useEffect, useRef, CSSProperties } from 'react'
@@ -56,6 +60,12 @@ export interface BlackHoleProps {
   paused?: boolean
   /** 帧率上限，默认 30；0 = 不限帧 */
   maxFps?: number
+  /**
+   * 画质档位。默认 'auto'：自动探测设备性能定档 + 运行时实测帧率兜底降档。
+   * 也可强制指定 'low' | 'medium' | 'high'（用户在设置里手动选档时用）。
+   * 指定固定档位时不再自动降档。
+   */
+  quality?: QualityTier | 'auto'
 }
 
 // ─── Shader 源码 ──────────────────────────────────────────────────────────────
@@ -77,7 +87,7 @@ const VERT_SRC = /* glsl */ `
  *  - 吸积盘：平面 y=0 上环形区域，多普勒增亮是视觉关键
  *  - 星空：逃逸光线用 hash 函数生成伪随机星点，被透镜效应自然扭曲
  */
-const FRAG_SRC = /* glsl */ `
+const FRAG_SRC_BODY = /* glsl */ `
   precision highp float;
 
   uniform vec2  u_resolution;
@@ -164,7 +174,7 @@ const FRAG_SRC = /* glsl */ `
 
     // 步进循环（最多 64 步：步数与下方 dt 配套，覆盖到 r≈30 逃逸边界；
     // 更多步数在 ANGLE/Metal 上有编译时间与单帧 GPU 超时风险）
-    for (int i = 0; i < 64; i++) {
+    for (int i = 0; i < STEPS; i++) {
       float dist2 = dot(p, p);
       float dist  = sqrt(dist2);
 
@@ -179,7 +189,7 @@ const FRAG_SRC = /* glsl */ `
       if (dist > 30.0) break;
 
       // 自适应步长：靠近时小步（精度），远离时大步（性能）
-      float dt = 0.18 + 0.08 * max(0.0, dist - 3.0);
+      float dt = (0.18 + 0.08 * max(0.0, dist - 3.0)) * DT_SCALE;
 
       // ── 测地线积分：a = -1.5 * h² * p / |p|^5 ────────────────────────
       // 物理意义：史瓦西度规下光子轨道的引力加速度（角动量修正项）
@@ -331,6 +341,71 @@ const FRAG_SRC = /* glsl */ `
   }
 `
 
+/**
+ * 拼接 fragment 源码：在 body 前注入档位相关宏。
+ * GLSL ES 1.0 的 for 循环上限必须是编译期常量，无法用 uniform 动态控制，
+ * 因此步数（STEPS）只能靠宏注入、按档位重新编译 program。
+ * 步数减半时步长（DT_SCALE）需放大以仍能覆盖到 r≈30 逃逸边界。
+ */
+function buildFragSrc(steps: number, dtScale: number): string {
+  return `#define STEPS ${steps}\n#define DT_SCALE ${dtScale.toFixed(3)}\n${FRAG_SRC_BODY}`
+}
+
+// ─── 性能分档 ────────────────────────────────────────────────────────────────
+
+/** 画质档位：流畅 / 均衡 / 精细 */
+export type QualityTier = 'low' | 'medium' | 'high'
+
+interface TierParams {
+  steps: number          // ray marching 步数（编译期常量）
+  dtScale: number        // 步长缩放（步数越少越大）
+  resolutionScale: number
+  maxFps: number
+}
+
+const TIER_TABLE: Record<QualityTier, TierParams> = {
+  low:    { steps: 32, dtScale: 2.0, resolutionScale: 0.5, maxFps: 30 },
+  medium: { steps: 48, dtScale: 1.35, resolutionScale: 0.7, maxFps: 45 },
+  high:   { steps: 64, dtScale: 1.0, resolutionScale: 1.0, maxFps: 60 },
+}
+
+const TIER_ORDER: QualityTier[] = ['high', 'medium', 'low']
+
+/**
+ * 设备性能探测：综合 CPU 核数、内存、GPU renderer 字符串静态定档。
+ * 这是「初判」——软渲染/核显/低核数 → low；明确高端独显 → high；其余 medium。
+ * 真正兜底靠运行时实测帧率（见组件内 FPS 监控），探测误判也能被纠正。
+ */
+function detectTier(gl: WebGLRenderingContext): QualityTier {
+  // GPU renderer 字符串（需 WEBGL_debug_renderer_info 扩展）
+  let renderer = ''
+  try {
+    const ext = gl.getExtension('WEBGL_debug_renderer_info')
+    if (ext) renderer = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) ?? '').toLowerCase()
+  } catch {
+    // 某些隐私设置下扩展被屏蔽，忽略
+  }
+
+  // 软渲染 / 明确的弱 GPU → 直接最低档
+  const isSoftware = /swiftshader|software|llvmpipe|microsoft basic|angle \(google/.test(renderer)
+  if (isSoftware) return 'low'
+
+  // 明确的高端独显标识 → 最高档
+  const isHighEnd = /rtx|radeon rx|geforce (gtx|rtx)|apple m[1-9]|nvidia/.test(renderer)
+
+  const cores = navigator.hardwareConcurrency ?? 4
+  // deviceMemory 非标准但 Chrome 支持，单位 GB
+  const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 4
+
+  if (isHighEnd && cores >= 8) return 'high'
+
+  // Intel 核显（办公电脑主力）/ 低核数 / 低内存 → 流畅档
+  const isIntegrated = /intel|uhd|hd graphics|iris/.test(renderer)
+  if (isIntegrated || cores <= 4 || mem <= 4) return 'low'
+
+  return 'medium'
+}
+
 // ─── WebGL 辅助工具（内联，零依赖）──────────────────────────────────────────
 
 function compileShader(gl: WebGLRenderingContext, type: number, src: string): WebGLShader | null {
@@ -346,9 +421,9 @@ function compileShader(gl: WebGLRenderingContext, type: number, src: string): We
   return s
 }
 
-function createProgram(gl: WebGLRenderingContext): WebGLProgram | null {
+function createProgram(gl: WebGLRenderingContext, steps: number, dtScale: number): WebGLProgram | null {
   const vert = compileShader(gl, gl.VERTEX_SHADER, VERT_SRC)
-  const frag = compileShader(gl, gl.FRAGMENT_SHADER, FRAG_SRC)
+  const frag = compileShader(gl, gl.FRAGMENT_SHADER, buildFragSrc(steps, dtScale))
   if (!vert || !frag) return null
 
   const prog = gl.createProgram()
@@ -375,12 +450,13 @@ function createProgram(gl: WebGLRenderingContext): WebGLProgram | null {
 export function BlackHole({
   className,
   style,
-  resolutionScale = 1,
+  resolutionScale,
   speed = 1,
   brightness = 1,
   interactive = false,
   paused = false,
-  maxFps = 0,
+  maxFps,
+  quality = 'auto',
 }: BlackHoleProps) {
   const wrapRef    = useRef<HTMLDivElement>(null)
 
@@ -389,8 +465,8 @@ export function BlackHole({
   const mouseRef   = useRef({ tx: 0, ty: 0, cx: 0, cy: 0 }) // target / current
 
   // 把频繁变化的 prop 存 ref，避免 effect 重新注册
-  const propsRef   = useRef({ resolutionScale, speed, brightness, interactive, paused, maxFps })
-  propsRef.current = { resolutionScale, speed, brightness, interactive, paused, maxFps }
+  const propsRef   = useRef({ resolutionScale, speed, brightness, interactive, paused, maxFps, quality })
+  propsRef.current = { resolutionScale, speed, brightness, interactive, paused, maxFps, quality }
 
   // paused 恢复时通过 kickRef.current() 踢一帧续上 rAF 循环
   const kickRef    = useRef<(() => void) | null>(null)
@@ -424,8 +500,14 @@ export function BlackHole({
 
     const glCtx = gl  // 局部别名，帮助 TS narrow
 
+    // ── 画质分档：auto 时探测设备定初判档，否则用强制档 ──────────────────
+    const qualityProp = propsRef.current.quality
+    const autoTier = qualityProp === 'auto'
+    let tier: QualityTier = autoTier ? detectTier(glCtx) : qualityProp
+    let tierParams = TIER_TABLE[tier]
+
     // ── 构建 GL 资源 ─────────────────────────────────────────────────────
-    let prog     = createProgram(glCtx)
+    let prog     = createProgram(glCtx, tierParams.steps, tierParams.dtScale)
     let buf      = glCtx.createBuffer()
     let isLost   = false
 
@@ -449,8 +531,9 @@ export function BlackHole({
     let canvasW = 1, canvasH = 1
 
     const setSize = (w: number, h: number) => {
-      const { resolutionScale: rs } = propsRef.current
-      const dpr   = Math.min(window.devicePixelRatio ?? 1, 2)
+      // 分辨率缩放：显式 prop 优先，否则用当前档位值（运行时降档会更新 tierParams）
+      const rs = propsRef.current.resolutionScale ?? tierParams.resolutionScale
+      const dpr = Math.min(window.devicePixelRatio ?? 1, 2)
       canvasW     = Math.max(1, Math.round(w * dpr * rs))
       canvasH     = Math.max(1, Math.round(h * dpr * rs))
       canvas.width  = canvasW
@@ -477,6 +560,56 @@ export function BlackHole({
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+    // ── 运行时帧率兜底降档 ───────────────────────────────────────────────
+    // 静态探测可能误判（同样标 Intel 的核显性能跨度很大），实测最可靠。
+    // 仅 auto 模式生效：采样一段窗口的平均帧率，连续过低则降一档并重建。
+    // 重建需重新编译 shader（步数是编译期常量），代价不小，故只降不升、有冷却。
+    let fpsAccumTime = 0       // 采样窗口累计时长（ms）
+    let fpsAccumFrames = 0     // 采样窗口累计帧数
+    let prevTs = 0             // 上一帧时间戳（算 delta）
+    let cooldownUntil = 0      // 降档冷却截止时间戳（避免重建后立刻又判降）
+    const SAMPLE_WINDOW = 2000 // 每 2s 评估一次
+
+    const rebuildForTier = (next: QualityTier) => {
+      tier = next
+      tierParams = TIER_TABLE[next]
+      // 重新编译 program（步数变化）
+      if (prog) glCtx.deleteProgram(prog)
+      prog = createProgram(glCtx, tierParams.steps, tierParams.dtScale)
+      // 重设画布尺寸（分辨率缩放变化），setSize 内部会补渲一帧
+      setSize(wrap.clientWidth || 1, wrap.clientHeight || 1)
+    }
+
+    const sampleFps = (now: number) => {
+      // 仅 auto 模式且能继续降档时才采样
+      if (!autoTier) return
+      const idx = TIER_ORDER.indexOf(tier)
+      if (idx >= TIER_ORDER.length - 1) return  // 已是最低档
+      if (now < cooldownUntil) { prevTs = now; return }
+
+      if (prevTs > 0) {
+        const dt = now - prevTs
+        // 跳过异常大间隔（切后台/断点导致），不计入采样
+        if (dt > 0 && dt < 500) {
+          fpsAccumTime += dt
+          fpsAccumFrames += 1
+        }
+      }
+      prevTs = now
+
+      if (fpsAccumTime >= SAMPLE_WINDOW && fpsAccumFrames > 0) {
+        const avgFps = (fpsAccumFrames * 1000) / fpsAccumTime
+        // 目标帧率取当前档上限；实测低于其 75% 视为吃力 → 降档
+        const target = tierParams.maxFps
+        if (avgFps < target * 0.75) {
+          rebuildForTier(TIER_ORDER[idx + 1])
+          cooldownUntil = now + 3000
+        }
+        fpsAccumTime = 0
+        fpsAccumFrames = 0
+      }
+    }
+
     // ── 渲染帧 ───────────────────────────────────────────────────────────
     const startTime = performance.now()
     let lastFrameAt = 0   // 上一次真正绘制的 rAF 时间戳（限帧用）
@@ -484,7 +617,9 @@ export function BlackHole({
     const render = (now?: number) => {
       if (isLost || !prog || !buf) return
 
-      const { speed: sp, brightness: br, interactive: iact, paused: ps, maxFps: fps } = propsRef.current
+      const { speed: sp, brightness: br, interactive: iact, paused: ps } = propsRef.current
+      // 帧率上限：显式 prop 优先，否则用当前档位值
+      const fps = propsRef.current.maxFps ?? tierParams.maxFps
 
       // 限帧节流：仅对 rAF 驱动的连续帧生效（now 为 rAF 时间戳），
       // 手动踢帧（无参调用，如首帧/resize 补渲）总是立即绘制。
@@ -535,6 +670,9 @@ export function BlackHole({
 
       glCtx.drawArrays(glCtx.TRIANGLES, 0, 3)
 
+      // 运行时帧率采样（仅 rAF 连续帧；手动踢帧 now 为 undefined 不计入）
+      if (now !== undefined) sampleFps(now)
+
       if (!ps && !reducedMotion && !document.hidden) {
         rafRef.current = requestAnimationFrame(render)
       } else {
@@ -583,7 +721,7 @@ export function BlackHole({
         return
       }
       isLost = false
-      prog   = createProgram(glCtx)
+      prog   = createProgram(glCtx, tierParams.steps, tierParams.dtScale)
       buf    = glCtx.createBuffer()
       setupGeom()
       if (!propsRef.current.paused) {

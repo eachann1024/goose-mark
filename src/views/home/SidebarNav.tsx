@@ -9,10 +9,117 @@
  * 禁止在声明前引用（见 vite-build-misses-hook-tdz.md）。
  */
 import { useState, useRef, useEffect, useCallback } from 'react'
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { Group, SubGroup } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import type { HomeGroup } from './viewModel'
 import { Ico } from './icon'
+
+// ── SortableNavItem：侧栏子分组可拖拽单项（模块顶层，避免 TDZ）────────────
+interface SortableNavItemProps {
+  id: string
+  name: string
+  count: number
+  isActive: boolean
+  isEditing: boolean
+  groupId: string
+  inputVal: string
+  inputRef: React.RefObject<HTMLInputElement>
+  onSubClick: () => void
+  onContextMenu: (e: React.MouseEvent) => void
+  onMoreClick: (e: React.MouseEvent) => void
+  onInputChange: (val: string) => void
+  onInputKeyDown: (e: React.KeyboardEvent) => void
+  onInputBlur: () => void
+}
+
+function SortableNavItem({
+  id,
+  name,
+  count,
+  isActive,
+  isEditing,
+  groupId,
+  inputVal,
+  inputRef,
+  onSubClick,
+  onContextMenu,
+  onMoreClick,
+  onInputChange,
+  onInputKeyDown,
+  onInputBlur,
+}: SortableNavItemProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled: isEditing,
+  })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : undefined,
+  }
+
+  if (isEditing) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`nav-item${isActive ? ' on' : ''} nav-item-editing`}
+      >
+        <input
+          ref={inputRef}
+          className="sidebar-inline-input"
+          value={inputVal}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={onInputKeyDown}
+          onBlur={onInputBlur}
+        />
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      role="button"
+      tabIndex={0}
+      className={`nav-item nav-item-hoverable${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}`}
+      data-nav-type="sub"
+      data-group-id={groupId}
+      data-sub-id={id}
+      {...attributes}
+      {...listeners}
+      onClick={onSubClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSubClick() } }}
+      onContextMenu={onContextMenu}
+    >
+      <span>{name}</span>
+      <span className="count nav-item-count">{count}</span>
+      <button
+        className="nav-icon-btn nav-item-more"
+        title="更多操作"
+        onClick={onMoreClick}
+      >
+        <Ico name="more-horizontal" />
+      </button>
+    </div>
+  )
+}
 
 // ── 菜单状态机 ──────────────────────────────────────────────────────────────
 type MenuTarget =
@@ -40,6 +147,7 @@ type EditingState =
 // ── Props ────────────────────────────────────────────────────────────────────
 export interface SidebarNavProps {
   homeGroups: HomeGroup[]
+  activeGroupId: string | null
   activeSubId: string | null
   screen: string
   trashN: number
@@ -60,6 +168,7 @@ function getNonTrashGroups(groups: Group[]): Group[] {
 // ── 主组件 ───────────────────────────────────────────────────────────────────
 export default function SidebarNav({
   homeGroups,
+  activeGroupId,
   activeSubId,
   screen,
   trashN,
@@ -69,6 +178,10 @@ export default function SidebarNav({
   onActiveSubIdFix,
   centerSignal,
 }: SidebarNavProps) {
+  // 只显示当前选中一级分组；若 activeGroupId 为空则回退到第一个
+  const visibleGroups = activeGroupId
+    ? homeGroups.filter((g) => g.id === activeGroupId)
+    : homeGroups.slice(0, 1)
   // ── store actions ─────────────────────────────────────────────────────────
   const updateGroup = useBookmarkStore((s) => s.updateGroup)
   const removeGroup = useBookmarkStore((s) => s.removeGroup)
@@ -80,6 +193,9 @@ export default function SidebarNav({
   const reorderSubGroups = useBookmarkStore((s) => s.reorderSubGroups)
   const moveSubToGroup = useBookmarkStore((s) => s.moveSubToGroup)
   const promoteSubToGroup = useBookmarkStore((s) => s.promoteSubToGroup)
+
+  // ── 子分组拖拽排序 sensors（distance:5 保证点击/右键/重命名不被误判为拖拽）──
+  const subSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   // ── 局部状态 ──────────────────────────────────────────────────────────────
   const [menu, setMenu] = useState<NavMenuState>({
@@ -183,9 +299,10 @@ export default function SidebarNav({
   }, [centerSignal])
 
   // ── activeSubId 修复：操作后检查并回调 ───────────────────────────────────
+  // 修复范围用 visibleGroups（当前分组内检查），不在当前分组时回退到首个子分组
   const fixActiveSubIfNeeded = useCallback(
     (newGroups?: HomeGroup[]) => {
-      const src = newGroups ?? homeGroups
+      const src = newGroups ?? visibleGroups
       // 检查 activeSubId 是否还在
       for (const g of src) {
         for (const s of g.subs) {
@@ -198,7 +315,7 @@ export default function SidebarNav({
         onActiveSubIdFix(first.id, src[0].id)
       }
     },
-    [homeGroups, activeSubId, onActiveSubIdFix]
+    [visibleGroups, activeSubId, onActiveSubIdFix]
   )
 
   // activeSubId 变化时也检查（store 变更后 homeGroups 重新计算触发重渲染，此时 fix）
@@ -577,113 +694,65 @@ export default function SidebarNav({
   return (
     <>
       <aside ref={asideRef} className="sidebar" onContextMenu={onAsideContextMenu}>
-        {homeGroups.map((g) => {
-          const isRenamingGroup = editing?.kind === 'renameGroup' && editing.groupId === g.id
+        {visibleGroups.map((g) => {
+          const handleSubDragEnd = (event: DragEndEvent) => {
+            const { active, over } = event
+            if (!over || active.id === over.id) return
+            const oldIdx = g.subs.findIndex((s) => s.id === active.id)
+            const newIdx = g.subs.findIndex((s) => s.id === over.id)
+            if (oldIdx < 0 || newIdx < 0) return
+            const newSubOrder = arrayMove(g.subs, oldIdx, newIdx)
+            const rawGroup = useBookmarkStore.getState().groups.find((rg) => rg.id === g.id)
+            if (!rawGroup) return
+            const rawChildren = rawGroup.children.filter((c) => !c.isDeleted)
+            const newRawChildren = newSubOrder
+              .map((hs) => rawChildren.find((rc) => rc.id === hs.id)!)
+              .filter(Boolean)
+            reorderSubGroups(g.id, newRawChildren)
+          }
+
           return (
             <div className="grp" key={g.id}>
-              {/* 一级分组标签 */}
-              {isRenamingGroup ? (
-                <div className="grp-label grp-label-editing">
-                  <span className="dot" />
-                  <input
-                    ref={inputRef}
-                    className="sidebar-inline-input"
-                    value={inputVal}
-                    onChange={(e) => setInputVal(e.target.value)}
-                    onKeyDown={onInputKeyDown}
-                    onBlur={onInputBlur}
-                  />
-                </div>
-              ) : (
-                <div
-                  className="grp-label grp-label-hoverable"
-                  data-nav-type="group"
-                  data-group-id={g.id}
-                  onContextMenu={(e) => {
-                    e.stopPropagation()
-                    openMenu(e, { type: 'group', groupId: g.id })
-                  }}
-                >
-                  <span className="dot" />
-                  <span className="grp-label-text">{g.name}</span>
-                  <span className="grp-label-actions">
-                    <button
-                      className="nav-icon-btn"
-                      title="新建子分组"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        startNewSub(g.id)
-                      }}
-                    >
-                      <Ico name="plus" />
-                    </button>
-                    <button
-                      className="nav-icon-btn"
-                      title="更多操作"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openMenu(e, { type: 'group', groupId: g.id })
-                      }}
-                    >
-                      <Ico name="more-horizontal" />
-                    </button>
-                  </span>
-                </div>
-              )}
-
-              {/* 子分组列表 */}
-              {g.subs.map((s) => {
-                const isRenamingSub =
-                  editing?.kind === 'renameSub' && editing.groupId === g.id && editing.subId === s.id
-                const isActive = s.id === activeSubId
-
-                if (isRenamingSub) {
-                  return (
-                    <div key={s.id} className={`nav-item${isActive ? ' on' : ''} nav-item-editing`}>
-                      <input
-                        ref={inputRef}
-                        className="sidebar-inline-input"
-                        value={inputVal}
-                        onChange={(e) => setInputVal(e.target.value)}
-                        onKeyDown={onInputKeyDown}
-                        onBlur={onInputBlur}
+              {/* 子分组列表（一级分组标题行已移至顶栏 Tab，此处不再渲染） */}
+              <DndContext
+                sensors={subSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleSubDragEnd}
+              >
+                <SortableContext items={g.subs.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                  {g.subs.map((s) => {
+                    const isRenamingSub =
+                      editing?.kind === 'renameSub' && editing.groupId === g.id && editing.subId === s.id
+                    const isActive = s.id === activeSubId
+                    return (
+                      <SortableNavItem
+                        key={s.id}
+                        id={s.id}
+                        name={s.name}
+                        count={s.items.length}
+                        isActive={isActive}
+                        isEditing={isRenamingSub}
+                        groupId={g.id}
+                        inputVal={inputVal}
+                        inputRef={inputRef}
+                        onSubClick={() => onSubClick(g.id, s.id)}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          openMenu(e, { type: 'sub', groupId: g.id, subId: s.id })
+                        }}
+                        onMoreClick={(e) => {
+                          e.stopPropagation()
+                          openMenu(e, { type: 'sub', groupId: g.id, subId: s.id })
+                        }}
+                        onInputChange={setInputVal}
+                        onInputKeyDown={onInputKeyDown}
+                        onInputBlur={onInputBlur}
                       />
-                    </div>
-                  )
-                }
-
-                return (
-                  <div
-                    key={s.id}
-                    role="button"
-                    tabIndex={0}
-                    className={`nav-item nav-item-hoverable${isActive ? ' on' : ''}`}
-                    data-nav-type="sub"
-                    data-group-id={g.id}
-                    data-sub-id={s.id}
-                    onClick={() => onSubClick(g.id, s.id)}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSubClick(g.id, s.id) } }}
-                    onContextMenu={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      openMenu(e, { type: 'sub', groupId: g.id, subId: s.id })
-                    }}
-                  >
-                    <span>{s.name}</span>
-                    <span className="count nav-item-count">{s.items.length}</span>
-                    <button
-                      className="nav-icon-btn nav-item-more"
-                      title="更多操作"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        openMenu(e, { type: 'sub', groupId: g.id, subId: s.id })
-                      }}
-                    >
-                      <Ico name="more-horizontal" />
-                    </button>
-                  </div>
-                )
-              })}
+                    )
+                  })}
+                </SortableContext>
+              </DndContext>
 
               {/* 新建子分组 inline input */}
               {editing?.kind === 'newSub' && editing.groupId === g.id && (
@@ -698,6 +767,14 @@ export default function SidebarNav({
                     onBlur={onInputBlur}
                   />
                 </div>
+              )}
+
+              {/* 新建子分组弱化入口（替代原 grp-label 里的 + 按钮） */}
+              {editing?.kind !== 'newSub' && (
+                <button className="sidebar-add-sub" onClick={() => startNewSub(g.id)}>
+                  <Ico name="plus" />
+                  新建子分组
+                </button>
               )}
             </div>
           )

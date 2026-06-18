@@ -128,7 +128,14 @@ export default function AddBookmarkWizard({
   const fetchFailed = iconFetchPhase === 'failed' && !draft.title && !previewIconUrl
 
   // 阶段索引：0=连接抓取中, 1=抓取完成待AI/已完成, 2=AI整理中
-  const stageIndex = isGenerating ? 2 : iconLoading ? 0 : fetchDone ? 2 : 0
+  // AI 未开启时无第 3 步：抓取完成即停在「抓取信息」步(索引 1)并标记完成,不再指向不存在的 AI 步
+  const stageIndex = isGenerating
+    ? 2
+    : iconLoading
+      ? 0
+      : fetchDone
+        ? (canUseAi ? 2 : 1)
+        : 0
   const recogStatus: 'running' | 'done' | 'failed' =
     fetchFailed && !iconLoading && !isGenerating
       ? 'failed'
@@ -264,6 +271,7 @@ export default function AddBookmarkWizard({
               previewIcon={previewIcon}
               titleFetching={titleFetching}
               descFetching={descFetching}
+              canUseAi={canUseAi}
               onManual={manualFill}
               onRetry={retry}
             />
@@ -457,7 +465,7 @@ function CaptureStep({
 
 /* ============ Step 1: 智能识别 ============ */
 const STAGES = [
-  { key: 'connect', label: '连接站点', hint: '建立安全连接', icon: 'globe', ai: false },
+  { key: 'connect', label: '解析链接', hint: '校验地址 · 识别站点', icon: 'globe', ai: false },
   { key: 'fetch', label: '抓取信息', hint: '读取标题 · 简介 · 图标', icon: 'download', ai: false },
   { key: 'ai', label: 'AI 整理', hint: '提炼标题 · 生成简介 · 推荐分类', icon: 'sparkles', ai: true },
 ]
@@ -470,6 +478,7 @@ function RecognizeStep({
   previewIcon,
   titleFetching,
   descFetching,
+  canUseAi,
   onManual,
   onRetry,
 }: {
@@ -480,9 +489,12 @@ function RecognizeStep({
   previewIcon: { bgColor?: string } | null
   titleFetching: boolean
   descFetching: boolean
+  canUseAi: boolean
   onManual: () => void
   onRetry: () => void
 }) {
+  // AI 未开启时 AI 整理永不点亮,只展示前两步,避免“卡在不会推进的步骤”观感
+  const stages = useMemo(() => (canUseAi ? STAGES : STAGES.filter((s) => !s.ai)), [canUseAi])
   const host = useMemo(() => {
     try {
       return new URL(/^https?:\/\//.test(draft.url) ? draft.url : `https://${draft.url}`).host.replace(/^www\./, '')
@@ -524,7 +536,7 @@ function RecognizeStep({
                 )}
               </div>
               <div className="gm-stages">
-                {STAGES.map((st, i) => {
+                {stages.map((st, i) => {
                   const sDone = status === 'done' || i < stageIndex
                   const sActive = status === 'running' && i === stageIndex
                   return (
@@ -537,7 +549,7 @@ function RecognizeStep({
                           {sDone ? <Ico name="check" /> : <Ico name={st.icon} />}
                           {sActive && <span className="gm-stage-ping" />}
                         </span>
-                        {i < STAGES.length - 1 && <span className="gm-stage-bar" />}
+                        {i < stages.length - 1 && <span className="gm-stage-bar" />}
                       </div>
                       <div className="gm-stage-text">
                         <div className="gm-stage-title">

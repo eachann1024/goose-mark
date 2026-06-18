@@ -1,8 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  DndContext,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  horizontalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, Group } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useSettingsStore } from '@/stores/settings'
+import { useSettingsStore, WINDOW_HEIGHT_MIN, WINDOW_HEIGHT_MAX } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { useUToolsMcpBridge } from '@/hooks/useUToolsMcpBridge'
 import { useUTools } from '@/hooks/useUTools'
@@ -14,13 +29,13 @@ import { useStatsStore } from '@/stores/stats'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { resolveBookmarkLaunchUrl, getTemplateLabel } from '@/lib/utils'
+import { getRuntimePlatform } from '@/lib/platform'
 import { Ico } from './icon'
 import { Image } from '@/components/ui/image'
 import { buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './viewModel'
 import SidebarNav from './SidebarNav'
 import AddBookmarkWizard from './AddBookmarkWizard'
 import GroupManagePage from './GroupManagePage'
-import ExtensionPage from './ExtensionPage'
 import AboutPage from './AboutPage'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
@@ -28,11 +43,45 @@ import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import './home.css'
 
+// ── SortableTab：顶栏一级分组 Tab 可拖拽单项（模块顶层，避免 TDZ）──────────
+interface SortableTabProps {
+  id: string
+  name: string
+  isActive: boolean
+  onTabClick: () => void
+  onTabContextMenu: (e: React.MouseEvent) => void
+}
+
+function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }: SortableTabProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : undefined,
+  }
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`group-tab${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}`}
+      onClick={onTabClick}
+      onContextMenu={onTabContextMenu}
+    >
+      {name}
+    </button>
+  )
+}
+
 // uTools 事件常量（与 preload 对齐）
 const UTOOLS_PLUGIN_ENTER_EVENT = 'goose-marks:plugin-enter'
 const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
 const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'
 const UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT = 'goose-marks:restore-default-search-input'
+
+// 运行平台：uTools 模式由顶部原生 subInput 承接搜索，页内搜索框隐藏（避免重复）。
+const RUNTIME_PLATFORM = getRuntimePlatform()
 
 // 模板/Universal 书签相关常量
 const UNIVERSAL_BOOKMARK_PAYLOAD_SPLIT_RE = /^[\s/|:：\-—–]+/
@@ -85,7 +134,7 @@ interface UToolsPluginEnterPayload {
  * 明暗用根容器 data-theme 控制，配色全部来自 home.css 的独立 CSS 变量。
  */
 
-type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups' | 'extension' | 'about'
+type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups' | 'about'
 type ViewMode = 'list' | 'grid'
 type Theme = 'light' | 'dark'
 type ThemePref = 'light' | 'dark' | 'system'
@@ -110,13 +159,17 @@ const SET_NAV: Array<[string, string, string]> = [
   ['AI 助手', 'sparkles', 'set-ai'],
   ['导入与备份', 'database', 'set-data'],
   ['分组管理', 'folder', 'set-categories'],
-  ['浏览器拓展', 'refresh-cw', 'set-local'],
   ['帮助与统计', 'info', 'set-about']
 ]
 
 export default function HomePage() {
   const groups = useBookmarkStore((s) => s.groups)
   const bookmarks = useBookmarkStore((s) => s.bookmarks)
+  const activeGroupId = useBookmarkStore((s) => s.activeGroupId)
+  const setActiveGroup = useBookmarkStore((s) => s.setActiveGroup)
+  const reorderGroups = useBookmarkStore((s) => s.reorderGroups)
+  const updateGroup = useBookmarkStore((s) => s.updateGroup)
+  const removeGroup = useBookmarkStore((s) => s.removeGroup)
 
   // 1.【致命】uTools MCP 桥接：让 plugin.json 声明的工具能从 React 端读写书签数据
   useUToolsMcpBridge()
@@ -294,7 +347,14 @@ export default function HomePage() {
   // 支持标题/链接/描述/标签 + 拼音匹配，取代原全屏搜索浮层。
   const filteredGroups = useMemo<HomeGroup[]>(() => {
     const q = searchVal.trim().toLowerCase()
-    if (!q) return homeGroups
+    // 非搜索态：两层导航 —— 只显示当前选中的一级分组（activeGroupId 为空则回退首个）
+    if (!q) {
+      const current = activeGroupId
+        ? homeGroups.filter((g) => g.id === activeGroupId)
+        : homeGroups.slice(0, 1)
+      return current.length ? current : homeGroups.slice(0, 1)
+    }
+    // 搜索态：跨所有一级分组全量匹配
     const match = (b: HomeItem) => {
       const haystack = [b.ttl, b.url, b.dsc, b.tags.join(' ')].join(' ').toLowerCase()
       if (haystack.includes(q)) return true
@@ -308,7 +368,7 @@ export default function HomePage() {
           .filter((s) => s.items.length > 0)
       }))
       .filter((g) => g.subs.length > 0)
-  }, [homeGroups, searchVal])
+  }, [homeGroups, searchVal, activeGroupId])
   const isSearching = searchVal.trim().length > 0
 
   // 网格搜索态：全局匹配的扁平集合（按 id 去重），展示为单个无分组宫格。
@@ -375,6 +435,80 @@ export default function HomePage() {
   const clearSearch = useCallback(() => {
     applySearchVal('')
   }, [applySearchVal])
+
+  // ---- 一级分组 Tab：切换当前分组（同步 store，首个子分组自动选中）----
+  const changeActiveGroup = useCallback((groupId: string) => {
+    if (screen === 'trash' || screen === 'settings') setScreen(view)
+    setActiveGroup(groupId)
+  }, [screen, view, setActiveGroup])
+
+  // ---- 顶栏 Tab 拖拽排序（distance:5 保证点击/右键不被误判为拖拽）----
+  const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+
+  const handleTabDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = homeGroups.findIndex((g) => g.id === active.id)
+    const newIndex = homeGroups.findIndex((g) => g.id === over.id)
+    if (oldIndex < 0 || newIndex < 0) return
+    // 用 arrayMove 算出视图模型新顺序，再映射回 raw groups（剔除回收站/已删除）
+    const newHomeGroups = arrayMove(homeGroups, oldIndex, newIndex)
+    const rawGroups = useBookmarkStore.getState().groups.filter((g) => g.id !== TRASH_GROUP_ID && !g.isDeleted)
+    const newRaw = newHomeGroups.map((hg) => rawGroups.find((rg) => rg.id === hg.id)!).filter(Boolean)
+    reorderGroups(newRaw)
+  }, [homeGroups, reorderGroups])
+
+  // ---- 一级 Tab 右键菜单：重命名 / 删除 ----
+  const [tabCtx, setTabCtx] = useState<{ open: boolean; x: number; y: number; groupId: string }>({ open: false, x: 0, y: 0, groupId: '' })
+  const [tabRenaming, setTabRenaming] = useState<string | null>(null)
+  const [tabRenameVal, setTabRenameVal] = useState('')
+  const tabMenuRef = useRef<HTMLDivElement>(null)
+  const tabRenameRef = useRef<HTMLInputElement>(null)
+
+  const openTabCtx = useCallback((e: React.MouseEvent, groupId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const menuW = 180
+    const left = Math.min(e.clientX, window.innerWidth - menuW - 8)
+    setTabCtx({ open: true, x: Math.max(8, left), y: e.clientY + 4, groupId })
+  }, [])
+  const closeTabCtx = useCallback(() => setTabCtx((c) => (c.open ? { ...c, open: false } : c)), [])
+
+  const startTabRename = useCallback((groupId: string) => {
+    const g = homeGroups.find((x) => x.id === groupId)
+    if (!g) return
+    setTabRenaming(groupId)
+    setTabRenameVal(g.name)
+    closeTabCtx()
+    requestAnimationFrame(() => { tabRenameRef.current?.focus(); tabRenameRef.current?.select() })
+  }, [homeGroups, closeTabCtx])
+
+  const commitTabRename = useCallback(() => {
+    if (!tabRenaming) return
+    const name = tabRenameVal.trim()
+    if (name) updateGroup(tabRenaming, name)
+    setTabRenaming(null)
+  }, [tabRenaming, tabRenameVal, updateGroup])
+
+  const deleteTabGroup = useCallback((groupId: string) => {
+    const g = homeGroups.find((x) => x.id === groupId)
+    if (!g) return
+    if (!window.confirm(`确定删除分组「${g.name}」？组内书签将移入回收站。`)) return
+    removeGroup(groupId)
+    closeTabCtx()
+  }, [homeGroups, removeGroup, closeTabCtx])
+
+  // 点击空白 / Esc 关闭 Tab 右键菜单
+  useEffect(() => {
+    if (!tabCtx.open) return
+    const onDown = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('.tab-ctx-menu')) closeTabCtx()
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeTabCtx() }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey) }
+  }, [tabCtx.open, closeTabCtx])
 
   // ---- 工具：返回书签列表视图（供 FormPage/TrashPage 返回用） ----
   const backToList = useCallback(() => setScreen(view), [view])
@@ -527,7 +661,7 @@ export default function HomePage() {
       if (anchorScrollTimer.current) clearTimeout(anchorScrollTimer.current)
       cancelAnimationFrame(anchorRaf.current)
       const top = el.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
-      root.scrollTo({ top: Math.max(0, top - 4), behavior: 'smooth' })
+      root.scrollTo({ top: Math.max(0, top - 4), behavior: 'auto' })
       // 抑制 scroll-spy 直到 smooth 动画真正停下（连续若干帧 scrollTop 不变）。
       // 固定超时会在动画末尾解除，恰好放过最后一次 scroll 事件 → 触底兜底逻辑误把高亮改成末段。
       let last = -1
@@ -610,7 +744,7 @@ export default function HomePage() {
           closeCtx()
           return
         }
-        if (screen === 'extension' || screen === 'about') {
+        if (screen === 'about') {
           setScreen('settings')
           closeCtx()
           return
@@ -1096,7 +1230,7 @@ export default function HomePage() {
       if (activeTemplateBookmarkRef.current) return
       const curScreen = screenRef.current
       if (curScreen === 'add') return
-      if (curScreen === 'settings' || curScreen === 'trash' || curScreen === 'groups' || curScreen === 'extension' || curScreen === 'about') {
+      if (curScreen === 'settings' || curScreen === 'trash' || curScreen === 'groups' || curScreen === 'about') {
         setScreenRef.current(viewRef.current)
       }
       applySearchValRef.current(text, true)
@@ -1221,7 +1355,7 @@ export default function HomePage() {
     isSetScrollingRef.current = true
     if (setScrollTimeout.current) clearTimeout(setScrollTimeout.current)
     const top = el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
-    container.scrollTo({ top, behavior: 'smooth' })
+    container.scrollTo({ top, behavior: 'auto' })
     setSetNavIdx(idx)
     setScrollTimeout.current = setTimeout(() => {
       isSetScrollingRef.current = false
@@ -1249,18 +1383,54 @@ export default function HomePage() {
     .join(' ')
 
   return (
-    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density}>
+    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-platform={RUNTIME_PLATFORM}>
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && <StarryBackground />}
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'blackhole' && (
         <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none">
-          <BlackHole brightness={0.75} maxFps={60} speed={0.9} />
+          <BlackHole brightness={0.75} speed={0.9} quality="auto" />
         </div>
       )}
       {/* zIndex 让窗口盖在彩蛋 canvas 上；position 必须保留 CSS 的 absolute+inset:0，否则高度约束链断裂导致设置页无法滚动 */}
       <div className="window" style={{ zIndex: 1 }}>
         {/* ---------- Header ---------- */}
         <header className="app-header">
-          <div className="search-field">
+          {/* 一级分组 Tab 栏（可拖拽排序 + 右键管理） */}
+          <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
+            <SortableContext items={homeGroups.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
+              <div className="group-tabs">
+                {homeGroups.map((g) =>
+                  tabRenaming === g.id ? (
+                    <input
+                      key={g.id}
+                      ref={tabRenameRef}
+                      className="group-tab-rename"
+                      value={tabRenameVal}
+                      onChange={(e) => setTabRenameVal(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitTabRename()
+                        else if (e.key === 'Escape') setTabRenaming(null)
+                      }}
+                      onBlur={commitTabRename}
+                    />
+                  ) : (
+                    <SortableTab
+                      key={g.id}
+                      id={g.id}
+                      name={g.name}
+                      isActive={!isSearching && activeGroupId === g.id}
+                      onTabClick={() => {
+                        if (isSearching) clearSearch()
+                        changeActiveGroup(g.id)
+                      }}
+                      onTabContextMenu={(e) => openTabCtx(e, g.id)}
+                    />
+                  )
+                )}
+              </div>
+            </SortableContext>
+          </DndContext>
+          {/* 搜索框（收窄到右侧） */}
+          <div className="header-search">
             <Ico name="search" />
             <input
               ref={headerSearchRef}
@@ -1309,6 +1479,26 @@ export default function HomePage() {
           </button>
         </header>
 
+        {/* 一级 Tab 右键菜单 */}
+        {tabCtx.open && (
+          <div
+            ref={tabMenuRef}
+            className="ctx-menu tab-ctx-menu"
+            style={{ display: 'flex', position: 'fixed', left: tabCtx.x, top: tabCtx.y, zIndex: 200 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button onClick={() => startTabRename(tabCtx.groupId)}>
+              <Ico name="pencil" />
+              重命名
+            </button>
+            <div className="ctx-sep" />
+            <button className="danger" onClick={() => deleteTabGroup(tabCtx.groupId)}>
+              <Ico name="trash-2" />
+              删除分组
+            </button>
+          </div>
+        )}
+
         {/* 模板输入态横幅：参数输入框在页面内（uTools subInput 已下线） */}
         {activeTemplateBookmark && (
           <div className="tpl-banner">
@@ -1333,6 +1523,7 @@ export default function HomePage() {
           {/* Sidebar */}
           <SidebarNav
             homeGroups={homeGroups}
+            activeGroupId={activeGroupId}
             activeSubId={activeSubId}
             screen={screen}
             trashN={trashN}
@@ -1429,7 +1620,6 @@ export default function HomePage() {
                 }}
                 onToast={fireToast}
                 onGoToGroups={() => setScreen('groups')}
-                onGoToExtension={() => setScreen('extension')}
                 onGoToAbout={() => setScreen('about')}
               />
             </div>
@@ -1441,9 +1631,6 @@ export default function HomePage() {
 
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}
-
-        {/* ---------- Extension page ---------- */}
-        {screen === 'extension' && <ExtensionPage onBack={() => setScreen('settings')} />}
 
         {/* ---------- About page ---------- */}
         {screen === 'about' && <AboutPage onBack={() => setScreen('settings')} onToast={fireToast} />}
@@ -2120,7 +2307,6 @@ function SettingsContent({
   onThemeChange,
   onToast,
   onGoToGroups,
-  onGoToExtension,
   onGoToAbout,
 }: {
   theme: Theme
@@ -2129,7 +2315,6 @@ function SettingsContent({
   onThemeChange?: (pref: ThemePref) => void
   onToast?: (title?: string) => void
   onGoToGroups?: () => void
-  onGoToExtension?: () => void
   onGoToAbout?: () => void
 }) {
   // settings store
@@ -2161,6 +2346,8 @@ function SettingsContent({
   const aiCustomModelOptions = useSettingsStore((s) => s.aiCustomModelOptions)
   const aiQuickSaveEnabled = useSettingsStore((s) => s.aiQuickSaveEnabled)
   const setAiQuickSaveEnabled = useSettingsStore((s) => s.setAiQuickSaveEnabled)
+  const windowHeight = useSettingsStore((s) => s.windowHeight)
+  const setWindowHeight = useSettingsStore((s) => s.setWindowHeight)
 
   // 模型选项：自定义 provider 时用 aiCustomModelOptions，否则只有默认模型
   const modelOptions = aiUseCustomProvider && aiCustomModelOptions.length > 0
@@ -2273,6 +2460,24 @@ function SettingsContent({
                   className={`switch${panelContinuous ? ' on' : ''}`}
                   onClick={() => setPanelContinuous(!panelContinuous)}
                 />
+              </div>
+              <div className="set-row">
+                <div><div className="rt">窗口高度</div><div className="rd">记住插件展开高度，下次呼出自动恢复</div></div>
+                <div className="stepper">
+                  <button
+                    className="stepper-btn"
+                    disabled={windowHeight <= WINDOW_HEIGHT_MIN}
+                    onClick={() => setWindowHeight(windowHeight - 20)}
+                    aria-label="减小窗口高度"
+                  ><Ico name="minus" /></button>
+                  <span className="stepper-val">{windowHeight}px</span>
+                  <button
+                    className="stepper-btn"
+                    disabled={windowHeight >= WINDOW_HEIGHT_MAX}
+                    onClick={() => setWindowHeight(windowHeight + 20)}
+                    aria-label="增大窗口高度"
+                  ><Ico name="plus" /></button>
+                </div>
               </div>
             </>
           )}
@@ -2409,16 +2614,6 @@ function SettingsContent({
         <div className="set-card">
           <div className="set-row set-row-link" onClick={onGoToGroups} style={{ cursor: 'pointer' }}>
             <div><div className="rt">分组管理</div><div className="rd">创建、编辑和排序分组</div></div>
-            <Ico name="chevron-right" style={{ color: 'var(--fg-faint)', fontSize: 16, flexShrink: 0 }} />
-          </div>
-        </div>
-      </div>
-
-      <div className="set-section" id="set-local">
-        <h2><Ico name="refresh-cw" />浏览器拓展</h2>
-        <div className="set-card">
-          <div className="set-row set-row-link" onClick={onGoToExtension} style={{ cursor: 'pointer' }}>
-            <div><div className="rt">浏览器拓展配置</div><div className="rd">查看浏览器拓展连接说明</div></div>
             <Ico name="chevron-right" style={{ color: 'var(--fg-faint)', fontSize: 16, flexShrink: 0 }} />
           </div>
         </div>
