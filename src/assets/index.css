@@ -157,21 +157,33 @@ body {
   --tw-ring-shadow: 0 0 #0000 !important;
   --tw-ring-color: transparent !important;
 }
-/* 默认全局禁用文本选中，提升原生应用感（避免主界面误拖选） */
-* {
+/* 默认全局禁用文本选中，提升原生应用感（避免主界面误拖选）。
+   注意：必须挂在 body 上靠继承下传，不能用 `*`。WebKit（Tauri 的 WKWebView）
+   与旧版 Chromium（uTools 内核）对表单控件的 -webkit-user-select 继承是「粘性」的——
+   一旦用 `*` 把 none 直接写到 input 本体及其整条祖先链，即便子元素声明 text !important，
+   旧引擎仍会吞掉输入框内的鼠标拖选。改挂 body 后 input 自身不再被直接置 none，
+   下面的放开规则才能真正生效。现代 Chrome 两种写法都正常，故浏览器里不易复现该回归。 */
+body {
   -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
   user-select: none;
 }
 
-/* 仅放开输入类元素与显式标记可选的内容 */
+/* 放开输入类元素与显式标记可选的内容。-webkit-user-select 用 auto（而非 text）：
+   auto 让表单控件回归 UA 原生选中行为，是旧 WKWebView 下最可靠的「解锁」值。 */
 input,
 textarea,
+select,
 [contenteditable="true"],
 [contenteditable=""],
 .select-text,
 .user-select-text {
-  -webkit-user-select: text !important;
+  -webkit-user-select: auto !important;
+  -moz-user-select: text !important;
+  -ms-user-select: text !important;
   user-select: text !important;
+  -webkit-touch-callout: default;
 }
 
 input,

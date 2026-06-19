@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
  * --------------------------------------------------------------------------
  * 旧版 Vue setup + onMounted/onUnmounted 的 canvas 动画，逐字段移植到
  * useRef + useEffect。所有可变状态（stars/shootingStars/ctx/尺寸）都放在
- * ref 中以避免重渲染，rAF 循环在挂载时启动、卸载时清理。星空彩蛋，无埋点。
+ * ref 中以避免重渲染，rAF 循环在挂载时启动、卸载时清理。星空彩蛋。
  */
 const CORE_STAR_COUNT = 35
 const SHOOTING_STAR_PROBABILITY = 0.0015

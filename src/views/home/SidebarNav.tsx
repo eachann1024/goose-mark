@@ -149,9 +149,7 @@ export interface SidebarNavProps {
   activeGroupId: string | null
   activeSubId: string | null
   screen: string
-  trashN: number
   onSubClick: (groupId: string, subId: string) => void
-  onToggleTrash: () => void
   fireToast: (title?: string) => void
   onActiveSubIdFix: (subId: string, groupId: string) => void
   /** 主动定位信号：每次自增表示"本次 activeSubId 变化由用户主动操作触发，应居中"。被动滚动跟随不传/不变。 */
@@ -170,9 +168,7 @@ export default function SidebarNav({
   activeGroupId,
   activeSubId,
   screen,
-  trashN,
   onSubClick,
-  onToggleTrash,
   fireToast,
   onActiveSubIdFix,
   centerSignal,
@@ -772,16 +768,6 @@ export default function SidebarNav({
           )
         })}
 
-        {/* 回收站 */}
-        <button
-          className={`trash${screen === 'trash' ? ' on' : ''}`}
-          title="回收站"
-          onClick={onToggleTrash}
-        >
-          <Ico name="trash-2" />
-          <span>回收站</span>
-          {trashN > 0 && <span className="count">{trashN}</span>}
-        </button>
       </aside>
 
       {/* 侧栏菜单（fixed 定位，逃出 sidebar overflow） */}

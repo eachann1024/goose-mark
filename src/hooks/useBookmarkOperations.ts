@@ -4,7 +4,6 @@ import { getTemplateLabel, resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { addBehaviorLog } from '@/lib/debugReport'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
-import { useStatsStore } from '@/stores/stats'
 import { useUIManager } from './useUIManager'
 
 /**
@@ -12,10 +11,7 @@ import { useUIManager } from './useUIManager'
  * --------------------------------------------------------------------------
  * 旧版 Vue composable。React 版：
  *   - store / settingsStore 在回调内用 .getState() 取最新值；showToast 订阅自 useUIManager。
- *   - 已移除全部 trackEvent 上报（保留业务逻辑）。注意 openUrl 的入参对象名仍叫
- *     `analytics`（保留打开链接逻辑），但其中不再触发任何上报。
  *   - 修复旧版 openExternalUrl 自我递归的 bug：非 Tauri 环境改用 window.open。
- * 本地使用统计（useStatsStore.recordClick/recordUse）保留——这是业务排序数据，非外部埋点。
  */
 
 type UToolsExtendedApi = {
@@ -31,8 +27,6 @@ type UToolsExtendedApi = {
 type OpenBookmarkOptions = {
   query?: string
   useUiQuery?: boolean
-  source?: string
-  openMethod?: 'keyboard' | 'click' | 'command' | 'plugin'
 }
 
 const getWindowType = () => {
@@ -150,22 +144,13 @@ export function useBookmarkOperations() {
   )
 
   const openUrl = useCallback(
-    (
-      url: string,
-      analytics?: {
-        source?: string
-        openMethod?: 'keyboard' | 'click' | 'command' | 'plugin'
-        bookmarkId?: string
-        hasTemplate?: boolean
-      }
-    ) => {
-      // 入参对象名保留为 analytics（保留打开逻辑），但不再触发任何埋点上报。
-      void analytics
+    (url: string) => {
       const settingsStore = useSettingsStore.getState()
 
       if (window.utools) {
         const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
-        const canUseInner = !!utoolsApi?.ubrowser
+        // 默认使用系统默认浏览器；仅当设置勾选「使用 uTools 内置浏览器」时才走 ubrowser
+        const canUseInner = settingsStore.useUtoolsBrowser && !!utoolsApi?.ubrowser
         let opened = false
         if (canUseInner) {
           try {
@@ -193,8 +178,6 @@ export function useBookmarkOperations() {
   const openBookmarkLink = useCallback(
     (bookmark: Bookmark, options: OpenBookmarkOptions = {}) => {
       const store = useBookmarkStore.getState()
-      // 记录书签点击统计（本地业务数据，非外部埋点）
-      useStatsStore.getState().recordClick(bookmark.id)
 
       if (isDevRuntime) console.info('[Bookmark] open', bookmark)
       addBehaviorLog('open', `${bookmark.title || ''} ${bookmark.url || ''}`.trim())
@@ -218,12 +201,7 @@ export function useBookmarkOperations() {
       store.updateBookmark(bookmark.id, {})
       // 记录本地使用排序数据：lastUsed = now、visits++（驱动「最近使用」虚拟视图）
       store.recordBookmarkUse(bookmark.id)
-      openUrl(url, {
-        source: options.source ?? (query ? 'search' : 'bookmark'),
-        openMethod: options.openMethod,
-        bookmarkId: bookmark.id,
-        hasTemplate
-      })
+      openUrl(url)
     },
     [isDevRuntime, openUrl]
   )
@@ -242,6 +220,24 @@ export function useBookmarkOperations() {
       } else {
         utoolsApi?.shellOpenExternal?.(url)
       }
+      if (settingsStore.autoCloseWindow) {
+        try {
+          if (isDetachedWindowNow()) window.utools.outPlugin()
+        } catch (e) {
+          console.warn('Failed to auto close window', e)
+        }
+      }
+      return
+    }
+    openExternalUrl(url)
+  }, [])
+
+  // 强制走系统默认浏览器（右键反转入口用：默认=内置时提供「用默认浏览器打开」）
+  const openUrlInDefaultBrowser = useCallback((url: string) => {
+    const settingsStore = useSettingsStore.getState()
+    if (window.utools) {
+      const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
+      utoolsApi?.shellOpenExternal?.(url)
       if (settingsStore.autoCloseWindow) {
         try {
           if (isDetachedWindowNow()) window.utools.outPlugin()
@@ -307,6 +303,7 @@ export function useBookmarkOperations() {
     copyBookmarkDescription,
     openUrl,
     openUrlInUtoolsBrowser,
+    openUrlInDefaultBrowser,
     getTemplateLabel,
     handleRemove,
     emptyTrash,

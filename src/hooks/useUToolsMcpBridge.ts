@@ -14,7 +14,7 @@ import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
  *     { requestId, ok: true, result } 或 { requestId, ok: false, error }
  *
  * 这是 uTools 契约的渲染层实现：让 plugin.json 声明的工具（get_bookmark_tree /
- * list_groups / list_bookmarks 等）能从 React 端取得并操作书签数据。无埋点。
+ * list_groups / list_bookmarks 等）能从 React 端取得并操作书签数据。
  */
 
 const MCP_TOOL_REQUEST_EVENT = 'goose-marks:mcp-tool-request'

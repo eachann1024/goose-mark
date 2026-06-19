@@ -12,7 +12,7 @@ import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
  *
  * applyRemoteChanges 等远端合并逻辑改为：取 store 的可变快照（groups/bookmarks 深拷贝），
  * 原地合并后通过 store.setData 一次性提交（等价旧版直接改 Pinia reactive state）。
- * store.setData / refreshMissingIcons 为业务阶段方法。无埋点。
+ * store.setData / refreshMissingIcons 为业务阶段方法。
  */
 
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/sync'

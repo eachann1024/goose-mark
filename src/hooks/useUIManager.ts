@@ -5,7 +5,7 @@ import { create } from 'zustand'
  * --------------------------------------------------------------------------
  * 整合 Tooltip、Toast、Dialog 等全局 UI 状态。旧版 Vue 用模块级 ref 共享，
  * React 等价做法是用一个模块级 Zustand store 承载共享状态，组件用
- * useUIManager() 订阅。纯 UI 反馈逻辑，无埋点。
+ * useUIManager() 订阅。纯 UI 反馈逻辑。
  */
 
 // ============ Toast 类型 ============

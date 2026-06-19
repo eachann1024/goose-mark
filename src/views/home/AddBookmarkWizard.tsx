@@ -63,6 +63,7 @@ export default function AddBookmarkWizard({
     openAdd,
     openEdit,
     handleSave,
+    runUrlFetch,
     askAI,
     requestDelete,
     askCategorySuggestion,
@@ -146,7 +147,8 @@ export default function AddBookmarkWizard({
   // ---- 动作 ----
   const startRecognize = useCallback(() => {
     setManualFallback(false)
-    // hook 内部 useEffect 已对 draft.url 变化自动防抖抓取（与是否进入识别步无关）
+    // 显式触发抓取：识别只在点「下一步 / 回车」时发起，输入阶段不再自动抓取
+    runUrlFetch()
     if (canUseAi) {
       // AI 开启：进入识别步展示三阶段进度，并叠加 AI 整理（先抓取后 AI）
       setStep(1)
@@ -155,7 +157,7 @@ export default function AddBookmarkWizard({
       // AI 关闭：没有可展示的识别工作，直接进确认；抓取在确认卡里边抓边填
       setStep(2)
     }
-  }, [askAI, canUseAi])
+  }, [askAI, canUseAi, runUrlFetch])
 
   // Step 0 不再做「停顿自动前进」：抓取仍随 URL 在 hook 内自动起跑，但「往前走」只由
   // 显式动作驱动（粘贴 / 回车 / 下一步按钮），避免自动跳转打断用户选中/编辑 URL（全选等）。
@@ -193,12 +195,10 @@ export default function AddBookmarkWizard({
   }, [])
 
   const retry = useCallback(() => {
-    // 重新写一遍 URL 触发 hook 防抖抓取
-    const url = draft.url
-    patchDraft({ url: '' })
-    window.setTimeout(() => patchDraft({ url }), 30)
+    // 重新发起抓取（显式触发，不再借清空/回填 URL 间接触发）
+    runUrlFetch()
     if (canUseAi) window.setTimeout(() => askAI(false), 80)
-  }, [draft.url, patchDraft, askAI, canUseAi])
+  }, [runUrlFetch, askAI, canUseAi])
 
   const handleCancel = useCallback(() => set({ showAdd: false }), [set])
   const handleSaveClick = useCallback(async () => {
