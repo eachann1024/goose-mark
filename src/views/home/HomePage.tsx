@@ -25,7 +25,6 @@ import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { useBookmarkForm, useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookmarkForm'
 import { useUIManager } from '@/hooks/useUIManager'
-import { useStatsStore } from '@/stores/stats'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { resolveBookmarkLaunchUrl, getTemplateLabel } from '@/lib/utils'
@@ -36,9 +35,11 @@ import { buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './vi
 import SidebarNav from './SidebarNav'
 import AddBookmarkWizard from './AddBookmarkWizard'
 import GroupManagePage from './GroupManagePage'
-import AboutPage from './AboutPage'
+import AvatarMenu from './AvatarMenu'
+import HelpAboutDialog from './HelpAboutDialog'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
+import logoUrl from '@/assets/logo.png'
 import { DEFAULT_AI_MODEL, AI_PROVIDER_PRESETS } from '@/constants/ai'
 import { fetchCustomAIModels } from '@/lib/aiProvider'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
@@ -135,7 +136,7 @@ interface UToolsPluginEnterPayload {
  * 明暗用根容器 data-theme 控制，配色全部来自 home.css 的独立 CSS 变量。
  */
 
-type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups' | 'about'
+type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups'
 type ViewMode = 'list' | 'grid'
 type Theme = 'light' | 'dark'
 type ThemePref = 'light' | 'dark' | 'system'
@@ -160,7 +161,6 @@ const SET_NAV: Array<[string, string, string]> = [
   ['AI 助手', 'sparkles', 'set-ai'],
   ['导入与备份', 'database', 'set-data'],
   ['分组管理', 'folder', 'set-categories'],
-  ['帮助与统计', 'info', 'set-about']
 ]
 
 export default function HomePage() {
@@ -183,6 +183,7 @@ export default function HomePage() {
   const {
     openBookmarkLink: openBookmarkLinkBase,
     openUrlInUtoolsBrowser,
+    openUrlInDefaultBrowser,
     copyBookmarkUrl,
     handleRemove,
     openUrl
@@ -205,6 +206,7 @@ export default function HomePage() {
   // settings store
   const homeViewMode = useSettingsStore((s) => s.homeViewMode)
   const setHomeViewMode = useSettingsStore((s) => s.setHomeViewMode)
+  const useUtoolsBrowser = useSettingsStore((s) => s.useUtoolsBrowser)
   const gridColumns = useSettingsStore((s) => s.gridColumns)
   const density = useSettingsStore((s) => s.density)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
@@ -288,6 +290,10 @@ export default function HomePage() {
   const [toastTitle, setToastTitle] = useState('')
   const [toastKey, setToastKey] = useState(0)
   const [searchVal, setSearchVal] = useState('')
+  // ---- 个人菜单 + 帮助弹窗 ----
+  const [paOpen, setPaOpen] = useState(false)
+  const avatarRef = useRef<HTMLButtonElement>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
   // 模板输入态：当前处于模板输入模式的书签
   const [activeTemplateBookmark, setActiveTemplateBookmark] = useState<Bookmark | null>(null)
   const [templateQuery, setTemplateQuery] = useState('')
@@ -538,13 +544,12 @@ export default function HomePage() {
   // ---- 工具：返回书签列表视图（供 FormPage/TrashPage 返回用） ----
   const backToList = useCallback(() => setScreen(view), [view])
 
-  // ---- 交互：明暗切换（持久化到 localStorage） ----
-  const toggleTheme = useCallback(() => {
-    const next: ThemePref = theme === 'dark' ? 'light' : 'dark'
-    setThemePref(next)
-    setTheme(next)
-    utoolsStorage.setItem('goose-marks.theme-mode', next)
-  }, [theme])
+  // ---- 交互：统一主题偏好入口（持久化到 utools storage） ----
+  const applyThemePref = useCallback((pref: ThemePref) => {
+    setThemePref(pref)
+    setTheme(resolveTheme(pref))
+    utoolsStorage.setItem('goose-marks.theme-mode', pref)
+  }, [])
 
   // ---- 交互：列表/网格切换（设计稿 setView，同步持久化到 settings store） ----
   const changeView = useCallback(
@@ -564,11 +569,6 @@ export default function HomePage() {
     },
     [setHomeViewMode]
   )
-
-  // ---- 交互：齿轮做设置开关 ----
-  const toggleSettings = useCallback(() => {
-    setScreen((prev) => (prev === 'settings' ? view : 'settings'))
-  }, [view])
 
   // ---- 交互：右键菜单（记录被右键的书签项及精确位置） ----
   const openCtx = useCallback((e: React.MouseEvent) => {
@@ -769,11 +769,6 @@ export default function HomePage() {
           closeCtx()
           return
         }
-        if (screen === 'about') {
-          setScreen('settings')
-          closeCtx()
-          return
-        }
         // 列表态：Esc 优先清空内联搜索，其次让搜索框失焦
         if (searchVal) {
           clearSearch()
@@ -788,8 +783,13 @@ export default function HomePage() {
         // 表单页（add/edit）正在编辑时忽略 Cmd+K，避免未保存草稿被卸载
         if (screen === 'add') return
         e.preventDefault()
-        headerSearchRef.current?.focus()
-        headerSearchRef.current?.select()
+        // uTools 模式无页内搜索框：⌘K 回到 uTools 原生 subInput；其余环境聚焦页内搜索框
+        if (window.utools) {
+          window.utools.subInputFocus?.()
+        } else {
+          headerSearchRef.current?.focus()
+          headerSearchRef.current?.select()
+        }
         return
       }
 
@@ -811,7 +811,7 @@ export default function HomePage() {
           if (hit) {
             e.preventDefault()
             const realBookmark = bookmarks.find((b) => b.id === hit.id)
-            if (realBookmark) openBookmarkLink(realBookmark, { openMethod: 'keyboard' })
+            if (realBookmark) openBookmarkLink(realBookmark)
           }
           return
         }
@@ -974,7 +974,7 @@ export default function HomePage() {
     let url = bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query))
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url
     fireToastRef.current('正在打开…')
-    openUrl(url, { source: 'template_search', openMethod: 'keyboard', bookmarkId: bookmark.id, hasTemplate: true })
+    openUrl(url)
     // openUrl 内部已处理 autoCloseWindow / outPlugin；非自动关闭时收起主窗口并退出模板态
     if (!isDetachedUToolsWindow()) { try { window.utools?.hideMainWindow?.() } catch { /* ignore */ } }
     exitTemplateModeRef.current()
@@ -1162,7 +1162,7 @@ export default function HomePage() {
       let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
       if (!/^https?:\/\//i.test(url)) url = 'https://' + url
       fireToastRef.current('正在打开…')
-      openUrl(url, { source: 'plugin', openMethod: 'plugin', bookmarkId: bookmark.id, hasTemplate })
+      openUrl(url)
       if (!isDetachedUToolsWindow()) { try { window.utools?.hideMainWindow?.() } catch { /* ignore */ } }
       if (activeTemplateBookmarkRef.current) exitTemplateModeRef.current()
       recentDynamicTemplateEnterAtRef.current = Date.now()
@@ -1183,7 +1183,7 @@ export default function HomePage() {
           const resolvedUrl = resolveBookmarkLaunchUrl(match.bookmark.url, match.query)
           if (resolvedUrl) {
             fireToastRef.current('正在打开…')
-            openUrl(resolvedUrl, { source: 'plugin', openMethod: 'plugin' })
+            openUrl(resolvedUrl)
             if (!isDetachedUToolsWindow()) { try { window.utools?.hideMainWindow?.() } catch { /* ignore */ } }
             return
           }
@@ -1264,7 +1264,7 @@ export default function HomePage() {
       if (activeTemplateBookmarkRef.current) return
       const curScreen = screenRef.current
       if (curScreen === 'add') return
-      if (curScreen === 'settings' || curScreen === 'trash' || curScreen === 'groups' || curScreen === 'about') {
+      if (curScreen === 'settings' || curScreen === 'trash' || curScreen === 'groups') {
         setScreenRef.current(viewRef.current)
       }
       applySearchValRef.current(text, true)
@@ -1329,11 +1329,6 @@ export default function HomePage() {
     }
     window.addEventListener('storage-sync', onStorageSync)
     return () => window.removeEventListener('storage-sync', onStorageSync)
-  }, [])
-
-  // 启动统计：记录插件每次打开（本地业务数据，非外部埋点；对齐 App.tsx recordUse('open')）
-  useEffect(() => {
-    useStatsStore.getState().recordUse('open')
   }, [])
 
   // ---- syncFeatures：书签数据变化 → 注册/反注册动态 uTools 特性 ----
@@ -1498,37 +1493,22 @@ export default function HomePage() {
               </button>
             )}
           </div>
-          <div className="seg" style={{ padding: 2, background: 'var(--surface)' }}>
-            <button
-              className={view === 'list' ? 'on' : ''}
-              style={{ padding: '6px 9px' }}
-              onClick={() => changeView('list')}
-              title="列表"
-            >
-              <Ico name="list" />
-            </button>
-            <button
-              className={view === 'grid' ? 'on' : ''}
-              style={{ padding: '6px 9px' }}
-              onClick={() => changeView('grid')}
-              title="网格"
-            >
-              <Ico name="layout-grid" />
-            </button>
-          </div>
-          <button className="icon-btn" title="新增书签" onClick={() => { setFormEditItem(null); setFormKey((k) => k + 1); setScreen('add') }}>
-            <Ico name="plus" />
-          </button>
-          <div className="h-divider" />
+          {/* 收集按钮 */}
           <button
-            className={`icon-btn${screen === 'settings' ? ' on' : ''}`}
-            title="设置"
-            onClick={toggleSettings}
+            className="collect-btn"
+            onClick={() => { setFormEditItem(null); setFormKey((k) => k + 1); setScreen('add') }}
           >
-            <Ico name="settings" />
+            <Ico name="plus" />
+            收集
           </button>
-          <button className="icon-btn theme-mini" title="主题" onClick={toggleTheme}>
-            <Ico name={theme === 'dark' ? 'sun' : 'moon-star'} />
+          {/* 头像按钮 */}
+          <button
+            ref={avatarRef}
+            className="avatar"
+            title="个人菜单"
+            onClick={() => setPaOpen((o) => !o)}
+          >
+            <Image src={logoUrl} alt="头像" bare />
           </button>
         </header>
 
@@ -1551,6 +1531,23 @@ export default function HomePage() {
             </button>
           </div>
         )}
+
+        {/* 个人菜单 */}
+        <AvatarMenu
+          open={paOpen}
+          theme={theme}
+          themePref={themePref}
+          view={view}
+          trashN={trashN}
+          onClose={() => setPaOpen(false)}
+          onThemePrefChange={applyThemePref}
+          onViewChange={changeView}
+          onOpenSettings={() => { setPaOpen(false); setScreen('settings') }}
+          onOpenTrash={() => { setPaOpen(false); setScreen('trash') }}
+          onOpenHelp={() => { setPaOpen(false); setHelpOpen(true) }}
+        />
+        {/* 帮助与关于弹窗 */}
+        <HelpAboutDialog open={helpOpen} onClose={() => setHelpOpen(false)} onToast={fireToast} />
 
         {/* 模板输入态横幅：参数输入框在页面内（uTools subInput 已下线） */}
         {activeTemplateBookmark && (
@@ -1579,7 +1576,6 @@ export default function HomePage() {
             activeGroupId={activeGroupId}
             activeSubId={activeSubId}
             screen={screen}
-            trashN={trashN}
             onSubClick={(groupId, subId) => {
               setActiveSubId(subId)
               centerSidebar() // 主动点击 → 侧栏高亮居中
@@ -1591,7 +1587,6 @@ export default function HomePage() {
               // 列表 / 网格视图都滚动到对应分组段
               if (view === 'list' || view === 'grid') scrollToSection(groupId, subId)
             }}
-            onToggleTrash={() => setScreen(screen === 'trash' ? view : 'trash')}
             fireToast={fireToast}
             onActiveSubIdFix={handleActiveSubIdFix}
             centerSignal={sidebarCenterSignal}
@@ -1622,7 +1617,7 @@ export default function HomePage() {
                     searchItems={gridSearchItems}
                     onOpen={(item) => {
                       const realBookmark = bookmarks.find((b) => b.id === item.id)
-                      if (realBookmark) openBookmarkLink(realBookmark, { openMethod: 'click' })
+                      if (realBookmark) openBookmarkLink(realBookmark)
                     }}
                   />
                 ) : (
@@ -1633,7 +1628,7 @@ export default function HomePage() {
                     searching={isSearching}
                     onOpen={(item) => {
                       const realBookmark = bookmarks.find((b) => b.id === item.id)
-                      if (realBookmark) openBookmarkLink(realBookmark, { openMethod: 'click' })
+                      if (realBookmark) openBookmarkLink(realBookmark)
                     }}
                   />
                 )}
@@ -1666,14 +1661,9 @@ export default function HomePage() {
                 theme={theme}
                 themePref={themePref}
                 view={view}
-                onThemeChange={(pref) => {
-                  setThemePref(pref)
-                  setTheme(resolveTheme(pref))
-                  utoolsStorage.setItem('goose-marks.theme-mode', pref)
-                }}
+                onThemeChange={applyThemePref}
                 onToast={fireToast}
                 onGoToGroups={() => setScreen('groups')}
-                onGoToAbout={() => setScreen('about')}
               />
             </div>
           </div>
@@ -1685,22 +1675,20 @@ export default function HomePage() {
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}
 
-        {/* ---------- About page ---------- */}
-        {screen === 'about' && <AboutPage onBack={() => setScreen('settings')} onToast={fireToast} />}
-
         {/* ---------- Context menu ---------- */}
         <div ref={ctxMenuRef} className="ctx-menu" style={{ left: ctx.x, top: ctx.y }}>
           <button onClick={() => {
             closeCtx()
             if (ctxItem) {
               const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
-              if (realBookmark) openBookmarkLink(realBookmark, { openMethod: 'click' })
+              if (realBookmark) openBookmarkLink(realBookmark)
             }
           }}><Ico name="external-link" />打开</button>
           <button onClick={() => {
             closeCtx()
-            if (ctxItem) openUrlInUtoolsBrowser(ctxItem.url)
-          }}><Ico name="globe" />在内置浏览器打开</button>
+            // 反转：默认走内置浏览器时，右键提供「用系统默认浏览器打开」，反之亦然
+            if (ctxItem) (useUtoolsBrowser ? openUrlInDefaultBrowser : openUrlInUtoolsBrowser)(ctxItem.url)
+          }}><Ico name="globe" />{useUtoolsBrowser ? '用默认浏览器打开' : '在内置浏览器打开'}</button>
           <button onClick={() => {
             closeCtx()
             if (ctxItem) {
@@ -2360,7 +2348,6 @@ function SettingsContent({
   onThemeChange,
   onToast,
   onGoToGroups,
-  onGoToAbout,
 }: {
   theme: Theme
   themePref: ThemePref
@@ -2368,7 +2355,6 @@ function SettingsContent({
   onThemeChange?: (pref: ThemePref) => void
   onToast?: (title?: string) => void
   onGoToGroups?: () => void
-  onGoToAbout?: () => void
 }) {
   // settings store
   const homeViewMode = useSettingsStore((s) => s.homeViewMode)
@@ -2379,6 +2365,8 @@ function SettingsContent({
   const setAutoCloseWindow = useSettingsStore((s) => s.setAutoCloseWindow)
   const panelContinuous = useSettingsStore((s) => s.panelContinuous)
   const setPanelContinuous = useSettingsStore((s) => s.setPanelContinuous)
+  const useUtoolsBrowser = useSettingsStore((s) => s.useUtoolsBrowser)
+  const setUseUtoolsBrowser = useSettingsStore((s) => s.setUseUtoolsBrowser)
   const gridColumns = useSettingsStore((s) => s.gridColumns)
   const setGridColumns = useSettingsStore((s) => s.setGridColumns)
   const gridIconSize = useSettingsStore((s) => s.gridIconSize)
@@ -2549,6 +2537,13 @@ function SettingsContent({
                 <div
                   className={`switch${autoCloseWindow ? ' on' : ''}`}
                   onClick={() => setAutoCloseWindow(!autoCloseWindow)}
+                />
+              </div>
+              <div className="set-row">
+                <div><div className="rt">使用 uTools 内置浏览器</div><div className="rd">默认用系统默认浏览器打开书签，开启后改用 uTools 内置浏览器</div></div>
+                <div
+                  className={`switch${useUtoolsBrowser ? ' on' : ''}`}
+                  onClick={() => setUseUtoolsBrowser(!useUtoolsBrowser)}
                 />
               </div>
               <div className="set-row">
@@ -2795,15 +2790,6 @@ function SettingsContent({
         </div>
       </div>
 
-      <div className="set-section" id="set-about">
-        <h2><Ico name="info" />帮助与统计</h2>
-        <div className="set-card">
-          <div className="set-row set-row-link" onClick={onGoToAbout} style={{ cursor: 'pointer' }}>
-            <div><div className="rt">帮助与统计</div><div className="rd">查看版本信息与使用统计</div></div>
-            <Ico name="chevron-right" style={{ color: 'var(--fg-faint)', fontSize: 16, flexShrink: 0 }} />
-          </div>
-        </div>
-      </div>
     </>
   )
 }

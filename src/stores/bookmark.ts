@@ -25,7 +25,6 @@ export { TRASH_GROUP_ID, parseUrlParams }
  *   - 数据结构：Group(二级分组 children) + Bookmark(locations 多归属) + 回收站(TRASH_GROUP_ID)
  *
  * 迁移要点：
- *   - 已移除全部 trackEvent 上报（保留业务逻辑）。
  *   - 旧版 Pinia `this.xxx` 改写为 Zustand set/get 不可变更新：读 get()，
  *     在 groups/bookmarks 深/浅拷贝上原地改写后整体 set，保证组件按引用订阅能刷新。
  *   - schedulePush 通过 useSync.getState() 取得（旧版 useSync()）。
@@ -233,7 +232,7 @@ export const useBookmarkStore = create<BookmarkStore>()(
 
         selectSubGroup: (subId) => set({ activeSubGroupId: subId, activeView: 'group' }),
 
-        // 记录书签使用：lastUsed = now、visits++。本地排序数据，非外部埋点。
+        // 记录书签使用：lastUsed = now、visits++。本地排序数据。
         // 不走 scheduleBookmarkSync（避免把高频本地使用记录推送到同步通道）。
         recordBookmarkUse: (id) => {
           const bookmarks = [...get().bookmarks]

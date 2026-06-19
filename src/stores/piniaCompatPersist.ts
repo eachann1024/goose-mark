@@ -21,7 +21,13 @@ export const createPiniaCompatStorage = <S>(): PersistStorage<S> => {
       try {
         const raw = utoolsStorage.getItem(name)
         if (raw == null) return null
-        const parsed = JSON.parse(raw)
+        let parsed = JSON.parse(raw)
+        // uTools dbStorage 历史数据可能双重 JSON 编码（旧版对已是 JSON 字符串的值再 stringify 一次）。
+        // 解一层后若仍是字符串，再解一层，避免 state 拿到字符串 → groups/bookmarks 读空回退种子。
+        // setItem 单层写入，重新保存后自愈。详见 memory utools-dbstorage-double-encoded。
+        if (typeof parsed === 'string') {
+          try { parsed = JSON.parse(parsed) } catch { /* 非双层编码，保持原值 */ }
+        }
         if (parsed && typeof parsed === 'object' && 'state' in parsed && 'version' in parsed) {
           return parsed as StorageValue<S>
         }

@@ -17,7 +17,6 @@ import {
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
-import { useStatsStore } from '@/stores/stats'
 import { useUIManager } from './useUIManager'
 import type { MetadataSource } from './useAI'
 
@@ -30,10 +29,10 @@ import type { MetadataSource } from './useAI'
  * （URL 防抖取图标、关闭时重置）。副作用挂载者应在应用顶层只渲染一次以等价
  * “watcher 只注册一次”。
  *
- * 已移除全部 trackEvent 上报（保留业务逻辑）。AI 调用走 lib/aiProvider 纯函数，
+ * AI 调用走 lib/aiProvider 纯函数，
  * 配置实时读自 settings store。store 的 addBookmark/updateBookmark/
  * updateBookmarkLocations/removeBookmark/getBookmarkLocations/selectGroup/
- * refreshSingleIcon 为业务阶段方法。statsStore.recordUse 为本地业务统计，保留。
+ * refreshSingleIcon 为业务阶段方法。
  */
 
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
@@ -731,7 +730,6 @@ ${groupsDescription}
             locationsToSave
           )
           if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created)
-          useStatsStore.getState().recordUse('add')
 
           const shouldHydrateInBackground =
             !!options?.forceAi ||
@@ -766,30 +764,20 @@ ${groupsDescription}
     [set, resolveLocationsForSave, buildTextIcon]
   )
 
-  // ---- 副作用：URL 变更防抖取图标（等价旧版 watch(draft.url)）----
-  const draftUrl = form.draft.url
-  useEffect(() => {
-    const { isTitleDirty, isDescDirty, editingId, originalUrl } = useBookmarkFormStore.getState()
-    const val = draftUrl
-
-    if (!val) {
-      resetPendingIconFetch()
-      set({ previewIcon: null, iconLoading: false, iconFetchPhase: 'idle' })
-      if (!isTitleDirty) patchDraft({ title: '' })
-      if (!isDescDirty) patchDraft({ desc: '' })
-      return
-    }
-
-    if (!isTitleDirty && !editingId) patchDraft({ title: '' })
-
-    // 编辑模式下：URL 未变化则跳过自动取图标/标题
+  // ---- 手动触发：抓取当前 URL 的图标/标题/描述 ----
+  // 不再随输入自动抓取（避免用户刚打几个字就弹「未能获取」打断、并干扰拖选/编辑 URL）。
+  // 改由「下一步 / 回车 / 重试」显式调用 runUrlFetch()，识别动作完全由用户驱动。
+  const runUrlFetch = useCallback(() => {
+    const { editingId, originalUrl } = useBookmarkFormStore.getState()
+    const val = useBookmarkFormStore.getState().draft.url
+    if (!val) return
+    // 编辑模式下：URL 未变化则跳过取图标/标题
     if (editingId && val === originalUrl) return
 
     if (urlFetchTimer) clearTimeout(urlFetchTimer)
     // 每次发起前递增 id，响应回来后校验是否仍是最新请求
     const thisRequestId = ++urlFetchRequestId
-    // 排定抓取即进入加载态（含防抖等待期）：标题/描述流光从输入完地址就开始，
-    // 避免快速响应时加载态一闪而过
+    // 排定抓取即进入加载态：标题/描述流光在识别阶段开始转，避免快速响应时加载态一闪而过
     set({ iconLoading: true, iconFetchFailed: false, iconFetchPhase: 'loading' })
     // 启动加载态看门狗：即便本次请求回调因代际竞态被丢弃，也保证加载态在总预算后强制落定，
     // 识别环不会无限转。正常回调会在 finally 里清掉它。
@@ -864,6 +852,30 @@ ${groupsDescription}
         }
       }
     }, 400)
+  }, [])
+
+  // ---- 副作用：URL 变更只做清空重置，不触发抓取（抓取改由 runUrlFetch 显式驱动）----
+  const draftUrl = form.draft.url
+  useEffect(() => {
+    const { isTitleDirty, isDescDirty, editingId } = useBookmarkFormStore.getState()
+    const val = draftUrl
+
+    if (!val) {
+      // 清空 URL：撤销在途抓取、复位预览态，未被用户接管的标题/描述一并清空
+      if (urlFetchTimer) {
+        clearTimeout(urlFetchTimer)
+        urlFetchTimer = null
+      }
+      urlFetchRequestId++
+      resetPendingIconFetch()
+      set({ previewIcon: null, iconLoading: false, iconFetchPhase: 'idle' })
+      if (!isTitleDirty) patchDraft({ title: '' })
+      if (!isDescDirty) patchDraft({ desc: '' })
+      return
+    }
+
+    // URL 变化时清掉上一站点遗留的自动标题（用户已手动编辑的不动）
+    if (!isTitleDirty && !editingId) patchDraft({ title: '' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftUrl])
 
@@ -928,6 +940,7 @@ ${groupsDescription}
     openAdd,
     openEdit,
     handleSave,
+    runUrlFetch,
     askAI,
     undoTitle,
     undoDesc,

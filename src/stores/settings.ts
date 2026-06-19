@@ -14,7 +14,7 @@ import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
  *   - 持久化字段 = 全部 state，但排除 localMirrorDirectory（旧版 persist.omit）
  *   - 水合后做字段兜底归一化（旧版 persist.afterHydrate）
  *
- * 说明：原 setter 中的 trackEvent 上报已全部移除（用户要求剥离埋点），仅保留业务赋值逻辑。
+ * 说明：setter 仅保留业务赋值逻辑。
  */
 
 export type ViewMode = 'list' | 'grid' | 'cards'
@@ -57,6 +57,8 @@ export interface SettingsState {
   aiQuickSaveEnabled: boolean
   /** uTools 主窗口展开高度（px），preload 启动时读取并 setExpendHeight 恢复 */
   windowHeight: number
+  /** 打开书签时使用 uTools 内置浏览器（默认 false，即用系统默认浏览器） */
+  useUtoolsBrowser: boolean
 }
 
 /** uTools 窗口高度范围（与 preload.cjs 的 clampWindowHeight 保持一致） */
@@ -90,6 +92,7 @@ export interface SettingsActions {
   setAiQuickSaveEnabled: (value: boolean) => void
   /** 设置 uTools 窗口高度：持久化 + 即时 setExpendHeight 应用 */
   setWindowHeight: (value: number) => void
+  setUseUtoolsBrowser: (value: boolean) => void
 }
 
 export type SettingsStore = SettingsState & SettingsActions
@@ -119,7 +122,8 @@ const createInitialState = (): SettingsState => {
     listShowTags: true,
     gridIconSize: 'medium',
     aiQuickSaveEnabled: true,
-    windowHeight: WINDOW_HEIGHT_DEFAULT
+    windowHeight: WINDOW_HEIGHT_DEFAULT,
+    useUtoolsBrowser: false
   }
 }
 
@@ -176,7 +180,8 @@ export const useSettingsStore = create<SettingsStore>()(
         try {
           window.utools?.setExpendHeight?.(next)
         } catch {}
-      }
+      },
+      setUseUtoolsBrowser: (value) => set({ useUtoolsBrowser: !!value })
     }),
     {
       name: 'settings', // 持久化 key（与旧版 Pinia $id 一致）
@@ -208,6 +213,7 @@ export const useSettingsStore = create<SettingsStore>()(
         gridIconSize: state.gridIconSize,
         aiQuickSaveEnabled: state.aiQuickSaveEnabled,
         windowHeight: state.windowHeight,
+        useUtoolsBrowser: state.useUtoolsBrowser,
       }),
       // 旧版 persist.afterHydrate —— 字段兜底归一化
       onRehydrateStorage: () => (state) => {

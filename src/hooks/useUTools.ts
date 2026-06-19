@@ -9,7 +9,7 @@ import { useBookmarkStore } from '@/stores/bookmark'
  * 旧版 Vue composable 内多为框架无关纯函数（图标转 dataURL、特性签名、串行注册）。
  * React 版保留全部模块级纯函数，仅把对外 API 包成 useCallback 稳定引用。
  * syncFeatures 通过 useBookmarkStore.getState() 读取最新 store（含 isBookmarkInTrash，
- * 业务阶段补齐）。无埋点。
+ * 业务阶段补齐）。
  */
 
 const FEATURE_PREFIX = 'bm_tpl:'

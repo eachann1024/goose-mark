@@ -13,7 +13,7 @@ import {
  * AI 元信息 / 分类建议（React 版）
  * --------------------------------------------------------------------------
  * 旧版 Vue ref 状态 → useState；useDebounceFn → 自定义 useRef + setTimeout 防抖。
- * 已移除全部 trackEvent 上报（用户要求剥离埋点），仅保留业务逻辑。
+ * 仅保留业务逻辑。
  * AI 配置从 settings store 实时读取（useSettingsStore.getState()），与旧版等价。
  */
 
