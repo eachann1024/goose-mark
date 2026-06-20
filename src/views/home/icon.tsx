@@ -7,7 +7,7 @@ import {
   Upload, Download, Cpu, ChevronDown, ChevronRight, Inbox, Loader, AlertCircle,
   RotateCcw, CheckCircle, SearchX, MoreHorizontal, ChevronUp, ArrowRight,
   ArrowUpToLine, Link2, ClipboardPaste, GitMerge, Layers, Bookmark, Eye,
-  RotateCw, ArrowUpRight, Minus, Monitor
+  RotateCw, ArrowUpRight, Minus, Monitor, ChevronLeft, ArrowRightLeft, FolderOpen
 } from 'lucide-react'
 
 /**
@@ -47,6 +47,9 @@ const MAP: Record<string, LucideIcon> = {
   cpu: Cpu,
   'chevron-down': ChevronDown,
   'chevron-right': ChevronRight,
+  'chevron-left': ChevronLeft,
+  'arrow-right-left': ArrowRightLeft,
+  'folder-open': FolderOpen,
   inbox: Inbox,
   loader: Loader,
   'alert-circle': AlertCircle,
