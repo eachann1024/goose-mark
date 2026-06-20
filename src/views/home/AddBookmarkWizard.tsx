@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
-import { useBookmarkForm } from '@/hooks/useBookmarkForm'
+import { useBookmarkForm, useBookmarkFormStore } from '@/hooks/useBookmarkForm'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { Ico } from './icon'
@@ -41,7 +41,7 @@ export default function AddBookmarkWizard({
   onBack,
 }: {
   editItem: HomeItem | null
-  onBack: () => void
+  onBack: (jump?: BookmarkLocation) => void
 }) {
   const bookmarks = useBookmarkStore((s) => s.bookmarks)
   const {
@@ -92,12 +92,15 @@ export default function AddBookmarkWizard({
   const onBackRef = useRef(onBack)
   onBackRef.current = onBack
   const wasOpenRef = useRef(false)
+  // 保存成功后要跳转到的目标分组（取首个落地位置）；取消则保持 null（原地返回不跳）
+  const pendingJumpRef = useRef<BookmarkLocation | null>(null)
   useEffect(() => {
     if (showAdd) {
       wasOpenRef.current = true
     } else if (wasOpenRef.current) {
       wasOpenRef.current = false
-      onBackRef.current()
+      onBackRef.current(pendingJumpRef.current ?? undefined)
+      pendingJumpRef.current = null
     }
   }, [showAdd])
 
@@ -203,6 +206,9 @@ export default function AddBookmarkWizard({
   const handleCancel = useCallback(() => set({ showAdd: false }), [set])
   const handleSaveClick = useCallback(async () => {
     await handleSave()
+    // 保存成功 → showAdd 已置 false；记录落地分组，关闭联动里回传给 onBack 用于跳转
+    const after = useBookmarkFormStore.getState()
+    if (!after.showAdd) pendingJumpRef.current = after.draftLocations[0] ?? null
   }, [handleSave])
   const handleDeleteClick = useCallback(() => requestDelete(), [requestDelete])
 
@@ -216,6 +222,26 @@ export default function AddBookmarkWizard({
       setStep(0)
     }
   }, [step, isEdit, manualFallback, canUseAi])
+
+  // ---- 回车推进：不必够到右下角「下一步」，整页回车即进入下一步 ----
+  // Step0 校验通过→识别；Step1 识别完成→确认；Step2 满足条件→保存。
+  // 简介 textarea 内的普通回车保留换行（cmd/ctrl+回车仍可在任意位置保存）；IME 组字回车忽略。
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (step === 0) {
+        if (isValidUrlLike(draft.url)) { e.preventDefault(); startRecognize() }
+      } else if (step === 1) {
+        if (canConfirm) { e.preventDefault(); toConfirm() }
+      } else if (step === 2) {
+        if (tag === 'TEXTAREA' && !(e.metaKey || e.ctrlKey)) return
+        if (!isSaving && draftLocations.length > 0) { e.preventDefault(); void handleSaveClick() }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [step, draft.url, canConfirm, isSaving, draftLocations.length, startRecognize, toConfirm, handleSaveClick])
 
   // AI 关闭时没有独立的识别步（抓取在确认卡里边抓边填），轨道收成两步
   const railSteps = useMemo(() => {
@@ -263,7 +289,6 @@ export default function AddBookmarkWizard({
             <CaptureStep
               url={draft.url}
               setUrl={setUrl}
-              onStart={startRecognize}
               onPaste={handlePaste}
             />
           )}
@@ -372,12 +397,10 @@ export default function AddBookmarkWizard({
 function CaptureStep({
   url,
   setUrl,
-  onStart,
   onPaste,
 }: {
   url: string
   setUrl: (v: string) => void
-  onStart: () => void
   onPaste: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -385,7 +408,6 @@ function CaptureStep({
     const t = window.setTimeout(() => inputRef.current?.focus(), 60)
     return () => window.clearTimeout(t)
   }, [])
-  const valid = isValidUrlLike(url)
   return (
     <div className="gm-capture">
       <div className="gm-capture-head">
@@ -399,9 +421,6 @@ function CaptureStep({
           ref={inputRef}
           value={url}
           onChange={(e) => setUrl(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && valid) onStart()
-          }}
           placeholder="粘贴或输入网址…"
         />
         <button className="gm-url-paste" onClick={onPaste} title="从剪贴板粘贴">

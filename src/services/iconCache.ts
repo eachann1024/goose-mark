@@ -116,19 +116,6 @@ const isHtmlDocument = async (url: string): Promise<boolean> => {
   }
 }
 
-const fetchIconDirect = async (url: string): Promise<{ icon: string; cache: string } | null> => {
-  try {
-    const target = new URL(url)
-    // 直接使用 DuckDuckGo favicon 服务，避免 CORS 和 404 问题
-    return {
-      icon: `https://icons.duckduckgo.com/ip3/${target.hostname}.ico`,
-      cache: ''
-    }
-  } catch {
-    return null
-  }
-}
-
 const buildTextIconValue = (text: string) => {
   const base = text.trim()
   return base ? base.slice(0, 4).toUpperCase() : '•'
@@ -423,21 +410,6 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
     }
   }
 
-  // Web 端直接兜底 favicon
-  const direct = await fetchIconDirect(targetUrl)
-  if (direct) {
-    if (import.meta.env.DEV) {
-      console.log('✅ [AG-Verify] Web Icon Base64:', direct.cache?.substring(0, 50) + '...', 'Len:', direct.cache?.length)
-    }
-    return {
-      type: 'remote',
-      src: direct.icon,
-      cache: direct.cache,
-      fetchedAt: Date.now(),
-      ...fetchedMeta
-    }
-  }
-
   if (fetchedMeta.title || fetchedMeta.description) {
     const fallbackText = fetchedMeta.title || (() => {
       try {
@@ -485,6 +457,36 @@ export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<strin
   }
 
   const workers = Array.from({ length: Math.min(CONCURRENCY, missing.length) }, () => worker())
+  await Promise.all(workers)
+
+  return result
+}
+
+/**
+ * 把"已有远程 URL、但还没缓存 base64"的图标抓成本地 base64。
+ * 用于一次性回填存量书签与 web 兜底失败的图标，实现"成功一次永久本地化、之后不再联网"。
+ * 返回 id -> base64 dataUrl 的映射，由调用方写回 store。
+ */
+export const backfillRemoteIconCache = async (bookmarks: Bookmark[]): Promise<Map<string, string>> => {
+  const result = new Map<string, string>()
+  const targets = bookmarks.filter((b) => {
+    const icon = b.icon
+    return icon?.type === 'remote' && !!icon.src && !(icon.cache && icon.cache.startsWith('data:image/'))
+  })
+  if (targets.length === 0) return result
+
+  const CONCURRENCY = 6
+  let index = 0
+  const worker = async () => {
+    while (index < targets.length) {
+      const bookmark = targets[index++]
+      const icon = bookmark.icon as Extract<IconSource, { type: 'remote' }>
+      const dataUrl = await fetchAsDataUrl(icon.src)
+      if (dataUrl) result.set(bookmark.id, dataUrl)
+    }
+  }
+
+  const workers = Array.from({ length: Math.min(CONCURRENCY, targets.length) }, () => worker())
   await Promise.all(workers)
 
   return result

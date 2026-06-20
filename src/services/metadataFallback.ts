@@ -1,7 +1,7 @@
 type SearchFallbackResult = {
   title: string | null
   description: string | null
-  provider: 'duckduckgo'
+  provider: 'jina'
 }
 
 type NodeModuleLike = {
@@ -20,19 +20,7 @@ const getNodeModule = (name: string): NodeModuleLike | null => {
   return null
 }
 
-const decodeHtml = (value: string) => value
-  .replace(/&amp;/g, '&')
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/&quot;/g, '"')
-  .replace(/&#39;/g, "'")
-  .replace(/&#x2F;/gi, '/')
-  .replace(/&#x27;/gi, "'")
-  .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-
-const stripHtml = (value: string) => decodeHtml(value.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim())
-
-const requestTextViaFetch = async (url: string, timeoutMs: number) => {
+const requestTextViaFetch = async (url: string, timeoutMs: number, headers?: Record<string, string>) => {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -40,7 +28,8 @@ const requestTextViaFetch = async (url: string, timeoutMs: number) => {
       signal: controller.signal,
       headers: {
         'User-Agent': 'Mozilla/5.0',
-        'Accept': 'text/html,application/xhtml+xml'
+        'Accept': 'text/html,application/xhtml+xml',
+        ...headers
       }
     })
     if (!response.ok) return null
@@ -52,7 +41,7 @@ const requestTextViaFetch = async (url: string, timeoutMs: number) => {
   }
 }
 
-const requestTextViaNode = (url: string, timeoutMs: number): Promise<string | null> => {
+const requestTextViaNode = (url: string, timeoutMs: number, headers?: Record<string, string>): Promise<string | null> => {
   return new Promise((resolve) => {
     const https = getNodeModule('https')
     const http = getNodeModule('http')
@@ -69,7 +58,8 @@ const requestTextViaNode = (url: string, timeoutMs: number): Promise<string | nu
         timeout: timeoutMs,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml'
+          'Accept': 'text/html,application/xhtml+xml',
+          ...headers
         }
       }, (res: any) => {
         if ((res.statusCode || 0) >= 400) {
@@ -101,58 +91,28 @@ const requestTextViaNode = (url: string, timeoutMs: number): Promise<string | nu
   })
 }
 
-const requestText = async (url: string, timeoutMs = 8000) => {
-  const nodeResult = await requestTextViaNode(url, timeoutMs)
+const requestText = async (url: string, timeoutMs = 8000, headers?: Record<string, string>) => {
+  const nodeResult = await requestTextViaNode(url, timeoutMs, headers)
   if (nodeResult) return nodeResult
-  return requestTextViaFetch(url, timeoutMs)
+  return requestTextViaFetch(url, timeoutMs, headers)
 }
 
-const buildSearchQuery = (rawUrl: string) => {
+const fetchMetadataViaJina = async (url: string): Promise<SearchFallbackResult | null> => {
   try {
-    const normalized = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`
-    const url = new URL(normalized)
-    const host = url.hostname.replace(/^www\./i, '')
-    const segments = url.pathname
-      .split('/')
-      .map(segment => {
-        try {
-          return decodeURIComponent(segment)
-        } catch {
-          return segment
-        }
-      })
-      .filter(Boolean)
-      .slice(-3)
-      .join(' ')
-    return [host, segments].filter(Boolean).join(' ')
+    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    const target = `https://r.jina.ai/${normalized}`
+    const text = await requestText(target, 10000, { Accept: 'application/json' })
+    if (!text) return null
+    const payload = JSON.parse(text)
+    const title = (payload?.data?.title ?? payload?.title ?? '').trim()
+    const description = (payload?.data?.description ?? payload?.description ?? '').trim()
+    if (!title) return null
+    return { title, description: description || null, provider: 'jina' }
   } catch {
-    return rawUrl.trim()
-  }
-}
-
-const extractDuckDuckGoResult = (html: string): SearchFallbackResult | null => {
-  const titleMatch = html.match(/result__a[^>]*>([\s\S]*?)<\/a>/i)
-  if (!titleMatch) return null
-
-  const snippetMatch = html.match(/result__snippet[^>]*>([\s\S]*?)<\/a>/i)
-    || html.match(/result__snippet[^>]*>([\s\S]*?)<\/div>/i)
-
-  const title = stripHtml(titleMatch[1] || '')
-  const description = snippetMatch ? stripHtml(snippetMatch[1] || '') : ''
-  if (!title) return null
-
-  return {
-    title,
-    description: description || null,
-    provider: 'duckduckgo'
+    return null
   }
 }
 
 export const fetchMetadataFromNetwork = async (url: string): Promise<SearchFallbackResult | null> => {
-  const query = buildSearchQuery(url)
-  if (!query) return null
-
-  const html = await requestText(`https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`)
-  if (!html) return null
-  return extractDuckDuckGoResult(html)
+  return fetchMetadataViaJina(url)
 }
