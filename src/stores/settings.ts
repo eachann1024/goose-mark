@@ -141,11 +141,15 @@ export const useSettingsStore = create<SettingsStore>()(
       setAiCustomProviderEnabled: (value) => set({ aiUseCustomProvider: !!value }),
       setAiProviderPreset: (preset) => {
         const meta = getPresetMeta(preset)
-        // 切换供应商即清空上一供应商缓存的模型列表（避免误用），custom 保留用户已填的 baseURL
+        // 切换供应商即清空上一供应商缓存的模型列表与选中模型（避免旧 provider 的模型 id 残留，
+        // 导致下拉视觉显示默认值、但实际仍把旧模型 id 发给新端点 → “旧模型不能访问”）。
+        // 归一到 DEFAULT_AI_MODEL，与模型下拉的兜底显示一致；用户拉取模型后 saveAiCustomConfig 再校正。
+        // custom 保留用户已填的 baseURL。
         set({
           aiProviderPreset: preset,
           aiCustomBaseURL: preset === 'custom' ? get().aiCustomBaseURL : meta.baseURL,
-          aiCustomModelOptions: []
+          aiCustomModelOptions: [],
+          aiSelectedModelId: DEFAULT_AI_MODEL
         })
       },
       saveAiCustomConfig: (config) => {

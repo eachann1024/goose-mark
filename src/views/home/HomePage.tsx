@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import PinyinMatch from 'pinyin-match'
-import type { Bookmark, Group } from '@/types/bookmark'
+import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore, WINDOW_HEIGHT_MIN, WINDOW_HEIGHT_MAX } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
@@ -541,8 +541,6 @@ export default function HomePage() {
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey) }
   }, [tabCtx.open, closeTabCtx])
 
-  // ---- 工具：返回书签列表视图（供 FormPage/TrashPage 返回用） ----
-  const backToList = useCallback(() => setScreen(view), [view])
 
   // ---- 交互：统一主题偏好入口（持久化到 utools storage） ----
   const applyThemePref = useCallback((pref: ThemePref) => {
@@ -712,6 +710,17 @@ export default function HomePage() {
     if (anchorScrollTimer.current) clearTimeout(anchorScrollTimer.current)
     cancelAnimationFrame(anchorRaf.current)
   }, [])
+
+  // ---- 工具：返回书签列表视图（供 FormPage/TrashPage 返回用） ----
+  // jump 非空（保存成功）时跳到书签落地的分组/子分组：store.selectGroup 已切一级分组，
+  // 这里再同步本地 activeSubId（侧栏高亮）并滚动到对应分组段。
+  const backToList = useCallback((jump?: BookmarkLocation) => {
+    setScreen(view)
+    if (jump) {
+      setActiveSubId(jump.subGroupId)
+      if (view === 'list' || view === 'grid') scrollToSection(jump.groupId, jump.subGroupId)
+    }
+  }, [view, scrollToSection])
 
   // ---- SidebarNav：activeSubId 修复回调（删除/移动/提升后回退到首个子分组） ----
   const handleActiveSubIdFix = useCallback(
@@ -2403,6 +2412,14 @@ function SettingsContent({
     ? aiCustomModelOptions
     : [{ id: DEFAULT_AI_MODEL, label: DEFAULT_AI_MODEL }]
 
+  // 自愈：选中模型若不在可选项内（如换供应商后旧 provider 的模型 id 残留），归一到首个可选项。
+  // 否则下拉视觉显示首项、但持久化仍是旧 id，元数据生成会把旧模型发给新端点 → “旧模型不能访问”。
+  useEffect(() => {
+    if (!modelOptions.some((m) => m.id === aiSelectedModelId)) {
+      setAiSelectedModelId(modelOptions[0]?.id ?? DEFAULT_AI_MODEL)
+    }
+  }, [aiSelectedModelId, modelOptions, setAiSelectedModelId])
+
   // 自定义供应商：API Key 本地草稿 + 拉取模型列表状态（BaseURL 跟随预置，custom 时可编辑）
   const [apiKeyDraft, setApiKeyDraft] = useState(aiCustomApiKey)
   const [customUrlDraft, setCustomUrlDraft] = useState(aiCustomBaseURL)
@@ -2526,7 +2543,7 @@ function SettingsContent({
           <div className="set-row">
             <div><div className="rt">紧凑密度</div><div className="rd">减小卡片间距，单屏显示更多</div></div>
             <div
-              className={`switch${compact ? ' on' : ''}`}
+              className={`g-switch${compact ? ' on' : ''}`}
               onClick={() => setDensity(compact ? 'regular' : 'compact')}
             />
           </div>
@@ -2535,21 +2552,21 @@ function SettingsContent({
               <div className="set-row">
                 <div><div className="rt">打开后自动关闭窗口</div><div className="rd">点击书签跳转后收起插件</div></div>
                 <div
-                  className={`switch${autoCloseWindow ? ' on' : ''}`}
+                  className={`g-switch${autoCloseWindow ? ' on' : ''}`}
                   onClick={() => setAutoCloseWindow(!autoCloseWindow)}
                 />
               </div>
               <div className="set-row">
                 <div><div className="rt">使用 uTools 内置浏览器</div><div className="rd">默认用系统默认浏览器打开书签，开启后改用 uTools 内置浏览器</div></div>
                 <div
-                  className={`switch${useUtoolsBrowser ? ' on' : ''}`}
+                  className={`g-switch${useUtoolsBrowser ? ' on' : ''}`}
                   onClick={() => setUseUtoolsBrowser(!useUtoolsBrowser)}
                 />
               </div>
               <div className="set-row">
                 <div><div className="rt">面板连贯模式</div><div className="rd">再次唤起插件时保留上次搜索和浏览位置，关闭则每次回到主页</div></div>
                 <div
-                  className={`switch${panelContinuous ? ' on' : ''}`}
+                  className={`g-switch${panelContinuous ? ' on' : ''}`}
                   onClick={() => setPanelContinuous(!panelContinuous)}
                 />
               </div>
@@ -2576,7 +2593,7 @@ function SettingsContent({
           <div className="set-row">
             <div><div className="rt">背景彩蛋</div><div className="rd">暗黑模式下的动态背景（可选）</div></div>
             <div
-              className={`switch${easterEggEnabled ? ' on' : ''}`}
+              className={`g-switch${easterEggEnabled ? ' on' : ''}`}
               onClick={() => setEasterEggEnabled(!easterEggEnabled)}
             />
           </div>
@@ -2599,21 +2616,21 @@ function SettingsContent({
           <div className="set-row">
             <div><div className="rt">显示描述</div><div className="rd">在书签条目下方显示描述文字</div></div>
             <div
-              className={`switch${listShowDescription ? ' on' : ''}`}
+              className={`g-switch${listShowDescription ? ' on' : ''}`}
               onClick={() => setListShowDescription(!listShowDescription)}
             />
           </div>
           <div className={`set-row${listShowDescription ? '' : ' is-off'}`} aria-disabled={!listShowDescription}>
             <div><div className="rt">完整显示描述</div><div className="rd">描述完整换行展示，不截断为单行省略号</div></div>
             <div
-              className={`switch${listFullDescription ? ' on' : ''}`}
+              className={`g-switch${listFullDescription ? ' on' : ''}`}
               onClick={() => listShowDescription && setListFullDescription(!listFullDescription)}
             />
           </div>
           <div className="set-row">
             <div><div className="rt">显示标签</div><div className="rd">在书签条目下方显示标签</div></div>
             <div
-              className={`switch${listShowTags ? ' on' : ''}`}
+              className={`g-switch${listShowTags ? ' on' : ''}`}
               onClick={() => setListShowTags(!listShowTags)}
             />
           </div>
@@ -2649,7 +2666,7 @@ function SettingsContent({
           <div className="set-row">
             <div><div className="rt">启用 AI 智能整理</div><div className="rd">自动预填标题、描述并推荐分类</div></div>
             <div
-              className={`switch ai${aiEnabled ? ' on' : ''}`}
+              className={`g-switch ai${aiEnabled ? ' on' : ''}`}
               onClick={() => setAiEnabled(!aiEnabled)}
             />
           </div>
@@ -2659,7 +2676,7 @@ function SettingsContent({
             <div className="set-row">
               <div><div className="rt">自定义供应商</div><div className="rd">用 OpenAI 协议端点替代 uTools 内置 AI</div></div>
               <div
-                className={`switch ai${aiUseCustomProvider ? ' on' : ''}`}
+                className={`g-switch ai${aiUseCustomProvider ? ' on' : ''}`}
                 onClick={() => aiEnabled && setAiCustomProviderEnabled(!aiUseCustomProvider)}
               />
             </div>
@@ -2740,7 +2757,7 @@ function SettingsContent({
             </div>
             <div className="set-row">
               <div><div className="rt">AI 快捷保存</div><div className="rd">全局快捷键直接由 AI 整理并保存当前网址</div></div>
-              <div className={`switch ai${aiQuickSaveEnabled ? ' on' : ''}`} onClick={() => aiEnabled && setAiQuickSaveEnabled(!aiQuickSaveEnabled)} />
+              <div className={`g-switch ai${aiQuickSaveEnabled ? ' on' : ''}`} onClick={() => aiEnabled && setAiQuickSaveEnabled(!aiQuickSaveEnabled)} />
             </div>
           </div>
         </div>

@@ -329,10 +329,11 @@
 .goose-home .set-row + .set-row { border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
 .goose-home .set-row .rt { @apply text-[13.5px] text-g-fg; }
 .goose-home .set-row .rd { @apply text-[11.5px] text-g-fg-muted mt-0.5; }
-.goose-home .switch { @apply w-[42px] h-6 rounded-full relative shrink-0 transition-[background] duration-150; background:var(--surface-hover); }
-.goose-home .switch::after { content:""; @apply absolute top-[3px] left-[3px] size-[18px] rounded-full transition-transform duration-[180ms]; background:#fff; box-shadow:var(--shadow-sm); }
-.goose-home .switch.on { @apply bg-g-accent; }
-.goose-home .switch.on::after { @apply translate-x-[18px]; }
+/* 自维护 toggle：类名加 g- 前缀，避开 HeroUI v3 全局 .switch 组件样式（inline-flex/gap/cursor/--switch-control-* 等会污染本控件） */
+.goose-home .g-switch { @apply w-[42px] h-6 rounded-full relative shrink-0 transition-[background] duration-150; background:var(--surface-hover); }
+.goose-home .g-switch::after { content:""; @apply absolute top-[3px] left-[3px] size-[18px] rounded-full transition-transform duration-[180ms]; background:var(--accent-fg); box-shadow:var(--shadow-sm); }
+.goose-home .g-switch.on { @apply bg-g-accent; }
+.goose-home .g-switch.on::after { @apply translate-x-[18px]; }
 /* AI toggle 特例已移除，统一使用 accent 橙色 */
 /* 步进控件（窗口高度等数值调整）：−/值/+，视觉对齐 .select */
 .goose-home .stepper { @apply flex items-center gap-0.5 h-[34px] p-[3px] border border-g-border rounded-g-md bg-g-input shrink-0; }

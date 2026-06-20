@@ -10,7 +10,7 @@ import {
   createBookmarkSeed,
   createSeedGroups
 } from '@/stores/bookmarkSeed'
-import { bulkMatchMissing, ensureIconForBookmark } from '@/services/iconCache'
+import { bulkMatchMissing, ensureIconForBookmark, backfillRemoteIconCache } from '@/services/iconCache'
 import { useSync } from '@/hooks/useSync'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -124,6 +124,7 @@ export interface BookmarkActions {
     successList: string[]
     failList: { id: string; title: string }[]
   }>
+  backfillIconCache: () => Promise<void>
 
   // 同步调度
   getShareIdsFromLocations: (locations?: BookmarkLocation[]) => string[]
@@ -1366,6 +1367,27 @@ export const useBookmarkStore = create<BookmarkStore>()(
           }
         },
 
+        // 把远程图标回填为本地 base64：纯本地缓存优化，成功一次后渲染不再联网。
+        // 刻意不改 updatedAt、不调度同步，避免把 base64 推到云端污染同步数据。
+        backfillIconCache: async () => {
+          const result = await backfillRemoteIconCache(get().bookmarks)
+          if (result.size === 0) return
+          const bookmarks = [...get().bookmarks]
+          let changed = false
+          result.forEach((cache, id) => {
+            const idx = bookmarks.findIndex((b) => b.id === id)
+            if (idx === -1) return
+            const prev = bookmarks[idx]
+            if (prev.icon?.type !== 'remote') return
+            bookmarks.splice(idx, 1, {
+              ...prev,
+              icon: { ...prev.icon, cache, fetchedAt: Date.now() }
+            })
+            changed = true
+          })
+          if (changed) set({ bookmarks })
+        },
+
         syncAllSharedEntities: (updatedAt = Date.now()) => {
           get()
             .groups.filter((group) => group.id !== TRASH_GROUP_ID)
@@ -1422,6 +1444,8 @@ export const useBookmarkStore = create<BookmarkStore>()(
       onRehydrateStorage: () => (state, error) => {
         if (error || !state) return
         useBookmarkStore.getState().migrateFromLegacy()
+        // 水合后后台静默把远程图标本地化为 base64，之后渲染不再联网读取
+        void useBookmarkStore.getState().backfillIconCache()
       }
     }
   )
