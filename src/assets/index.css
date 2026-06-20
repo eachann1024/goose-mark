@@ -7,6 +7,38 @@
 
 @config "../../tailwind.config.js";
 
+/* ============================================================
+   goose-home 调色板 → Tailwind 工具类（g- 前缀，零撞车）
+   home.css 的 --fg/--surface/--accent… 是 .goose-home 作用域内的裸色值；
+   与 index.css/HeroUI 的 HSL token 同名会撞车（accent/ai/input/border/success），
+   故统一加 g- 前缀注册成工具类（text-g-fg / bg-g-surface / rounded-g-md …）。
+   @theme inline：工具类按 var(...) 内联引用，随 .goose-home[data-theme=dark]
+   自动切换明暗，与现有 HeroUI/Tailwind token 完全隔离。
+   ============================================================ */
+@theme inline {
+  --color-g-bg: var(--bg);
+  --color-g-surface: var(--surface);
+  --color-g-surface-hover: var(--surface-hover);
+  --color-g-input: var(--input);
+  --color-g-fg: var(--fg);
+  --color-g-fg-muted: var(--fg-muted);
+  --color-g-fg-faint: var(--fg-faint);
+  --color-g-accent: var(--accent);
+  --color-g-accent-hover: var(--accent-hover);
+  --color-g-accent-subtle: var(--accent-subtle);
+  --color-g-accent-fg: var(--accent-fg);
+  --color-g-ai: var(--ai);
+  --color-g-ai-subtle: var(--ai-subtle);
+  --color-g-ai-bright: var(--ai-bright);
+  --color-g-border: var(--border);
+  --color-g-success: var(--success);
+  --color-g-success-subtle: var(--success-subtle);
+  --color-g-danger: var(--danger);
+  --radius-g: var(--radius);
+  --radius-g-md: var(--radius-md);
+  --radius-g-sm: var(--radius-sm);
+}
+
 /* 图标迁移说明：原 UnoCSS presetIcons 的 i-ph-* 用法已废弃，
    组件阶段统一改用 lucide-react 的命名导出（如 import { Bookmark } from 'lucide-react'）。 */
 
@@ -285,21 +317,19 @@ input[type="number"] {
 
 /* BookmarkCard 选中态（普通 / 搜索浮层两种变体） */
 .bookmark-card--selected {
-  border-color: hsl(var(--primary) / 0.35);
-  background-color: hsl(var(--primary) / 0.08);
+  @apply border-primary/[0.35] bg-primary/[0.08];
   box-shadow:
     0 4px 16px hsl(var(--primary) / 0.08),
     0 0 0 1px hsl(var(--primary) / 0.25);
 }
 .bookmark-card--selected-search {
-  border-color: hsl(var(--primary) / 0.25);
-  background-color: hsl(var(--primary) / 0.05);
+  @apply border-primary/25 bg-primary/5;
   box-shadow:
     0 4px 12px hsl(var(--primary) / 0.06),
     0 0 0 1px hsl(var(--primary) / 0.18);
 }
 .dark .bookmark-card--hoverable:hover {
-  background-color: hsl(var(--card));
+  @apply bg-card;
 }
 .bookmark-card__locate-btn:hover {
   background-color: hsl(var(--foreground) / 0.1) !important;
@@ -307,37 +337,30 @@ input[type="number"] {
 
 /* CategoryMultiSelect 子分组 chip */
 .subgroup-chip {
-  transition: all 0.15s ease;
+  @apply transition-all duration-150;
 }
 .subgroup-chip--idle {
-  background: hsl(var(--muted) / 0.3);
-  color: hsl(var(--foreground));
-  border: 1px solid transparent;
+  @apply bg-muted/30 text-foreground border border-transparent;
 }
 .subgroup-chip--idle:hover {
-  background: hsl(var(--muted) / 0.6);
-  border-color: hsl(var(--border));
+  @apply bg-muted/60 border-border;
 }
 .subgroup-chip--selected {
-  background: hsl(var(--primary) / 0.08);
-  color: hsl(var(--primary));
-  border: 1px solid hsl(var(--primary) / 0.25);
+  @apply bg-primary/[0.08] text-primary border border-primary/25;
 }
 .dark .subgroup-chip--selected {
-  background: hsl(var(--primary) / 0.15);
-  border-color: hsl(var(--primary) / 0.3);
+  @apply bg-primary/15 border-primary/30;
   box-shadow: 0 0 8px hsl(var(--primary) / 0.1);
 }
 
 /* IconSelector tab 激活态 */
 .icon-selector-tab--active {
-  color: hsl(var(--primary));
-  background-color: hsl(var(--primary) / 0.1);
+  @apply text-primary bg-primary/10;
 }
 
 /* OnboardingBanner 渐变背景 */
 .onboarding-banner {
-  border-color: hsl(var(--primary) / 0.2);
+  @apply border-primary/20;
   background: linear-gradient(
     135deg,
     hsl(var(--primary) / 0.05),
@@ -345,63 +368,48 @@ input[type="number"] {
   );
 }
 .onboarding-banner__icon {
-  background-color: hsl(var(--primary) / 0.1);
+  @apply bg-primary/10;
 }
 
 /* AppSidebar 导航项 —— 对齐设计稿：hover 中性微暗(surface-2)、active 珊瑚浅染(accent-tint) */
 .nav-item {
-  transition: background-color 120ms ease, color 120ms ease;
+  @apply transition-[color,background-color] duration-[120ms];
 }
 .nav-item--idle {
-  color: hsl(var(--foreground));
+  @apply text-foreground;
 }
 .nav-item--idle:hover {
-  color: hsl(var(--foreground));
-  background-color: hsl(var(--muted) / 0.85);
+  @apply text-foreground bg-muted/85;
 }
 .dark .nav-item--idle:hover {
-  background-color: hsl(var(--muted) / 0.55);
+  @apply bg-muted/[0.55];
 }
 /* 子项 idle 文字淡一档（对齐设计稿 text-2）；hover/active 仍由上面规则接管 */
 .nav-item--sub.nav-item--idle {
-  color: hsl(var(--muted-foreground));
+  @apply text-muted-foreground;
 }
 .nav-item--sub.nav-item--idle:hover {
-  color: hsl(var(--foreground));
+  @apply text-foreground;
 }
 .nav-item--active {
-  color: hsl(var(--primary));
-  background-color: hsl(var(--primary) / 0.12);
-  font-weight: 500;
+  @apply text-primary bg-primary/[0.12] font-medium;
 }
 .dark .nav-item--active {
-  background-color: hsl(var(--primary) / 0.2);
+  @apply bg-primary/20;
 }
 .nav-item--trash-active {
-  color: hsl(var(--destructive));
-  background-color: hsl(var(--destructive) / 0.1);
+  @apply text-destructive bg-destructive/10;
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* ResultToast 容器（从触发位置生长，配合 @starting-style + allow-discrete） */
 .toast-container {
-  position: fixed;
-  z-index: 20000;
-  width: 320px;
-  max-width: calc(100vw - 2rem);
-  max-height: 200px;
-  overflow-y: auto;
+  @apply fixed z-[20000] w-80 max-w-[calc(100vw-2rem)] max-h-[200px] overflow-y-auto border-border bg-card p-4 pointer-events-auto opacity-100 scale-100;
   border-radius: var(--radius-lg);
-  border: 1px solid hsl(var(--border));
-  background: hsl(var(--card));
+  border-width: 1px;
   box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   backdrop-filter: blur(8px);
-  padding: 1rem;
-  pointer-events: auto;
-
-  opacity: 1;
-  transform: scale(1);
   transform-origin: var(--origin-x, right) var(--origin-y, bottom);
 
   transition:
@@ -416,9 +424,7 @@ input[type="number"] {
 }
 .toast-container[hidden] {
   display: block;
-  opacity: 0;
-  transform: scale(0.92);
-  pointer-events: none;
+  @apply opacity-0 scale-[0.92] pointer-events-none;
 
   transition:
     opacity 180ms ease-in,
@@ -439,171 +445,126 @@ input[type="number"] {
    设置中心（settings 模块）— 从各 .vue <style> 集中迁移到全局。
    ============================================================ */
 .settings-block {
-  padding: 16px;
-  border-radius: 14px;
-  border: 1px solid hsl(var(--border) / 0.25);
-  background: hsl(var(--card));
+  @apply p-4 rounded-[14px] border border-border/25 bg-card flex flex-col;
   box-shadow: 0 10px 24px hsl(var(--foreground) / 0.03);
-  display: flex;
-  flex-direction: column;
 }
 
 .dark .settings-block {
-  background: hsl(var(--card) / 0.55);
-  border-color: hsl(var(--border) / 0.15);
+  @apply bg-card/[0.55] border-border/15;
   backdrop-filter: blur(14px) saturate(1.1);
   -webkit-backdrop-filter: blur(14px) saturate(1.1);
 }
 
 .settings-block__head {
-  margin-bottom: 12px;
+  @apply mb-3;
 }
 
 .settings-block__title {
-  font-size: 14px;
-  line-height: 20px;
-  font-weight: 600;
-  color: hsl(var(--foreground));
+  @apply text-sm font-semibold text-foreground;
 }
 
 .settings-block__desc {
-  margin-top: 4px;
-  font-size: 12px;
-  line-height: 18px;
-  color: hsl(var(--muted-foreground));
+  @apply mt-1 text-xs leading-[18px] text-muted-foreground;
 }
 
 .settings-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  @apply flex items-center justify-between gap-4;
 }
 
 .settings-row--top {
-  align-items: flex-start;
+  @apply items-start;
 }
 
 .settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  @apply flex flex-col gap-2;
 }
 
 .settings-field__label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: hsl(var(--foreground));
+  @apply text-sm font-medium text-foreground;
 }
 
 .settings-section {
-  scroll-margin-top: 12px;
+  @apply scroll-mt-3;
 }
 
 /* TOC 侧栏 */
 .settings-nav {
-  background: hsl(var(--card) / 0.6);
-  border-right: 1px solid hsl(var(--border) / 0.3);
+  @apply bg-card/60 border-r border-border/30;
 }
 
 .dark .settings-nav {
-  background: hsl(var(--card) / 0.45);
-  border-right-color: hsl(var(--border) / 0.15);
+  @apply bg-card/[0.45] border-border/15;
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
 
 .settings-nav-item {
   border-radius: var(--radius-sm);
-  transition: background-color 120ms ease, color 120ms ease;
+  @apply transition-[color,background-color] duration-[120ms];
 }
 
 .settings-nav-item__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
+  @apply inline-flex items-center justify-center shrink-0;
 }
 
 /* 对齐「配色改造预览」设置导航：idle 次级文字、hover 奶油面、active 珊瑚实底 */
 .settings-nav-item--idle {
-  color: hsl(var(--muted-foreground));
+  @apply text-muted-foreground;
 }
 
 .settings-nav-item--idle:hover {
-  color: hsl(var(--foreground));
-  background: hsl(var(--card));
+  @apply text-foreground bg-card;
 }
 
 .dark .settings-nav-item--idle:hover {
-  background: hsl(var(--accent));
+  @apply bg-accent;
 }
 
 .settings-nav-item--active {
-  color: hsl(var(--primary-foreground));
-  background: hsl(var(--primary));
-  font-weight: 500;
+  @apply text-primary-foreground bg-primary font-medium;
 }
 
 .dark .settings-nav-item--active {
-  color: hsl(var(--primary-foreground));
-  background: hsl(var(--primary));
+  @apply text-primary-foreground bg-primary;
 }
 
 .settings-back {
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.4);
-  transition: color 120ms ease, background-color 120ms ease;
+  @apply text-muted-foreground bg-muted/40 transition-[color,background-color] duration-[120ms];
 }
 
 .settings-back:hover {
-  color: hsl(var(--foreground));
-  background: hsl(var(--muted) / 0.7);
+  @apply text-foreground bg-muted/[0.7];
 }
 
 .dark .settings-back {
-  background: hsl(var(--muted) / 0.3);
+  @apply bg-muted/30;
 }
 
 .dark .settings-back:hover {
-  background: hsl(var(--muted) / 0.55);
+  @apply bg-muted/[0.55];
 }
 
 .settings-feedback {
-  color: hsl(var(--muted-foreground));
-  background: hsl(var(--muted) / 0.5);
-  transition: color 120ms ease, background-color 120ms ease;
+  @apply text-muted-foreground bg-muted/[0.5] transition-[color,background-color] duration-[120ms];
 }
 
 .settings-feedback:hover {
-  color: hsl(var(--foreground));
-  background: hsl(var(--muted) / 0.95);
+  @apply text-foreground bg-muted/[0.95];
 }
 
 /* AI 模型选择列表项 */
 .settings-list-item {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  border-radius: 0.75rem;
-  padding: 0.625rem 0.75rem;
-  text-align: left;
-  transition: background-color 120ms ease, color 120ms ease;
+  @apply w-full flex items-start gap-3 rounded-xl px-3 py-[0.625rem] text-left transition-[color,background-color] duration-[120ms];
 }
 
 .settings-list-item:hover {
-  background: hsl(var(--muted) / 0.75);
+  @apply bg-muted/[0.75];
 }
 
 /* 强调色样本 */
 .accent-swatch {
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 9999px;
+  @apply size-6 rounded-full cursor-pointer shrink-0;
   border: none;
-  cursor: pointer;
-  flex-shrink: 0;
   transition: transform 100ms ease, box-shadow 100ms ease;
 }
 
@@ -613,12 +574,7 @@ input[type="number"] {
 
 /* 外观预览（深色模式背景选择） */
 .background-preview {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.75rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  @apply size-10 rounded-xl inline-flex items-center justify-center;
 }
 
 .background-preview--dark {
@@ -637,11 +593,8 @@ input[type="number"] {
 }
 
 .sky-preview {
-  position: relative;
-  width: 2.5rem;
-  height: 2.5rem;
+  @apply relative size-10 overflow-hidden;
   border-radius: 0.625rem;
-  overflow: hidden;
   background:
     radial-gradient(circle at 50% -5%, rgb(25 53 84 / 0.95), transparent 52%),
     linear-gradient(180deg, #08111c 0%, #020204 62%, #000000 100%);
@@ -715,308 +668,167 @@ input[type="number"] {
    设置页行内交互增强
    ============================================================ */
 .goose-home .set-row-link:hover {
-  background: hsl(var(--muted));
+  @apply bg-muted;
 }
 
 /* ============================================================
    GroupManagePage (.gm-*)
    ============================================================ */
 .goose-home .gm-page {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg);
-  color: var(--fg);
+  @apply absolute inset-0 z-50 flex flex-col bg-g-bg text-g-fg;
 }
 
 .goose-home .gm-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 16px 22px 12px;
+  @apply shrink-0 flex items-center gap-3 px-[22px] pt-4 pb-3;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 
 .goose-home .gm-back-btn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 32px;
-  padding: 0 10px 0 6px;
+  @apply flex items-center gap-1 h-8 pl-1.5 pr-2.5 bg-g-surface text-g-fg-muted text-[12.5px] cursor-pointer transition-all duration-150;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--fg-muted);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: all .15s;
 }
-.goose-home .gm-back-btn:hover { color: var(--fg); background: var(--surface-hover); }
+.goose-home .gm-back-btn:hover { @apply text-g-fg bg-g-surface-hover; }
 .goose-home .gm-back-btn .lucide { font-size: 15px; }
 
 .goose-home .gm-title {
+  @apply text-lg font-semibold tracking-[-0.01em];
   font-family: var(--font-serif);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: -.01em;
 }
 
 .goose-home .gm-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
+  @apply flex-1 min-h-0 flex overflow-hidden;
   gap: 0;
-  overflow: hidden;
 }
 
 /* 左栏 */
 .goose-home .gm-left {
-  width: 220px;
-  flex-shrink: 0;
+  @apply w-[220px] shrink-0 flex flex-col overflow-hidden;
   border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
 }
 
 /* 右栏 */
 .goose-home .gm-right {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  @apply flex-1 min-w-0 flex flex-col overflow-hidden;
 }
 
 .goose-home .gm-col-label {
-  flex-shrink: 0;
-  padding: 10px 14px 6px;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--fg-faint);
+  @apply shrink-0 px-3.5 pt-2.5 pb-1.5 text-[11px] font-medium tracking-[.04em] uppercase text-g-fg-faint;
 }
 
 .goose-home .gm-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  @apply flex-1 overflow-y-auto px-2 pt-1 pb-3 flex flex-col gap-0.5;
 }
 
 /* 行 */
 .goose-home .gm-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
+  @apply relative flex items-center gap-2 py-[7px] px-2 cursor-pointer transition-[background] duration-[120ms];
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background .12s;
-  min-height: 34px;
+  /* 固定行高（非 min-height）：hover 显示的 24px 操作按钮比基础文字行高，
+     用 min-height 会让行从 34→38px 撑高、反复 hover 抖动；锁死 34px 即可消除 */
+  height: 34px;
 }
-.goose-home .gm-item:hover { background: var(--surface); }
-.goose-home .gm-item.on { background: var(--surface-hover); font-weight: 500; }
+.goose-home .gm-item:hover { @apply bg-g-surface; }
+.goose-home .gm-item.on { @apply bg-g-surface-hover font-medium; }
 
 .goose-home .gm-item-name {
-  flex: 1;
-  font-size: 13px;
-  color: var(--fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  @apply flex-1 text-[13px] text-g-fg whitespace-nowrap overflow-hidden text-ellipsis;
 }
 
 .goose-home .gm-item-badge {
-  font-size: 10.5px;
-  color: var(--fg-faint);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  flex-shrink: 0;
+  @apply text-[10.5px] text-g-fg-faint tabular-nums whitespace-nowrap shrink-0;
 }
 
 /* 行内操作按钮组（hover 显示） */
 .goose-home .gm-item-actions {
-  display: none;
-  align-items: center;
-  gap: 1px;
-  flex-shrink: 0;
+  @apply hidden items-center gap-px shrink-0;
 }
-.goose-home .gm-item:hover .gm-item-actions { display: flex; }
-.goose-home .gm-item.on .gm-item-actions { display: flex; }
+.goose-home .gm-item:hover .gm-item-actions { @apply flex; }
+.goose-home .gm-item.on .gm-item-actions { @apply flex; }
 
 .goose-home .gm-item-actions button {
-  width: 24px;
-  height: 24px;
+  @apply size-6 border-none bg-transparent text-g-fg-muted cursor-pointer flex items-center justify-center transition-all duration-[120ms] shrink-0;
   border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all .12s;
-  flex-shrink: 0;
 }
 .goose-home .gm-item-actions button .lucide { font-size: 13px; }
-.goose-home .gm-item-actions button:hover { background: var(--surface-hover); color: var(--fg); }
-.goose-home .gm-item-actions button.danger:hover { color: hsl(var(--destructive)); }
-.goose-home .gm-item-actions button:disabled { opacity: 0.3; cursor: not-allowed; }
-.goose-home .gm-item-actions button:disabled:hover { background: transparent; color: var(--fg-muted); }
+.goose-home .gm-item-actions button:hover { @apply bg-g-surface-hover text-g-fg; }
+.goose-home .gm-item-actions button.danger:hover { @apply text-destructive; }
+.goose-home .gm-item-actions button:disabled { @apply opacity-30 cursor-not-allowed; }
+.goose-home .gm-item-actions button:disabled:hover { @apply bg-transparent text-g-fg-muted; }
 
 /* 编辑态 */
 .goose-home .gm-item-editing {
+  @apply cursor-default;
   background: var(--surface) !important;
-  cursor: default;
 }
 
 .goose-home .gm-inline-input {
-  flex: 1;
-  height: 26px;
-  padding: 0 8px;
-  font-size: 13px;
-  color: var(--fg);
-  background: var(--input);
+  @apply flex-1 h-[26px] px-2 py-0 text-[13px] text-g-fg bg-g-input outline-none transition-[border-color] duration-150;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  outline: none;
-  transition: border-color .15s;
   -webkit-user-select: text !important;
   user-select: text !important;
 }
-.goose-home .gm-inline-input:focus { border-color: hsl(var(--primary) / 0.6); }
+.goose-home .gm-inline-input:focus { @apply border-primary/60; }
 
 /* 确认态 */
 .goose-home .gm-item-confirm {
+  @apply cursor-default flex-wrap gap-1.5;
   background: hsl(var(--destructive) / 0.06) !important;
-  cursor: default;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 .goose-home .gm-item-confirm > span {
-  font-size: 12px;
-  color: var(--fg-muted);
-  flex: 1;
-  min-width: 0;
+  @apply text-xs text-g-fg-muted flex-1 min-w-0;
 }
 
 .goose-home .gm-confirm-btns {
-  display: flex;
-  gap: 4px;
-  flex-shrink: 0;
+  @apply flex gap-1 shrink-0;
 }
 
 .goose-home .gm-btn-danger {
-  height: 24px;
-  padding: 0 10px;
+  @apply h-6 px-2.5 py-0 border-none bg-destructive text-destructive-foreground text-xs cursor-pointer transition-[opacity] duration-150;
   border-radius: var(--radius-sm);
-  border: none;
-  background: hsl(var(--destructive));
-  color: hsl(var(--destructive-foreground));
-  font-size: 12px;
-  cursor: pointer;
-  transition: opacity .15s;
 }
-.goose-home .gm-btn-danger:hover { opacity: 0.85; }
+.goose-home .gm-btn-danger:hover { @apply opacity-85; }
 
 .goose-home .gm-btn-ghost {
-  height: 24px;
-  padding: 0 10px;
+  @apply h-6 px-2.5 py-0 bg-transparent text-g-fg-muted text-xs cursor-pointer transition-all duration-150;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: transparent;
-  color: var(--fg-muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all .15s;
 }
-.goose-home .gm-btn-ghost:hover { background: var(--surface-hover); color: var(--fg); }
+.goose-home .gm-btn-ghost:hover { @apply bg-g-surface-hover text-g-fg; }
 
 /* 移动下拉浮层 */
 .goose-home .gm-move-dropdown {
-  position: absolute;
-  right: 8px;
-  top: calc(100% + 4px);
-  z-index: 10;
-  background: hsl(var(--popover));
+  @apply absolute right-2 top-[calc(100%+4px)] z-10 bg-popover p-1 flex flex-col gap-px min-w-[140px];
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 16px hsl(0 0% 0% / 0.12);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 140px;
 }
 .goose-home .gm-move-dropdown button {
-  width: 100%;
-  height: 30px;
-  padding: 0 10px;
+  @apply w-full h-[30px] px-2.5 py-0 border-none bg-transparent text-g-fg-muted text-[12.5px] text-left cursor-pointer transition-all duration-[120ms] whitespace-nowrap;
   border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--fg-muted);
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-  transition: all .12s;
-  white-space: nowrap;
 }
-.goose-home .gm-move-dropdown button:hover { background: var(--surface-hover); color: var(--fg); }
+.goose-home .gm-move-dropdown button:hover { @apply bg-g-surface-hover text-g-fg; }
 
 /* 新建行按钮 */
 .goose-home .gm-add-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 8px;
+  @apply flex items-center gap-1.5 py-[7px] px-2 border-none bg-transparent text-g-fg-faint text-[12.5px] cursor-pointer transition-all duration-[120ms] text-left mt-0.5;
   border-radius: var(--radius-sm);
-  border: none;
-  background: transparent;
-  color: var(--fg-faint);
-  font-size: 12.5px;
-  cursor: pointer;
-  transition: all .12s;
-  text-align: left;
-  margin-top: 2px;
 }
-.goose-home .gm-add-row:hover { background: var(--surface); color: var(--fg); }
+.goose-home .gm-add-row:hover { @apply bg-g-surface text-g-fg; }
 .goose-home .gm-add-row .lucide { font-size: 13px; }
 
 /* 空态 */
 .goose-home .gm-empty {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  color: var(--fg-faint);
-  font-size: 12.5px;
-  padding: 32px 16px;
+  @apply flex-1 flex flex-col items-center justify-center gap-2 text-g-fg-faint text-[12.5px] px-4 py-8;
 }
-.goose-home .gm-empty .lucide { font-size: 24px; opacity: 0.5; }
-.goose-home .gm-empty-right { justify-content: center; }
+.goose-home .gm-empty .lucide { font-size: 24px; @apply opacity-50; }
+.goose-home .gm-empty-right { @apply justify-center; }
 
 .goose-home .gm-text-btn {
-  height: 28px;
-  padding: 0 12px;
+  @apply h-7 px-3 py-0 bg-g-surface text-g-fg-muted text-xs cursor-pointer transition-all duration-150 mt-1;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--fg-muted);
-  font-size: 12px;
-  cursor: pointer;
-  transition: all .15s;
-  margin-top: 4px;
 }
-.goose-home .gm-text-btn:hover { background: var(--surface-hover); color: var(--fg); }
+.goose-home .gm-text-btn:hover { @apply bg-g-surface-hover text-g-fg; }
 

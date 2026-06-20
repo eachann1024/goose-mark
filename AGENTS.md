@@ -1,6 +1,5 @@
 # 项目规则（读取后遵守）
-- 修改后请记住要 bun run build 生成 dist 文件。
-- 埋点我想看的是每个用户有没有用这个功能 这种一个功能一天用多少次
+- 修改后须 bun run build 生成 dist 文件（已由 `.claude/settings.local.json` 的 Stop hook 在每轮结束自动执行：src/index.html 比 dist 新时才 build，失败则拦下修复）。
 
 ## 规范
 - 始终使用中文回复

@@ -1,9 +1,21 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx vue-tsc:*)",
-      "Bash(pnpm build)"
+      "Bash(bun run build)",
+      "Bash(bun run build:*)"
     ]
   },
-  "spinnerTipsEnabled": false
+  "spinnerTipsEnabled": false,
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" || exit 0; if [ ! -f dist/index.html ] || [ -n \"$(find src index.html -type f -newer dist/index.html 2>/dev/null | head -1)\" ]; then bun run build > /tmp/goose-build.log 2>&1 && echo '✅ Stop hook: bun run build 完成（src 有改动）' || { echo '❌ Stop hook: build 失败，详情：'; tail -25 /tmp/goose-build.log; exit 2; }; fi"
+          }
+        ]
+      }
+    ]
+  }
 }
