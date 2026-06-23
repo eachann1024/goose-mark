@@ -58,6 +58,7 @@ interface BookmarkFormState {
   modalTitle: string
   editingId: string
   draft: DraftState
+  draftTags: string[]
   draftLocations: BookmarkLocation[]
   previewIcon: IconSource | null
   showCategorySelector: boolean
@@ -88,6 +89,7 @@ export const useBookmarkFormStore = create<BookmarkFormState>((set) => ({
   modalTitle: '新建书签',
   editingId: '',
   draft: initialDraft(),
+  draftTags: [],
   draftLocations: [],
   previewIcon: null,
   showCategorySelector: false,
@@ -149,9 +151,6 @@ const resolveErrorMessage = (error: unknown, action: '生成' | '分类') => {
   return `AI ${action}失败，请稍后重试`
 }
 
-const PRODUCT_LOCAL_MODE_CONTEXT =
-  '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
-
 const generateMetadataDirect = async (input: {
   url: string
   title?: string
@@ -172,7 +171,6 @@ const generateMetadataDirect = async (input: {
 页面标题：${params.title || '无'}
 页面描述：${params.desc || '无'}
 是否已触发联网兜底：${params.forceNetworkFallback ? '是' : '否'}
-产品上下文：${PRODUCT_LOCAL_MODE_CONTEXT}
 
 请返回 JSON 格式：{"title":"...","desc":"...","source":"ai"|"network"}
 要求：
@@ -185,7 +183,7 @@ const generateMetadataDirect = async (input: {
   const messages: AIMessage[] = [
     {
       role: 'system',
-      content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+      content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。`
     },
     { role: 'user', content: prompt }
   ]
@@ -446,6 +444,7 @@ export function useBookmarkForm() {
       editingId: '',
       modalTitle: '新建书签',
       draft: initialDraft(),
+      draftTags: [],
       draftLocations: [{ groupId: store.activeGroupId, subGroupId: store.activeSubGroupId }],
       previewIcon: null,
       formError: '',
@@ -472,8 +471,8 @@ export function useBookmarkForm() {
         previewIcon: bookmark.icon ?? null,
         formError: '',
         isTitleDirty: true,
-        isDescDirty: true,
         originalUrl: bookmark.url,
+        draftTags: [...(bookmark.tags ?? [])],
         draftLocations: store.getBookmarkLocations(bookmark.id),
         showAdd: true
       })
@@ -599,9 +598,6 @@ export function useBookmarkForm() {
 【待分类网址】
 ${draft.url}
 
-【产品上下文】
-${PRODUCT_LOCAL_MODE_CONTEXT}
-
 【用户现有分组】
 ${groupsDescription}
 
@@ -611,7 +607,7 @@ ${groupsDescription}
       const res = await runAIText(getActiveAiSettings(), [
         {
           role: 'system',
-          content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+          content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。`
         },
         { role: 'user', content: prompt }
       ])
@@ -713,6 +709,7 @@ ${groupsDescription}
             url: urlToSave,
             desc: descToSave,
             allowUniversal: draft.allowUniversal,
+            tags: [...state.draftTags],
             icon: iconToSave
           })
           store.updateBookmarkLocations(editingId, locationsToSave)
@@ -723,7 +720,7 @@ ${groupsDescription}
               url: urlToSave,
               desc: descToSave,
               allowUniversal: draft.allowUniversal,
-              tags: [],
+              tags: [...state.draftTags],
               pinned: false,
               icon: iconToSave
             },

@@ -6,18 +6,13 @@ import { cn } from '@/lib/utils'
 
 /**
  * CategoryMultiSelect（React 版）
- * --------------------------------------------------------------------------
- * 旧版 Vue v-model:modelValue(BookmarkLocation[]) + emit(close) → React 受控
- * value + onChange。直接以 value 为单一数据源（去掉旧版本地副本 watch 同步），
- * 每次 toggle/remove 都向上 onChange 新数组。i-ph-* 改 lucide-react；chip 样式
- * 已迁移到 index.css。支持 inline（内嵌）与弹窗两种布局。
+ * 样式由 .goose-home .form-category-select 下的 home.css 接管（勿用 bg-primary/bg-popover 等全局 token，避免深色露白）。
  */
 export interface CategoryMultiSelectProps {
   value: BookmarkLocation[]
   onChange: (value: BookmarkLocation[]) => void
   readonly?: boolean
   inline?: boolean
-  /** 弹窗模式下底部确定/取消按钮触发 */
   onClose?: () => void
 }
 
@@ -40,21 +35,16 @@ export function CategoryMultiSelect({
 
   const toggleLocation = (groupId: string, subGroupId: string) => {
     if (readonly) return
-    const idx = value.findIndex(
-      (loc) => loc.groupId === groupId && loc.subGroupId === subGroupId
+    onChange(
+      isSelected(groupId, subGroupId)
+        ? value.filter((loc) => !(loc.groupId === groupId && loc.subGroupId === subGroupId))
+        : [...value, { groupId, subGroupId }]
     )
-    if (idx >= 0) {
-      onChange(value.filter((_, i) => i !== idx))
-    } else {
-      onChange([...value, { groupId, subGroupId }])
-    }
   }
 
   const removeLocation = (loc: BookmarkLocation) => {
     if (readonly) return
-    onChange(
-      value.filter((l) => !(l.groupId === loc.groupId && l.subGroupId === loc.subGroupId))
-    )
+    onChange(value.filter((l) => !(l.groupId === loc.groupId && l.subGroupId === loc.subGroupId)))
   }
 
   const getLocationLabel = (loc: BookmarkLocation) => {
@@ -65,49 +55,33 @@ export function CategoryMultiSelect({
 
   return (
     <div
-      className={cn(
-        'overflow-hidden',
-        inline
-          ? 'w-full rounded-2xl bg-background/60 p-3'
-          : 'w-[420px] max-w-[calc(100vw-2rem)] rounded-xl border-0 bg-popover shadow-2xl p-3'
-      )}
+      className={cn('cat-ms-root', inline && 'cat-ms-root--inline')}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className={cn(!inline && 'overflow-y-auto max-h-[300px]')}>
-        <div className="flex flex-col gap-4">
+      <div className={cn('cat-ms-scroll', !inline && 'cat-ms-scroll--modal')}>
+        <div className="cat-ms-sections">
           {displayGroups.map((group) => (
-            <div key={group.id} className="flex flex-col gap-2">
-              <div className="flex items-center gap-1.5 px-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary/50 shrink-0" />
-                <span className="text-[11px] font-semibold text-muted-foreground/70 uppercase tracking-wider">
-                  {group.name}
-                </span>
+            <div key={group.id} className="cat-ms-section">
+              <div className="cat-ms-heading">
+                <span className="cat-ms-dot" />
+                <span className="cat-ms-heading-label">{group.name}</span>
               </div>
 
-              <div className="flex flex-wrap gap-1.5">
+              <div className="cat-ms-chips">
                 {group.children.map((sub) => {
                   const selected = isSelected(group.id, sub.id)
                   return (
                     <button
                       key={`${group.id}-${sub.id}`}
                       type="button"
-                      className={cn(
-                        'subgroup-chip flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] transition-all',
-                        selected ? 'subgroup-chip--selected' : 'subgroup-chip--idle'
-                      )}
+                      className={cn('cat-ms-chip', selected && 'cat-ms-chip--on')}
+                      disabled={readonly}
                       onClick={() => toggleLocation(group.id, sub.id)}
                     >
-                      <span
-                        className={cn(
-                          'w-3.5 h-3.5 rounded border flex items-center justify-center shrink-0 transition-colors',
-                          selected
-                            ? 'bg-primary border-primary text-primary-foreground'
-                            : 'border-muted-foreground/30'
-                        )}
-                      >
-                        {selected && <Check className="size-[10px]" />}
+                      <span className={cn('cat-ms-chip-check', selected && 'cat-ms-chip-check--on')}>
+                        {selected && <Check className="lucide" strokeWidth={3} />}
                       </span>
-                      <span className="truncate">{sub.name}</span>
+                      <span className="cat-ms-chip-label">{sub.name}</span>
                     </button>
                   )
                 })}
@@ -115,58 +89,47 @@ export function CategoryMultiSelect({
             </div>
           ))}
 
-          {displayGroups.length === 0 && (
-            <div className="flex items-center justify-center py-8 text-muted-foreground text-sm">
-              暂无分组
-            </div>
-          )}
+          {displayGroups.length === 0 && <div className="cat-ms-empty">暂无分组</div>}
         </div>
       </div>
 
       {value.length > 0 && (
-        <div className="px-1 pt-3 mt-2 border-t border-border/30">
-          <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="cat-ms-picked">
+          <div className="cat-ms-picked-chips">
             {value.map((loc) => (
-              <div
-                key={`${loc.groupId}-${loc.subGroupId}`}
-                className="flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium shrink-0"
-              >
-                <span className="truncate">{getLocationLabel(loc)}</span>
-                <button
-                  type="button"
-                  className="h-4 w-4 inline-flex items-center justify-center text-primary/60 hover:text-destructive"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    removeLocation(loc)
-                  }}
-                >
-                  <X className="size-[10px]" />
-                </button>
+              <div key={`${loc.groupId}-${loc.subGroupId}`} className="cat-ms-picked-chip">
+                <span className="cat-ms-picked-label">{getLocationLabel(loc)}</span>
+                {!readonly && (
+                  <button
+                    type="button"
+                    className="cat-ms-picked-remove"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      removeLocation(loc)
+                    }}
+                  >
+                    <X className="lucide" strokeWidth={2} />
+                  </button>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {!inline && (
-        <div className="border-t border-border/40 px-1 pt-2.5 mt-2">
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              className="h-8 w-16 inline-flex items-center justify-center rounded-md text-sm text-muted-foreground hover:bg-muted/70 hover:text-foreground transition-colors"
-              onClick={onClose}
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              disabled={value.length === 0}
-              className="h-8 w-16 inline-flex items-center justify-center rounded-md bg-primary text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              onClick={onClose}
-            >
-              确定
-            </button>
-          </div>
+      {!inline && onClose && (
+        <div className="cat-ms-modal-foot">
+          <button type="button" className="cat-ms-modal-btn cat-ms-modal-btn--ghost" onClick={onClose}>
+            取消
+          </button>
+          <button
+            type="button"
+            disabled={value.length === 0}
+            className="cat-ms-modal-btn cat-ms-modal-btn--primary"
+            onClick={onClose}
+          >
+            确定
+          </button>
         </div>
       )}
     </div>

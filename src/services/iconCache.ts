@@ -71,9 +71,61 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs = ICON_FETCH_TIMEOU
   }
 }
 
+/**
+ * uTools 端用 Node https/http 下载图片转 base64。
+ * 普通网站 favicon 通常不返回 CORS 头，renderer 的 fetch 跨域会被拦（Failed to fetch），
+ * 导致缓存补不上、图标只能用远程 URL，切换分组时 <img> 重新挂载就会闪。
+ * preload.cjs 暴露了 window.require，Node 环境无 CORS 限制，可直接下载任意站点图标。
+ */
+const fetchImageViaNode = (url: string, redirectDepth = 0): Promise<string | null> => {
+  const req = (window as unknown as { require?: (m: string) => any }).require
+  if (typeof req !== 'function' || redirectDepth > 3) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (v: string | null) => { if (settled) return; settled = true; resolve(v) }
+    try {
+      const lib = req(url.startsWith('https:') ? 'https' : 'http')
+      const { Buffer } = req('buffer')
+      const request = lib.get(url, (res: any) => {
+        const status = res.statusCode || 0
+        const location = res.headers?.location
+        // 跟随重定向（favicon 常有 301/302）
+        if (status >= 300 && status < 400 && location) {
+          res.resume()
+          let next: string
+          try { next = new URL(location, url).href } catch { finish(null); return }
+          if (settled) return
+          settled = true
+          resolve(fetchImageViaNode(next, redirectDepth + 1))
+          return
+        }
+        if (status !== 200) { res.resume(); finish(null); return }
+        const contentType = String(res.headers?.['content-type'] || '')
+        if (!contentType.startsWith('image/')) { res.resume(); finish(null); return }
+        const chunks: Uint8Array[] = []
+        res.on('data', (c: Uint8Array) => chunks.push(c))
+        res.on('end', () => finish(`data:${contentType.split(';')[0].trim()};base64,${Buffer.concat(chunks).toString('base64')}`))
+        res.on('error', () => finish(null))
+      })
+      request.on('error', () => finish(null))
+      request.setTimeout(ICON_FETCH_TIMEOUT_MS, () => { try { request.destroy() } catch {} finish(null) })
+    } catch {
+      finish(null)
+    }
+  })
+}
+
 export const fetchAsDataUrl = async (url: string): Promise<string | null> => {
   if (!url) return null
   if (isOriginInCooldown(url)) return null
+
+  // uTools 端走 Node 下载，绕过 renderer 跨域 CORS 限制（renderer fetch 对无 CORS 头的 favicon 必失败，无需回退）
+  if (typeof (window as unknown as { require?: unknown }).require === 'function') {
+    const viaNode = await fetchImageViaNode(url)
+    if (viaNode) clearOriginCooldown(url)
+    return viaNode
+  }
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS)
   try {

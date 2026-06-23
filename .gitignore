@@ -20,3 +20,6 @@ goose-polish/
 goose-shots-r2/
 goose-shots3/
 qa-screenshots/
+.verify-screens/
+pnpm-lock.yaml
+pnpm-workspace.yaml

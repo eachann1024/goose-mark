@@ -330,6 +330,8 @@ export default function AddBookmarkWizard({
               askCategorySuggestion={askCategorySuggestion}
               applyCategorySuggestion={applyCategorySuggestion}
               dismissCategorySuggestion={dismissCategorySuggestion}
+              setUrl={setUrl}
+              onPaste={handlePaste}
             />
           )}
 
@@ -415,7 +417,7 @@ function CaptureStep({
         <p>粘贴或输入网址，自动识别标题、图标与简介，下一步确认归类</p>
       </div>
 
-      <div className="gm-url-big ring">
+      <div className="gm-url-big">
         <Ico name="link" className="gm-url-icon" />
         <input
           ref={inputRef}
@@ -633,6 +635,8 @@ function ConfirmStep({
   askCategorySuggestion,
   applyCategorySuggestion,
   dismissCategorySuggestion,
+  setUrl,
+  onPaste,
 }: {
   draft: { title: string; desc: string; url: string }
   draftLocations: BookmarkLocation[]
@@ -661,15 +665,9 @@ function ConfirmStep({
   askCategorySuggestion: () => void
   applyCategorySuggestion: () => void
   dismissCategorySuggestion: () => void
+  setUrl: (v: string) => void
+  onPaste: () => void
 }) {
-  const host = useMemo(() => {
-    try {
-      return new URL(/^https?:\/\//.test(draft.url) ? draft.url : `https://${draft.url}`).host.replace(/^www\./, '')
-    } catch {
-      return draft.url
-    }
-  }, [draft.url])
-
   const previewText = ((draft.title || draft.url) || 'ICON').trim().slice(0, 2).toUpperCase()
 
   return (
@@ -678,6 +676,28 @@ function ConfirmStep({
         <h2>确认并归类</h2>
         <p>{canUseAi ? 'AI 已填好内容，确认无误、选好位置即可保存' : '确认信息、选好位置即可保存'}</p>
       </div>
+
+      <section className="gm-confirm-url">
+        <div className="gm-id-label">链接 / 模板</div>
+        <div className="gm-url-big">
+          <Ico name="link" className="gm-url-icon" />
+          <input
+            value={draft.url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://… 或含 {query} 的搜索模板"
+            spellCheck={false}
+          />
+          <button type="button" className="gm-url-paste" onClick={onPaste} title="从剪贴板粘贴">
+            <Ico name="paste" />
+            粘贴
+          </button>
+        </div>
+        {/{[^}]+}/.test(draft.url) && (
+          <div className="gm-capture-hint">
+            URL 含 {'{query}'} 可作为模板，呼出后直接输入关键词跳转
+          </div>
+        )}
+      </section>
 
       {/* 身份卡 */}
       <div className="gm-id-card">
@@ -725,12 +745,6 @@ function ConfirmStep({
                 onTitleInput()
               }}
             />
-            {host && (
-              <div className="gm-id-host">
-                <Ico name="globe" />
-                {host}
-              </div>
-            )}
           </div>
         </div>
         <div className="gm-id-desc-block">
