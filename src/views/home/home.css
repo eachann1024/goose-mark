@@ -202,6 +202,21 @@
   font-family:var(--font-serif);
   box-shadow:var(--shadow-sm);
 }
+/* 文字首字母占位（拿不到 favicon）：按域名稳定分配的 --fav-hue 派生「低饱和底色 + 同色调文字」，
+   每个站点一种颜色而非统一珊瑚；有真实图标时不加背景，避免透明 PNG 透出底色。
+   用户自设 icon.bgColor 时由 inline background 覆盖（此时无 --fav-hue，回退默认珊瑚色调）。 */
+.goose-home .fav.is-placeholder {
+  --fav-hue:16;
+  background:linear-gradient(135deg,
+    hsl(var(--fav-hue) 44% 91%), hsl(var(--fav-hue) 38% 85%));
+  color:hsl(var(--fav-hue) 46% 40%);
+  text-shadow:none;
+}
+.goose-home[data-theme="dark"] .fav.is-placeholder {
+  background:linear-gradient(135deg,
+    hsl(var(--fav-hue) 26% 27%), hsl(var(--fav-hue) 23% 21%));
+  color:hsl(var(--fav-hue) 52% 74%);
+}
 .goose-home .fav img { @apply w-full h-full object-cover; }
 .goose-home .card .meta { @apply flex-1 min-w-0 flex flex-col gap-0.5; }
 .goose-home .card .ttl { @apply font-semibold text-[15px] text-g-fg leading-[1.25] whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-serif); }
@@ -325,7 +340,7 @@
 .goose-home .set-card { @apply border border-g-border rounded-g bg-g-surface overflow-hidden; }
 /* 暗黑：去掉硬边框，卡片靠比窗口底色更亮的 --surface 自然浮起 */
 .goose-home[data-theme="dark"] .set-card { border-color:transparent; }
-.goose-home .set-row { @apply flex items-center justify-between gap-[14px] px-4 py-[14px]; }
+.goose-home .set-row { @apply flex items-center justify-between gap-[14px] px-4 py-[14px] min-w-0; }
 .goose-home .set-row + .set-row { border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
 .goose-home .set-row .rt { @apply text-[13.5px] text-g-fg; }
 .goose-home .set-row .rd { @apply text-[11.5px] text-g-fg-muted mt-0.5; }
@@ -342,8 +357,8 @@
 .goose-home .stepper-btn:disabled { @apply opacity-35 cursor-default; }
 .goose-home .stepper-btn .lucide { @apply text-[15px]; }
 .goose-home .stepper-val { @apply min-w-[52px] text-center text-[12.5px] text-g-fg tabular-nums; }
-.goose-home .radio-seg { @apply flex gap-[3px] p-[3px] bg-g-bg border border-g-border rounded-g-md; }
-.goose-home .radio-seg button { @apply px-[13px] py-1.5 rounded-g-sm text-[12.5px] text-g-fg-muted whitespace-nowrap; }
+.goose-home .radio-seg { @apply flex flex-nowrap gap-[3px] p-[3px] bg-g-bg border border-g-border rounded-g-md shrink-0; }
+.goose-home .radio-seg button { @apply px-[13px] py-1.5 rounded-g-sm text-[12.5px] text-g-fg-muted whitespace-nowrap transition-[color,background-color] duration-150; }
 .goose-home .radio-seg button.on { @apply bg-g-accent text-g-accent-fg; }
 .goose-home .select { @apply h-[34px] px-3 rounded-g-md border border-g-border bg-g-input text-[12.5px] text-g-fg flex flex-row flex-nowrap items-center gap-2 cursor-pointer max-w-[200px]; }
 .goose-home .select .lucide { @apply text-sm text-g-fg-faint shrink-0; }
@@ -355,6 +370,42 @@
   font-family:inherit; text-overflow:ellipsis;
 }
 .goose-home .select-native select option { color:#111; }
+/* uTools 窄面板：设置行改为「说明在上、控件在下」，避免 Seg/步进器被横向挤成竖条（Web 宽屏仍用默认左右布局） */
+.goose-home[data-platform="utools"] .set-main { @apply px-4; }
+.goose-home[data-platform="utools"] .set-wrap { @apply max-w-none; }
+.goose-home[data-platform="utools"] .set-row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.goose-home[data-platform="utools"] .set-row .radio-seg {
+  width: 100%;
+  flex-wrap: nowrap;
+}
+.goose-home[data-platform="utools"] .set-row .radio-seg button {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.goose-home[data-platform="utools"] .set-row .stepper,
+.goose-home[data-platform="utools"] .set-row .g-switch,
+.goose-home[data-platform="utools"] .set-row .select {
+  align-self: flex-start;
+}
+/* 极窄时设置侧栏改顶栏横排，给正文更多宽度 */
+@media (max-width: 560px) {
+  .goose-home[data-platform="utools"] .settings { flex-direction: column; }
+  .goose-home[data-platform="utools"] .set-nav {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  }
+  .goose-home[data-platform="utools"] .set-nav .feedback { width: 100%; margin-top: 4px; }
+}
 
 /* ---- AI 助手：OpenAI 协议供应商配置 ---- */
 .goose-home .ai-prov-label { @apply text-[11.5px] text-g-fg-muted px-4 pt-3; }
@@ -554,88 +605,151 @@
 .goose-home .form-col { @apply pt-9 gap-8; }
 .goose-home .field .lbl { @apply mb-3; }
 
-/* 2. CategoryMultiSelect 面板：覆盖 Tailwind 类，与输入框风格一致 */
-.goose-home .form-category-select { margin-top:4px; }
 
-/* 容器背景/边框与输入框一致 */
-.goose-home .form-category-select > div {
-  background: var(--input) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius-md) !important;
-  padding: 14px 16px !important;
-  /* 确保已选chips不会溢出 */
-  overflow: visible !important;
-}
 
-/* 分区标题：muted 小字，去掉原来的primary圆点 */
-.goose-home .form-category-select .flex.items-center.gap-1\.5.px-1 > span:first-child {
-  background: var(--accent) !important;
-  opacity: 0.45;
+/* 2. CategoryMultiSelect（cat-ms-*）：仅用 .goose-home token，不依赖 bg-primary/bg-popover */
+.goose-home .form-category-select,
+.goose-home .gm-cat-select .form-category-select { margin-top:4px; }
+
+.goose-home .form-category-select .cat-ms-root {
+  width:100%;
+  background:var(--input);
+  border:1px solid var(--border);
+  border-radius:var(--radius-md);
+  padding:14px 16px;
+  overflow:visible;
 }
-.goose-home .form-category-select .flex.items-center.gap-1\.5.px-1 > span:last-child {
-  font-size: 10px !important;
-  font-weight: 600 !important;
-  letter-spacing: 0.09em !important;
-  color: var(--fg-faint) !important;
-  text-transform: uppercase !important;
+.goose-home .form-category-select .cat-ms-root--inline {
+  background:var(--input);
 }
 
-/* 选项 chip：圆角 chip 风格 */
-.goose-home .form-category-select .subgroup-chip {
-  border-radius: 999px !important;
-  padding: 5px 14px !important;
-  font-size: 12.5px !important;
-  border: 1px solid var(--border) !important;
-  background: var(--bg) !important;
-  color: var(--fg-muted) !important;
-  transition: all 0.12s !important;
-  gap: 6px !important;
+.goose-home .form-category-select .cat-ms-scroll--modal {
+  max-height:300px;
+  overflow-y:auto;
 }
-.goose-home .form-category-select .subgroup-chip:hover {
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent) !important;
-  color: var(--fg) !important;
-  background: var(--bg) !important;
+.goose-home .form-category-select .cat-ms-sections {
+  display:flex;
+  flex-direction:column;
+  gap:16px;
 }
-/* 选中态：accent 弱底 + accent 文字 */
-.goose-home .form-category-select .subgroup-chip--selected {
-  background: var(--accent-subtle) !important;
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent) !important;
-  color: var(--accent) !important;
+.goose-home .form-category-select .cat-ms-section {
+  display:flex;
+  flex-direction:column;
+  gap:8px;
 }
-/* 选中态复选方块替换成 accent 色 */
-.goose-home .form-category-select .subgroup-chip--selected .bg-primary {
-  background-color: var(--accent) !important;
-  border-color: var(--accent) !important;
+.goose-home .form-category-select .cat-ms-heading {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:0 4px;
 }
-.goose-home .form-category-select .subgroup-chip--idle .border-muted-foreground\/30 {
-  border-color: var(--border) !important;
+.goose-home .form-category-select .cat-ms-dot {
+  width:6px;
+  height:6px;
+  border-radius:999px;
+  background:var(--accent);
+  opacity:0.45;
+  flex-shrink:0;
 }
-
-/* 已选 chips 区域：保留足够空间，不溢出容器 */
-.goose-home .form-category-select .px-1.pt-3.mt-2.border-t {
-  border-top-color: var(--border) !important;
-  padding-top: 10px !important;
-  margin-top: 10px !important;
+.goose-home .form-category-select .cat-ms-heading-label {
+  font-size:10px;
+  font-weight:600;
+  letter-spacing:0.09em;
+  text-transform:uppercase;
+  color:var(--fg-faint);
 }
-/* 已选 chip 样式 */
-.goose-home .form-category-select .bg-primary\/10 {
-  background: var(--accent-subtle) !important;
-  color: var(--accent) !important;
-  border-radius: 999px !important;
-  padding: 4px 10px !important;
+.goose-home .form-category-select .cat-ms-chips {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
 }
-.goose-home .form-category-select .text-primary\/60 {
-  color: color-mix(in srgb, var(--accent) 60%, transparent) !important;
+.goose-home .form-category-select .cat-ms-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:5px 14px;
+  border-radius:999px;
+  font-size:12.5px;
+  border:1px solid var(--border);
+  background:var(--surface);
+  color:var(--fg-muted);
+  transition:color .12s, background-color .12s, border-color .12s;
+  cursor:pointer;
 }
-.goose-home .form-category-select .text-primary\/60:hover {
-  color: var(--danger) !important;
+.goose-home .form-category-select .cat-ms-chip:hover:not(:disabled) {
+  border-color:color-mix(in srgb, var(--accent) 40%, transparent);
+  color:var(--fg);
+  background:var(--surface-hover);
 }
-
-/* 暗色模式兼容：input 背景在暗色下也正确 */
-.goose-home[data-theme="dark"] .form-category-select > div {
-  background: var(--input) !important;
-  border-color: var(--border) !important;
+.goose-home .form-category-select .cat-ms-chip--on {
+  background:var(--accent-subtle);
+  border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  color:var(--accent);
 }
+.goose-home .form-category-select .cat-ms-chip-check {
+  width:14px;
+  height:14px;
+  border-radius:4px;
+  border:1px solid var(--border);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
+  transition:background-color .12s, border-color .12s, color .12s;
+}
+.goose-home .form-category-select .cat-ms-chip-check .lucide { width:10px; height:10px; }
+.goose-home .form-category-select .cat-ms-chip-check--on {
+  background:var(--accent);
+  border-color:var(--accent);
+  color:var(--accent-fg);
+}
+.goose-home .form-category-select .cat-ms-chip-label {
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  max-width:12rem;
+}
+.goose-home .form-category-select .cat-ms-empty {
+  text-align:center;
+  padding:32px 8px;
+  font-size:13px;
+  color:var(--fg-muted);
+}
+.goose-home .form-category-select .cat-ms-picked {
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px solid var(--border);
+}
+.goose-home .form-category-select .cat-ms-picked-chips {
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.goose-home .form-category-select .cat-ms-picked-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:4px 10px;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:500;
+  background:var(--accent-subtle);
+  color:var(--accent);
+}
+.goose-home .form-category-select .cat-ms-picked-remove {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:16px;
+  height:16px;
+  color:color-mix(in srgb, var(--accent) 60%, transparent);
+  border-radius:4px;
+  transition:color .12s;
+}
+.goose-home .form-category-select .cat-ms-picked-remove:hover {
+  color:var(--danger);
+}
+.goose-home .form-category-select .cat-ms-picked-remove .lucide { width:10px; height:10px; }
 
 .goose-home .form-error {
   @apply flex items-center gap-2 px-[14px] py-[10px] rounded-g-md text-g-danger text-[12.5px];
@@ -860,6 +974,7 @@
 .goose-home .gm-confirm { @apply w-full max-w-[540px] mx-auto flex flex-col gap-4; }
 .goose-home .gm-confirm-head h2 { @apply text-[20px] font-semibold text-g-fg; font-family:var(--font-serif); }
 .goose-home .gm-confirm-head p { @apply text-[12.5px] text-g-fg-muted mt-[3px]; }
+.goose-home .gm-confirm-url { @apply flex flex-col gap-2; }
 .goose-home .gm-id-card { @apply p-4 rounded-[16px] border border-g-border bg-g-surface flex flex-col gap-[14px]; box-shadow:var(--shadow-sm); }
 .goose-home .gm-id-top { @apply flex gap-[14px] items-start; }
 .goose-home .gm-id-fav {
@@ -907,7 +1022,7 @@
 .goose-home .gm-conf-bar { @apply w-[54px] h-[5px] rounded-[3px] overflow-hidden; background:var(--surface-hover); }
 .goose-home .gm-conf-fill { @apply block h-full rounded-[3px]; background:var(--ai); animation: gm-bar .5s cubic-bezier(.22,1,.36,1); transform-origin:left; }
 @keyframes gm-bar { from { transform:scaleX(0); } to { transform:scaleX(1); } }
-.goose-home .gm-ai-suggest-body { @apply flex items-center gap-[11px] p-[11px] rounded-[11px] border border-g-border bg-g-surface; }
+.goose-home .gm-ai-suggest-body { @apply flex items-center gap-[11px] p-[11px] rounded-[11px]; background:color-mix(in srgb,var(--ai) 14%,var(--input)); border:1px solid color-mix(in srgb,var(--ai) 32%,transparent); }
 .goose-home .gm-ai-suggest-glyph { @apply size-8 shrink-0 rounded-[9px] flex items-center justify-center text-base; background:var(--accent); color:#fff; }
 .goose-home .gm-ai-suggest-meta { @apply flex-1 min-w-0; }
 .goose-home .gm-ai-suggest-name { @apply text-sm font-semibold text-g-fg; }
@@ -1069,4 +1184,98 @@
   .goose-home .help-backdrop,
   .goose-home .help-panel,
   .goose-home .group-tab-rename { animation:none; }
+}
+
+/* ---------- uTools 内核兼容（旧 Chromium：color-mix 无效、全局 focus 去掉 box-shadow、-webkit-user-select 粘性） ---------- */
+.goose-home[data-platform="utools"] {
+  color-scheme: light dark;
+}
+.goose-home[data-platform="utools"][data-theme="dark"] {
+  color-scheme: dark;
+}
+
+/* 向导/表单：显式 token，避免 @apply bg-g-input 落到 HeroUI 浅色 */
+.goose-home[data-platform="utools"] .gm-id-input,
+.goose-home[data-platform="utools"] .gm-id-textarea,
+.goose-home[data-platform="utools"] .txt-input,
+.goose-home[data-platform="utools"] .textarea,
+.goose-home[data-platform="utools"] .url-input input {
+  background-color: var(--input) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--fg) !important;
+  -webkit-text-fill-color: var(--fg);
+  -webkit-user-select: auto !important;
+  user-select: text !important;
+}
+/* 大网址条：边框只在 .gm-url-big 外壳，内层 input 无边框，避免双层框 */
+.goose-home[data-platform="utools"] .gm-url-big input {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--fg) !important;
+  -webkit-text-fill-color: var(--fg);
+  -webkit-user-select: auto !important;
+  user-select: text !important;
+}
+.goose-home[data-platform="utools"] .gm-id-input::placeholder,
+.goose-home[data-platform="utools"] .gm-id-textarea::placeholder,
+.goose-home[data-platform="utools"] .gm-url-big input::placeholder {
+  color: var(--fg-faint) !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: var(--fg-faint);
+}
+.goose-home[data-platform="utools"] .gm-id-input:focus,
+.goose-home[data-platform="utools"] .gm-id-textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.16) !important;
+}
+.goose-home[data-platform="utools"] .gm-url-big:focus-within {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(217, 119, 87, 0.16) !important;
+}
+.goose-home[data-platform="utools"][data-theme="dark"] .gm-id-input:focus,
+.goose-home[data-platform="utools"][data-theme="dark"] .gm-id-textarea:focus {
+  box-shadow: 0 0 0 3px rgba(224, 135, 95, 0.2) !important;
+}
+.goose-home[data-platform="utools"][data-theme="dark"] .gm-url-big:focus-within {
+  box-shadow: 0 0 0 3px rgba(224, 135, 95, 0.2) !important;
+}
+
+.goose-home[data-platform="utools"] .gm-id-card {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+}
+.goose-home[data-platform="utools"] .gm-wiz,
+.goose-home[data-platform="utools"] .gm-wiz-main {
+  background: var(--bg);
+}
+
+/* 分类区：旧内核下 color-mix 失效时仍用实心 token */
+.goose-home[data-platform="utools"] .form-category-select .cat-ms-root,
+.goose-home[data-platform="utools"] .gm-cat-select .cat-ms-root {
+  background: var(--input) !important;
+  border-color: var(--border) !important;
+}
+.goose-home[data-platform="utools"] .form-category-select .cat-ms-chip {
+  background: var(--surface) !important;
+  border-color: var(--border) !important;
+  color: var(--fg-muted) !important;
+}
+.goose-home[data-platform="utools"] .form-category-select .cat-ms-chip--on {
+  background: var(--accent-subtle) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+.goose-home[data-platform="utools"] .form-category-select .cat-ms-chip-check {
+  border-color: var(--border) !important;
+  background: transparent;
+}
+.goose-home[data-platform="utools"] .form-category-select .cat-ms-chip-check--on {
+  background: var(--accent) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent-fg) !important;
+}
+.goose-home[data-platform="utools"] .form-category-select .cat-ms-picked-chip {
+  background: var(--accent-subtle) !important;
+  color: var(--accent) !important;
 }

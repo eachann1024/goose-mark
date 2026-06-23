@@ -17,8 +17,6 @@ import {
  * AI 配置从 settings store 实时读取（useSettingsStore.getState()），与旧版等价。
  */
 
-const PRODUCT_LOCAL_MODE_CONTEXT =
-  '产品新增“本地模式”：可配合扩展使用；开启本地优先时会先读本地快照覆盖当前数据；跨设备同步后每台设备需单独选择本地存储路径。'
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
 
 export type MetadataSource = 'page' | 'ai' | 'network'
@@ -183,7 +181,6 @@ export function useAI() {
 页面标题：${params.title || '无'}
 页面描述：${params.desc || '无'}
 是否已触发联网兜底：${params.forceNetworkFallback ? '是' : '否'}
-产品上下文：${PRODUCT_LOCAL_MODE_CONTEXT}
 
 请返回 JSON 格式：{"title":"...","desc":"...","source":"ai"|"network"}
 要求：
@@ -196,7 +193,7 @@ export function useAI() {
         const res = await callAi([
           {
             role: 'system',
-            content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+            content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。`
           },
           { role: 'user', content: prompt }
         ])
@@ -261,9 +258,6 @@ export function useAI() {
 【待分类网址】
 ${url}
 
-【产品上下文】
-${PRODUCT_LOCAL_MODE_CONTEXT}
-
 【用户现有分组】
 ${groupsDescription}
 ${avoidCurrentTip}
@@ -295,7 +289,7 @@ ${avoidCurrentTip}
         const res = await callAi([
           {
             role: 'system',
-            content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。已知上下文：${PRODUCT_LOCAL_MODE_CONTEXT}`
+            content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。`
           },
           { role: 'user', content: prompt }
         ])

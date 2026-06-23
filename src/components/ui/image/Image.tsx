@@ -72,6 +72,10 @@ export function Image({
           alt={alt}
           className={cn('w-full h-full object-cover', className)}
           style={style}
+          // 图标多为已缓存的 base64：同步解码 + 立即加载，让图标随首帧一起绘制，
+          // 消除切换分组时 <img> 重新挂载后「先空白再出现」的闪烁。
+          decoding="sync"
+          loading="eager"
           onError={handleError}
           onLoad={handleLoad}
           onContextMenu={onContextMenu}

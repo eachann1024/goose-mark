@@ -425,7 +425,36 @@ export default function HomePage() {
   // 同步 .dark class 到 documentElement，让 Tailwind token（index.css 第 83 行）在深色模式下生效
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
+    // uTools 壳层 body 仍用 index.css 的 hsl(--background)，与 .goose-home --bg 不一致时会露边/发白
+    if (RUNTIME_PLATFORM !== 'utools') return
+    const bg = theme === 'dark' ? '#262624' : '#faf9f5'
+    const fg = theme === 'dark' ? '#faf9f5' : '#1f1e1d'
+    document.body.style.backgroundColor = bg
+    document.body.style.color = fg
+    document.documentElement.style.backgroundColor = bg
   }, [theme])
+
+  // uTools 默认窗口偏矮（plugin.json 560）；收集向导内容高，临时拉高避免底部裁切（离开 add 恢复用户设置）
+  const utoolsWizardHeightRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (RUNTIME_PLATFORM !== 'utools' || typeof window.utools?.setExpendHeight !== 'function') return
+    if (screen === 'add') {
+      const stored = useSettingsStore.getState().windowHeight
+      const target = Math.max(stored, 680)
+      if (utoolsWizardHeightRef.current === null) utoolsWizardHeightRef.current = stored
+      try {
+        window.utools.setExpendHeight(target)
+      } catch { /* ignore */ }
+      return
+    }
+    if (utoolsWizardHeightRef.current !== null) {
+      const restore = utoolsWizardHeightRef.current
+      utoolsWizardHeightRef.current = null
+      try {
+        window.utools.setExpendHeight(restore)
+      } catch { /* ignore */ }
+    }
+  }, [screen])
 
   /**
    * 统一搜索值更新入口：setSearchVal 并在 uTools 环境下把值同步到 subInput。
@@ -811,19 +840,24 @@ export default function HomePage() {
 
       if (screen !== 'list' && screen !== 'grid') return
       if (ctx.open) return
+
+      // Enter：打开当前选中书签。无论焦点在顶栏搜索框、列表区还是无焦点（鼠标点击 / 方向键
+      // 选中后焦点落在 body），都应直接打开；仅当焦点落在「搜索框以外」的其它输入控件时才放行给它。
+      if (e.key === 'Enter') {
+        if (inEditable && active !== headerSearchRef.current) return
+        const hit = navigableItems.find((i) => i.id === selectedId) ?? navigableItems[0]
+        if (hit) {
+          e.preventDefault()
+          const realBookmark = bookmarks.find((b) => b.id === hit.id)
+          if (realBookmark) openBookmarkLink(realBookmark)
+        }
+        return
+      }
+
       const isArrowKey =
         e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'ArrowLeft' || e.key === 'ArrowRight'
       if (inEditable && active === headerSearchRef.current) {
-        // 顶栏搜索框聚焦：字符正常键入（内联过滤）；Enter 打开当前选中项；方向键放行到下方导航
-        if (e.key === 'Enter') {
-          const hit = navigableItems.find((i) => i.id === selectedId) ?? navigableItems[0]
-          if (hit) {
-            e.preventDefault()
-            const realBookmark = bookmarks.find((b) => b.id === hit.id)
-            if (realBookmark) openBookmarkLink(realBookmark)
-          }
-          return
-        }
+        // 顶栏搜索框聚焦：字符正常键入（内联过滤）；方向键放行到下方导航
         if (!isArrowKey) return
         // 方向键：落到下方导航逻辑
       } else if (inEditable) {
@@ -1737,8 +1771,13 @@ function Fav({ item, cls = 'fav' }: { item: HomeItem; cls?: string }) {
   // 真实图标加载失败（如 favicon 服务 404）时优雅回退到文字首字母
   const [imgError, setImgError] = useState(false)
   const showImg = item.iconUrl && !imgError
+  // 有真实图标：不加背景（透明 PNG 不会透出底色）。文字占位：加 is-placeholder，
+  // 底色与文字色由 --fav-hue 在 CSS 里按深浅模式派生（低饱和、每站独立）；用户自设 color 优先覆盖
+  const placeholderStyle: React.CSSProperties = item.color
+    ? { background: item.color }
+    : ({ '--fav-hue': item.favHue } as React.CSSProperties)
   return (
-    <div className={cls} style={{ background: item.color }}>
+    <div className={showImg ? cls : `${cls} is-placeholder`} style={showImg ? undefined : placeholderStyle}>
       {showImg ? (
         <Image bare src={item.iconUrl} alt="" onError={() => setImgError(true)} onContextMenu={(e) => e.preventDefault()} />
       ) : (
