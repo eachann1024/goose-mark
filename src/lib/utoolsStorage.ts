@@ -124,13 +124,17 @@ export const utoolsStorage = {
 
     const utools = getUtoolsApi()
     if (utools?.dbStorage) {
+      let dbSaved = false
       try {
         utools.dbStorage.setItem(key, value)
+        dbSaved = true
       } catch (error) {
         console.warn('[utoolsStorage] dbStorage.setItem 失败，回退 localStorage:', error)
         setLocalStorageItem(key, value)
       }
-      removeLocalStorageItem(key)
+      // 仅当 dbStorage 写入成功才清理 localStorage 兜底；
+      // 失败时必须保留 localStorage，否则下次启动 readPersistedValue 读不到任何数据 → 书签丢失
+      if (dbSaved) removeLocalStorageItem(key)
     } else {
       setLocalStorageItem(key, value)
     }
