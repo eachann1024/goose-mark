@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useBookmarkStore, TRASH_GROUP_ID } from '../../stores/bookmark'
 import type { Group, SubGroup } from '../../types/bookmark'
+import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEditKeys'
 import { Ico } from './icon'
 
 interface GroupManagePageProps {
@@ -206,10 +207,10 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                         value={editState.val}
                         onChange={(e) => setEditState({ kind: 'rename-group', id: g.id, val: e.target.value })}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitGroupName(g.id, editState.val)
+                          handleInlineRenameEnter(e, () => commitGroupName(g.id, editState.val))
                           if (e.key === 'Escape') setEditState({ kind: 'none' })
                         }}
-                        onBlur={() => commitGroupName(g.id, editState.val)}
+                        onBlur={() => deferInlineRenameCommit(() => commitGroupName(g.id, editState.val))}
                       />
                     </div>
                   )
@@ -263,7 +264,7 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                   value={editState.val}
                   onChange={(e) => setEditState({ kind: 'new-group', val: e.target.value })}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') commitGroupName(null, editState.val)
+                    handleInlineRenameEnter(e, () => commitGroupName(null, editState.val))
                     if (e.key === 'Escape') setEditState({ kind: 'none' })
                   }}
                   onBlur={() => {
@@ -325,10 +326,10 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                             value={editState.val}
                             onChange={(e) => setEditState({ kind: 'rename-sub', id: sub.id, val: e.target.value })}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') commitSubName(selectedGroup.id, sub.id, editState.val)
+                              handleInlineRenameEnter(e, () => commitSubName(selectedGroup.id, sub.id, editState.val))
                               if (e.key === 'Escape') setEditState({ kind: 'none' })
                             }}
-                            onBlur={() => commitSubName(selectedGroup.id, sub.id, editState.val)}
+                            onBlur={() => deferInlineRenameCommit(() => commitSubName(selectedGroup.id, sub.id, editState.val))}
                           />
                         </div>
                       )
@@ -397,7 +398,7 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                       value={editState.val}
                       onChange={(e) => setEditState({ kind: 'new-sub', val: e.target.value })}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitSubName(selectedGroup.id, null, editState.val)
+                        handleInlineRenameEnter(e, () => commitSubName(selectedGroup.id, null, editState.val))
                         if (e.key === 'Escape') setEditState({ kind: 'none' })
                       }}
                       onBlur={() => {

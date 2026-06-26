@@ -4,8 +4,8 @@ if (typeof window !== 'undefined') {
     window.utools = utools
 
     const WINDOW_HEIGHT_STORAGE_KEY = 'settings'
-    const MIN_WINDOW_HEIGHT = 460
-    const MAX_WINDOW_HEIGHT = 900
+    const MIN_WINDOW_HEIGHT = 600
+    const MAX_WINDOW_HEIGHT = 1000
 
     const clampWindowHeight = (height) => {
       const numericHeight = Number(height)

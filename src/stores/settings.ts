@@ -62,9 +62,9 @@ export interface SettingsState {
 }
 
 /** uTools 窗口高度范围（与 preload.cjs 的 clampWindowHeight 保持一致） */
-export const WINDOW_HEIGHT_MIN = 460
-export const WINDOW_HEIGHT_MAX = 900
-export const WINDOW_HEIGHT_DEFAULT = 600
+export const WINDOW_HEIGHT_MIN = 600
+export const WINDOW_HEIGHT_MAX = 1000
+export const WINDOW_HEIGHT_DEFAULT = 800
 const clampWindowHeight = (h: number) =>
   Math.min(WINDOW_HEIGHT_MAX, Math.max(WINDOW_HEIGHT_MIN, Math.round(h)))
 

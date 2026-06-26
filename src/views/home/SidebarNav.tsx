@@ -27,6 +27,7 @@ import { CSS } from '@dnd-kit/utilities'
 import type { Group, SubGroup } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import type { HomeGroup } from './viewModel'
+import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEditKeys'
 import { Ico } from './icon'
 
 // ── SortableNavItem：侧栏子分组可拖拽单项（模块顶层，避免 TDZ）────────────
@@ -353,14 +354,14 @@ export default function SidebarNav({
   // ── input 键盘处理 ────────────────────────────────────────────────────────
   const onInputKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') submitRename()
+      handleInlineRenameEnter(e, submitRename)
       if (e.key === 'Escape') cancelEditing()
     },
     [submitRename, cancelEditing]
   )
 
   const onInputBlur = useCallback(() => {
-    submitRename()
+    deferInlineRenameCommit(submitRename)
   }, [submitRename])
 
   // ── 菜单操作 ─────────────────────────────────────────────────────────────

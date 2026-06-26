@@ -29,6 +29,11 @@ import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { resolveBookmarkLaunchUrl, getTemplateLabel } from '@/lib/utils'
 import { getRuntimePlatform } from '@/lib/platform'
+import {
+  deferInlineRenameCommit,
+  handleInlineRenameEnter,
+  shouldDeferListEnterShortcut,
+} from '@/lib/inlineEditKeys'
 import { Ico } from './icon'
 import { Image } from '@/components/ui/image'
 import { buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './viewModel'
@@ -844,7 +849,7 @@ export default function HomePage() {
       // Enter：打开当前选中书签。无论焦点在顶栏搜索框、列表区还是无焦点（鼠标点击 / 方向键
       // 选中后焦点落在 body），都应直接打开；仅当焦点落在「搜索框以外」的其它输入控件时才放行给它。
       if (e.key === 'Enter') {
-        if (inEditable && active !== headerSearchRef.current) return
+        if (shouldDeferListEnterShortcut(e, headerSearchRef.current)) return
         const hit = navigableItems.find((i) => i.id === selectedId) ?? navigableItems[0]
         if (hit) {
           e.preventDefault()
@@ -1479,10 +1484,10 @@ export default function HomePage() {
                       value={tabRenameVal}
                       onChange={(e) => setTabRenameVal(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitTabRename()
-                        else if (e.key === 'Escape') setTabRenaming(null)
+                        handleInlineRenameEnter(e, commitTabRename)
+                        if (e.key === 'Escape') setTabRenaming(null)
                       }}
-                      onBlur={commitTabRename}
+                      onBlur={() => deferInlineRenameCommit(commitTabRename)}
                     />
                   ) : (
                     <SortableTab
@@ -1507,10 +1512,10 @@ export default function HomePage() {
                     value={tabAddVal}
                     onChange={(e) => setTabAddVal(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitTabAdd()
-                      else if (e.key === 'Escape') setTabAdding(false)
+                      handleInlineRenameEnter(e, commitTabAdd)
+                      if (e.key === 'Escape') setTabAdding(false)
                     }}
-                    onBlur={commitTabAdd}
+                    onBlur={() => deferInlineRenameCommit(commitTabAdd)}
                   />
                 ) : (
                   <button className="tab-add" title="新建分组" onClick={startTabAdd}>
@@ -2610,7 +2615,7 @@ function SettingsContent({
                 />
               </div>
               <div className="set-row">
-                <div><div className="rt">窗口高度</div><div className="rd">记住插件展开高度，下次呼出自动恢复</div></div>
+                <div><div className="rt">窗口高度</div><div className="rd">插件展开高度（{WINDOW_HEIGHT_MIN}–{WINDOW_HEIGHT_MAX}px），下次呼出自动恢复</div></div>
                 <div className="stepper">
                   <button
                     className="stepper-btn"
