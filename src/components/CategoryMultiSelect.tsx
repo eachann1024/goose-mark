@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
-import { Check, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Check, Plus, X } from 'lucide-react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { cn } from '@/lib/utils'
+import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEditKeys'
 
 /**
  * CategoryMultiSelect（React 版）
@@ -24,11 +25,19 @@ export function CategoryMultiSelect({
   onClose
 }: CategoryMultiSelectProps) {
   const groups = useBookmarkStore((s) => s.groups)
+  const addSubGroup = useBookmarkStore((s) => s.addSubGroup)
+  const [addingGroupId, setAddingGroupId] = useState<string | null>(null)
+  const [addVal, setAddVal] = useState('')
+  const addInputRef = useRef<HTMLInputElement>(null)
 
   const displayGroups = useMemo(
     () => groups.filter((g) => g.id !== TRASH_GROUP_ID),
     [groups]
   )
+
+  useEffect(() => {
+    if (addingGroupId) addInputRef.current?.focus()
+  }, [addingGroupId])
 
   const isSelected = (groupId: string, subGroupId: string) =>
     value.some((loc) => loc.groupId === groupId && loc.subGroupId === subGroupId)
@@ -51,6 +60,30 @@ export function CategoryMultiSelect({
     const group = groups.find((g) => g.id === loc.groupId)
     const sub = group?.children.find((c) => c.id === loc.subGroupId)
     return sub?.name ?? ''
+  }
+
+  const startAddSub = (groupId: string) => {
+    if (readonly) return
+    setAddingGroupId(groupId)
+    setAddVal('')
+  }
+
+  const cancelAddSub = () => {
+    setAddingGroupId(null)
+    setAddVal('')
+  }
+
+  const commitAddSub = (groupId: string) => {
+    const name = addVal.trim()
+    if (!name) {
+      cancelAddSub()
+      return
+    }
+    const sub = addSubGroup(name, groupId)
+    if (sub) {
+      onChange([...value, { groupId, subGroupId: sub.id }])
+    }
+    cancelAddSub()
   }
 
   return (
@@ -85,6 +118,35 @@ export function CategoryMultiSelect({
                     </button>
                   )
                 })}
+                {!readonly && addingGroupId === group.id && (
+                  <input
+                    ref={addInputRef}
+                    className="cat-ms-chip-input"
+                    placeholder="子分组名称…"
+                    value={addVal}
+                    onChange={(e) => setAddVal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        cancelAddSub()
+                        return
+                      }
+                      handleInlineRenameEnter(e, () => commitAddSub(group.id))
+                    }}
+                    onBlur={() => deferInlineRenameCommit(() => commitAddSub(group.id))}
+                  />
+                )}
+                {!readonly && addingGroupId !== group.id && (
+                  <button
+                    type="button"
+                    className="cat-ms-chip cat-ms-chip--add"
+                    title="新建子分组"
+                    onClick={() => startAddSub(group.id)}
+                  >
+                    <Plus className="lucide" strokeWidth={2} />
+                    <span className="cat-ms-chip-label">新建</span>
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -118,17 +180,9 @@ export function CategoryMultiSelect({
       )}
 
       {!inline && onClose && (
-        <div className="cat-ms-modal-foot">
-          <button type="button" className="cat-ms-modal-btn cat-ms-modal-btn--ghost" onClick={onClose}>
-            取消
-          </button>
-          <button
-            type="button"
-            disabled={value.length === 0}
-            className="cat-ms-modal-btn cat-ms-modal-btn--primary"
-            onClick={onClose}
-          >
-            确定
+        <div className="cat-ms-footer">
+          <button type="button" className="cat-ms-done" onClick={onClose}>
+            完成
           </button>
         </div>
       )}

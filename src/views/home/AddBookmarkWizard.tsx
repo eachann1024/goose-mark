@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
-import { useBookmarkForm, useBookmarkFormStore } from '@/hooks/useBookmarkForm'
+import {
+  useBookmarkForm,
+  useBookmarkFormStore,
+  isValidUrlInput,
+  URL_FETCH_DEBOUNCE_MS,
+} from '@/hooks/useBookmarkForm'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { Ico } from './icon'
@@ -55,6 +60,7 @@ export default function AddBookmarkWizard({
     isSaving,
     isGenerating,
     editingId,
+    originalUrl,
     categorySuggestion,
     isSuggestingCategory,
     canUseAi,
@@ -332,6 +338,9 @@ export default function AddBookmarkWizard({
               dismissCategorySuggestion={dismissCategorySuggestion}
               setUrl={setUrl}
               onPaste={handlePaste}
+              editingId={editingId}
+              originalUrl={originalUrl}
+              runUrlFetch={runUrlFetch}
             />
           )}
 
@@ -425,10 +434,12 @@ function CaptureStep({
           onChange={(e) => setUrl(e.target.value)}
           placeholder="粘贴或输入网址…"
         />
-        <button className="gm-url-paste" onClick={onPaste} title="从剪贴板粘贴">
-          <Ico name="paste" />
-          粘贴
-        </button>
+        {!url.trim() && (
+          <button className="gm-url-paste" onClick={onPaste} title="从剪贴板粘贴">
+            <Ico name="paste" />
+            粘贴
+          </button>
+        )}
       </div>
 
       {/{[^}]+}/.test(url) && (
@@ -637,6 +648,9 @@ function ConfirmStep({
   dismissCategorySuggestion,
   setUrl,
   onPaste,
+  editingId,
+  originalUrl,
+  runUrlFetch,
 }: {
   draft: { title: string; desc: string; url: string }
   draftLocations: BookmarkLocation[]
@@ -667,7 +681,19 @@ function ConfirmStep({
   dismissCategorySuggestion: () => void
   setUrl: (v: string) => void
   onPaste: () => void
+  editingId: string
+  originalUrl: string
+  runUrlFetch: (debounceMs?: number) => void
 }) {
+  useEffect(() => {
+    const val = draft.url
+    if (!val.trim()) return
+    if (!isValidUrlInput(val)) return
+    if (editingId && val === originalUrl) return
+    if (typeof runUrlFetch !== 'function') return
+    runUrlFetch(URL_FETCH_DEBOUNCE_MS)
+  }, [draft.url, editingId, originalUrl, runUrlFetch])
+
   const previewText = ((draft.title || draft.url) || 'ICON').trim().slice(0, 2).toUpperCase()
 
   return (
@@ -687,10 +713,12 @@ function ConfirmStep({
             placeholder="https://… 或含 {query} 的搜索模板"
             spellCheck={false}
           />
-          <button type="button" className="gm-url-paste" onClick={onPaste} title="从剪贴板粘贴">
-            <Ico name="paste" />
-            粘贴
-          </button>
+          {!draft.url.trim() && (
+            <button type="button" className="gm-url-paste" onClick={onPaste} title="从剪贴板粘贴">
+              <Ico name="paste" />
+              粘贴
+            </button>
+          )}
         </div>
         {/{[^}]+}/.test(draft.url) && (
           <div className="gm-capture-hint">

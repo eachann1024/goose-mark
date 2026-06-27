@@ -222,7 +222,7 @@ const buildTextIconFromValue = (value: string): IconSource => {
   return { type: 'text', value: text }
 }
 
-const isValidUrlInput = (rawUrl: string) => {
+export const isValidUrlInput = (rawUrl: string) => {
   const input = rawUrl.trim()
   if (!input) return false
   if (/^javascript:/i.test(input) || /^file:/i.test(input)) return false
@@ -329,6 +329,8 @@ let urlFetchTimer: ReturnType<typeof setTimeout> | null = null
 // 导致 iconLoading 永远停在 true、识别环一直转的竞态。
 let iconLoadingWatchdog: ReturnType<typeof setTimeout> | null = null
 const ICON_LOADING_WATCHDOG_MS = 6000
+export const URL_FETCH_DEBOUNCE_MS = 2000
+export const URL_FETCH_IMMEDIATE_MS = 400
 // 单调递增请求序号，用于丢弃乱序响应（慢请求覆盖后输入 URL 的竞态保护）
 let urlFetchRequestId = 0
 // askAI 请求代际计数器：区分同 URL 的并发请求与跨表单会话的在途请求
@@ -761,10 +763,8 @@ ${groupsDescription}
     [set, resolveLocationsForSave, buildTextIcon]
   )
 
-  // ---- 手动触发：抓取当前 URL 的图标/标题/描述 ----
-  // 不再随输入自动抓取（避免用户刚打几个字就弹「未能获取」打断、并干扰拖选/编辑 URL）。
-  // 改由「下一步 / 回车 / 重试」显式调用 runUrlFetch()，识别动作完全由用户驱动。
-  const runUrlFetch = useCallback(() => {
+  // 手动触发抓取；debounceMs 默认 400（下一步/重试），确认页 URL 变更用 2s 防抖自动重抓。
+  const runUrlFetch = useCallback((debounceMs = URL_FETCH_IMMEDIATE_MS) => {
     const { editingId, originalUrl } = useBookmarkFormStore.getState()
     const val = useBookmarkFormStore.getState().draft.url
     if (!val) return
@@ -848,17 +848,16 @@ ${groupsDescription}
           }
         }
       }
-    }, 400)
+    }, debounceMs)
   }, [])
 
-  // ---- 副作用：URL 变更只做清空重置，不触发抓取（抓取改由 runUrlFetch 显式驱动）----
+  // ---- 副作用：URL 变更仅清空遗留标题/预览（自动重抓仅在确认页 ConfirmStep）----
   const draftUrl = form.draft.url
   useEffect(() => {
     const { isTitleDirty, isDescDirty, editingId } = useBookmarkFormStore.getState()
     const val = draftUrl
 
     if (!val) {
-      // 清空 URL：撤销在途抓取、复位预览态，未被用户接管的标题/描述一并清空
       if (urlFetchTimer) {
         clearTimeout(urlFetchTimer)
         urlFetchTimer = null
@@ -871,7 +870,6 @@ ${groupsDescription}
       return
     }
 
-    // URL 变化时清掉上一站点遗留的自动标题（用户已手动编辑的不动）
     if (!isTitleDirty && !editingId) patchDraft({ title: '' })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftUrl])

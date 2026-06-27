@@ -705,12 +705,83 @@
   border-color:var(--accent);
   color:var(--accent-fg);
 }
+
+.goose-home .form-category-select .cat-ms-heading {
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.goose-home .form-category-select .cat-ms-heading-add {
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:22px;
+  height:22px;
+  border-radius:var(--radius-sm);
+  color:var(--fg-faint);
+  transition:color .12s, background-color .12s;
+  cursor:pointer;
+}
+.goose-home .form-category-select .cat-ms-heading-add:hover {
+  color:var(--accent);
+  background:var(--accent-subtle);
+}
+.goose-home .form-category-select .cat-ms-heading-add .lucide { width:13px; height:13px; }
+.goose-home .form-category-select .cat-ms-chip--add {
+  border-style:dashed;
+  color:var(--fg-faint);
+}
+.goose-home .form-category-select .cat-ms-chip--add:hover:not(:disabled) {
+  color:var(--accent);
+  border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  background:var(--accent-subtle);
+}
+.goose-home .form-category-select .cat-ms-chip--add .lucide { width:12px; height:12px; }
+.goose-home .form-category-select .cat-ms-chip-input {
+  min-width:7rem;
+  max-width:10rem;
+  height:28px;
+  padding:0 12px;
+  border-radius:999px;
+  font-size:12.5px;
+  color:var(--fg);
+  background:var(--input);
+  border:1px solid var(--accent);
+  outline:none;
+}
 .goose-home .form-category-select .cat-ms-chip-label {
   overflow:hidden;
   text-overflow:ellipsis;
   white-space:nowrap;
   max-width:12rem;
 }
+
+.goose-home .form-category-select .cat-ms-add-group {
+  margin-top:10px;
+  padding-top:8px;
+  border-top:1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.goose-home .form-category-select .cat-ms-add-group-btn {
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding:6px 14px;
+  border-radius:999px;
+  font-size:12.5px;
+  color:var(--fg-muted);
+  border:1px dashed var(--border);
+  background:transparent;
+  transition:color .12s, background-color .12s, border-color .12s;
+  cursor:pointer;
+}
+.goose-home .form-category-select .cat-ms-add-group-btn:hover {
+  color:var(--accent);
+  border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  background:var(--accent-subtle);
+}
+.goose-home .form-category-select .cat-ms-add-group-btn .lucide { width:13px; height:13px; }
+.goose-home .form-category-select .cat-ms-chip-input--wide { min-width:10rem; max-width:16rem; }
 .goose-home .form-category-select .cat-ms-empty {
   text-align:center;
   padding:32px 8px;
