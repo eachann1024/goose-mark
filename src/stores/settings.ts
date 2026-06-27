@@ -121,7 +121,7 @@ const createInitialState = (): SettingsState => {
     listFullDescription: true,
     listShowTags: true,
     gridIconSize: 'medium',
-    aiQuickSaveEnabled: true,
+    aiQuickSaveEnabled: false,
     windowHeight: WINDOW_HEIGHT_DEFAULT,
     useUtoolsBrowser: false
   }
@@ -227,7 +227,7 @@ export const useSettingsStore = create<SettingsStore>()(
         if (typeof state.aiSelectedModelId !== 'string' || !state.aiSelectedModelId.trim()) {
           patch.aiSelectedModelId = DEFAULT_AI_MODEL
         }
-        if (typeof state.aiEnabled !== 'boolean') patch.aiEnabled = true
+        if (typeof state.aiEnabled !== 'boolean') patch.aiEnabled = false
         if (typeof state.aiUseCustomProvider !== 'boolean') patch.aiUseCustomProvider = false
         if (typeof state.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()
         // 预置字段兜底：旧数据无此字段时，从已存 baseURL 反查推断；非法值同样回退推断
@@ -242,7 +242,7 @@ export const useSettingsStore = create<SettingsStore>()(
         if (!['small', 'medium', 'large'].includes(state.gridIconSize)) patch.gridIconSize = 'medium'
         if (typeof state.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
         if (!['starry', 'blackhole'].includes(state.easterEggVariant)) patch.easterEggVariant = 'starry'
-        if (typeof state.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = true
+        if (typeof state.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = false
 
         const rawModelOptions = Array.isArray(state.aiCustomModelOptions) ? state.aiCustomModelOptions : null
         if (!rawModelOptions) {

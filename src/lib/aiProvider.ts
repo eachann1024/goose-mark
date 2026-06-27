@@ -621,7 +621,7 @@ export async function runAIText(settings: AISettingsLike, messages: AIMessage[])
 
 export function getDefaultAISettings() {
   return {
-    enabled: true,
+    enabled: false,
     selectedModelId: DEFAULT_AI_MODEL,
     useCustomProvider: false,
     customBaseURL: getDefaultBaseURL(),
