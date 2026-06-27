@@ -26,6 +26,6 @@ export function shouldDeferListEnterShortcut(
   if (headerSearch && t === headerSearch) return false
   if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return true
   return !!t.closest(
-    '.nav-item-editing, .grp-label-editing, .group-tab-rename, .gm-item-editing',
+    '.nav-item-editing, .grp-label-editing, .group-tab-rename, .gm-item-editing, .cat-ms-chip-input',
   )
 }
