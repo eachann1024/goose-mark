@@ -10,18 +10,9 @@
  */
 import { useState, useRef, useEffect, useCallback } from 'react'
 import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  closestCenter,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
   SortableContext,
   verticalListSortingStrategy,
   useSortable,
-  arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import type { Group, SubGroup } from '@/types/bookmark'
@@ -64,9 +55,10 @@ function SortableNavItem({
   onInputKeyDown,
   onInputBlur,
 }: SortableNavItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
     id,
     disabled: isEditing,
+    data: { type: 'sub', groupId },
   })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -99,7 +91,7 @@ function SortableNavItem({
       style={style}
       role="button"
       tabIndex={0}
-      className={`nav-item nav-item-hoverable${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}`}
+      className={`nav-item nav-item-hoverable${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}${isOver ? ' drop-over' : ''}`}
       data-nav-type="sub"
       data-group-id={groupId}
       data-sub-id={id}
@@ -188,9 +180,6 @@ export default function SidebarNav({
   const reorderSubGroups = useBookmarkStore((s) => s.reorderSubGroups)
   const moveSubToGroup = useBookmarkStore((s) => s.moveSubToGroup)
   const promoteSubToGroup = useBookmarkStore((s) => s.promoteSubToGroup)
-
-  // ── 子分组拖拽排序 sensors（distance:5 保证点击/右键/重命名不被误判为拖拽）──
-  const subSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   // ── 局部状态 ──────────────────────────────────────────────────────────────
   const [menu, setMenu] = useState<NavMenuState>({
@@ -682,22 +671,6 @@ export default function SidebarNav({
     <>
       <aside ref={asideRef} className="sidebar" onContextMenu={onAsideContextMenu}>
         {visibleGroups.map((g) => {
-          const handleSubDragEnd = (event: DragEndEvent) => {
-            const { active, over } = event
-            if (!over || active.id === over.id) return
-            const oldIdx = g.subs.findIndex((s) => s.id === active.id)
-            const newIdx = g.subs.findIndex((s) => s.id === over.id)
-            if (oldIdx < 0 || newIdx < 0) return
-            const newSubOrder = arrayMove(g.subs, oldIdx, newIdx)
-            const rawGroup = useBookmarkStore.getState().groups.find((rg) => rg.id === g.id)
-            if (!rawGroup) return
-            const rawChildren = rawGroup.children.filter((c) => !c.isDeleted)
-            const newRawChildren = newSubOrder
-              .map((hs) => rawChildren.find((rc) => rc.id === hs.id)!)
-              .filter(Boolean)
-            reorderSubGroups(g.id, newRawChildren)
-          }
-
           return (
             <div className="grp" key={g.id}>
               {/* 子分组分区标题：hover 右侧浮现 + 就地新建（一级分组标题已移至顶栏 Tab） */}
@@ -711,12 +684,7 @@ export default function SidebarNav({
                   <Ico name="plus" />
                 </button>
               </div>
-              <DndContext
-                sensors={subSensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleSubDragEnd}
-              >
-                <SortableContext items={g.subs.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+              <SortableContext items={g.subs.map((s) => s.id)} strategy={verticalListSortingStrategy}>
                   {g.subs.map((s) => {
                     const isRenamingSub =
                       editing?.kind === 'renameSub' && editing.groupId === g.id && editing.subId === s.id
@@ -749,7 +717,6 @@ export default function SidebarNav({
                     )
                   })}
                 </SortableContext>
-              </DndContext>
 
               {/* 新建子分组 inline input */}
               {editing?.kind === 'newSub' && editing.groupId === g.id && (

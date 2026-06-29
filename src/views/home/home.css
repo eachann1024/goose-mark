@@ -219,10 +219,11 @@
 }
 .goose-home .fav img { @apply w-full h-full object-cover; }
 .goose-home .card .meta { @apply flex-1 min-w-0 flex flex-col gap-0.5; }
-.goose-home .card .ttl { @apply font-semibold text-[15px] text-g-fg leading-[1.25] whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-serif); }
-.goose-home .card .dsc { @apply text-[11.5px] text-g-fg-muted whitespace-nowrap overflow-hidden text-ellipsis; }
+.goose-home .card .ttl { @apply font-semibold text-[16px] text-g-fg leading-[1.25] whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-sans); }
+.goose-home .card .dsc { @apply text-[13px] font-medium text-g-fg-muted whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-sans); }
 /* 完整显示描述：多行换行，不再单行省略 */
-.goose-home .card .dsc.full { @apply whitespace-normal overflow-visible leading-[1.45] break-words; text-overflow:clip; }
+.goose-home .card .dsc.full { @apply font-normal whitespace-normal overflow-visible leading-[1.5] break-words; text-overflow:clip; }
+.goose-home .card .url { @apply text-[10.5px] font-normal text-g-fg-faint whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-sans); }
 .goose-home .card .tags { @apply flex flex-nowrap gap-1 overflow-hidden mt-px; }
 .goose-home .card .tag { @apply text-[10px] leading-[1.4] px-[5px] rounded-[4px] text-g-accent whitespace-nowrap shrink-0;
   background:color-mix(in srgb,var(--accent) 12%,transparent); }
@@ -241,8 +242,9 @@
 .goose-home .gcard:focus-visible { outline:none; box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 45%,transparent); }
 .goose-home .card:focus-visible { outline:none; box-shadow:inset 2px 0 0 var(--accent), 0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent); }
 .goose-home .gcard .fav { width:var(--grid-icon-size, 46px); height:var(--grid-icon-size, 46px); @apply text-lg rounded-g; }
-.goose-home .gcard .ttl { @apply font-semibold text-sm text-g-fg max-w-full whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-serif); }
-.goose-home .gcard .url { @apply text-[10.5px] text-g-fg-faint max-w-full whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-mono); }
+.goose-home .gcard .ttl { @apply font-semibold text-[15px] text-g-fg max-w-full whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-sans); }
+.goose-home .gcard .dsc { @apply text-[13px] font-medium text-g-fg-muted max-w-full whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-sans); }
+.goose-home .gcard .url { @apply text-[10.5px] font-normal text-g-fg-faint max-w-full whitespace-nowrap overflow-hidden text-ellipsis; font-family:var(--font-sans); }
 .goose-home .empty { @apply flex flex-col items-center justify-center gap-[10px] h-full text-g-fg-faint text-[13px]; }
 .goose-home .empty .lucide { @apply text-[30px] opacity-60; }
 
@@ -1010,7 +1012,7 @@
 }
 .goose-home .gm-preview-fav img { @apply w-[64%] h-[64%] object-contain; }
 .goose-home .gm-preview-meta { @apply flex-1 min-w-0 pt-0.5; }
-.goose-home .gm-preview-title { @apply text-[19px] font-semibold text-g-fg; font-family:var(--font-serif); }
+.goose-home .gm-preview-title { @apply text-[19px] font-medium text-g-fg; font-family:var(--font-sans); }
 .goose-home .gm-preview-host { @apply flex items-center gap-[5px] text-[11.5px] text-g-fg-faint mt-[5px]; font-family:var(--font-mono); }
 .goose-home .gm-preview-host .lucide { @apply text-[11px]; }
 .goose-home .gm-preview-desc { @apply mt-[13px] flex flex-col gap-[7px] text-[13px] leading-[1.6] text-g-fg-muted; }
@@ -1115,6 +1117,26 @@
 .goose-home .nav-item.dragging {
   @apply bg-g-surface rounded-g-sm z-10;
   box-shadow: var(--shadow-sm);
+}
+/* 跟手预览（DragOverlay）：书签卡片浮起，强制不透明底避免透出彩蛋背景 */
+.goose-home .drag-overlay { cursor: grabbing; }
+.goose-home .drag-overlay .card,
+.goose-home .gcard.drag-overlay {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  box-shadow: var(--shadow-pop);
+  border-radius: 12px;
+}
+/* 书签拖到内容区某子分组段：虚线高亮整段 */
+.goose-home .sec-block.drop-over {
+  outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+/* 书签拖到侧栏子分组项：填充高亮接收 */
+.goose-home .nav-item.drop-over {
+  background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 /* ---------- 顶栏：收集按钮 + 头像按钮 ---------- */
