@@ -8,7 +8,9 @@ import {
   uid,
   parseUrlParams,
   createBookmarkSeed,
-  createSeedGroups
+  createDefaultBookmarkSnapshot,
+  createSeedGroups,
+  patchBookmarksWithBuiltinSeedIcons
 } from '@/stores/bookmarkSeed'
 import { bulkMatchMissing, ensureIconForBookmark, backfillRemoteIconCache } from '@/services/iconCache'
 import { useSync } from '@/hooks/useSync'
@@ -72,6 +74,7 @@ export interface BookmarkActions {
   ensureValidSelection: (preferredGroupId?: string, preferredSubGroupId?: string) => void
   autoCleanTrash: () => void
   migrateFromLegacy: () => void
+  patchBookmarksWithBuiltinSeedIcons: () => void
 
   // 查询（旧版 getter，作为方法暴露便于 .getState() 调用）
   getBookmarkLocations: (id: string) => BookmarkLocation[]
@@ -148,6 +151,7 @@ export interface BookmarkActions {
   // 快照 / 整体替换
   loadFromSnapshot: (data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly?: boolean) => void
   setData: (state: SetDataPayload) => void
+  resetToDefaultBookmarks: () => void
   $patch: (partial: Partial<BookmarkState>) => void
 }
 
@@ -296,6 +300,12 @@ export const useBookmarkStore = create<BookmarkStore>()(
           })
 
           commit(groups, bookmarks)
+        },
+
+
+        patchBookmarksWithBuiltinSeedIcons: () => {
+          const { bookmarks, changed } = patchBookmarksWithBuiltinSeedIcons(get().bookmarks)
+          if (changed) set({ bookmarks })
         },
 
         migrateFromLegacy: () => {
@@ -1408,11 +1418,30 @@ export const useBookmarkStore = create<BookmarkStore>()(
         loadFromSnapshot: (data, readOnly = false) => {
           const preferredGroupId = get().activeGroupId
           const preferredSubGroupId = get().activeSubGroupId
-          set({ groups: data.groups, bookmarks: data.bookmarks, isReadOnly: readOnly })
+          const bookmarks = patchBookmarksWithBuiltinSeedIcons(data.bookmarks).bookmarks
+          set({ groups: data.groups, bookmarks, isReadOnly: readOnly })
           get().ensureValidSelection(preferredGroupId, preferredSubGroupId)
         },
 
-        setData: (state) => set(state),
+        setData: (state) => {
+          const next = { ...state }
+          if (state.bookmarks) {
+            next.bookmarks = patchBookmarksWithBuiltinSeedIcons(state.bookmarks).bookmarks
+          }
+          set(next)
+        },
+
+        resetToDefaultBookmarks: () => {
+          const snap = createDefaultBookmarkSnapshot()
+          get().loadFromSnapshot(snap, false)
+          set({
+            search: '',
+            activeView: 'all',
+            activeGroupId: 'g-nav',
+            activeSubGroupId: 'sg-nav-common',
+            isReadOnly: false
+          })
+        },
 
         $patch: (partial) => set(partial)
       }
@@ -1424,11 +1453,13 @@ export const useBookmarkStore = create<BookmarkStore>()(
       merge: (persisted, current) => {
         const saved = persisted as Partial<BookmarkState> | undefined
         if (!saved || (!saved.groups && !saved.bookmarks)) return current
+        const bookmarks = saved.bookmarks ?? current.bookmarks
+        const patched = patchBookmarksWithBuiltinSeedIcons(bookmarks)
         return {
           ...current,
           ...saved,
           groups: saved.groups ?? current.groups,
-          bookmarks: saved.bookmarks ?? current.bookmarks,
+          bookmarks: patched.bookmarks,
           activeGroupId: saved.activeGroupId ?? current.activeGroupId,
           activeSubGroupId: saved.activeSubGroupId ?? current.activeSubGroupId
         }
@@ -1444,8 +1475,10 @@ export const useBookmarkStore = create<BookmarkStore>()(
       onRehydrateStorage: () => (state, error) => {
         if (error || !state) return
         useBookmarkStore.getState().migrateFromLegacy()
+        useBookmarkStore.getState().patchBookmarksWithBuiltinSeedIcons()
         // 水合后后台静默把远程图标本地化为 base64，之后渲染不再联网读取
         void useBookmarkStore.getState().backfillIconCache()
+        void useBookmarkStore.getState().refreshMissingIcons()
       }
     }
   )

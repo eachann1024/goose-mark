@@ -1,15 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
+  useDroppable,
   closestCenter,
+  pointerWithin,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragStartEvent,
 } from '@dnd-kit/core'
 import {
   SortableContext,
   horizontalListSortingStrategy,
+  verticalListSortingStrategy,
+  rectSortingStrategy,
   useSortable,
   arrayMove,
 } from '@dnd-kit/sortable'
@@ -78,6 +87,137 @@ function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }: Sorta
     >
       {name}
     </button>
+  )
+}
+
+// ── 书签拖拽：碰撞策略（优先指针命中，空则回退到最近中心，兼顾「拖到段落空白/侧栏」与同段排序）──
+const bookmarkCollision: CollisionDetection = (args) => {
+  const pointerHits = pointerWithin(args)
+  return pointerHits.length ? pointerHits : closestCenter(args)
+}
+
+// ── SecBlock：子分组段容器（droppable），让空段与段落空白区也能接收书签 ──────────
+function SecBlock({
+  groupId,
+  subId,
+  groupName,
+  subName,
+  count,
+  view,
+  children,
+}: {
+  groupId: string
+  subId: string
+  groupName: string
+  subName: string
+  count: number
+  view: 'list' | 'grid'
+  children: React.ReactNode
+}) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `area:${groupId}:${subId}`,
+    data: { type: 'sub-area', groupId, subId },
+  })
+  return (
+    <div
+      ref={setNodeRef}
+      className={`sec-block${isOver ? ' drop-over' : ''}`}
+      data-sec-id={`sec-${groupId}-${subId}`}
+      data-sub-id={subId}
+      data-view={view}
+    >
+      <div className="sec-head">
+        <span className="g">{groupName}</span>
+        <span className="s">/ {subName} · {count}</span>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ── SortableCard：列表视图可拖拽书签行（模块顶层，避免 TDZ）────────────────────
+function SortableCard({
+  item,
+  groupId,
+  subId,
+  selected,
+  onSelect,
+  onOpen,
+}: {
+  item: HomeItem
+  groupId: string
+  subId: string
+  selected: boolean
+  onSelect: (id: string) => void
+  onOpen?: (item: HomeItem) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.id,
+    data: { type: 'bookmark', groupId, subId, item },
+  })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : undefined,
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      onClick={() => { onSelect(item.id); onOpen?.(item) }}
+    >
+      <BookmarkCard item={item} selected={selected} groupId={groupId} subId={subId} />
+    </div>
+  )
+}
+
+// ── SortableGridCell：网格视图可拖拽书签格（模块顶层，避免 TDZ）───────────────────
+function SortableGridCell({
+  item,
+  groupId,
+  subId,
+  selected,
+  subText,
+  subClass,
+  onSelect,
+  onOpen,
+}: {
+  item: HomeItem
+  groupId: string
+  subId: string
+  selected: boolean
+  subText: string
+  subClass: string
+  onSelect: (id: string) => void
+  onOpen?: (item: HomeItem) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: item.id,
+    data: { type: 'bookmark', groupId, subId, item },
+  })
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : undefined,
+  }
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`gcard${selected ? ' sel' : ''}`}
+      data-item-id={item.id}
+      data-group-id={groupId}
+      data-sub-id={subId}
+      onClick={() => { onSelect(item.id); onOpen?.(item) }}
+    >
+      <Fav item={item} />
+      <div className="ttl">{item.ttl}</div>
+      <div className={subClass}>{subText}</div>
+    </div>
   )
 }
 
@@ -174,6 +314,9 @@ export default function HomePage() {
   const activeGroupId = useBookmarkStore((s) => s.activeGroupId)
   const setActiveGroup = useBookmarkStore((s) => s.setActiveGroup)
   const reorderGroups = useBookmarkStore((s) => s.reorderGroups)
+  const reorderSubGroups = useBookmarkStore((s) => s.reorderSubGroups)
+  const reorderInSub = useBookmarkStore((s) => s.reorderInSub)
+  const moveBookmarkToSubGroup = useBookmarkStore((s) => s.moveBookmarkToSubGroup)
   const updateGroup = useBookmarkStore((s) => s.updateGroup)
   const removeGroup = useBookmarkStore((s) => s.removeGroup)
   const addGroup = useBookmarkStore((s) => s.addGroup)
@@ -243,6 +386,8 @@ export default function HomePage() {
   )
   const [screen, setScreen] = useState<Screen>('list')
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  // 书签拖拽中的项（用于 DragOverlay 跟手预览）
+  const [activeDragItem, setActiveDragItem] = useState<HomeItem | null>(null)
   // 标记本次 selectedId 变更来自键盘方向键（决定滚入时居中 vs 就近，避免鼠标点击触发跳动）
   const keyboardNavRef = useRef(false)
   // 方向键节流：长按时系统 keydown repeat 频率过高会导致滚动飞快，限制每步最小间隔放慢节奏
@@ -486,6 +631,12 @@ export default function HomePage() {
 
   // ---- 顶栏 Tab 拖拽排序（distance:5 保证点击/右键不被误判为拖拽）----
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
+  // 书签 / 侧栏子分组统一拖拽 sensors：MouseSensor + TouchSensor（dnd-kit 推荐的更兼容组合，
+  // 鼠标/触摸都稳；distance:8 比点击略大，避免「点开书签」被误判为拖拽；触摸长按 180ms 起拖、避免与滚动冲突）
+  const dndSensors = useSensors(
+    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
+  )
 
   const handleTabDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -663,6 +814,71 @@ export default function HomePage() {
   )
   // 保持 fireToastRef 与最新 fireToast 同步（供 plugin-enter effect 引用）
   fireToastRef.current = fireToast
+
+  // ---- 统一拖拽：书签卡片（列表/网格）+ 侧栏子分组共用一个 DndContext ----
+  // onDragStart：记录被拖书签，供 DragOverlay 跟手预览（子分组拖拽不需要 overlay）
+  const handleDndDragStart = useCallback((event: DragStartEvent) => {
+    const data = event.active.data.current as { type?: string; item?: HomeItem } | undefined
+    if (data?.type === 'bookmark' && data.item) setActiveDragItem(data.item)
+  }, [])
+
+  // onDragEnd：按 active.type 分流 —— 子分组排序 / 书签排序 / 书签跨子分组移动
+  const handleDndDragEnd = useCallback((event: DragEndEvent) => {
+    setActiveDragItem(null)
+    const { active, over } = event
+    if (!over) return
+    const a = active.data.current as { type?: string; groupId?: string; subId?: string } | undefined
+    const o = over.data.current as { type?: string; groupId?: string; subId?: string } | undefined
+    if (!a) return
+
+    // 1) 侧栏子分组排序（active 与 over 都是子分组，同一一级分组内）
+    if (a.type === 'sub') {
+      if (o?.type !== 'sub' || o.groupId !== a.groupId || active.id === over.id) return
+      const group = homeGroups.find((g) => g.id === a.groupId)
+      if (!group) return
+      const oldIdx = group.subs.findIndex((s) => s.id === active.id)
+      const newIdx = group.subs.findIndex((s) => s.id === over.id)
+      if (oldIdx < 0 || newIdx < 0) return
+      const newOrder = arrayMove(group.subs, oldIdx, newIdx)
+      const rawGroup = useBookmarkStore.getState().groups.find((rg) => rg.id === group.id)
+      if (!rawGroup) return
+      const rawChildren = rawGroup.children.filter((c) => !c.isDeleted)
+      const newRaw = newOrder.map((hs) => rawChildren.find((rc) => rc.id === hs.id)!).filter(Boolean)
+      reorderSubGroups(group.id, newRaw)
+      return
+    }
+
+    // 2) 书签拖拽：先解析落点所属子分组
+    if (a.type !== 'bookmark' || !a.groupId || !a.subId) return
+    let toGroupId: string | undefined
+    let toSubId: string | undefined
+    let overBookmarkId: string | undefined
+    if (o?.type === 'bookmark') {
+      toGroupId = o.groupId
+      toSubId = o.subId
+      overBookmarkId = String(over.id)
+    } else if (o?.type === 'sub') {
+      // 落到侧栏子分组项：over.id 即目标子分组 id
+      toGroupId = o.groupId
+      toSubId = String(over.id)
+    } else if (o?.type === 'sub-area') {
+      // 落到内容区某子分组段（含空段/段落空白）
+      toGroupId = o.groupId
+      toSubId = o.subId
+    }
+    if (!toGroupId || !toSubId) return
+
+    if (a.groupId === toGroupId && a.subId === toSubId) {
+      // 同子分组内排序（仅当落在另一张卡片上）
+      if (overBookmarkId && active.id !== over.id) {
+        reorderInSub(a.groupId, a.subId, String(active.id), overBookmarkId)
+      }
+      return
+    }
+    // 跨子分组移动
+    const ok = moveBookmarkToSubGroup(String(active.id), a.groupId, a.subId, toGroupId, toSubId)
+    if (ok) fireToast('已移动')
+  }, [homeGroups, reorderSubGroups, reorderInSub, moveBookmarkToSubGroup, fireToast])
 
   // 选中项变化时滚入可视区域
   useEffect(() => {
@@ -1618,6 +1834,12 @@ export default function HomePage() {
 
         {/* ---------- Main ---------- */}
         <div className="app-main">
+          <DndContext
+            sensors={dndSensors}
+            collisionDetection={bookmarkCollision}
+            onDragStart={handleDndDragStart}
+            onDragEnd={handleDndDragEnd}
+          >
           {/* Sidebar */}
           <SidebarNav
             homeGroups={homeGroups}
@@ -1683,6 +1905,22 @@ export default function HomePage() {
               </div>
             )}
           </div>
+          <DragOverlay dropAnimation={null}>
+            {activeDragItem ? (
+              view === 'grid' ? (
+                <div className="gcard drag-overlay">
+                  <Fav item={activeDragItem} />
+                  <div className="ttl">{activeDragItem.ttl}</div>
+                  <div className="url">{activeDragItem.host}</div>
+                </div>
+              ) : (
+                <div className="drag-overlay">
+                  <BookmarkCard item={activeDragItem} />
+                </div>
+              )
+            ) : null}
+          </DragOverlay>
+          </DndContext>
         </div>
 
         {/* ---------- Settings ---------- */}
@@ -1857,25 +2095,39 @@ function ListContent({
     <>
       {groups.map((g) =>
         g.subs.map((s) => (
-          <div
+          <SecBlock
             key={`${g.id}-${s.id}`}
-            className="sec-block"
-            data-sec-id={`sec-${g.id}-${s.id}`}
-            data-sub-id={s.id}
+            groupId={g.id}
+            subId={s.id}
+            groupName={g.name}
+            subName={s.name}
+            count={s.items.length}
+            view="list"
           >
-            <div className="sec-head">
-              <span className="g">{g.name}</span>
-              <span className="s">/ {s.name} · {s.items.length}</span>
-            </div>
-            {s.items.length === 0
-              ? <div className="sec-empty">暂无书签</div>
-              : s.items.map((b) => (
+            {s.items.length === 0 ? (
+              <div className="sec-empty">暂无书签</div>
+            ) : searching ? (
+              s.items.map((b) => (
                 <div key={`${g.id}-${s.id}-${b.id}`} onClick={() => { onSelect(b.id); onOpen?.(b) }}>
                   <BookmarkCard item={b} selected={b.id === selectedId} groupId={g.id} subId={s.id} />
                 </div>
               ))
-            }
-          </div>
+            ) : (
+              <SortableContext items={s.items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                {s.items.map((b) => (
+                  <SortableCard
+                    key={`${g.id}-${s.id}-${b.id}`}
+                    item={b}
+                    groupId={g.id}
+                    subId={s.id}
+                    selected={b.id === selectedId}
+                    onSelect={onSelect}
+                    onOpen={onOpen}
+                  />
+                ))}
+              </SortableContext>
+            )}
+          </SecBlock>
         ))
       )}
     </>
@@ -1909,6 +2161,42 @@ function GridCells({
   groupId?: string
   subId?: string
 }) {
+  const showDescription = useSettingsStore((s) => s.listShowDescription)
+  // 非搜索态（有归属分组）才可拖拽；搜索扁平宫格无 groupId，保持普通渲染
+  const canDrag = !!groupId && !!subId
+  const cells = items.map((b) => {
+    const subText = showDescription && b.dsc ? b.dsc : b.host
+    const subClass = showDescription && b.dsc ? 'dsc' : 'url'
+    if (canDrag) {
+      return (
+        <SortableGridCell
+          key={b.id}
+          item={b}
+          groupId={groupId!}
+          subId={subId!}
+          selected={b.id === selectedId}
+          subText={subText}
+          subClass={subClass}
+          onSelect={onSelect}
+          onOpen={onOpen}
+        />
+      )
+    }
+    return (
+      <div
+        key={b.id}
+        className={`gcard${b.id === selectedId ? ' sel' : ''}`}
+        data-item-id={b.id}
+        data-group-id={groupId}
+        data-sub-id={subId}
+        onClick={() => { onSelect(b.id); onOpen?.(b) }}
+      >
+        <Fav item={b} />
+        <div className="ttl">{b.ttl}</div>
+        <div className={subClass}>{subText}</div>
+      </div>
+    )
+  })
   return (
     <div
       className="grid"
@@ -1917,20 +2205,11 @@ function GridCells({
         '--grid-icon-size': iconSize
       } as React.CSSProperties}
     >
-      {items.map((b) => (
-        <div
-          key={b.id}
-          className={`gcard${b.id === selectedId ? ' sel' : ''}`}
-          data-item-id={b.id}
-          data-group-id={groupId}
-          data-sub-id={subId}
-          onClick={() => { onSelect(b.id); onOpen?.(b) }}
-        >
-          <Fav item={b} />
-          <div className="ttl">{b.ttl}</div>
-          <div className="url">{b.host}</div>
-        </div>
-      ))}
+      {canDrag ? (
+        <SortableContext items={items.map((b) => b.id)} strategy={rectSortingStrategy}>
+          {cells}
+        </SortableContext>
+      ) : cells}
     </div>
   )
 }
@@ -1995,31 +2274,30 @@ function GridContent({
     <>
       {groups.map((g) =>
         g.subs.map((s) => (
-          <div
+          <SecBlock
             key={`${g.id}-${s.id}`}
-            className="sec-block"
-            data-sec-id={`sec-${g.id}-${s.id}`}
-            data-sub-id={s.id}
+            groupId={g.id}
+            subId={s.id}
+            groupName={g.name}
+            subName={s.name}
+            count={s.items.length}
+            view="grid"
           >
-            <div className="sec-head">
-              <span className="g">{g.name}</span>
-              <span className="s">/ {s.name} · {s.items.length}</span>
-            </div>
-            {s.items.length === 0
-              ? <div className="sec-empty">暂无书签</div>
-              : (
-                <GridCells
-                  items={s.items}
-                  columns={columns}
-                  selectedId={selectedId}
-                  iconSize={iconSize}
-                  onSelect={onSelect}
-                  onOpen={onOpen}
-                  groupId={g.id}
-                  subId={s.id}
-                />
-              )}
-          </div>
+            {s.items.length === 0 ? (
+              <div className="sec-empty">暂无书签</div>
+            ) : (
+              <GridCells
+                items={s.items}
+                columns={columns}
+                selectedId={selectedId}
+                iconSize={iconSize}
+                onSelect={onSelect}
+                onOpen={onOpen}
+                groupId={g.id}
+                subId={s.id}
+              />
+            )}
+          </SecBlock>
         ))
       )}
     </>
@@ -2355,7 +2633,7 @@ function TrashContent({
             </div>
             <div className="meta">
               <div className="ttl">{b.title || b.url}</div>
-              <div className="dsc">{b.url}</div>
+              <div className="url">{b.url}</div>
             </div>
             <button
               className="trash-restore-btn"
@@ -2541,6 +2819,18 @@ function SettingsContent({
       console.error('[Import] 导入失败', err)
       onToast?.('导入失败，请检查文件格式')
     }
+  }, [onToast])
+
+  const handleResetBookmarks = useCallback(() => {
+    if (
+      !window.confirm(
+        '确定重置为默认书签？当前全部分组与书签将被替换为内置示例（含站点图标），此操作不可撤销。'
+      )
+    ) {
+      return
+    }
+    useBookmarkStore.getState().resetToDefaultBookmarks()
+    onToast?.('已恢复默认书签')
   }, [onToast])
 
   // 导出 JSON
@@ -2836,6 +3126,16 @@ function SettingsContent({
               onClick={handleExport}
             >
               <Ico name="download" />导出
+            </button>
+          </div>
+          <div className="set-row">
+            <div><div className="rt">重置书签</div><div className="rd">恢复为内置默认分组与示例链接（图标已内置）</div></div>
+            <button
+              className="btn btn-ghost danger"
+              style={{ height: 34, fontSize: 12.5 }}
+              onClick={handleResetBookmarks}
+            >
+              <Ico name="rotate-ccw" />重置
             </button>
           </div>
         </div>
