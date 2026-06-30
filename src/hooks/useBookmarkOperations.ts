@@ -27,6 +27,8 @@ type UToolsExtendedApi = {
 type OpenBookmarkOptions = {
   query?: string
   useUiQuery?: boolean
+  /** 调用来源，如 'template' 表示由模板书签触发 */
+  source?: string
 }
 
 const getWindowType = () => {

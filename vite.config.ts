@@ -1,9 +1,15 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import { debugSourcemap, debugMinify } from './vite.debug'
 
+const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
+
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version)
+  },
   base: './',
   publicDir: 'public',
   resolve: {

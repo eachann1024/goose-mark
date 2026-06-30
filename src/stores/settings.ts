@@ -19,11 +19,12 @@ import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
 
 export type ViewMode = 'list' | 'grid' | 'cards'
 export type Density = 'compact' | 'regular' | 'comfy'
+/** 界面缩放档位：大 / 正常 / 小 */
+export type UIScale = 'large' | 'normal' | 'small'
 /** 宫格图标尺寸：小 38px / 中 46px / 大 56px */
 export type GridIconSize = 'small' | 'medium' | 'large'
 /** 彩蛋背景样式 */
 export type EasterEggVariant = 'starry' | 'blackhole'
-
 export interface SettingsState {
   gridColumns: number
   autoCloseWindow: boolean
@@ -51,6 +52,8 @@ export interface SettingsState {
   listFullDescription: boolean
   /** 列表模式：显示书签标签 */
   listShowTags: boolean
+  /** 界面缩放档位：大 / 正常 / 小（默认正常） */
+  uiScale: UIScale
   /** 宫格模式：图标大小 */
   gridIconSize: GridIconSize
   /** AI 快捷保存：控制 ai_quick_save uTools 特性是否注册 */
@@ -88,6 +91,7 @@ export interface SettingsActions {
   setListShowDescription: (value: boolean) => void
   setListFullDescription: (value: boolean) => void
   setListShowTags: (value: boolean) => void
+  setUiScale: (value: UIScale) => void
   setGridIconSize: (value: GridIconSize) => void
   setAiQuickSaveEnabled: (value: boolean) => void
   /** 设置 uTools 窗口高度：持久化 + 即时 setExpendHeight 应用 */
@@ -120,6 +124,7 @@ const createInitialState = (): SettingsState => {
     listShowDescription: true,
     listFullDescription: true,
     listShowTags: true,
+    uiScale: 'normal',
     gridIconSize: 'medium',
     aiQuickSaveEnabled: false,
     windowHeight: WINDOW_HEIGHT_DEFAULT,
@@ -175,6 +180,7 @@ export const useSettingsStore = create<SettingsStore>()(
       setListShowDescription: (value) => set({ listShowDescription: !!value }),
       setListFullDescription: (value) => set({ listFullDescription: !!value }),
       setListShowTags: (value) => set({ listShowTags: !!value }),
+      setUiScale: (value) => set({ uiScale: (['large', 'normal', 'small'] as const).includes(value) ? value : 'normal' }),
       setGridIconSize: (value) => set({ gridIconSize: ['small', 'medium', 'large'].includes(value) ? value : 'medium' }),
       setAiQuickSaveEnabled: (value) => set({ aiQuickSaveEnabled: !!value }),
       setWindowHeight: (value) => {
@@ -214,6 +220,7 @@ export const useSettingsStore = create<SettingsStore>()(
         listShowDescription: state.listShowDescription,
         listFullDescription: state.listFullDescription,
         listShowTags: state.listShowTags,
+        uiScale: state.uiScale,
         gridIconSize: state.gridIconSize,
         aiQuickSaveEnabled: state.aiQuickSaveEnabled,
         windowHeight: state.windowHeight,
@@ -240,6 +247,7 @@ export const useSettingsStore = create<SettingsStore>()(
         if (typeof state.listFullDescription !== 'boolean') patch.listFullDescription = true
         if (typeof state.listShowTags !== 'boolean') patch.listShowTags = true
         if (!['small', 'medium', 'large'].includes(state.gridIconSize)) patch.gridIconSize = 'medium'
+        if (!['large', 'normal', 'small'].includes(state.uiScale as string)) patch.uiScale = 'normal'
         if (typeof state.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
         if (!['starry', 'blackhole'].includes(state.easterEggVariant)) patch.easterEggVariant = 'starry'
         if (typeof state.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = false

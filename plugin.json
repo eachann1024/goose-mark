@@ -7,7 +7,7 @@
   "preload": "preload/preload.cjs",
   "main": "dist/index.html",
   "pluginSetting": {
-    "height": 560
+    "height": 800
   },
   "logo": "logo.png",
   "tools": {
