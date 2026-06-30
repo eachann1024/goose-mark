@@ -93,7 +93,7 @@ export default function HelpAboutDialog({ open, onClose, onToast }: HelpAboutDia
               <div className="set-row-sep" />
               <div className="help-kv">
                 <span>版本</span>
-                <span className="help-val">v0.1.0</span>
+                <span className="help-val">v{__APP_VERSION__}</span>
               </div>
               <div className="set-row-sep" />
               <div className="help-kv">

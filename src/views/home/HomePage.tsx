@@ -357,6 +357,8 @@ export default function HomePage() {
   const useUtoolsBrowser = useSettingsStore((s) => s.useUtoolsBrowser)
   const gridColumns = useSettingsStore((s) => s.gridColumns)
   const density = useSettingsStore((s) => s.density)
+  const uiScale = useSettingsStore((s) => s.uiScale)
+  const setUiScale = useSettingsStore((s) => s.setUiScale)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   // AI 设置变化键（与 App.tsx 对齐），用于触发 syncFeatures 重跑
@@ -1676,7 +1678,7 @@ export default function HomePage() {
     .join(' ')
 
   return (
-    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-platform={RUNTIME_PLATFORM}>
+    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM}>
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && <StarryBackground />}
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'blackhole' && (
         <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none">
@@ -1802,10 +1804,12 @@ export default function HomePage() {
           theme={theme}
           themePref={themePref}
           view={view}
+          uiScale={uiScale}
           trashN={trashN}
           onClose={() => setPaOpen(false)}
           onThemePrefChange={applyThemePref}
           onViewChange={changeView}
+          onUiScaleChange={setUiScale}
           onOpenSettings={() => { setPaOpen(false); setScreen('settings') }}
           onOpenTrash={() => { setPaOpen(false); setScreen('trash') }}
           onOpenHelp={() => { setPaOpen(false); setHelpOpen(true) }}

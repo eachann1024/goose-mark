@@ -11,16 +11,19 @@ import logoUrl from '@/assets/logo.png'
 type ThemePref = 'light' | 'dark' | 'system'
 type ViewMode = 'list' | 'grid'
 type Theme = 'light' | 'dark'
+type UIScale = 'large' | 'normal' | 'small'
 
 export interface AvatarMenuProps {
   open: boolean
   theme: Theme
   themePref: ThemePref
   view: ViewMode
+  uiScale: UIScale
   trashN: number
   onClose: () => void
   onThemePrefChange: (pref: ThemePref) => void
   onViewChange: (v: ViewMode) => void
+  onUiScaleChange: (s: UIScale) => void
   onOpenSettings: () => void
   onOpenTrash: () => void
   onOpenHelp: () => void
@@ -37,14 +40,22 @@ const VIEW_OPTS: { v: ViewMode; label: string }[] = [
   { v: 'grid', label: '网格' },
 ]
 
+const SCALE_OPTS: { s: UIScale; label: string }[] = [
+  { s: 'large', label: '放大' },
+  { s: 'normal', label: '正常' },
+  { s: 'small', label: '缩小' },
+]
+
 export default function AvatarMenu({
   open,
   themePref,
   view,
+  uiScale,
   trashN,
   onClose,
   onThemePrefChange,
   onViewChange,
+  onUiScaleChange,
   onOpenSettings,
   onOpenTrash,
   onOpenHelp,
@@ -81,7 +92,7 @@ export default function AvatarMenu({
         </div>
         <div className="pp-top-info">
           <span className="pp-name">鹅的书签</span>
-          <span className="pp-sub">goose-marks · v0.1.0</span>
+          <span className="pp-sub">goose-marks · v{__APP_VERSION__}</span>
         </div>
       </div>
 
@@ -117,6 +128,22 @@ export default function AvatarMenu({
               onClick={() => { onViewChange(v); onClose() }}
             >
               <Ico name={v === 'list' ? 'list' : 'layout-grid'} />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 缩放：大 / 正常 / 小 */}
+      <div className="pp-field">
+        <span className="pp-field-lbl">缩放</span>
+        <div className="radio-seg">
+          {SCALE_OPTS.map(({ s, label }) => (
+            <button
+              key={s}
+              className={uiScale === s ? 'on' : ''}
+              onClick={() => onUiScaleChange(s)}
+            >
               {label}
             </button>
           ))}

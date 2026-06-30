@@ -6,6 +6,7 @@ if (typeof window !== 'undefined') {
     const WINDOW_HEIGHT_STORAGE_KEY = 'settings'
     const MIN_WINDOW_HEIGHT = 600
     const MAX_WINDOW_HEIGHT = 1000
+    const DEFAULT_WINDOW_HEIGHT = 800
 
     const clampWindowHeight = (height) => {
       const numericHeight = Number(height)
@@ -41,10 +42,15 @@ if (typeof window !== 'undefined') {
       }
     }
 
-    if (typeof utools.setExpendHeight === 'function') {
+    const applyStoredWindowHeight = () => {
+      if (typeof utools.setExpendHeight !== 'function') return
       const storedHeight = readStoredWindowHeight()
-      if (storedHeight != null) utools.setExpendHeight(storedHeight)
+      const height = storedHeight ?? DEFAULT_WINDOW_HEIGHT
+      utools.setExpendHeight(height)
     }
+    // 后台页加载时先应用一次；后续每次 onPluginEnter 再应用，
+    // 解决“首次有效、再次打开失效”的问题。
+    applyStoredWindowHeight()
 
     const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
     const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'
@@ -203,6 +209,7 @@ if (typeof window !== 'undefined') {
           entry,
         ].slice(-8)
         mountDefaultSearchInput(true)
+        applyStoredWindowHeight()
         window.dispatchEvent(new CustomEvent(UTOOLS_PLUGIN_ENTER_EVENT, {
           detail: entry.params,
         }))
