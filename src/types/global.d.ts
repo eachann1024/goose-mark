@@ -46,6 +46,20 @@ interface UToolsToolContext {
 }
 
 interface UToolsApi {
+  dbStorage?: {
+    getItem: (key: string) => unknown
+    setItem: (key: string, value: string) => void
+    removeItem: (key: string) => void
+  }
+  db?: {
+    put: <T>(doc: { _id: string; _rev?: string; data: T }) => { ok?: boolean; id?: string; rev?: string; error?: unknown; message?: string }
+    get: <T>(id: string) => { _id: string; _rev?: string; data: T } | null
+    remove: (id: string) => { ok?: boolean; id?: string; error?: unknown; message?: string }
+    allDocs: <T>(prefix?: string) => Array<{ _id: string; _rev?: string; data: T }>
+    postAttachment?: (id: string, data: Uint8Array, type: string) => { ok?: boolean; id?: string; rev?: string; error?: unknown; message?: string }
+    getAttachment?: (id: string) => Uint8Array | null
+    getAttachmentType?: (id: string) => string | null
+  }
   getPath(name: string): string
   setSubInput(onChange: (params: { text: string }) => void, placeholder?: string, isFocus?: boolean): boolean
   setSubInputValue?(text: string): boolean

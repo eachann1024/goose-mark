@@ -615,8 +615,9 @@ export function BlackHole({
     let lastFrameAt = 0   // 上一次真正绘制的 rAF 时间戳（限帧用）
 
     const render = (now?: number) => {
-      if (isLost || !prog || !buf) return
-
+      if (isLost || !prog || !buf) {
+        return
+      }
       const { speed: sp, brightness: br, interactive: iact, paused: ps } = propsRef.current
       // 帧率上限：显式 prop 优先，否则用当前档位值
       const fps = propsRef.current.maxFps ?? tierParams.maxFps
@@ -669,7 +670,6 @@ export function BlackHole({
       if (uMouse) glCtx.uniform2f(uMouse, m.cx, m.cy)
 
       glCtx.drawArrays(glCtx.TRIANGLES, 0, 3)
-
       // 运行时帧率采样（仅 rAF 连续帧；手动踢帧 now 为 undefined 不计入）
       if (now !== undefined) sampleFps(now)
 

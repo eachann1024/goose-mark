@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import UnoCSS from '@unocss/vite'
 import path from 'node:path'
 import { readFileSync } from 'node:fs'
 import { debugSourcemap, debugMinify } from './vite.debug'
@@ -18,6 +19,7 @@ export default defineConfig({
     }
   },
   plugins: [
+    UnoCSS(),
     react()
   ],
   server: {

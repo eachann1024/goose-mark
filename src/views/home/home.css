@@ -97,11 +97,22 @@
 /* 彩蛋激活（egg-on）：壳层让位给底层 canvas，窗体保留半透明底色保证可读性。
    选择器带 data-theme="dark" 双保险：彩蛋只在深色模式渲染，浅色下即使误挂 egg-on 也不透明化 */
 .goose-home[data-theme="dark"].egg-on { background:transparent; }
-.goose-home[data-theme="dark"].egg-on .window { background:color-mix(in srgb, var(--bg) 68%, transparent); }
+.goose-home[data-theme="dark"].egg-on .window { background:color-mix(in srgb, var(--bg) 42%, transparent); }
 /* 宫格卡片与列表行视觉对齐：默认透明透出彩蛋背景，hover/选中恢复底色（与 .card 行为一致） */
 .goose-home[data-theme="dark"].egg-on .gcard { background:transparent; border-color:transparent; }
 .goose-home[data-theme="dark"].egg-on .gcard:hover { background:var(--surface); border-color:color-mix(in srgb,var(--accent) 40%,transparent); }
 .goose-home[data-theme="dark"].egg-on .gcard.sel { background:var(--accent-subtle); border-color:var(--accent); }
+.goose-home[data-theme="dark"].egg-on .content .card { background:transparent; border-color:transparent; }
+.goose-home[data-theme="dark"].egg-on .content .card:hover { background:var(--surface); }
+.goose-home[data-theme="dark"].egg-on .content .card.sel { background:var(--surface-hover); }
+.goose-home[data-theme="dark"].egg-on .set-card {
+  background:color-mix(in srgb, var(--surface) 70%, transparent);
+  border-color:color-mix(in srgb, var(--border) 45%, transparent);
+}
+.goose-home[data-theme="dark"].egg-on .sidebar,
+.goose-home[data-theme="dark"].egg-on .app-header {
+  background:color-mix(in srgb, var(--bg) 55%, transparent);
+}
 
 /* ---------- App window（铺满壳层） ---------- */
 .goose-home .window {
@@ -393,10 +404,10 @@
 /* 自维护 toggle：类名加 g- 前缀，避开 HeroUI v3 全局 .switch 组件样式（inline-flex/gap/cursor/--switch-control-* 等会污染本控件）。
    滑块位移用 transform（而非 Tailwind 的 translate-x-*，后者编译为 CSS `translate` 属性，旧 Electron/Chromium 不支持会导致滑块不右移） */
 .goose-home .g-switch { @apply w-[42px] h-6 rounded-full relative shrink-0 cursor-pointer transition-[background] duration-150; background:var(--surface-hover); }
-.goose-home .g-switch::after { content:""; @apply absolute top-[3px] left-[3px] size-[18px] rounded-full transition-transform duration-[180ms]; background:var(--accent-fg); box-shadow:var(--shadow-sm); transform:translateX(0); }
+.goose-home .g-switch::after { content:""; @apply absolute left-[3px] size-[18px] rounded-full transition-transform duration-[180ms]; background:var(--accent-fg); box-shadow:var(--shadow-sm); top:50%; transform:translateY(-50%) translateX(0); }
 .goose-home .g-switch:hover::after { box-shadow:var(--shadow-sm),0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent); }
 .goose-home .g-switch.on { @apply bg-g-accent; }
-.goose-home .g-switch.on::after { transform:translateX(18px); }
+.goose-home .g-switch.on::after { transform:translateY(-50%) translateX(18px); }
 /* AI toggle 特例已移除，统一使用 accent 橙色 */
 /* 步进控件（窗口高度等数值调整）：−/值/+，视觉对齐 .select */
 .goose-home .stepper { @apply flex items-center gap-0.5 h-[34px] p-[3px] border border-g-border rounded-g-md bg-g-input shrink-0; }

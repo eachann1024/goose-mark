@@ -1,20 +1,16 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import type { AIProviderPreset } from '@/constants/ai'
 import { DEFAULT_AI_MODEL, getPresetMeta, resolvePresetByBaseURL } from '@/constants/ai'
 import type { AIModelOption, AISettingsLike } from '@/lib/aiProvider'
 import { getDefaultAISettings, getDefaultBaseURL, normalizeAIModelOptions } from '@/lib/aiProvider'
-import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
+import { emitStorageSync } from '@/lib/utoolsDb'
+import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepository'
 
 /**
  * 设置 store（Zustand）
  * --------------------------------------------------------------------------
- * 数据契约（与旧版 Pinia 'settings' store 一致）：
- *   - 持久化 key = 'settings'
- *   - 持久化字段 = 全部 state，但排除 localMirrorDirectory（旧版 persist.omit）
- *   - 水合后做字段兜底归一化（旧版 persist.afterHydrate）
- *
- * 说明：setter 仅保留业务赋值逻辑。
+ * 设置 store（Zustand）
+ * 说明：setter 仅保留业务赋值逻辑，持久化由 utools.db 仓储统一处理。
  */
 
 export type ViewMode = 'list' | 'grid' | 'cards'
@@ -101,6 +97,8 @@ export interface SettingsActions {
 
 export type SettingsStore = SettingsState & SettingsActions
 
+type PersistedSettingsState = Omit<SettingsState, 'localMirrorDirectory'>
+
 const createInitialState = (): SettingsState => {
   const defaults = getDefaultAISettings()
   return {
@@ -132,10 +130,8 @@ const createInitialState = (): SettingsState => {
   }
 }
 
-export const useSettingsStore = create<SettingsStore>()(
-  persist(
-    (set, get) => ({
-      ...createInitialState(),
+export const useSettingsStore = create<SettingsStore>()((set, get) => ({
+  ...createInitialState(),
 
       setGridColumns: (value) => set({ gridColumns: Math.min(5, Math.max(2, Math.round(value))) }),
       setAutoCloseWindow: (value) => set({ autoCloseWindow: !!value }),
@@ -192,83 +188,104 @@ export const useSettingsStore = create<SettingsStore>()(
         } catch {}
       },
       setUseUtoolsBrowser: (value) => set({ useUtoolsBrowser: !!value })
-    }),
-    {
-      name: 'settings', // 持久化 key（与旧版 Pinia $id 一致）
-      // 用 any 绕过 storage 泛型与 partialize 返回类型的推断冲突（功能等价，运行时 setItem 只序列化 state）
-      storage: createPiniaCompatStorage<any>(),
-      // 显式数据字段白名单 partialize：排除 localMirrorDirectory（旧版 omit）及所有 actions（函数无需持久化），
-      // 同时防止已删除字段（如 accentColor、searchViewMode、previewPanelWidth 等旧 UI 体系字段）
-      // 通过 zustand persist 浅合并回流并再次写入 localStorage —— 旧数据水合时多余键无害，写回时被丢弃。
-      partialize: (state) => ({
-        gridColumns: state.gridColumns,
-        autoCloseWindow: state.autoCloseWindow,
-        preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
-        aiEnabled: state.aiEnabled,
-        aiSelectedModelId: state.aiSelectedModelId,
-        aiUseCustomProvider: state.aiUseCustomProvider,
-        aiProviderPreset: state.aiProviderPreset,
-        aiCustomBaseURL: state.aiCustomBaseURL,
-        aiCustomApiKey: state.aiCustomApiKey,
-        aiCustomModelOptions: state.aiCustomModelOptions,
-        homeViewMode: state.homeViewMode,
-        density: state.density,
-        easterEggEnabled: state.easterEggEnabled,
-        easterEggVariant: state.easterEggVariant,
-        skipFailedIconMatch: state.skipFailedIconMatch,
-        panelContinuous: state.panelContinuous,
-        listShowDescription: state.listShowDescription,
-        listFullDescription: state.listFullDescription,
-        listShowTags: state.listShowTags,
-        uiScale: state.uiScale,
-        gridIconSize: state.gridIconSize,
-        aiQuickSaveEnabled: state.aiQuickSaveEnabled,
-        windowHeight: state.windowHeight,
-        useUtoolsBrowser: state.useUtoolsBrowser,
-      }),
-      // 旧版 persist.afterHydrate —— 字段兜底归一化
-      onRehydrateStorage: () => (state) => {
-        if (!state) return
-        const patch: Partial<SettingsState> = {}
+}))
 
-        if (typeof state.aiSelectedModelId !== 'string' || !state.aiSelectedModelId.trim()) {
-          patch.aiSelectedModelId = DEFAULT_AI_MODEL
-        }
-        if (typeof state.aiEnabled !== 'boolean') patch.aiEnabled = false
-        if (typeof state.aiUseCustomProvider !== 'boolean') patch.aiUseCustomProvider = false
-        if (typeof state.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()
-        // 预置字段兜底：旧数据无此字段时，从已存 baseURL 反查推断；非法值同样回退推断
-        if (!['glm', 'glm-coding', 'deepseek', 'custom'].includes(state.aiProviderPreset as string)) {
-          patch.aiProviderPreset = resolvePresetByBaseURL(patch.aiCustomBaseURL ?? state.aiCustomBaseURL ?? '')
-        }
-        if (typeof state.aiCustomApiKey !== 'string') patch.aiCustomApiKey = ''
-        if (typeof state.panelContinuous !== 'boolean') patch.panelContinuous = false
-        if (typeof state.listShowDescription !== 'boolean') patch.listShowDescription = true
-        if (typeof state.listFullDescription !== 'boolean') patch.listFullDescription = true
-        if (typeof state.listShowTags !== 'boolean') patch.listShowTags = true
-        if (!['small', 'medium', 'large'].includes(state.gridIconSize)) patch.gridIconSize = 'medium'
-        if (!['large', 'normal', 'small'].includes(state.uiScale as string)) patch.uiScale = 'normal'
-        if (typeof state.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
-        if (!['starry', 'blackhole'].includes(state.easterEggVariant)) patch.easterEggVariant = 'starry'
-        if (typeof state.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = false
+const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => ({
+  gridColumns: state.gridColumns,
+  autoCloseWindow: state.autoCloseWindow,
+  preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
+  aiEnabled: state.aiEnabled,
+  aiSelectedModelId: state.aiSelectedModelId,
+  aiUseCustomProvider: state.aiUseCustomProvider,
+  aiProviderPreset: state.aiProviderPreset,
+  aiCustomBaseURL: state.aiCustomBaseURL,
+  aiCustomApiKey: state.aiCustomApiKey,
+  aiCustomModelOptions: state.aiCustomModelOptions,
+  homeViewMode: state.homeViewMode,
+  density: state.density,
+  easterEggEnabled: state.easterEggEnabled,
+  easterEggVariant: state.easterEggVariant,
+  skipFailedIconMatch: state.skipFailedIconMatch,
+  panelContinuous: state.panelContinuous,
+  listShowDescription: state.listShowDescription,
+  listFullDescription: state.listFullDescription,
+  listShowTags: state.listShowTags,
+  uiScale: state.uiScale,
+  gridIconSize: state.gridIconSize,
+  aiQuickSaveEnabled: state.aiQuickSaveEnabled,
+  windowHeight: state.windowHeight,
+  useUtoolsBrowser: state.useUtoolsBrowser
+})
 
-        const rawModelOptions = Array.isArray(state.aiCustomModelOptions) ? state.aiCustomModelOptions : null
-        if (!rawModelOptions) {
-          patch.aiCustomModelOptions = []
-        } else {
-          const normalized = normalizeAIModelOptions(rawModelOptions)
-          if (JSON.stringify(normalized) !== JSON.stringify(rawModelOptions)) {
-            patch.aiCustomModelOptions = normalized
-          }
-        }
+const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
+  if (!state) return {}
+  const patch: Partial<SettingsState> = { ...state }
 
-        if (Object.keys(patch).length > 0) {
-          useSettingsStore.setState(patch as Partial<SettingsStore>)
-        }
-      }
-    }
-  )
-)
+  if (typeof patch.aiSelectedModelId !== 'string' || !patch.aiSelectedModelId.trim()) {
+    patch.aiSelectedModelId = DEFAULT_AI_MODEL
+  }
+  if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
+  if (typeof patch.aiUseCustomProvider !== 'boolean') patch.aiUseCustomProvider = false
+  if (typeof patch.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()
+  if (!['glm', 'glm-coding', 'deepseek', 'custom'].includes(patch.aiProviderPreset as string)) {
+    patch.aiProviderPreset = resolvePresetByBaseURL(patch.aiCustomBaseURL ?? '')
+  }
+  if (typeof patch.aiCustomApiKey !== 'string') patch.aiCustomApiKey = ''
+  if (typeof patch.panelContinuous !== 'boolean') patch.panelContinuous = false
+  if (typeof patch.listShowDescription !== 'boolean') patch.listShowDescription = true
+  if (typeof patch.listFullDescription !== 'boolean') patch.listFullDescription = true
+  if (typeof patch.listShowTags !== 'boolean') patch.listShowTags = true
+  if (!['small', 'medium', 'large'].includes(String(patch.gridIconSize))) patch.gridIconSize = 'medium'
+  if (!['large', 'normal', 'small'].includes(String(patch.uiScale))) patch.uiScale = 'normal'
+  if (typeof patch.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
+  if (!['starry', 'blackhole'].includes(String(patch.easterEggVariant))) patch.easterEggVariant = 'starry'
+  if (typeof patch.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = false
+
+  const rawModelOptions = Array.isArray(patch.aiCustomModelOptions) ? patch.aiCustomModelOptions : null
+  if (!rawModelOptions) {
+    patch.aiCustomModelOptions = []
+  } else {
+    patch.aiCustomModelOptions = normalizeAIModelOptions(rawModelOptions)
+  }
+
+  return patch
+}
+
+let settingsPersistenceStarted = false
+let settingsPersistPromise: Promise<void> = Promise.resolve()
+let lastPersistedSettings = ''
+
+const enqueueSettingsPersist = (state: SettingsStore): void => {
+  const payload = pickPersistedSettings(state)
+  const serialized = JSON.stringify(payload)
+  if (serialized === lastPersistedSettings) return
+
+  settingsPersistPromise = settingsPersistPromise
+    .then(async () => {
+      saveSettingsSnapshot(payload)
+      lastPersistedSettings = serialized
+      emitStorageSync('settings', serialized)
+    })
+    .catch((error) => {
+      console.error('[settings] 保存失败:', error)
+    })
+}
+
+export const initializeSettingsStorePersistence = async (): Promise<void> => {
+  if (settingsPersistenceStarted) return
+  settingsPersistenceStarted = true
+
+  const persisted = normalizePersistedSettings(loadSettingsSnapshot())
+  if (Object.keys(persisted).length > 0) {
+    useSettingsStore.setState(persisted as Partial<SettingsStore>)
+  }
+
+  useSettingsStore.subscribe((state) => {
+    enqueueSettingsPersist(state)
+  })
+  lastPersistedSettings = ''
+  enqueueSettingsPersist(useSettingsStore.getState())
+}
 
 // ---- 选择器（等价旧版 getters）----
 
