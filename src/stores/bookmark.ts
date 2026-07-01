@@ -1,8 +1,6 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, Group, BookmarkLocation, SubGroup, IconSource } from '@/types/bookmark'
-import { createPiniaCompatStorage } from '@/stores/piniaCompatPersist'
 import {
   TRASH_GROUP_ID,
   uid,
@@ -14,6 +12,8 @@ import {
 } from '@/stores/bookmarkSeed'
 import { bulkMatchMissing, ensureIconForBookmark, backfillRemoteIconCache } from '@/services/iconCache'
 import { useSync } from '@/hooks/useSync'
+import { emitStorageSync } from '@/lib/utoolsDb'
+import { loadBookmarkSnapshot, saveBookmarkSnapshot, type BookmarkSnapshot } from '@/lib/stateRepository'
 import { useSettingsStore } from '@/stores/settings'
 
 export { TRASH_GROUP_ID, parseUrlParams }
@@ -21,17 +21,8 @@ export { TRASH_GROUP_ID, parseUrlParams }
 /**
  * 书签 store（Zustand）—— 完整业务版（从旧 Pinia store 等价迁移）
  * --------------------------------------------------------------------------
- * 数据契约（必须与旧版 Pinia store 保持一致，确保 uTools dbStorage 旧数据可直接读写）：
- *   - 持久化 key = 'bookmark'（旧版 Pinia $id），由 piniaCompatStorage 写入裸 JSON
- *   - 持久化字段 = groups / bookmarks / activeGroupId / activeSubGroupId
- *   - 数据结构：Group(二级分组 children) + Bookmark(locations 多归属) + 回收站(TRASH_GROUP_ID)
- *
- * 迁移要点：
- *   - 旧版 Pinia `this.xxx` 改写为 Zustand set/get 不可变更新：读 get()，
- *     在 groups/bookmarks 深/浅拷贝上原地改写后整体 set，保证组件按引用订阅能刷新。
- *   - schedulePush 通过 useSync.getState() 取得（旧版 useSync()）。
- *   - 新增 setData / $patch 供 useSync / useLocalDataMirror / settings 适配器调用。
- *   - 旧版 `$persist()` 强制持久化由 zustand persist 在 set 后自动落盘，等价空操作。
+ * 数据结构：Group(二级分组 children) + Bookmark(locations 多归属) + 回收站(TRASH_GROUP_ID)。
+ * 持久化由 utools.db 仓储统一处理，不再依赖 zustand persist。
  */
 
 /**
@@ -201,9 +192,7 @@ const schedulePush = (
   }
 }
 
-export const useBookmarkStore = create<BookmarkStore>()(
-  persist(
-    (set, get) => {
+export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
       // 在工作副本上原地改写后整体提交，等价旧版 Pinia 的可变 state。
       const commit = (groups: Group[], bookmarks: Bookmark[], extra?: Partial<BookmarkState>) =>
         set({ groups: [...groups], bookmarks: [...bookmarks], ...extra })
@@ -1445,44 +1434,63 @@ export const useBookmarkStore = create<BookmarkStore>()(
 
         $patch: (partial) => set(partial)
       }
-    },
-    {
-      name: 'bookmark',
-      storage: createPiniaCompatStorage<BookmarkStore>(),
-      // 持久化数据优先：防止水合前种子 state 在 merge 时污染已保存书签
-      merge: (persisted, current) => {
-        const saved = persisted as Partial<BookmarkState> | undefined
-        if (!saved || (!saved.groups && !saved.bookmarks)) return current
-        const bookmarks = saved.bookmarks ?? current.bookmarks
-        const patched = patchBookmarksWithBuiltinSeedIcons(bookmarks)
-        return {
-          ...current,
-          ...saved,
-          groups: saved.groups ?? current.groups,
-          bookmarks: patched.bookmarks,
-          activeGroupId: saved.activeGroupId ?? current.activeGroupId,
-          activeSubGroupId: saved.activeSubGroupId ?? current.activeSubGroupId
-        }
-      },
-      partialize: (state) =>
-        ({
-          groups: state.groups,
-          bookmarks: state.bookmarks,
-          activeGroupId: state.activeGroupId,
-          activeSubGroupId: state.activeSubGroupId
-        }) as BookmarkStore,
-      // 必须在 storage 水合完成后再做格式迁移，避免对种子数据写盘覆盖用户书签
-      onRehydrateStorage: () => (state, error) => {
-        if (error || !state) return
-        useBookmarkStore.getState().migrateFromLegacy()
-        useBookmarkStore.getState().patchBookmarksWithBuiltinSeedIcons()
-        // 水合后后台静默把远程图标本地化为 base64，之后渲染不再联网读取
-        void useBookmarkStore.getState().backfillIconCache()
-        void useBookmarkStore.getState().refreshMissingIcons()
-      }
-    }
-  )
-)
+    })
+
+const pickBookmarkSnapshot = (state: BookmarkStore): BookmarkSnapshot => ({
+  groups: state.groups,
+  bookmarks: state.bookmarks,
+  activeGroupId: state.activeGroupId,
+  activeSubGroupId: state.activeSubGroupId
+})
+
+let bookmarkPersistenceStarted = false
+let bookmarkPersistPromise: Promise<void> = Promise.resolve()
+let lastPersistedBookmarkState = ''
+
+const enqueueBookmarkPersist = (state: BookmarkStore): void => {
+  const snapshot = pickBookmarkSnapshot(state)
+  const serialized = JSON.stringify(snapshot)
+  if (serialized === lastPersistedBookmarkState) return
+
+  bookmarkPersistPromise = bookmarkPersistPromise
+    .then(async () => {
+      const written = await saveBookmarkSnapshot(snapshot)
+      lastPersistedBookmarkState = serialized
+      emitStorageSync('bookmark', written)
+    })
+    .catch((error) => {
+      console.error('[bookmark] 保存失败:', error)
+    })
+}
+
+export const initializeBookmarkStorePersistence = async (): Promise<void> => {
+  if (bookmarkPersistenceStarted) return
+  bookmarkPersistenceStarted = true
+
+  const persisted = await loadBookmarkSnapshot()
+  if (persisted) {
+    const patched = patchBookmarksWithBuiltinSeedIcons(persisted.bookmarks).bookmarks
+    useBookmarkStore.setState({
+      groups: persisted.groups,
+      bookmarks: patched,
+      activeGroupId: persisted.activeGroupId,
+      activeSubGroupId: persisted.activeSubGroupId
+    })
+  }
+
+  useBookmarkStore.getState().migrateFromLegacy()
+  useBookmarkStore.getState().patchBookmarksWithBuiltinSeedIcons()
+  useBookmarkStore.getState().ensureValidSelection()
+
+  useBookmarkStore.subscribe((state) => {
+    enqueueBookmarkPersist(state)
+  })
+  lastPersistedBookmarkState = ''
+  enqueueBookmarkPersist(useBookmarkStore.getState())
+
+  void useBookmarkStore.getState().backfillIconCache()
+  void useBookmarkStore.getState().refreshMissingIcons()
+}
 
 // ---- 查询选择器（等价旧版 getters，供组件以 useBookmarkStore(selector) 使用）----
 

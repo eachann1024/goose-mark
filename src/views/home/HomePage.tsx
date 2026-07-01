@@ -577,14 +577,27 @@ export default function HomePage() {
   // 同步 .dark class 到 documentElement，让 Tailwind token（index.css 第 83 行）在深色模式下生效
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
-    // uTools 壳层 body 仍用 index.css 的 hsl(--background)，与 .goose-home --bg 不一致时会露边/发白
-    if (RUNTIME_PLATFORM !== 'utools') return
-    const bg = theme === 'dark' ? '#262624' : '#faf9f5'
-    const fg = theme === 'dark' ? '#faf9f5' : '#1f1e1d'
-    document.body.style.backgroundColor = bg
-    document.body.style.color = fg
-    document.documentElement.style.backgroundColor = bg
-  }, [theme])
+    const eggOn = theme === 'dark' && easterEggEnabled
+    const rootEl = document.getElementById('root')
+    if (RUNTIME_PLATFORM === 'utools') {
+      const bg = eggOn ? 'transparent' : theme === 'dark' ? '#262624' : '#faf9f5'
+      const fg = theme === 'dark' ? '#faf9f5' : '#1f1e1d'
+      document.body.style.backgroundColor = bg
+      document.body.style.color = fg
+      document.documentElement.style.backgroundColor = bg
+      if (rootEl) rootEl.style.backgroundColor = eggOn ? 'transparent' : ''
+      return
+    }
+    if (eggOn) {
+      document.body.style.backgroundColor = 'transparent'
+      document.documentElement.style.backgroundColor = 'transparent'
+      if (rootEl) rootEl.style.backgroundColor = 'transparent'
+    } else {
+      document.body.style.backgroundColor = ''
+      document.documentElement.style.backgroundColor = ''
+      if (rootEl) rootEl.style.backgroundColor = ''
+    }
+  }, [theme, easterEggEnabled])
 
   // uTools 默认窗口偏矮（plugin.json 560）；收集向导内容高，临时拉高避免底部裁切（离开 add 恢复用户设置）
   const utoolsWizardHeightRef = useRef<number | null>(null)
@@ -1517,6 +1530,12 @@ export default function HomePage() {
       }
       ;(window as unknown as { __gooseMarksPendingPluginEnterEvents?: unknown[] }).__gooseMarksPendingPluginEnterEvents = []
     }
+    if (typeof window.utools?.setExpendHeight === 'function') {
+      try {
+        window.utools.setExpendHeight(useSettingsStore.getState().windowHeight)
+      } catch { /* ignore */ }
+    }
+
 
     return () => window.removeEventListener(UTOOLS_PLUGIN_ENTER_EVENT, wrapper)
   }, [])

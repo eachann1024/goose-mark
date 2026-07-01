@@ -35,8 +35,13 @@ if (typeof window !== 'undefined') {
 
       try {
         const parsed = JSON.parse(rawValue)
-        if (parsed?.windowHeight == null) return null
-        return clampWindowHeight(parsed.windowHeight)
+        if (parsed != null && typeof parsed === 'object' && 'windowHeight' in parsed) {
+          return clampWindowHeight(parsed.windowHeight)
+        }
+        if (parsed?.state != null && typeof parsed.state === 'object' && parsed.state.windowHeight != null) {
+          return clampWindowHeight(parsed.state.windowHeight)
+        }
+        return null
       } catch {
         return null
       }

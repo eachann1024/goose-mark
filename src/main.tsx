@@ -3,16 +3,16 @@ import { createRoot } from 'react-dom/client'
 // 首页改造：以「鹅的书签 · 配色改造预览」为新首页（旧业务壳 App.tsx 暂保留在仓库，未删除）。
 import HomePage from './views/home/HomePage'
 import './assets/index.css'
+import 'virtual:uno.css'
 import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
+import { initializeBookmarkStorePersistence } from '@/stores/bookmark'
+import { initializeSettingsStorePersistence } from '@/stores/settings'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立（浏览器 / Tauri）模式。
 const platform = getRuntimePlatform()
 if (import.meta.env.DEV) {
   console.log(`[Main] 运行模式: ${platform}`)
 }
-
-// 书签格式迁移（migrateFromLegacy）在 bookmark store 的 onRehydrateStorage 中执行，
-// 必须等 storage 水合完成后再跑，否则会把种子数据写进 dbStorage 覆盖用户书签。
 
 const container = document.getElementById('root')
 if (!container) {
@@ -26,8 +26,15 @@ type RootHolder = HTMLElement & { __gooseRoot?: ReturnType<typeof createRoot> }
 const holder = container as RootHolder
 const root = holder.__gooseRoot ?? (holder.__gooseRoot = createRoot(container))
 
-root.render(
-  <StrictMode>
-    <HomePage />
-  </StrictMode>
-)
+const bootstrap = async () => {
+  await initializeSettingsStorePersistence()
+  await initializeBookmarkStorePersistence()
+
+  root.render(
+    <StrictMode>
+      <HomePage />
+    </StrictMode>
+  )
+}
+
+void bootstrap()

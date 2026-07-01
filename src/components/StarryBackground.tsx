@@ -166,6 +166,7 @@ export function StarryBackground() {
 
     handleResize()
     window.addEventListener('resize', handleResize)
+    window.requestAnimationFrame(() => handleResize())
     draw()
 
     return () => {
