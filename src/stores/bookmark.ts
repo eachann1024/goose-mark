@@ -12,7 +12,7 @@ import {
 } from '@/stores/bookmarkSeed'
 import { bulkMatchMissing, ensureIconForBookmark, backfillRemoteIconCache } from '@/services/iconCache'
 import { useSync } from '@/hooks/useSync'
-import { emitStorageSync } from '@/lib/utoolsDb'
+import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import { loadBookmarkSnapshot, saveBookmarkSnapshot, type BookmarkSnapshot } from '@/lib/stateRepository'
 import { useSettingsStore } from '@/stores/settings'
 
@@ -1481,6 +1481,8 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
   useBookmarkStore.getState().migrateFromLegacy()
   useBookmarkStore.getState().patchBookmarksWithBuiltinSeedIcons()
   useBookmarkStore.getState().ensureValidSelection()
+
+  if (!isUToolsDbAvailable()) return
 
   useBookmarkStore.subscribe((state) => {
     enqueueBookmarkPersist(state)

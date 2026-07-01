@@ -3,7 +3,7 @@ import type { AIProviderPreset } from '@/constants/ai'
 import { DEFAULT_AI_MODEL, getPresetMeta, resolvePresetByBaseURL } from '@/constants/ai'
 import type { AIModelOption, AISettingsLike } from '@/lib/aiProvider'
 import { getDefaultAISettings, getDefaultBaseURL, normalizeAIModelOptions } from '@/lib/aiProvider'
-import { emitStorageSync } from '@/lib/utoolsDb'
+import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepository'
 
 /**
@@ -279,6 +279,8 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
   if (Object.keys(persisted).length > 0) {
     useSettingsStore.setState(persisted as Partial<SettingsStore>)
   }
+
+  if (!isUToolsDbAvailable()) return
 
   useSettingsStore.subscribe((state) => {
     enqueueSettingsPersist(state)

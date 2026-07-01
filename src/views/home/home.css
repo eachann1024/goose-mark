@@ -515,11 +515,19 @@
 .goose-home.ctx-open .ctx-menu { display:flex; }
 .goose-home .ctx-menu button { @apply flex items-center gap-[10px] px-[10px] py-2 rounded-g-sm text-[13px] text-g-fg text-left; }
 .goose-home .ctx-menu button .lucide { @apply text-[15px] text-g-fg-muted; }
-.goose-home .ctx-menu button:hover { @apply bg-g-surface-hover; }
-.goose-home .ctx-menu button:hover .lucide { @apply text-g-fg; }
+.goose-home .ctx-menu button:hover,
+.goose-home .ctx-menu button:focus-visible { @apply bg-g-surface-hover; outline:none; }
+.goose-home .ctx-menu button:hover .lucide,
+.goose-home .ctx-menu button:focus-visible .lucide { @apply text-g-fg; }
 .goose-home .ctx-menu button.danger { @apply text-g-danger; }
 .goose-home .ctx-menu button.danger .lucide { color:var(--danger); }
-.goose-home .ctx-menu button.danger:hover { background:color-mix(in srgb,var(--danger) 10%,transparent); }
+.goose-home .ctx-menu button.danger:hover,
+.goose-home .ctx-menu button.danger:focus-visible {
+  color:color-mix(in srgb,var(--danger) 76%,var(--fg));
+  background:color-mix(in srgb,var(--danger) 7%,var(--input));
+}
+.goose-home .ctx-menu button.danger:hover .lucide,
+.goose-home .ctx-menu button.danger:focus-visible .lucide { color:color-mix(in srgb,var(--danger) 76%,var(--fg)); }
 .goose-home .ctx-sep { @apply h-px mx-1.5 my-1 bg-g-border; }
 
 /* ---------- Sidebar editing & hover actions ---------- */
