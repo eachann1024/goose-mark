@@ -8,7 +8,7 @@ import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
 import { initializeBookmarkStorePersistence } from '@/stores/bookmark'
 import { initializeSettingsStorePersistence } from '@/stores/settings'
-// 平台检测：window.utools 存在 → uTools 模式，否则独立（浏览器 / Tauri）模式。
+// 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
 const platform = getRuntimePlatform()
 if (import.meta.env.DEV) {
   console.log(`[Main] 运行模式: ${platform}`)

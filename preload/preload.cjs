@@ -57,6 +57,65 @@ if (typeof window !== 'undefined') {
     // 解决“首次有效、再次打开失效”的问题。
     applyStoredWindowHeight()
 
+    const getCurrentElectronWindow = () => {
+      try {
+        const electron = typeof require === 'function' ? require('electron') : null
+        const fromRemote = electron?.remote?.getCurrentWindow?.()
+        if (fromRemote) return fromRemote
+      } catch {}
+
+      try {
+        const remote = typeof require === 'function' ? require('@electron/remote') : null
+        const fromRemotePackage = remote?.getCurrentWindow?.()
+        if (fromRemotePackage) return fromRemotePackage
+      } catch {}
+
+      return null
+    }
+
+    window.__gooseMarksWindowControl = {
+      getPosition() {
+        const currentWindow = getCurrentElectronWindow()
+        try {
+          const bounds = currentWindow?.getBounds?.()
+          if (bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
+            return { x: Math.round(bounds.x), y: Math.round(bounds.y) }
+          }
+        } catch {}
+
+        const x = Math.round(window.screenX)
+        const y = Math.round(window.screenY)
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+        return { x, y }
+      },
+      setPosition(position) {
+        if (!position) return false
+        const x = Math.round(Number(position.x))
+        const y = Math.round(Number(position.y))
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return false
+
+        const currentWindow = getCurrentElectronWindow()
+        try {
+          if (typeof currentWindow?.setPosition === 'function') {
+            currentWindow.setPosition(x, y, false)
+            return true
+          }
+        } catch {}
+        try {
+          if (typeof currentWindow?.setBounds === 'function') {
+            currentWindow.setBounds({ x, y })
+            return true
+          }
+        } catch {}
+        try {
+          if (typeof window.moveTo === 'function') {
+            window.moveTo(x, y)
+          }
+        } catch {}
+        return false
+      }
+    }
+
     const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
     const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'
     const UTOOLS_PLUGIN_ENTER_EVENT = 'goose-marks:plugin-enter'

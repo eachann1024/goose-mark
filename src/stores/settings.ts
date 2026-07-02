@@ -21,6 +21,10 @@ export type UIScale = 'large' | 'normal' | 'small'
 export type GridIconSize = 'small' | 'medium' | 'large'
 /** 彩蛋背景样式 */
 export type EasterEggVariant = 'starry' | 'blackhole'
+export interface DetachedWindowPosition {
+  x: number
+  y: number
+}
 export interface SettingsState {
   gridColumns: number
   autoCloseWindow: boolean
@@ -56,6 +60,8 @@ export interface SettingsState {
   aiQuickSaveEnabled: boolean
   /** uTools 主窗口展开高度（px），preload 启动时读取并 setExpendHeight 恢复 */
   windowHeight: number
+  /** uTools 分离窗口最后一次停留位置，下次切换独立窗口时恢复 */
+  detachedWindowPosition: DetachedWindowPosition | null
   /** 打开书签时使用 uTools 内置浏览器（默认 false，即用系统默认浏览器） */
   useUtoolsBrowser: boolean
 }
@@ -92,6 +98,7 @@ export interface SettingsActions {
   setAiQuickSaveEnabled: (value: boolean) => void
   /** 设置 uTools 窗口高度：持久化 + 即时 setExpendHeight 应用 */
   setWindowHeight: (value: number) => void
+  setDetachedWindowPosition: (value: DetachedWindowPosition | null) => void
   setUseUtoolsBrowser: (value: boolean) => void
 }
 
@@ -126,6 +133,7 @@ const createInitialState = (): SettingsState => {
     gridIconSize: 'medium',
     aiQuickSaveEnabled: false,
     windowHeight: WINDOW_HEIGHT_DEFAULT,
+    detachedWindowPosition: null,
     useUtoolsBrowser: false
   }
 }
@@ -187,6 +195,18 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
           window.utools?.setExpendHeight?.(next)
         } catch {}
       },
+      setDetachedWindowPosition: (value) => {
+        if (!value) {
+          set({ detachedWindowPosition: null })
+          persistSettingsNow(useSettingsStore.getState())
+          return
+        }
+        const x = Math.round(value.x)
+        const y = Math.round(value.y)
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return
+        set({ detachedWindowPosition: { x, y } })
+        persistSettingsNow(useSettingsStore.getState())
+      },
       setUseUtoolsBrowser: (value) => set({ useUtoolsBrowser: !!value })
 }))
 
@@ -214,6 +234,7 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   gridIconSize: state.gridIconSize,
   aiQuickSaveEnabled: state.aiQuickSaveEnabled,
   windowHeight: state.windowHeight,
+  detachedWindowPosition: state.detachedWindowPosition,
   useUtoolsBrowser: state.useUtoolsBrowser
 })
 
@@ -240,6 +261,20 @@ const normalizePersistedSettings = (state: Partial<SettingsState> | null | undef
   if (typeof patch.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
   if (!['starry', 'blackhole'].includes(String(patch.easterEggVariant))) patch.easterEggVariant = 'starry'
   if (typeof patch.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = false
+  if (
+    patch.detachedWindowPosition == null ||
+    typeof patch.detachedWindowPosition !== 'object' ||
+    Array.isArray(patch.detachedWindowPosition) ||
+    !Number.isFinite(Number((patch.detachedWindowPosition as DetachedWindowPosition).x)) ||
+    !Number.isFinite(Number((patch.detachedWindowPosition as DetachedWindowPosition).y))
+  ) {
+    patch.detachedWindowPosition = null
+  } else {
+    patch.detachedWindowPosition = {
+      x: Math.round(Number((patch.detachedWindowPosition as DetachedWindowPosition).x)),
+      y: Math.round(Number((patch.detachedWindowPosition as DetachedWindowPosition).y))
+    }
+  }
 
   const rawModelOptions = Array.isArray(patch.aiCustomModelOptions) ? patch.aiCustomModelOptions : null
   if (!rawModelOptions) {
@@ -254,6 +289,19 @@ const normalizePersistedSettings = (state: Partial<SettingsState> | null | undef
 let settingsPersistenceStarted = false
 let settingsPersistPromise: Promise<void> = Promise.resolve()
 let lastPersistedSettings = ''
+
+function persistSettingsNow(state: SettingsStore): void {
+  if (!isUToolsDbAvailable()) return
+  const payload = pickPersistedSettings(state)
+  const serialized = JSON.stringify(payload)
+  try {
+    saveSettingsSnapshot(payload)
+    lastPersistedSettings = serialized
+    emitStorageSync('settings', serialized)
+  } catch (error) {
+    console.error('[settings] 立即保存失败:', error)
+  }
+}
 
 const enqueueSettingsPersist = (state: SettingsStore): void => {
   const payload = pickPersistedSettings(state)

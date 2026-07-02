@@ -97,7 +97,10 @@
 /* 彩蛋激活（egg-on）：壳层让位给底层 canvas，窗体保留半透明底色保证可读性。
    选择器带 data-theme="dark" 双保险：彩蛋只在深色模式渲染，浅色下即使误挂 egg-on 也不透明化 */
 .goose-home[data-theme="dark"].egg-on { background:transparent; }
-.goose-home[data-theme="dark"].egg-on .window { background:color-mix(in srgb, var(--bg) 42%, transparent); }
+.goose-home[data-theme="dark"].egg-on .window {
+  background:rgba(38,38,36,.42);
+  background:color-mix(in srgb, var(--bg) 42%, transparent);
+}
 /* 宫格卡片与列表行视觉对齐：默认透明透出彩蛋背景，hover/选中恢复底色（与 .card 行为一致） */
 .goose-home[data-theme="dark"].egg-on .gcard { background:transparent; border-color:transparent; }
 .goose-home[data-theme="dark"].egg-on .gcard:hover { background:var(--surface); border-color:color-mix(in srgb,var(--accent) 40%,transparent); }
@@ -106,11 +109,14 @@
 .goose-home[data-theme="dark"].egg-on .content .card:hover { background:var(--surface); }
 .goose-home[data-theme="dark"].egg-on .content .card.sel { background:var(--surface-hover); }
 .goose-home[data-theme="dark"].egg-on .set-card {
+  background:rgba(48,48,46,.7);
   background:color-mix(in srgb, var(--surface) 70%, transparent);
+  border-color:rgba(62,62,58,.45);
   border-color:color-mix(in srgb, var(--border) 45%, transparent);
 }
 .goose-home[data-theme="dark"].egg-on .sidebar,
 .goose-home[data-theme="dark"].egg-on .app-header {
+  background:rgba(38,38,36,.55);
   background:color-mix(in srgb, var(--bg) 55%, transparent);
 }
 
@@ -186,7 +192,7 @@
 .goose-home .h-divider { @apply w-px h-5 shrink-0 bg-g-border; }
 
 /* uTools 模式：搜索由顶部原生 subInput 承接，隐藏页内搜索框（避免重复，输入仍经
-   UTOOLS_INPUT_EVENT 同步过滤列表）。standalone（浏览器/Tauri）保留页内搜索框。 */
+   UTOOLS_INPUT_EVENT 同步过滤列表）。standalone（浏览器调试）保留页内搜索框。 */
 .goose-home[data-platform="utools"] .search-field { display:none; }
 
 /* ---------- Main layout ---------- */
@@ -1408,6 +1414,20 @@
 .goose-home[data-platform="utools"] .gm-wiz,
 .goose-home[data-platform="utools"] .gm-wiz-main {
   background: var(--bg);
+}
+
+/* 彩蛋背景：PostCSS 会给 color-mix 生成不透明 var(...) fallback，旧 uTools 内核会吃到它。
+   兼容层放在后面并用 rgba 覆盖，保证菜单/设置页能透出底层动态背景。 */
+.goose-home[data-platform="utools"][data-theme="dark"].egg-on .window {
+  background: rgba(38, 38, 36, .42) !important;
+}
+.goose-home[data-platform="utools"][data-theme="dark"].egg-on .sidebar,
+.goose-home[data-platform="utools"][data-theme="dark"].egg-on .app-header {
+  background: rgba(38, 38, 36, .55) !important;
+}
+.goose-home[data-platform="utools"][data-theme="dark"].egg-on .set-card {
+  background: rgba(48, 48, 46, .7) !important;
+  border-color: rgba(62, 62, 58, .45) !important;
 }
 
 /* 分类区：旧内核下 color-mix 失效时仍用实心 token */

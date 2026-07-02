@@ -37,7 +37,7 @@ export default defineConfig({
     // 禁用 modulePreload 避免 uTools 环境中的警告
     modulePreload: false,
     // sourcemap / minify 策略由 vite.debug 决定（GOOSE_DEBUG=1 调试构建带 map 且不压缩；
-    // uTools 正式 'hidden'+脚本删 map；Tauri 正式 false）。
+    // 正式构建走 'hidden'+scripts/utools-build 删除 map）。
     sourcemap: debugSourcemap,
     minify: debugMinify,
     rolldownOptions: {
