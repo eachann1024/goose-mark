@@ -45,6 +45,16 @@ interface UToolsToolContext {
   }) => Promise<void>
 }
 
+interface GooseMarksWindowPosition {
+  x: number
+  y: number
+}
+
+interface GooseMarksWindowControl {
+  getPosition?: () => GooseMarksWindowPosition | null
+  setPosition?: (position: GooseMarksWindowPosition) => boolean
+}
+
 interface UToolsApi {
   dbStorage?: {
     getItem: (key: string) => unknown
@@ -111,6 +121,7 @@ interface UToolsApi {
 declare global {
   interface Window {
     utools?: UToolsApi
+    __gooseMarksWindowControl?: GooseMarksWindowControl
     require?: NodeRequire
     __gooseMarksPluginEnterSerial?: number
     __gooseMarksLastPluginEnterSerial?: number

@@ -190,7 +190,7 @@ body {
   --tw-ring-color: transparent !important;
 }
 /* 默认全局禁用文本选中，提升原生应用感（避免主界面误拖选）。
-   注意：必须挂在 body 上靠继承下传，不能用 `*`。WebKit（Tauri 的 WKWebView）
+   注意：必须挂在 body 上靠继承下传，不能用 `*`。旧版 WebKit
    与旧版 Chromium（uTools 内核）对表单控件的 -webkit-user-select 继承是「粘性」的——
    一旦用 `*` 把 none 直接写到 input 本体及其整条祖先链，即便子元素声明 text !important，
    旧引擎仍会吞掉输入框内的鼠标拖选。改挂 body 后 input 自身不再被直接置 none，
@@ -831,4 +831,3 @@ input[type="number"] {
   border: 1px solid var(--border);
 }
 .goose-home .gm-text-btn:hover { @apply bg-g-surface-hover text-g-fg; }
-

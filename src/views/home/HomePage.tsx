@@ -25,8 +25,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
-import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useSettingsStore, WINDOW_HEIGHT_MIN, WINDOW_HEIGHT_MAX } from '@/stores/settings'
+import { flushBookmarkStorePersistence, useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import { useSettingsStore, WINDOW_HEIGHT_MIN, WINDOW_HEIGHT_MAX, type DetachedWindowPosition } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { useUToolsMcpBridge } from '@/hooks/useUToolsMcpBridge'
 import { useUTools } from '@/hooks/useUTools'
@@ -223,6 +223,7 @@ function SortableGridCell({
 
 // uTools 事件常量（与 preload 对齐）
 const UTOOLS_PLUGIN_ENTER_EVENT = 'goose-marks:plugin-enter'
+const UTOOLS_PLUGIN_OUT_EVENT = 'goose-marks:plugin-out'
 const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
 const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'
 const UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT = 'goose-marks:restore-default-search-input'
@@ -245,6 +246,29 @@ const isDetachedUToolsWindow = () => {
   } catch {
     return false
   }
+}
+
+const readCurrentWindowPosition = (): DetachedWindowPosition | null => {
+  const fromBridge = window.__gooseMarksWindowControl?.getPosition?.()
+  if (fromBridge && Number.isFinite(fromBridge.x) && Number.isFinite(fromBridge.y)) {
+    return { x: Math.round(fromBridge.x), y: Math.round(fromBridge.y) }
+  }
+
+  const x = Math.round(window.screenX)
+  const y = Math.round(window.screenY)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  return { x, y }
+}
+
+const moveDetachedWindowTo = (position: DetachedWindowPosition | null | undefined) => {
+  if (!position || !isDetachedUToolsWindow()) return
+  const x = Math.round(Number(position.x))
+  const y = Math.round(Number(position.y))
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return
+  if (window.__gooseMarksWindowControl?.setPosition?.({ x, y })) return
+  try {
+    window.moveTo?.(x, y)
+  } catch { /* ignore */ }
 }
 
 // 跨窗口同步：取数据集中最大 updatedAt（对齐 App.tsx getLatestUpdatedAt）
@@ -1320,6 +1344,48 @@ export default function HomePage() {
     }
   }, [])
 
+  const lastDetachedWindowPositionKeyRef = useRef('')
+  const saveDetachedWindowPosition = useCallback(() => {
+    if (!isDetachedUToolsWindow()) return
+    const position = readCurrentWindowPosition()
+    if (!position) return
+    const key = `${position.x},${position.y}`
+    if (key === lastDetachedWindowPositionKeyRef.current) return
+    lastDetachedWindowPositionKeyRef.current = key
+    useSettingsStore.getState().setDetachedWindowPosition(position)
+  }, [])
+
+  useEffect(() => {
+    if (!window.utools) return
+
+    const restore = () => {
+      const position = useSettingsStore.getState().detachedWindowPosition
+      window.setTimeout(() => moveDetachedWindowTo(position), 0)
+      window.setTimeout(() => moveDetachedWindowTo(position), 120)
+    }
+    const save = () => saveDetachedWindowPosition()
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') save()
+    }
+
+    restore()
+    const saveTimer = window.setInterval(save, 1000)
+    window.addEventListener(UTOOLS_PLUGIN_ENTER_EVENT, restore)
+    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, save)
+    window.addEventListener('blur', save)
+    window.addEventListener('beforeunload', save)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.clearInterval(saveTimer)
+      save()
+      window.removeEventListener(UTOOLS_PLUGIN_ENTER_EVENT, restore)
+      window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, save)
+      window.removeEventListener('blur', save)
+      window.removeEventListener('beforeunload', save)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [saveDetachedWindowPosition])
+
   // 3.【致命】plugin-enter 事件：处理 bookmarks / quick_save / ai_quick_save / bm_tpl: 功能码
   // handler 用 ref 包裹，保持监听器长生命周期的同时始终调用最新逻辑
   const pluginEnterHandlerRef = useRef<(e: Event) => void>(() => {})
@@ -1402,7 +1468,7 @@ export default function HomePage() {
           })
         }
         fireToastRef.current(`已保存：${bookmark.title || urlToSave}`)
-        window.utools?.outPlugin()
+        void flushBookmarkStorePersistence().finally(() => window.utools?.outPlugin())
       } else {
         // 无有效 URL：打开新增表单作为兜底（对齐旧版 QuickSaveDialog 的意图）
         setFormEditItem(null)
@@ -1485,6 +1551,7 @@ export default function HomePage() {
         Date.now() - lastWindowFocusAtRef.current > DETACH_TOGGLE_FOCUS_GRACE_MS
       ) {
         if (activeTemplateBookmarkRef.current) exitTemplateModeRef.current()
+        saveDetachedWindowPosition()
         try { window.utools?.outPlugin?.() } catch { /* ignore */ }
         return
       }

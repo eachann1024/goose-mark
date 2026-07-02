@@ -1436,31 +1436,86 @@ export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
       }
     })
 
+const UTOOLS_PLUGIN_OUT_EVENT = 'goose-marks:plugin-out'
+
+interface BookmarkPersistJob {
+  snapshot: BookmarkSnapshot
+  serialized: string
+}
+
 const pickBookmarkSnapshot = (state: BookmarkStore): BookmarkSnapshot => ({
-  groups: state.groups,
-  bookmarks: state.bookmarks,
+  groups: clone(state.groups),
+  bookmarks: clone(state.bookmarks),
   activeGroupId: state.activeGroupId,
   activeSubGroupId: state.activeSubGroupId
 })
 
 let bookmarkPersistenceStarted = false
-let bookmarkPersistPromise: Promise<void> = Promise.resolve()
+let bookmarkPersistPromise: Promise<void> | null = null
+let pendingBookmarkPersistJob: BookmarkPersistJob | null = null
 let lastPersistedBookmarkState = ''
+let bookmarkPersistenceFlushEventsStarted = false
 
-const enqueueBookmarkPersist = (state: BookmarkStore): void => {
+const queueBookmarkPersistJob = (state: BookmarkStore): boolean => {
+  if (!isUToolsDbAvailable()) return false
   const snapshot = pickBookmarkSnapshot(state)
   const serialized = JSON.stringify(snapshot)
-  if (serialized === lastPersistedBookmarkState) return
+  if (serialized === lastPersistedBookmarkState && !pendingBookmarkPersistJob) return false
+  pendingBookmarkPersistJob = { snapshot, serialized }
+  return true
+}
 
-  bookmarkPersistPromise = bookmarkPersistPromise
-    .then(async () => {
-      const written = await saveBookmarkSnapshot(snapshot)
-      lastPersistedBookmarkState = serialized
+const drainBookmarkPersistQueue = (): Promise<void> => {
+  if (bookmarkPersistPromise) return bookmarkPersistPromise
+
+  bookmarkPersistPromise = (async () => {
+    while (pendingBookmarkPersistJob) {
+      const job = pendingBookmarkPersistJob
+      pendingBookmarkPersistJob = null
+      if (job.serialized === lastPersistedBookmarkState) continue
+
+      const written = await saveBookmarkSnapshot(job.snapshot)
+      lastPersistedBookmarkState = job.serialized
       emitStorageSync('bookmark', written)
-    })
+    }
+  })()
     .catch((error) => {
       console.error('[bookmark] 保存失败:', error)
     })
+    .finally(() => {
+      bookmarkPersistPromise = null
+      if (pendingBookmarkPersistJob && pendingBookmarkPersistJob.serialized !== lastPersistedBookmarkState) {
+        void drainBookmarkPersistQueue()
+      }
+    })
+
+  return bookmarkPersistPromise
+}
+
+const enqueueBookmarkPersist = (state: BookmarkStore): void => {
+  if (queueBookmarkPersistJob(state)) void drainBookmarkPersistQueue()
+}
+
+export const flushBookmarkStorePersistence = async (): Promise<void> => {
+  queueBookmarkPersistJob(useBookmarkStore.getState())
+  await drainBookmarkPersistQueue()
+}
+
+const bindBookmarkPersistenceFlushEvents = (): void => {
+  if (bookmarkPersistenceFlushEventsStarted || typeof window === 'undefined') return
+  bookmarkPersistenceFlushEventsStarted = true
+
+  const flush = () => {
+    void flushBookmarkStorePersistence()
+  }
+  const flushWhenHidden = () => {
+    if (document.visibilityState === 'hidden') flush()
+  }
+
+  window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, flush)
+  window.addEventListener('pagehide', flush)
+  window.addEventListener('beforeunload', flush)
+  document.addEventListener('visibilitychange', flushWhenHidden)
 }
 
 export const initializeBookmarkStorePersistence = async (): Promise<void> => {
@@ -1487,6 +1542,7 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
   useBookmarkStore.subscribe((state) => {
     enqueueBookmarkPersist(state)
   })
+  bindBookmarkPersistenceFlushEvents()
   lastPersistedBookmarkState = ''
   enqueueBookmarkPersist(useBookmarkStore.getState())
 
