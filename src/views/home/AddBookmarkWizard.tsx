@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
 import {
@@ -67,12 +67,22 @@ export default function AddBookmarkWizard({
   const titleFetching = iconLoading && !isTitleDirty
   const descFetching = iconLoading && !isDescDirty
   const previewIconUrl = iconToDisplayUrl(previewIcon ?? undefined) || ''
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false)
+  const deleteConfirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const clearDeleteConfirmTimer = useCallback(() => {
+    if (deleteConfirmTimerRef.current) {
+      clearTimeout(deleteConfirmTimerRef.current)
+      deleteConfirmTimerRef.current = null
+    }
+  }, [])
 
   // ---- 关闭联动：hook 保存成功后 set({ showAdd:false }) -> 触发 onBack ----
   const onBackRef = useRef(onBack)
   onBackRef.current = onBack
   const wasOpenRef = useRef(false)
   const pendingJumpRef = useRef<BookmarkLocation | null>(null)
+  const editItemId = editItem?.id ?? null
   useEffect(() => {
     if (showAdd) {
       wasOpenRef.current = true
@@ -83,8 +93,18 @@ export default function AddBookmarkWizard({
     }
   }, [showAdd])
 
+  useEffect(() => {
+    return () => {
+      clearDeleteConfirmTimer()
+    }
+  }, [clearDeleteConfirmTimer])
+
+  useEffect(() => {
+    clearDeleteConfirmTimer()
+    setIsConfirmingDelete(false)
+  }, [editItemId, clearDeleteConfirmTimer])
+
   // ---- 打开：编辑加载已有书签，新建初始化空表单 ----
-  const editItemId = editItem?.id ?? null
   useEffect(() => {
     if (editItemId) {
       const real = bookmarks.find((b) => b.id === editItemId)
@@ -111,13 +131,34 @@ export default function AddBookmarkWizard({
     }
   }, [setUrl])
 
-  const handleCancel = useCallback(() => set({ showAdd: false }), [set])
   const handleSaveClick = useCallback(async () => {
+    clearDeleteConfirmTimer()
+    setIsConfirmingDelete(false)
     await handleSave()
     const after = useBookmarkFormStore.getState()
     if (!after.showAdd) pendingJumpRef.current = after.draftLocations[0] ?? null
-  }, [handleSave])
-  const handleDeleteClick = useCallback(() => requestDelete(), [requestDelete])
+  }, [clearDeleteConfirmTimer, handleSave])
+
+  const handleDeleteClick = useCallback(() => {
+    if (!isEdit) return
+
+    if (!isConfirmingDelete) {
+      setIsConfirmingDelete(true)
+      clearDeleteConfirmTimer()
+      deleteConfirmTimerRef.current = setTimeout(() => setIsConfirmingDelete(false), 3000)
+      return
+    }
+
+    clearDeleteConfirmTimer()
+    setIsConfirmingDelete(false)
+    requestDelete()
+  }, [isConfirmingDelete, clearDeleteConfirmTimer, isEdit, requestDelete])
+
+  const handleCancel = useCallback(() => {
+    clearDeleteConfirmTimer()
+    setIsConfirmingDelete(false)
+    set({ showAdd: false })
+  }, [clearDeleteConfirmTimer, set])
 
   // Cmd/Ctrl + Enter 保存；普通 Enter 在输入框里保留原生编辑行为，避免刚粘贴 URL 就误保存。
   useEffect(() => {
@@ -205,7 +246,7 @@ export default function AddBookmarkWizard({
           {isEdit && (
             <button className="btn btn-ghost danger" onClick={handleDeleteClick} disabled={isSaving}>
               <Ico name="trash-2" />
-              删除
+              {isConfirmingDelete ? '确认删除' : '删除'}
             </button>
           )}
           <div style={{ flex: 1 }} />
