@@ -50,7 +50,7 @@ export interface SettingsState {
   listShowDescription: boolean
   /** 列表模式：描述完整展示（多行换行，不单行省略） */
   listFullDescription: boolean
-  /** 列表模式：显示书签标签 */
+  /** 列表/宫格模式：书签没有描述时隐藏网址占位 */
   listShowTags: boolean
   /** 界面缩放档位：大 / 正常 / 小（默认正常） */
   uiScale: UIScale
