@@ -14,7 +14,7 @@ export interface HomeItem {
   ttl: string          // 标题
   url: string          // 链接
   host: string         // 域名（网格视图小字 / fav 取色用）
-  dsc: string          // 描述
+  dsc: string          // 描述（保持真实描述，不用域名兜底）
   fav: string          // 文字图标（标题首字 / 域名首字母）
   color?: string       // fav 背景色（仅用户在 icon.bgColor 主动设置时有值，否则不分配）
   favHue: number       // 文字占位底色色调（拿不到 favicon 时按域名稳定分配，低饱和）
@@ -68,7 +68,7 @@ function toItem(b: Bookmark): HomeItem {
     ttl: b.title || host,
     url: b.url,
     host,
-    dsc: b.desc || host,
+    dsc: b.desc || '',
     fav: favText(b.title, host),
     color: b.icon?.bgColor || undefined,
     favHue: favHueOf(host || b.title || b.url),

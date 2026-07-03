@@ -92,7 +92,7 @@ export default function AvatarMenu({
         </div>
         <div className="pp-top-info">
           <span className="pp-name">鹅的书签</span>
-          <span className="pp-sub">goose-marks · v{__APP_VERSION__}</span>
+          <span className="pp-sub">goose-marks</span>
         </div>
       </div>
 

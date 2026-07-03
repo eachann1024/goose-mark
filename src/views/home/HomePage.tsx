@@ -53,7 +53,6 @@ import AvatarMenu from './AvatarMenu'
 import HelpAboutDialog from './HelpAboutDialog'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
-import logoUrl from '@/assets/logo.png'
 import { DEFAULT_AI_MODEL, AI_PROVIDER_PRESETS } from '@/constants/ai'
 import { fetchCustomAIModels } from '@/lib/aiProvider'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
@@ -216,7 +215,7 @@ function SortableGridCell({
     >
       <Fav item={item} />
       <div className="ttl">{item.ttl}</div>
-      <div className={subClass}>{subText}</div>
+      {subText && <div className={subClass}>{subText}</div>}
     </div>
   )
 }
@@ -309,6 +308,7 @@ type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups'
 type ViewMode = 'list' | 'grid'
 type Theme = 'light' | 'dark'
 type ThemePref = 'light' | 'dark' | 'system'
+type CtxMode = 'menu' | 'confirmDelete'
 
 function resolveTheme(pref: ThemePref): Theme {
   if (pref === 'system') {
@@ -454,6 +454,7 @@ export default function HomePage() {
   const isSetScrollingRef = useRef(false)
   const setScrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [ctx, setCtx] = useState<CtxState>({ open: false, x: 0, y: 0 })
+  const [ctxMode, setCtxMode] = useState<CtxMode>('menu')
   // 当前被右键点击的书签项（用于右键菜单操作）
   const [ctxItem, setCtxItem] = useState<HomeItem | null>(null)
   // 右键点击处的精确位置（用于多分类书签删除正确分类）
@@ -664,6 +665,8 @@ export default function HomePage() {
 
   // ---- 一级分组 Tab：切换当前分组（同步 store，首个子分组自动选中）----
   const changeActiveGroup = useCallback((groupId: string) => {
+    setCtx((c) => (c.open ? { ...c, open: false } : c))
+    setCtxMode('menu')
     if (screen === 'trash' || screen === 'settings') setScreen(view)
     setActiveGroup(groupId)
   }, [screen, view, setActiveGroup])
@@ -830,9 +833,24 @@ export default function HomePage() {
     let top = e.clientY - r.top
     left = Math.min(left, r.width - menuW - 12)
     top = Math.min(top, r.height - 250)
+    setCtxMode('menu')
     setCtx({ open: true, x: Math.max(8, left), y: Math.max(8, top) })
   }, [homeGroups])
-  const closeCtx = useCallback(() => setCtx((c) => (c.open ? { ...c, open: false } : c)), [])
+  const closeCtx = useCallback(() => {
+    setCtx((c) => (c.open ? { ...c, open: false } : c))
+    setCtxMode('menu')
+  }, [])
+
+  const requestCtxDelete = useCallback(() => {
+    if (ctxItem) setCtxMode('confirmDelete')
+  }, [ctxItem])
+
+  const confirmCtxDelete = useCallback(() => {
+    if (!ctxItem) return
+    const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
+    closeCtx()
+    if (realBookmark) handleRemove(realBookmark, ctxLocation ?? undefined)
+  }, [bookmarks, closeCtx, ctxItem, ctxLocation, handleRemove])
 
   // fireToast 的稳定引用，供 plugin-enter effect 使用（声明在 fireToast 之前）
   const fireToastRef = useRef<(title?: string) => void>(() => {})
@@ -1755,7 +1773,6 @@ export default function HomePage() {
 
   const rootCls = [
     'goose-home',
-    ctx.open ? 'ctx-open' : '',
     toastOpen ? 'toast-open' : '',
     // 彩蛋激活时加 egg-on，让 CSS 透出底层 canvas
     theme === 'dark' && easterEggEnabled ? 'egg-on' : '',
@@ -1857,10 +1874,10 @@ export default function HomePage() {
           <button
             ref={avatarRef}
             className="avatar"
-            title="个人菜单"
+            title="设置"
             onClick={() => setPaOpen((o) => !o)}
           >
-            <Image src={logoUrl} alt="头像" bare />
+            <Ico name="settings" />
           </button>
         </header>
 
@@ -2052,36 +2069,44 @@ export default function HomePage() {
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}
 
         {/* ---------- Context menu ---------- */}
-        <div ref={ctxMenuRef} className="ctx-menu" style={{ left: ctx.x, top: ctx.y }}>
-          <button onClick={() => {
-            closeCtx()
-            if (ctxItem) {
-              const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
-              if (realBookmark) openBookmarkLink(realBookmark)
-            }
-          }}><Ico name="external-link" />打开</button>
-          <button onClick={() => {
-            closeCtx()
-            // 反转：默认走内置浏览器时，右键提供「用系统默认浏览器打开」，反之亦然
-            if (ctxItem) (useUtoolsBrowser ? openUrlInDefaultBrowser : openUrlInUtoolsBrowser)(ctxItem.url)
-          }}><Ico name="globe" />{useUtoolsBrowser ? '用默认浏览器打开' : '在内置浏览器打开'}</button>
-          <button onClick={() => {
-            closeCtx()
-            if (ctxItem) {
-              const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
-              // useUIManager 的 toast 在新 UI 未挂载，复制成功后用 HomePage 自己的 fireToast 反馈
-              if (realBookmark) void copyBookmarkUrl(realBookmark) // 成功/失败反馈由 useUIManager toast 桥统一转发
-            }
-          }}><Ico name="copy" />复制链接</button>
-          <button onClick={() => { closeCtx(); setFormEditItem(ctxItem); setScreen('add') }}><Ico name="pencil" />编辑</button>
-          <div className="ctx-sep" />
-          <button className="danger" onClick={() => {
-            closeCtx()
-            if (ctxItem) {
-              const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
-              if (realBookmark) handleRemove(realBookmark, ctxLocation ?? undefined)
-            }
-          }}><Ico name="trash-2" />删除</button>
+        <div ref={ctxMenuRef} className={`ctx-menu${ctx.open ? ' show' : ''}`} style={{ left: ctx.x, top: ctx.y }} onClick={(e) => e.stopPropagation()}>
+          {ctxMode === 'confirmDelete' ? (
+            <>
+              <div className="ctx-confirm-msg">
+                <span>删除「{ctxItem?.ttl || '该书签'}」？</span>
+                <span className="ctx-confirm-sub">书签将移入回收站</span>
+              </div>
+              <div className="ctx-sep" />
+              <button className="danger" onClick={confirmCtxDelete}><Ico name="trash-2" />确认删除</button>
+              <button onClick={closeCtx}><Ico name="x" />取消</button>
+            </>
+          ) : (
+            <>
+              <button onClick={() => {
+                closeCtx()
+                if (ctxItem) {
+                  const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
+                  if (realBookmark) openBookmarkLink(realBookmark)
+                }
+              }}><Ico name="external-link" />打开</button>
+              <button onClick={() => {
+                closeCtx()
+                // 反转：默认走内置浏览器时，右键提供「用系统默认浏览器打开」，反之亦然
+                if (ctxItem) (useUtoolsBrowser ? openUrlInDefaultBrowser : openUrlInUtoolsBrowser)(ctxItem.url)
+              }}><Ico name="globe" />{useUtoolsBrowser ? '用默认浏览器打开' : '在内置浏览器打开'}</button>
+              <button onClick={() => {
+                closeCtx()
+                if (ctxItem) {
+                  const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
+                  // useUIManager 的 toast 在新 UI 未挂载，复制成功后用 HomePage 自己的 fireToast 反馈
+                  if (realBookmark) void copyBookmarkUrl(realBookmark) // 成功/失败反馈由 useUIManager toast 桥统一转发
+                }
+              }}><Ico name="copy" />复制链接</button>
+              <button onClick={() => { closeCtx(); setFormEditItem(ctxItem); setScreen('add') }}><Ico name="pencil" />编辑</button>
+              <div className="ctx-sep" />
+              <button className="danger" onClick={requestCtxDelete}><Ico name="trash-2" />删除</button>
+            </>
+          )}
         </div>
 
         {/* ---------- Toast ---------- */}
@@ -2139,14 +2164,15 @@ function BookmarkCard({
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
   const fullDescription = useSettingsStore((s) => s.listFullDescription)
-  const showTags = useSettingsStore((s) => s.listShowTags)
+  const hideUrlWithoutDescription = useSettingsStore((s) => s.listShowTags)
   return (
     <div className={`card${selected ? ' sel' : ''}`} style={style} data-item-id={item.id} data-group-id={groupId} data-sub-id={subId} onClick={onClick}>
       <Fav item={item} />
       <div className="meta">
         <div className="ttl">{item.ttl}</div>
         {showDescription && item.dsc && <div className={`dsc${fullDescription ? ' full' : ''}`}>{item.dsc}</div>}
-        {showTags && item.tags.length > 0 && (
+        {!hideUrlWithoutDescription && showDescription && !item.dsc && item.host && <div className="url">{item.host}</div>}
+        {item.tags.length > 0 && (
           <div className="tags">
             {item.tags.map((tag) => (
               <span key={tag} className="tag">{tag}</span>
@@ -2252,10 +2278,11 @@ function GridCells({
   subId?: string
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
+  const hideUrlWithoutDescription = useSettingsStore((s) => s.listShowTags)
   // 非搜索态（有归属分组）才可拖拽；搜索扁平宫格无 groupId，保持普通渲染
   const canDrag = !!groupId && !!subId
   const cells = items.map((b) => {
-    const subText = showDescription && b.dsc ? b.dsc : b.host
+    const subText = showDescription && b.dsc ? b.dsc : (hideUrlWithoutDescription ? '' : b.host)
     const subClass = showDescription && b.dsc ? 'dsc' : 'url'
     if (canDrag) {
       return (
@@ -2283,7 +2310,7 @@ function GridCells({
       >
         <Fav item={b} />
         <div className="ttl">{b.ttl}</div>
-        <div className={subClass}>{subText}</div>
+        {subText && <div className={subClass}>{subText}</div>}
       </div>
     )
   })
@@ -2796,8 +2823,8 @@ function SettingsContent({
   const setListShowDescription = useSettingsStore((s) => s.setListShowDescription)
   const listFullDescription = useSettingsStore((s) => s.listFullDescription)
   const setListFullDescription = useSettingsStore((s) => s.setListFullDescription)
-  const listShowTags = useSettingsStore((s) => s.listShowTags)
-  const setListShowTags = useSettingsStore((s) => s.setListShowTags)
+  const listHideUrlWithoutDescription = useSettingsStore((s) => s.listShowTags)
+  const setListHideUrlWithoutDescription = useSettingsStore((s) => s.setListShowTags)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const setEasterEggEnabled = useSettingsStore((s) => s.setEasterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
@@ -3052,10 +3079,10 @@ function SettingsContent({
             />
           </div>
           <div className="set-row">
-            <div><div className="rt">显示标签</div><div className="rd">在书签条目下方显示标签</div></div>
+            <div><div className="rt">无描述时隐藏网址</div><div className="rd">书签没有描述时，不用网址占位</div></div>
             <div
-              className={`g-switch${listShowTags ? ' on' : ''}`}
-              onClick={() => setListShowTags(!listShowTags)}
+              className={`g-switch${listHideUrlWithoutDescription ? ' on' : ''}`}
+              onClick={() => setListHideUrlWithoutDescription(!listHideUrlWithoutDescription)}
             />
           </div>
         </div>
@@ -3234,9 +3261,9 @@ function SettingsContent({
       <div className="set-section" id="set-categories">
         <h2><Ico name="folder" />分组管理</h2>
         <div className="set-card">
-          <div className="set-row set-row-link" onClick={onGoToGroups} style={{ cursor: 'pointer' }}>
+          <div className="set-row set-row-link" onClick={onGoToGroups}>
             <div><div className="rt">分组管理</div><div className="rd">创建、编辑和排序分组</div></div>
-            <Ico name="chevron-right" style={{ color: 'var(--fg-faint)', fontSize: 16, flexShrink: 0 }} />
+            <Ico name="chevron-right" className="set-row-link-icon" />
           </div>
         </div>
       </div>

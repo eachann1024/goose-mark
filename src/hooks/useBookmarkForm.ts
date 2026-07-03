@@ -357,6 +357,7 @@ export function useBookmarkForm() {
       aiError: s.aiError,
       categorySuggestion: s.categorySuggestion,
       originalBeforeAI: s.originalBeforeAI,
+      originalUrl: s.originalUrl,
       isTitleDirty: s.isTitleDirty,
       isDescDirty: s.isDescDirty
     }))
