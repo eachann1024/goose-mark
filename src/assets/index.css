@@ -1,7 +1,8 @@
 /* 所有 @import 必须置于文件最顶部（CSS 规范：@import 须先于其他语句） */
-@import "tailwindcss";
-/* HeroUI v3 样式（无 Provider；通过 useTheme 切换 light/dark；主题类挂在 <html>） */
-@import "@heroui/styles";
+@layer theme, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+/* HeroUI 组件按需引入；当前首页不加载 @heroui/styles，避免 uTools 旧 Chromium 吃到现代颜色主题变量。 */
 /* 衬线标题字体（Newsreader 已本地化，见 fonts.css；CJK 标题回退系统 Songti SC / serif，
    不再远程拉取 Noto Serif SC，避免 uTools/离线环境对 Google Fonts 的网络依赖与隐私外泄）。 */
 
@@ -82,6 +83,18 @@
     --ai-bright: 269 72.2% 78.8%;
     --success: 149 67.6% 29%;
     --success-subtle: 139 40% 92.2%;
+    --compat-muted-weak: #f5f3ed;
+    --compat-muted: #f0eee6;
+    --compat-muted-hover: #ebe8df;
+    --compat-primary-weak: #f8ede8;
+    --compat-primary-soft: #f4e2d9;
+    --compat-primary-border: #e9c8b9;
+    --compat-card-soft: #f8f7f3;
+    --compat-card-border: #eeeae1;
+    --compat-danger-soft: #f5e5e2;
+    --compat-foreground-hover: rgba(31, 30, 29, .1);
+    --compat-primary-shadow-weak: rgba(217, 119, 87, .08);
+    --compat-primary-shadow: rgba(217, 119, 87, .18);
 
     --radius: 0.875rem;                  /* 14px */
     --radius-sm: calc(var(--radius) - 4px);
@@ -146,6 +159,18 @@
     --ai-bright: 269 76% 85.3%;
     --success: 149 60% 38%;
     --success-subtle: 150 35% 12%;
+    --compat-muted-weak: #2c2c2a;
+    --compat-muted: #30302e;
+    --compat-muted-hover: #3a3936;
+    --compat-primary-weak: #33261f;
+    --compat-primary-soft: #3a2a22;
+    --compat-primary-border: #684533;
+    --compat-card-soft: #2f2f2d;
+    --compat-card-border: #3a3936;
+    --compat-danger-soft: #3a2422;
+    --compat-foreground-hover: rgba(250, 249, 245, .12);
+    --compat-primary-shadow-weak: rgba(224, 135, 95, .1);
+    --compat-primary-shadow: rgba(224, 135, 95, .22);
 
     --chart-1: 220 70% 50%;
     --chart-2: 160 60% 45%;
@@ -317,22 +342,24 @@ input[type="number"] {
 
 /* BookmarkCard 选中态（普通 / 搜索浮层两种变体） */
 .bookmark-card--selected {
-  @apply border-primary/[0.35] bg-primary/[0.08];
+  border-color: var(--compat-primary-border);
+  background: var(--compat-primary-weak);
   box-shadow:
-    0 4px 16px hsl(var(--primary) / 0.08),
-    0 0 0 1px hsl(var(--primary) / 0.25);
+    0 4px 16px var(--compat-primary-shadow-weak),
+    0 0 0 1px var(--compat-primary-border);
 }
 .bookmark-card--selected-search {
-  @apply border-primary/25 bg-primary/5;
+  border-color: var(--compat-primary-border);
+  background: var(--compat-primary-weak);
   box-shadow:
-    0 4px 12px hsl(var(--primary) / 0.06),
-    0 0 0 1px hsl(var(--primary) / 0.18);
+    0 4px 12px var(--compat-primary-shadow-weak),
+    0 0 0 1px var(--compat-primary-border);
 }
 .dark .bookmark-card--hoverable:hover {
   @apply bg-card;
 }
 .bookmark-card__locate-btn:hover {
-  background-color: hsl(var(--foreground) / 0.1) !important;
+  background-color: var(--compat-foreground-hover) !important;
 }
 
 /* CategoryMultiSelect 子分组 chip */
@@ -340,35 +367,41 @@ input[type="number"] {
   @apply transition-all duration-150;
 }
 .subgroup-chip--idle {
-  @apply bg-muted/30 text-foreground border border-transparent;
+  @apply text-foreground border border-transparent;
+  background: var(--compat-muted-weak);
 }
 .subgroup-chip--idle:hover {
-  @apply bg-muted/60 border-border;
+  @apply border-border;
+  background: var(--compat-muted);
 }
 .subgroup-chip--selected {
-  @apply bg-primary/[0.08] text-primary border border-primary/25;
+  @apply text-primary border;
+  background: var(--compat-primary-weak);
+  border-color: var(--compat-primary-border);
 }
 .dark .subgroup-chip--selected {
-  @apply bg-primary/15 border-primary/30;
-  box-shadow: 0 0 8px hsl(var(--primary) / 0.1);
+  background: var(--compat-primary-soft);
+  border-color: var(--compat-primary-border);
+  box-shadow: 0 0 8px var(--compat-primary-shadow-weak);
 }
 
 /* IconSelector tab 激活态 */
 .icon-selector-tab--active {
-  @apply text-primary bg-primary/10;
+  @apply text-primary;
+  background: var(--compat-primary-weak);
 }
 
 /* OnboardingBanner 渐变背景 */
 .onboarding-banner {
-  @apply border-primary/20;
+  border-color: var(--compat-primary-border);
   background: linear-gradient(
     135deg,
-    hsl(var(--primary) / 0.05),
-    hsl(var(--primary) / 0.1)
+    var(--compat-primary-weak),
+    var(--compat-primary-soft)
   );
 }
 .onboarding-banner__icon {
-  @apply bg-primary/10;
+  background: var(--compat-primary-weak);
 }
 
 /* AppSidebar 导航项 —— 对齐设计稿：hover 中性微暗(surface-2)、active 珊瑚浅染(accent-tint) */
@@ -379,10 +412,11 @@ input[type="number"] {
   @apply text-foreground;
 }
 .nav-item--idle:hover {
-  @apply text-foreground bg-muted/85;
+  @apply text-foreground;
+  background: var(--compat-muted-hover);
 }
 .dark .nav-item--idle:hover {
-  @apply bg-muted/[0.55];
+  background: var(--compat-muted-hover);
 }
 /* 子项 idle 文字淡一档（对齐设计稿 text-2）；hover/active 仍由上面规则接管 */
 .nav-item--sub.nav-item--idle {
@@ -392,13 +426,15 @@ input[type="number"] {
   @apply text-foreground;
 }
 .nav-item--active {
-  @apply text-primary bg-primary/[0.12] font-medium;
+  @apply text-primary font-medium;
+  background: var(--compat-primary-weak);
 }
 .dark .nav-item--active {
-  @apply bg-primary/20;
+  background: var(--compat-primary-soft);
 }
 .nav-item--trash-active {
-  @apply text-destructive bg-destructive/10;
+  @apply text-destructive;
+  background: var(--compat-danger-soft);
 }
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
@@ -445,12 +481,14 @@ input[type="number"] {
    设置中心（settings 模块）— 从各 .vue <style> 集中迁移到全局。
    ============================================================ */
 .settings-block {
-  @apply p-4 rounded-[14px] border border-border/25 bg-card flex flex-col;
-  box-shadow: 0 10px 24px hsl(var(--foreground) / 0.03);
+  @apply p-4 rounded-[14px] border bg-card flex flex-col;
+  border-color: var(--compat-card-border);
+  box-shadow: 0 10px 24px rgba(31, 30, 29, .03);
 }
 
 .dark .settings-block {
-  @apply bg-card/[0.55] border-border/15;
+  background: var(--compat-card-soft);
+  border-color: var(--compat-card-border);
   backdrop-filter: blur(14px) saturate(1.1);
   -webkit-backdrop-filter: blur(14px) saturate(1.1);
 }
@@ -489,11 +527,14 @@ input[type="number"] {
 
 /* TOC 侧栏 */
 .settings-nav {
-  @apply bg-card/60 border-r border-border/30;
+  @apply border-r;
+  background: var(--compat-card-soft);
+  border-color: var(--compat-card-border);
 }
 
 .dark .settings-nav {
-  @apply bg-card/[0.45] border-border/15;
+  background: var(--compat-card-soft);
+  border-color: var(--compat-card-border);
   backdrop-filter: blur(16px) saturate(1.2);
   -webkit-backdrop-filter: blur(16px) saturate(1.2);
 }
@@ -529,27 +570,31 @@ input[type="number"] {
 }
 
 .settings-back {
-  @apply text-muted-foreground bg-muted/40 transition-[color,background-color] duration-[120ms];
+  @apply text-muted-foreground transition-[color,background-color] duration-[120ms];
+  background: var(--compat-muted-weak);
 }
 
 .settings-back:hover {
-  @apply text-foreground bg-muted/[0.7];
+  @apply text-foreground;
+  background: var(--compat-muted-hover);
 }
 
 .dark .settings-back {
-  @apply bg-muted/30;
+  background: var(--compat-muted-weak);
 }
 
 .dark .settings-back:hover {
-  @apply bg-muted/[0.55];
+  background: var(--compat-muted-hover);
 }
 
 .settings-feedback {
-  @apply text-muted-foreground bg-muted/[0.5] transition-[color,background-color] duration-[120ms];
+  @apply text-muted-foreground transition-[color,background-color] duration-[120ms];
+  background: var(--compat-muted);
 }
 
 .settings-feedback:hover {
-  @apply text-foreground bg-muted/[0.95];
+  @apply text-foreground;
+  background: var(--compat-muted-hover);
 }
 
 /* AI 模型选择列表项 */
@@ -558,7 +603,7 @@ input[type="number"] {
 }
 
 .settings-list-item:hover {
-  @apply bg-muted/[0.75];
+  background: var(--compat-muted-hover);
 }
 
 /* 强调色样本 */
@@ -680,7 +725,7 @@ input[type="number"] {
 
 .goose-home .gm-header {
   @apply shrink-0 flex items-center gap-3 px-[22px] pt-4 pb-3;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-bottom:1px solid var(--border-muted);
 }
 
 .goose-home .gm-back-btn {
@@ -704,7 +749,7 @@ input[type="number"] {
 /* 左栏 */
 .goose-home .gm-left {
   @apply w-[220px] shrink-0 flex flex-col overflow-hidden;
-  border-right: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-right:1px solid var(--border-muted);
 }
 
 /* 右栏 */
@@ -769,12 +814,12 @@ input[type="number"] {
   -webkit-user-select: text !important;
   user-select: text !important;
 }
-.goose-home .gm-inline-input:focus { @apply border-primary/60; }
+.goose-home .gm-inline-input:focus { border-color:var(--accent); }
 
 /* 确认态 */
 .goose-home .gm-item-confirm {
   @apply cursor-default flex-wrap gap-1.5;
-  background: hsl(var(--destructive) / 0.06) !important;
+  background:var(--danger-subtle) !important;
 }
 .goose-home .gm-item-confirm > span {
   @apply text-xs text-g-fg-muted flex-1 min-w-0;

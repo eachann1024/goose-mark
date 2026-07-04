@@ -26,7 +26,13 @@ import { CSS } from '@dnd-kit/utilities'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
 import { flushBookmarkStorePersistence, useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
-import { useSettingsStore, WINDOW_HEIGHT_MIN, WINDOW_HEIGHT_MAX, type DetachedWindowPosition } from '@/stores/settings'
+import {
+  useSettingsStore,
+  selectAiSettings,
+  WINDOW_HEIGHT_MIN,
+  WINDOW_HEIGHT_MAX,
+  type DetachedWindowPosition
+} from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { useUToolsMcpBridge } from '@/hooks/useUToolsMcpBridge'
 import { useUTools } from '@/hooks/useUTools'
@@ -54,7 +60,7 @@ import HelpAboutDialog from './HelpAboutDialog'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
 import { DEFAULT_AI_MODEL, AI_PROVIDER_PRESETS } from '@/constants/ai'
-import { fetchCustomAIModels } from '@/lib/aiProvider'
+import { fetchCustomAIModels, getAIAvailability } from '@/lib/aiProvider'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import './home.css'
 
@@ -386,7 +392,7 @@ export default function HomePage() {
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   // AI 设置变化键（与 App.tsx 对齐），用于触发 syncFeatures 重跑
-  const aiSettingsKey = useSettingsStore((s) => `${s.aiEnabled}|${s.aiUseCustomProvider}|${s.aiSelectedModelId}`)
+  const aiSettingsKey = useSettingsStore((s) => `${s.aiEnabled}|${s.aiAllowLegacyUTools}|${s.aiUseCustomProvider}|${s.aiSelectedModelId}|${s.aiCustomApiKey}`)
 
   const homeGroups: HomeGroup[] = useMemo(
     () => buildHomeGroups(groups, bookmarks),
@@ -1705,9 +1711,9 @@ export default function HomePage() {
   // checkAiAvailable 是纯函数（读 store），直接在 callback 内调用，不需要作为依赖
   const syncUToolsFeatures = useCallback(() => {
     if (!window.utools) return
-    const { aiEnabled, aiUseCustomProvider, aiSelectedModelId, aiQuickSaveEnabled: quickSaveSetting } = useSettingsStore.getState()
-    // 对齐 App.tsx: checkAiAvailable().available 的计算方式（通过 aiEnabled 开关判断）
-    const aiQuickSaveEnabled = !!(aiEnabled && (aiUseCustomProvider ? aiSelectedModelId : true) && quickSaveSetting)
+    const settings = useSettingsStore.getState()
+    const { aiQuickSaveEnabled: quickSaveSetting } = settings
+    const aiQuickSaveEnabled = !!(quickSaveSetting && getAIAvailability(selectAiSettings(settings)).ok)
     syncFeatures(useBookmarkStore.getState().bookmarks, { aiQuickSaveEnabled })
   }, [syncFeatures])
 
@@ -2831,6 +2837,7 @@ function SettingsContent({
   const setEasterEggVariant = useSettingsStore((s) => s.setEasterEggVariant)
   const aiEnabled = useSettingsStore((s) => s.aiEnabled)
   const setAiEnabled = useSettingsStore((s) => s.setAiEnabled)
+  const aiAllowLegacyUTools = useSettingsStore((s) => s.aiAllowLegacyUTools)
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
   const aiUseCustomProvider = useSettingsStore((s) => s.aiUseCustomProvider)
@@ -2846,7 +2853,8 @@ function SettingsContent({
   const windowHeight = useSettingsStore((s) => s.windowHeight)
   const setWindowHeight = useSettingsStore((s) => s.setWindowHeight)
 
-  // 模型选项：自定义 provider 时用 aiCustomModelOptions，否则只有默认模型
+  const usingLegacyUToolsAi = aiAllowLegacyUTools && !aiUseCustomProvider
+  // 第三方模型列表取自用户拉取结果；历史兼容的 uTools AI 仍回落到默认模型占位。
   const modelOptions = aiUseCustomProvider && aiCustomModelOptions.length > 0
     ? aiCustomModelOptions
     : [{ id: DEFAULT_AI_MODEL, label: DEFAULT_AI_MODEL }]
@@ -3125,14 +3133,26 @@ function SettingsContent({
           {/* 下方所有 AI 配置：未启用时整体禁用置灰（pointer-events:none + 降透明度） */}
           <div className={`set-ai-body${aiEnabled ? '' : ' is-off'}`} aria-disabled={!aiEnabled}>
             <div className="set-row">
-              <div><div className="rt">自定义供应商</div><div className="rd">用 OpenAI 协议端点替代 uTools 内置 AI</div></div>
-              <div
-                className={`g-switch ai${aiUseCustomProvider ? ' on' : ''}`}
-                onClick={() => aiEnabled && setAiCustomProviderEnabled(!aiUseCustomProvider)}
-              />
+              <div>
+                <div className="rt">AI 供应商</div>
+                <div className="rd">
+                  {aiAllowLegacyUTools
+                    ? '默认仅支持第三方 OpenAI 协议端点；你之前已手动开启过 AI，可继续保留旧版 uTools AI'
+                    : '仅支持第三方 OpenAI 协议端点，不再为新用户启用 uTools 内置 AI'}
+                </div>
+              </div>
+              {aiAllowLegacyUTools ? (
+                <div
+                  className={`g-switch ai${aiUseCustomProvider ? ' on' : ''}`}
+                  onClick={() => aiEnabled && setAiCustomProviderEnabled(!aiUseCustomProvider)}
+                  title={aiUseCustomProvider ? '当前使用第三方供应商' : '当前使用历史兼容的 uTools AI'}
+                />
+              ) : (
+                <div className="ai-pill">仅第三方</div>
+              )}
             </div>
 
-            {aiUseCustomProvider && (
+            {!usingLegacyUToolsAi && (
               <>
                 <div className="ai-prov-label">选择供应商</div>
                 <div className="ai-prov-grid">
@@ -3206,6 +3226,12 @@ function SettingsContent({
                 <Ico name="chevron-down" />
               </div>
             </div>
+            {usingLegacyUToolsAi && (
+              <div className="set-row">
+                <div><div className="rt">兼容模式</div><div className="rd">你沿用的是历史已开启的 uTools AI；切到第三方后将按新规则运行</div></div>
+                <div className="ai-pill">历史兼容</div>
+              </div>
+            )}
             <div className="set-row">
               <div><div className="rt">AI 快捷保存</div><div className="rd">全局快捷键直接由 AI 整理并保存当前网址</div></div>
               <div className={`g-switch ai${aiQuickSaveEnabled ? ' on' : ''}`} onClick={() => aiEnabled && setAiQuickSaveEnabled(!aiQuickSaveEnabled)} />

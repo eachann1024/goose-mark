@@ -31,6 +31,8 @@ export interface SettingsState {
   preferLocalSnapshotOnStartup: boolean
   localMirrorDirectory: string
   aiEnabled: boolean
+  /** 历史兼容：仅老用户已手动开启过 AI 时保留 uTools 内置 AI 路径 */
+  aiAllowLegacyUTools: boolean
   aiSelectedModelId: string
   aiUseCustomProvider: boolean
   /** 当前选中的 OpenAI 协议供应商预置（仅 aiUseCustomProvider 为 true 时生效） */
@@ -114,6 +116,7 @@ const createInitialState = (): SettingsState => {
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     aiEnabled: defaults.enabled,
+    aiAllowLegacyUTools: defaults.allowLegacyUTools,
     aiSelectedModelId: defaults.selectedModelId ?? DEFAULT_AI_MODEL,
     aiUseCustomProvider: defaults.useCustomProvider,
     aiProviderPreset: 'glm',
@@ -215,6 +218,7 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   autoCloseWindow: state.autoCloseWindow,
   preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
   aiEnabled: state.aiEnabled,
+  aiAllowLegacyUTools: state.aiAllowLegacyUTools,
   aiSelectedModelId: state.aiSelectedModelId,
   aiUseCustomProvider: state.aiUseCustomProvider,
   aiProviderPreset: state.aiProviderPreset,
@@ -241,12 +245,21 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
 const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
   if (!state) return {}
   const patch: Partial<SettingsState> = { ...state }
+  const rawAiEnabled = state.aiEnabled
+  const rawAiUseCustomProvider = state.aiUseCustomProvider
+  const rawAiAllowLegacyUTools = state.aiAllowLegacyUTools
 
   if (typeof patch.aiSelectedModelId !== 'string' || !patch.aiSelectedModelId.trim()) {
     patch.aiSelectedModelId = DEFAULT_AI_MODEL
   }
   if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
-  if (typeof patch.aiUseCustomProvider !== 'boolean') patch.aiUseCustomProvider = false
+  const allowLegacyUTools = typeof rawAiAllowLegacyUTools === 'boolean'
+    ? rawAiAllowLegacyUTools
+    : rawAiEnabled === true && rawAiUseCustomProvider === false
+  patch.aiAllowLegacyUTools = allowLegacyUTools
+  patch.aiUseCustomProvider = allowLegacyUTools
+    ? (typeof rawAiUseCustomProvider === 'boolean' ? rawAiUseCustomProvider : false)
+    : true
   if (typeof patch.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()
   if (!['glm', 'glm-coding', 'deepseek', 'custom'].includes(patch.aiProviderPreset as string)) {
     patch.aiProviderPreset = resolvePresetByBaseURL(patch.aiCustomBaseURL ?? '')
@@ -341,6 +354,7 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
 
 export const selectAiSettings = (s: SettingsStore): AISettingsLike => ({
   enabled: s.aiEnabled,
+  allowLegacyUTools: s.aiAllowLegacyUTools,
   selectedModelId: s.aiSelectedModelId?.trim() || null,
   useCustomProvider: s.aiUseCustomProvider,
   customBaseURL: s.aiCustomBaseURL,
