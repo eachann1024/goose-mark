@@ -13,13 +13,15 @@
    ============================================================ */
 
 .goose-home {
-  --bg:#faf9f5; --surface:#f0eee6; --surface-hover:#e8e6db; --input:#ffffff;
+  --bg:#faf9f5; --surface:#f0eee6; --surface-hover:#e8e6db; --surface-blend:#f5f3ee; --surface-footer:#f4f2ec; --input:#ffffff;
   --fg:#1f1e1d; --fg-muted:#6c6b64; --fg-faint:#a4a299;
-  --accent:#d97757; --accent-hover:#c25f3c; --accent-subtle:#f3e7e0; --accent-fg:#fff;
+  --accent:#d97757; --accent-hover:#c25f3c; --accent-subtle:#f3e7e0; --accent-tint:#f8f0ec; --accent-fg:#fff;
+  --accent-border:#e2b59f; --accent-border-strong:#dba088; --accent-ring:rgba(217,119,87,.18); --accent-ring-strong:rgba(217,119,87,.32);
   --ai:#7c52e0; --ai-subtle:#f1eaff; --ai-bright:#c8a2f0;
   --ai-panel:#f6f1ff; --ai-border:#decff8; --ai-hover:#e9ddff;
   --danger-panel:#fff0ee; --danger-border:#e7b8b0;
-  --border:#e6e3d9; --success:#187c49; --success-subtle:#e3f3e8; --danger:#b54a3f; --danger-subtle:#f5e5e2;
+  --border:#e6e3d9; --border-muted:rgba(230,227,217,.55); --border-soft:rgba(230,227,217,.7); --success:#187c49; --success-subtle:#e3f3e8; --danger:#b54a3f; --danger-subtle:#f5e5e2;
+  --bg-overlay:rgba(250,249,245,.5);
   --shadow-sm:0 1px 2px rgba(25,15,9,.05);
   --shadow-pop:0 12px 36px -10px rgba(25,15,9,.22);
   --radius:14px; --radius-md:11px; --radius-sm:8px;
@@ -38,13 +40,15 @@
   --grid-fav-size:var(--grid-icon-size,46px);
 }
 .goose-home[data-theme="dark"] {
-  --bg:#262624; --surface:#30302e; --surface-hover:#3a3936; --input:#21211f;
+  --bg:#262624; --surface:#30302e; --surface-hover:#3a3936; --surface-blend:#2b2b29; --surface-footer:#2d2d2b; --input:#21211f;
   --fg:#faf9f5; --fg-muted:#b7b5ad; --fg-faint:#75746d;
-  --accent:#e0875f; --accent-hover:#ea9670; --accent-subtle:#3a2a22;
+  --accent:#e0875f; --accent-hover:#ea9670; --accent-subtle:#3a2a22; --accent-tint:#33261f;
+  --accent-border:rgba(224,135,95,.42); --accent-border-strong:rgba(224,135,95,.55); --accent-ring:rgba(224,135,95,.2); --accent-ring-strong:rgba(224,135,95,.34);
   --ai:#a78bfa; --ai-subtle:#2c2640; --ai-bright:#d9bdf6;
   --ai-panel:#2a2437; --ai-border:#5a4978; --ai-hover:#342a49;
   --danger-panel:#332321; --danger-border:#7a433d;
-  --border:#3e3e3a; --success:#249057; --success-subtle:#152e1c; --danger:#d15c56; --danger-subtle:#3a2422;
+  --border:#3e3e3a; --border-muted:rgba(62,62,58,.55); --border-soft:rgba(62,62,58,.7); --success:#249057; --success-subtle:#152e1c; --danger:#d15c56; --danger-subtle:#3a2422;
+  --bg-overlay:rgba(38,38,36,.5);
   --shadow-sm:0 1px 2px rgba(0,0,0,.3);
   --shadow-pop:0 12px 36px -10px rgba(0,0,0,.6);
 }
@@ -91,7 +95,7 @@
   transition:background-color .3s, color .3s;
 }
 .goose-home * { margin:0; padding:0; box-sizing:border-box; }
-.goose-home ::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+.goose-home ::selection { background:var(--accent-subtle); }
 .goose-home button { font-family:inherit; cursor:pointer; border:none; background:none; color:inherit; }
 .goose-home input, .goose-home textarea { font-family:inherit; }
 .goose-home .serif { font-family:var(--font-serif); }
@@ -103,20 +107,17 @@
 .goose-home[data-theme="dark"].egg-on { background:transparent; }
 .goose-home[data-theme="dark"].egg-on .window {
   background:rgba(38,38,36,.42);
-  background:color-mix(in srgb, var(--bg) 42%, transparent);
 }
 /* 宫格卡片与列表行视觉对齐：默认透明透出彩蛋背景，hover/选中恢复底色（与 .card 行为一致） */
 .goose-home[data-theme="dark"].egg-on .gcard { background:transparent; border-color:transparent; }
-.goose-home[data-theme="dark"].egg-on .gcard:hover { background:var(--surface); border-color:color-mix(in srgb,var(--accent) 40%,transparent); }
+.goose-home[data-theme="dark"].egg-on .gcard:hover { background:var(--surface); border-color:var(--accent-border); }
 .goose-home[data-theme="dark"].egg-on .gcard.sel { background:var(--accent-subtle); border-color:var(--accent); }
 .goose-home[data-theme="dark"].egg-on .content .card { background:transparent; border-color:transparent; }
 .goose-home[data-theme="dark"].egg-on .content .card:hover { background:var(--surface); }
 .goose-home[data-theme="dark"].egg-on .content .card.sel { background:var(--surface-hover); }
 .goose-home[data-theme="dark"].egg-on .set-card {
   background:rgba(48,48,46,.7);
-  background:color-mix(in srgb, var(--surface) 70%, transparent);
   border-color:rgba(62,62,58,.45);
-  border-color:color-mix(in srgb, var(--border) 45%, transparent);
 }
 .goose-home[data-theme="dark"].egg-on .sidebar,
 .goose-home[data-theme="dark"].egg-on .app-header {
@@ -158,7 +159,7 @@
 /* ---------- Header ---------- */
 .goose-home .app-header {
   @apply shrink-0 flex items-center gap-2 px-4 h-[46px] min-h-[46px];
-  border-bottom:1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-bottom:1px solid var(--border-soft);
 }
 
 /* 一级分组 Tab 栏 —— 胶囊填充式选中态（无下划线） */
@@ -187,7 +188,7 @@
 .goose-home .header-search {
   @apply shrink-0 flex items-center gap-1.5 relative w-[180px] h-8 px-[10px] bg-g-input border border-g-border rounded-g-md text-g-fg-muted transition-[border-color,box-shadow] duration-150;
 }
-.goose-home .header-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent); }
+.goose-home .header-search:focus-within { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-ring); }
 .goose-home .header-search .lucide { @apply text-[15px] shrink-0; }
 .goose-home .header-search input {
   @apply flex-1 min-w-0 h-full border-none bg-transparent outline-none text-[13px] text-g-fg;
@@ -216,7 +217,7 @@
 .goose-home .app-main { @apply flex-1 min-h-0 flex overflow-hidden; }
 .goose-home .sidebar {
   @apply shrink-0 w-[152px] flex flex-col gap-[10px] py-3 px-[10px] overflow-y-auto;
-  border-right:1px solid color-mix(in srgb,var(--border) 55%,transparent);
+  border-right:1px solid var(--border-muted);
 }
 .goose-home .grp { @apply flex flex-col gap-0.5; }
 /* 分组块之间留一点呼吸感（叠加 sidebar 自身 gap:10px） */
@@ -241,7 +242,7 @@
   @apply mt-auto flex items-center gap-2 p-2 w-full rounded-g-sm text-[12.5px] text-g-fg-muted transition-all duration-[120ms] text-left;
 }
 .goose-home .sidebar .trash .lucide { @apply text-[15px]; }
-.goose-home .sidebar .trash:hover { color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,transparent); }
+.goose-home .sidebar .trash:hover { color:var(--danger); background:var(--danger-subtle); }
 
 /* ---------- Center column ---------- */
 .goose-home .center { @apply flex-1 min-w-0 flex flex-col overflow-hidden; }
@@ -302,7 +303,7 @@
 .goose-home .card .url { @apply font-normal text-g-fg-faint whitespace-nowrap overflow-hidden text-ellipsis; font-size:var(--list-url-size); font-family:var(--font-sans); }
 .goose-home .card .tags { @apply flex flex-nowrap gap-1 overflow-hidden mt-px; }
 .goose-home .card .tag { @apply leading-[1.4] px-[5px] rounded-[4px] text-g-accent whitespace-nowrap shrink-0; font-size:var(--list-tag-size);
-  background:color-mix(in srgb,var(--accent) 12%,transparent); }
+  background:var(--accent-tint); }
 .goose-home .card .pin { @apply text-g-accent text-xs shrink-0; }
 
 /* grid */
@@ -312,13 +313,13 @@
   gap:var(--grid-card-gap);
   padding:var(--grid-card-py) var(--grid-card-px);
 }
-.goose-home .gcard:hover { transform:translateY(-2px); border-color:color-mix(in srgb,var(--accent) 40%,transparent); box-shadow:var(--shadow-sm); }
+.goose-home .gcard:hover { transform:translateY(-2px); border-color:var(--accent-border); box-shadow:var(--shadow-sm); }
 /* 键盘导航期间禁用网格卡 hover */
 .goose-home.kbd-nav .gcard:not(.sel):hover { border-color:var(--border); transform:none; box-shadow:none; }
 .goose-home .gcard.sel { @apply border-g-accent bg-g-accent-subtle; }
 .goose-home .gcard:focus, .goose-home .card:focus { @apply outline-none; }
-.goose-home .gcard:focus-visible { outline:none; box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 45%,transparent); }
-.goose-home .card:focus-visible { outline:none; box-shadow:inset 2px 0 0 var(--accent), 0 0 0 2px color-mix(in srgb,var(--accent) 30%,transparent); }
+.goose-home .gcard:focus-visible { outline:none; box-shadow:0 0 0 2px var(--accent-ring-strong); }
+.goose-home .card:focus-visible { outline:none; box-shadow:inset 2px 0 0 var(--accent), 0 0 0 2px var(--accent-ring); }
 .goose-home .gcard .fav { width:var(--grid-fav-size); height:var(--grid-fav-size); @apply text-lg rounded-g; }
 .goose-home .gcard .ttl { @apply font-semibold text-g-fg max-w-full whitespace-nowrap overflow-hidden text-ellipsis; font-size:var(--grid-title-size); font-family:var(--font-sans); }
 .goose-home .gcard .dsc { @apply font-medium text-g-fg-muted max-w-full whitespace-nowrap overflow-hidden text-ellipsis; font-size:var(--grid-desc-size); font-family:var(--font-sans); }
@@ -330,7 +331,7 @@
 .goose-home .formpage { @apply absolute inset-0 z-50 hidden flex-col; background:var(--bg); }
 .goose-home[data-screen="add"] .formpage { display:flex; }
 .goose-home[data-screen="add"] .app-header, .goose-home[data-screen="add"] .app-main { @apply invisible; }
-.goose-home .form-head { @apply shrink-0 flex items-center gap-[14px] px-[26px] pt-5 pb-[14px]; border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent); }
+.goose-home .form-head { @apply shrink-0 flex items-center gap-[14px] px-[26px] pt-5 pb-[14px]; border-bottom:1px solid var(--border-muted); }
 .goose-home .back-btn { @apply size-[38px] rounded-g-md border border-g-border bg-g-surface flex items-center justify-center text-lg text-g-fg-muted transition-all duration-150; }
 .goose-home .back-btn:hover { @apply text-g-fg bg-g-surface-hover; }
 .goose-home .form-head .ic { @apply size-[34px] rounded-g-md bg-g-accent-subtle flex items-center justify-center text-g-accent text-[17px]; }
@@ -342,16 +343,16 @@
 .goose-home .hint-text { @apply text-[11.5px] text-g-fg-faint mt-2 leading-[1.5]; }
 .goose-home .url-input { @apply relative; }
 .goose-home .url-input input { @apply w-full h-[50px] pr-[54px] pl-4 text-sm text-g-fg bg-g-input border border-g-border rounded-g-md outline-none transition-[border-color,box-shadow] duration-150; font-family:var(--font-mono); }
-.goose-home .url-input input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent); }
+.goose-home .url-input input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
 .goose-home .ai-trigger { @apply absolute right-[7px] top-1/2 -translate-y-1/2 size-[38px] rounded-g-sm flex items-center justify-center text-lg transition-all duration-150; color:var(--ai); background:var(--ai-subtle); }
-.goose-home .ai-trigger:hover { background:color-mix(in srgb,var(--ai) 18%,transparent); }
+.goose-home .ai-trigger:hover { background:var(--ai-hover); }
 .goose-home .id-row { @apply flex items-start gap-4; }
 .goose-home .favcol { @apply shrink-0 flex flex-col items-center gap-[7px] pt-0.5; }
 .goose-home .id-row .bigfav { @apply size-[72px] rounded-g text-[30px]; }
 .goose-home .id-fields { @apply flex-1 min-w-0 flex flex-col gap-[10px]; }
 .goose-home .txt-input { @apply w-full h-[50px] px-4 text-[15px] font-semibold text-g-fg bg-g-input border border-g-border rounded-g-md outline-none transition-[border-color,box-shadow] duration-150; font-family:var(--font-serif); }
 .goose-home .txt-input.desc-input { @apply h-11 text-[13.5px] font-normal text-g-fg-muted; font-family:var(--font-sans); }
-.goose-home .txt-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent); }
+.goose-home .txt-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
 .goose-home .txt-input.desc-input:focus { @apply text-g-fg; }
 /* 元数据获取中：流光占位动画 */
 .goose-home .txt-input.input-shimmer {
@@ -375,10 +376,10 @@
 }
 .goose-home .editfav-cap { @apply text-[11px] text-g-fg-muted; }
 .goose-home .textarea { @apply w-full min-h-[92px] px-4 py-[13px] text-[13.5px] leading-[1.65] resize-none text-g-fg bg-g-input border border-g-border rounded-g-md outline-none transition-[border-color,box-shadow] duration-150; font-family:var(--font-sans); }
-.goose-home .textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent); }
+.goose-home .textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
 .goose-home .ai-pill { @apply flex items-center gap-[5px] h-7 px-[11px] rounded-full text-[11.5px] font-medium; color:var(--ai); background:var(--ai-subtle); }
 .goose-home .ai-pill .lucide { @apply text-[13px]; }
-.goose-home .ai-suggest { @apply flex items-center gap-[9px] px-3 py-[10px] rounded-g-md; background:var(--ai-subtle); border:1px solid color-mix(in srgb,var(--ai) 22%,transparent); }
+.goose-home .ai-suggest { @apply flex items-center gap-[9px] px-3 py-[10px] rounded-g-md; background:var(--ai-subtle); border:1px solid var(--ai-border); }
 .goose-home .ai-suggest .lucide.bulb { @apply text-base shrink-0; color:var(--ai); }
 .goose-home .ai-suggest .txt { @apply flex-1 text-[12.5px] text-g-fg; }
 .goose-home .ai-suggest .txt b { @apply font-semibold; color:var(--ai); }
@@ -387,10 +388,10 @@
 .goose-home .ai-suggest .no { @apply text-g-fg-muted; } .goose-home .ai-suggest .no:hover { @apply bg-g-surface-hover; }
 .goose-home .cat-chips { @apply flex flex-wrap gap-2 mt-3; }
 .goose-home .chip { @apply px-[14px] py-[7px] rounded-full text-[12.5px] border border-g-border bg-g-bg text-g-fg-muted transition-all duration-[120ms]; }
-.goose-home .chip:hover { border-color:color-mix(in srgb,var(--accent) 40%,transparent); @apply text-g-fg; }
+.goose-home .chip:hover { border-color:var(--accent-border); @apply text-g-fg; }
 .goose-home .chip.on { @apply bg-g-accent border-g-accent text-g-accent-fg; }
 .goose-home .form-foot { @apply absolute left-0 right-0 bottom-0 z-[2] flex items-center gap-[10px] px-[26px] py-[14px];
-  border-top:1px solid color-mix(in srgb,var(--border) 55%,transparent); }
+  border-top:1px solid var(--border-muted); }
 .goose-home .btn { @apply h-10 rounded-g-md text-[13.5px] font-medium flex items-center justify-center gap-1.5 px-[18px] transition-all duration-150; }
 .goose-home .btn .lucide { @apply text-[15px]; }
 .goose-home .btn-ghost { @apply text-g-fg-muted; } .goose-home .btn-ghost:hover { @apply bg-g-surface-hover text-g-fg; }
@@ -406,7 +407,7 @@
 .goose-home[data-screen="settings"] .app-main { display:none; }
 .goose-home[data-screen="settings"] .settings { display:flex; }
 .goose-home .set-nav { @apply w-[158px] shrink-0 flex flex-col gap-[3px] py-3 px-2;
-  border-right:1px solid color-mix(in srgb,var(--border) 55%,transparent); }
+  border-right:1px solid var(--border-muted); }
 .goose-home .set-nav button { @apply flex items-center gap-[9px] px-[11px] py-[9px] rounded-g-sm text-[12.5px] font-medium text-g-fg-muted text-left transition-all duration-[120ms]; }
 .goose-home .set-nav button .lucide { @apply text-base; }
 .goose-home .set-nav button:hover { @apply text-g-fg bg-g-surface; }
@@ -421,7 +422,7 @@
 /* 暗黑：去掉硬边框，卡片靠比窗口底色更亮的 --surface 自然浮起 */
 .goose-home[data-theme="dark"] .set-card { border-color:transparent; }
 .goose-home .set-row { @apply flex items-center justify-between gap-[14px] px-4 py-[14px] min-w-0; }
-.goose-home .set-row + .set-row { border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
+.goose-home .set-row + .set-row { border-top:1px solid var(--border-soft); }
 .goose-home .set-row .rt { @apply text-[13.5px] text-g-fg; }
 .goose-home .set-row .rd { @apply text-[11.5px] text-g-fg-muted mt-0.5; }
 .goose-home .set-row-link { @apply cursor-pointer transition-[color,background-color] duration-[120ms]; }
@@ -436,7 +437,7 @@
    滑块位移用 transform（而非 Tailwind 的 translate-x-*，后者编译为 CSS `translate` 属性，旧 Electron/Chromium 不支持会导致滑块不右移） */
 .goose-home .g-switch { @apply w-[42px] h-6 rounded-full relative shrink-0 cursor-pointer transition-[background] duration-150; background:var(--surface-hover); }
 .goose-home .g-switch::after { content:""; @apply absolute left-[3px] size-[18px] rounded-full transition-transform duration-[180ms]; background:var(--accent-fg); box-shadow:var(--shadow-sm); top:50%; transform:translateY(-50%) translateX(0); }
-.goose-home .g-switch:hover::after { box-shadow:var(--shadow-sm),0 0 0 4px color-mix(in srgb,var(--accent) 12%,transparent); }
+.goose-home .g-switch:hover::after { box-shadow:var(--shadow-sm),0 0 0 4px var(--accent-ring); }
 .goose-home .g-switch.on { @apply bg-g-accent; }
 .goose-home .g-switch.on::after { transform:translateY(-50%) translateX(18px); }
 /* AI toggle 特例已移除，统一使用 accent 橙色 */
@@ -492,7 +493,7 @@
     flex-direction: row;
     flex-wrap: wrap;
     border-right: none;
-    border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+    border-bottom: 1px solid var(--border-muted);
   }
   .goose-home[data-platform="utools"] .set-nav .feedback { width: 100%; margin-top: 4px; }
 }
@@ -529,7 +530,7 @@
 .goose-home .set-ai-body .set-row + .set-row,
 .goose-home .set-ai-body .ai-prov-label,
 .goose-home .set-ai-body > .set-row:first-child {
-  border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent);
+  border-top:1px solid var(--border-soft);
 }
 /* prov 卡片/字段区紧跟开关行时无需额外上线（label 已承担分隔） */
 .goose-home .set-ai-body .ai-prov-grid,
@@ -596,7 +597,7 @@
   @apply flex-1 min-w-0 rounded-g-sm outline-none text-g-fg px-[5px] py-px leading-[inherit];
   background:var(--surface);
   font-size:inherit; font-family:inherit;
-  border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border:1px solid var(--accent-border);
 }
 .goose-home .grp-label-editing { @apply gap-1; }
 .goose-home .nav-item-editing { cursor:default; }
@@ -681,7 +682,7 @@
 .goose-home .trash-content { @apply px-[18px] pt-4 pb-[18px]; }
 .goose-home .trash-head {
   @apply flex items-center justify-between gap-3 pb-[14px] mb-1.5;
-  border-bottom:1px solid color-mix(in srgb,var(--border) 70%,transparent);
+  border-bottom:1px solid var(--border-soft);
 }
 .goose-home .trash-title {
   @apply flex items-center gap-2 text-base font-semibold text-g-fg;
@@ -697,8 +698,8 @@
   @apply shrink-0 flex items-center gap-[5px] h-[30px] px-[11px] rounded-g-sm text-xs font-medium text-g-fg-muted border border-g-border bg-g-surface transition-all duration-150 whitespace-nowrap;
 }
 .goose-home .trash-restore-btn .lucide { @apply text-[13px]; }
-.goose-home .trash-restore-btn:hover { @apply text-g-accent bg-g-accent-subtle; border-color:color-mix(in srgb,var(--accent) 45%,transparent); }
-.goose-home .sidebar .trash.on { color:var(--danger); background:color-mix(in srgb,var(--danger) 8%,transparent); }
+.goose-home .trash-restore-btn:hover { @apply text-g-accent bg-g-accent-subtle; border-color:var(--accent-border-strong); }
+.goose-home .sidebar .trash.on { color:var(--danger); background:var(--danger-subtle); }
 
 /* ---------- FormPage 扩展样式 ---------- */
 
@@ -714,7 +715,7 @@
 
 
 
-/* 2. CategoryMultiSelect（cat-ms-*）：仅用 .goose-home token，不依赖 bg-primary/bg-popover */
+/* 2. CategoryMultiSelect（cat-ms-*）：仅用 .goose-home token，不依赖全局主题色 */
 .goose-home .form-category-select,
 .goose-home .gm-cat-select .form-category-select { margin-top:4px; }
 
@@ -784,13 +785,13 @@
   cursor:pointer;
 }
 .goose-home .form-category-select .cat-ms-chip:hover:not(:disabled) {
-  border-color:color-mix(in srgb, var(--accent) 40%, transparent);
+  border-color:var(--accent-border);
   color:var(--fg);
   background:var(--surface-hover);
 }
 .goose-home .form-category-select .cat-ms-chip--on {
   background:var(--accent-subtle);
-  border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  border-color:var(--accent);
   color:var(--accent);
 }
 .goose-home .form-category-select .cat-ms-chip-check {
@@ -839,7 +840,7 @@
 }
 .goose-home .form-category-select .cat-ms-chip--add:hover:not(:disabled) {
   color:var(--accent);
-  border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  border-color:var(--accent-border-strong);
   background:var(--accent-subtle);
 }
 .goose-home .form-category-select .cat-ms-chip--add .lucide { width:12px; height:12px; }
@@ -865,7 +866,7 @@
 .goose-home .form-category-select .cat-ms-add-group {
   margin-top:10px;
   padding-top:8px;
-  border-top:1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-top:1px solid var(--border-soft);
 }
 .goose-home .form-category-select .cat-ms-add-group-btn {
   display:inline-flex;
@@ -882,7 +883,7 @@
 }
 .goose-home .form-category-select .cat-ms-add-group-btn:hover {
   color:var(--accent);
-  border-color:color-mix(in srgb, var(--accent) 45%, transparent);
+  border-color:var(--accent-border-strong);
   background:var(--accent-subtle);
 }
 .goose-home .form-category-select .cat-ms-add-group-btn .lucide { width:13px; height:13px; }
@@ -920,7 +921,7 @@
   justify-content:center;
   width:16px;
   height:16px;
-  color:color-mix(in srgb, var(--accent) 60%, transparent);
+  color:var(--accent-hover);
   border-radius:4px;
   transition:color .12s;
 }
@@ -931,8 +932,8 @@
 
 .goose-home .form-error {
   @apply flex items-center gap-2 px-[14px] py-[10px] rounded-g-md text-g-danger text-[12.5px];
-  background:color-mix(in srgb,var(--danger) 9%,transparent);
-  border:1px solid color-mix(in srgb,var(--danger) 30%,transparent);
+  background:var(--danger-subtle);
+  border:1px solid var(--danger-border);
 }
 .goose-home .form-error .lucide { @apply text-[15px] shrink-0; }
 @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
@@ -940,21 +941,21 @@
 /* ---------- 模板输入态横幅 ---------- */
 .goose-home .tpl-banner {
   @apply flex items-center gap-2 mx-4 px-[14px] py-2 rounded-g-md text-g-fg text-[12.5px];
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  background:var(--accent-tint);
+  border:1px solid var(--accent-border);
 }
 .goose-home .tpl-banner .lucide { @apply text-sm shrink-0; color: var(--accent); }
 .goose-home .tpl-banner span { @apply shrink-0 max-w-[40%] overflow-hidden text-ellipsis whitespace-nowrap font-medium; }
 .goose-home .tpl-banner .tpl-input {
   @apply flex-1 min-w-0 h-[26px] px-2 text-[12.5px] text-g-fg bg-g-input outline-none rounded-[7px];
-  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border:1px solid var(--accent-border);
 }
 .goose-home .tpl-banner .tpl-input:focus { border-color: var(--accent); }
 .goose-home .tpl-banner .tpl-input::placeholder { @apply text-g-fg-faint; }
 .goose-home .tpl-banner-exit {
   @apply flex items-center justify-center size-[22px] rounded-[6px] border-none bg-transparent text-g-fg-muted cursor-pointer;
 }
-.goose-home .tpl-banner-exit:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); @apply text-g-fg; }
+.goose-home .tpl-banner-exit:hover { background:var(--accent-subtle); @apply text-g-fg; }
 
 /* ---- 图标预览：沿圆角外框的倒计时描边（看门狗倒计时） ---- */
 .goose-home .icon-countdown { @apply relative flex items-center justify-center w-full h-full; }
@@ -985,8 +986,8 @@
 /* ---- 左侧信息栏 ---- */
 .goose-home .gm-rail {
   @apply w-[188px] shrink-0 flex flex-col py-[18px] px-[14px];
-  border-right:1px solid color-mix(in srgb,var(--border) 70%,transparent);
-  background:color-mix(in srgb,var(--surface) 45%,var(--bg));
+  border-right:1px solid var(--border-soft);
+  background:var(--surface-blend);
 }
 .goose-home .gm-rail-brand { @apply flex items-center gap-2 mb-5 px-1; }
 .goose-home .gm-rail-logo {
@@ -1018,12 +1019,12 @@
 }
 .goose-home .gm-wiz-foot {
   @apply shrink-0 flex items-center gap-2 px-[22px] py-3;
-  border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent);
-  background:color-mix(in srgb,var(--surface) 40%,var(--bg));
+  border-top:1px solid var(--border-soft);
+  background:var(--surface-footer);
 }
 .goose-home .gm-wiz-error {
   @apply flex items-center gap-2 mt-[14px] px-[13px] py-[10px] rounded-g-md text-g-danger text-[12.5px];
-  background:color-mix(in srgb,var(--danger) 10%,transparent); border:1px solid color-mix(in srgb,var(--danger) 28%,transparent);
+  background:var(--danger-panel); border:1px solid var(--danger-border);
 }
 .goose-home .gm-wiz-error .lucide { @apply text-[15px] shrink-0; }
 
@@ -1121,7 +1122,7 @@
 .goose-home .gm-ai-suggest {
   @apply flex items-center gap-[10px] rounded-[12px] px-3 py-[10px];
   background:var(--ai-subtle);
-  border:1px solid color-mix(in srgb,var(--ai) 22%,transparent);
+  border:1px solid var(--ai-border);
 }
 .goose-home .gm-ai-suggest > .lucide { @apply text-[15px] shrink-0; color:var(--ai); }
 .goose-home .gm-ai-suggest-meta { @apply flex-1 min-w-0; }
@@ -1154,7 +1155,7 @@
 }
 /* 书签拖到内容区某子分组段：虚线高亮整段 */
 .goose-home .sec-block.drop-over {
-  outline: 2px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  outline:2px dashed var(--accent-border-strong);
   outline-offset: 4px;
   border-radius: 10px;
 }
@@ -1221,7 +1222,7 @@
 /* ---------- 帮助与关于弹窗（HelpAboutDialog） ---------- */
 .goose-home .help-backdrop {
   @apply fixed inset-0 z-[400] flex items-center justify-center;
-  background:color-mix(in srgb, var(--bg) 50%, transparent);
+  background:var(--bg-overlay);
   backdrop-filter:blur(2px);
 }
 .goose-home .help-panel {
@@ -1251,7 +1252,7 @@
 }
 .goose-home .help-email {
   @apply inline-flex items-center gap-0 text-[12.5px] text-g-accent cursor-pointer transition-[color,border-color] duration-[120ms];
-  border-bottom:1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-bottom:1px solid var(--accent-border);
 }
 .goose-home .help-email:hover { color:var(--accent-hover); }
 
@@ -1261,7 +1262,7 @@
   @apply text-[11px] font-semibold tracking-[.06em] uppercase text-g-fg-faint mb-1.5 px-0.5;
 }
 .goose-home .help-body .set-card { padding:0; }
-.goose-home .set-row-sep { @apply h-px mx-[14px]; background:color-mix(in srgb, var(--border) 60%, transparent); }
+.goose-home .set-row-sep { @apply h-px mx-[14px]; background:var(--border-soft); }
 
 /* ---------- 弹窗 / 菜单入场动画（轻量纯 CSS：opacity + 缩放上浮，缓出，不动 layout） ---------- */
 @keyframes gm-pop-in {
@@ -1307,7 +1308,7 @@
   .goose-home .group-tab-rename { animation:none; }
 }
 
-/* ---------- uTools 内核兼容（旧 Chromium：color-mix 无效、全局 focus 去掉 box-shadow、-webkit-user-select 粘性） ---------- */
+/* ---------- uTools 内核兼容（旧 Chromium：现代颜色函数无效、全局 focus 去掉 box-shadow、-webkit-user-select 粘性） ---------- */
 .goose-home[data-platform="utools"] {
   color-scheme: light dark;
 }
@@ -1371,7 +1372,7 @@
   background: var(--bg);
 }
 
-/* 彩蛋背景：PostCSS 会给 color-mix 生成不透明 var(...) fallback，旧 uTools 内核会吃到它。
+/* 彩蛋背景：PostCSS 会给现代颜色函数生成不透明 var(...) fallback，旧 uTools 内核会吃到它。
    兼容层放在后面并用 rgba 覆盖，保证菜单/设置页能透出底层动态背景。 */
 .goose-home[data-platform="utools"][data-theme="dark"].egg-on .window {
   background: rgba(38, 38, 36, .42) !important;
@@ -1401,7 +1402,7 @@
   border-top-color: transparent !important;
 }
 
-/* 分类区：旧内核下 color-mix 失效时仍用实心 token */
+/* 分类区：旧内核下现代颜色函数失效时仍用实心 token */
 .goose-home[data-platform="utools"] .form-category-select .cat-ms-root,
 .goose-home[data-platform="utools"] .gm-cat-select .cat-ms-root {
   background: var(--input) !important;

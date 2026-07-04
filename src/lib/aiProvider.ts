@@ -19,6 +19,7 @@ export interface AIModelOption {
 
 export interface AISettingsLike {
   enabled: boolean
+  allowLegacyUTools: boolean
   selectedModelId: string | null
   useCustomProvider: boolean
   customBaseURL: string
@@ -170,6 +171,10 @@ function getSelectedCustomModelId(settings: AISettingsLike) {
   const selectedModelId = settings.selectedModelId?.trim()
   if (selectedModelId) return selectedModelId
   return settings.customModelOptions[0]?.id ?? null
+}
+
+function shouldUseLegacyUTools(settings: AISettingsLike) {
+  return settings.allowLegacyUTools && !settings.useCustomProvider
 }
 
 function extractTextPayload(result: string | { text?: string; content?: string }) {
@@ -521,7 +526,7 @@ export function normalizeAIModelOptions(modelOptions: AIModelOption[] | undefine
 }
 
 export function getAIProviderMode(settings: AISettingsLike): AIProviderMode {
-  return settings.useCustomProvider ? 'custom' : 'utools'
+  return shouldUseLegacyUTools(settings) ? 'utools' : 'custom'
 }
 
 export function getStoredAIModelOptions(settings: AISettingsLike) {
@@ -533,7 +538,7 @@ export function getAIAvailability(settings: AISettingsLike) {
     return { ok: false as const, reason: 'AI 助手尚未开启，请先到设置中打开' }
   }
 
-  if (settings.useCustomProvider) {
+  if (!shouldUseLegacyUTools(settings)) {
     if (!settings.customApiKey.trim()) {
       return { ok: false as const, reason: getApiKeyMissingMessage() }
     }
@@ -622,8 +627,9 @@ export async function runAIText(settings: AISettingsLike, messages: AIMessage[])
 export function getDefaultAISettings() {
   return {
     enabled: false,
+    allowLegacyUTools: false,
     selectedModelId: DEFAULT_AI_MODEL,
-    useCustomProvider: false,
+    useCustomProvider: true,
     customBaseURL: getDefaultBaseURL(),
     customApiKey: '',
     customModelOptions: [] as AIModelOption[]
