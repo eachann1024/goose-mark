@@ -14,6 +14,10 @@ async function injectDetachUToolsMock(page: Page) {
   await page.addInitScript(() => {
     const calls: number[] = []
     ;(window as unknown as { __outPluginCalls: number[] }).__outPluginCalls = calls
+    ;(window as unknown as { __restoreSearchEvents: number[] }).__restoreSearchEvents = []
+    window.addEventListener('goose-marks:restore-default-search-input', () => {
+      ;(window as unknown as { __restoreSearchEvents: number[] }).__restoreSearchEvents.push(Date.now())
+    })
     const base = {
       getWindowType: () => 'detach',
       outPlugin: () => { calls.push(Date.now()); return true },
@@ -42,10 +46,21 @@ function readOutPluginCalls(page: Page) {
   return page.evaluate(() => (window as unknown as { __outPluginCalls: number[] }).__outPluginCalls.length)
 }
 
+function readRestoreSearchEvents(page: Page) {
+  return page.evaluate(() => (window as unknown as { __restoreSearchEvents: number[] }).__restoreSearchEvents.length)
+}
+
 test.beforeEach(async ({ page }) => {
   await injectDetachUToolsMock(page)
   await page.goto('/')
   await expect(page.getByPlaceholder('搜索书签…')).toBeVisible()
+})
+
+test('分离窗口使用页内搜索，不恢复 uTools subInput', async ({ page }) => {
+  await expect(page.locator('.goose-home')).toHaveAttribute('data-search-surface', 'inline')
+  expect(await readRestoreSearchEvents(page)).toBe(0)
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+K' : 'Control+K')
+  await expect(page.getByPlaceholder('搜索书签…')).toBeFocused()
 })
 
 test('分离窗口已激活时再次唤起 → outPlugin 收起', async ({ page }) => {

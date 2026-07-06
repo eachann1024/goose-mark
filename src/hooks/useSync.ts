@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { syncBookmarkLocations } from '@/hooks/useImportExport'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import { utoolsStorage } from '@/lib/utoolsStorage'
 import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 
 /**
@@ -16,6 +17,7 @@ import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
  */
 
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/sync'
+const SYNC_STATE_STORAGE_KEY = 'goose-marks.sync-state'
 
 interface SyncItem {
   itemId: string
@@ -140,12 +142,82 @@ interface SyncState {
   schedulePush: (item: SyncItem, options?: SchedulePushOptions) => void
 }
 
+interface PersistedSyncState {
+  schemaVersion: number
+  lastSyncTimes: Array<[string, number]>
+  pendingQueues: Array<{ shareId: string; items: SyncItem[] }>
+}
+
+const syncItemKey = (item: SyncItem): string => `${item.itemType}:${item.itemId}`
+
+const loadPersistedSyncState = (): Pick<SyncState, 'lastSyncTimes' | 'pendingQueues'> => {
+  const empty = { lastSyncTimes: new Map<string, number>(), pendingQueues: new Map<string, Map<string, SyncItem>>() }
+  const raw = utoolsStorage.getItem(SYNC_STATE_STORAGE_KEY)
+  if (!raw) return empty
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<PersistedSyncState>
+    const lastSyncTimes = new Map<string, number>()
+    const pendingQueues = new Map<string, Map<string, SyncItem>>()
+
+    if (Array.isArray(parsed.lastSyncTimes)) {
+      parsed.lastSyncTimes.forEach(([shareId, timestamp]) => {
+        const id = String(shareId || '').trim()
+        if (id && isFiniteNumber(timestamp)) lastSyncTimes.set(id, timestamp)
+      })
+    }
+
+    if (Array.isArray(parsed.pendingQueues)) {
+      parsed.pendingQueues.forEach((entry) => {
+        const shareId = String(entry?.shareId || '').trim()
+        if (!shareId || !Array.isArray(entry.items)) return
+
+        const queue = new Map<string, SyncItem>()
+        entry.items.forEach((item) => {
+          if (!item || typeof item !== 'object' || !item.itemId || !item.itemType) return
+          const normalized: SyncItem = {
+            ...item,
+            itemId: String(item.itemId),
+            itemType: item.itemType,
+            isDeleted: !!item.isDeleted,
+            updatedAt: isFiniteNumber(item.updatedAt) ? item.updatedAt : Date.now()
+          }
+          queue.set(syncItemKey(normalized), normalized)
+        })
+        if (queue.size > 0) pendingQueues.set(shareId, queue)
+      })
+    }
+
+    return { lastSyncTimes, pendingQueues }
+  } catch {
+    return empty
+  }
+}
+
+const persistSyncState = (state: SyncState): void => {
+  const payload: PersistedSyncState = {
+    schemaVersion: 1,
+    lastSyncTimes: Array.from(state.lastSyncTimes.entries()).filter(([, timestamp]) => isFiniteNumber(timestamp)),
+    pendingQueues: Array.from(state.pendingQueues.entries())
+      .map(([shareId, queue]) => ({
+        shareId,
+        items: Array.from(queue.values())
+      }))
+      .filter((entry) => entry.items.length > 0)
+  }
+
+  utoolsStorage.setItem(SYNC_STATE_STORAGE_KEY, JSON.stringify(payload))
+}
+
 export const useSync = create<SyncState>((set, get) => {
+  const persisted = loadPersistedSyncState()
+
   const enqueueForShare = (shareId: string, item: SyncItem) => {
     const queues = get().pendingQueues
     if (!queues.has(shareId)) queues.set(shareId, new Map())
     const queue = queues.get(shareId)!
-    queue.set(`${item.itemType}:${item.itemId}`, item)
+    queue.set(syncItemKey(item), item)
+    persistSyncState(get())
 
     console.log(`[Sync] Scheduled push for ${shareId}:`, item.itemId, item.itemType, item.isDeleted ? '(deleted)' : '')
 
@@ -154,11 +226,19 @@ export const useSync = create<SyncState>((set, get) => {
     }
   }
 
+  if (persisted.pendingQueues.size > 0 && typeof window !== 'undefined') {
+    window.setTimeout(() => {
+      persisted.pendingQueues.forEach((_queue, shareId) => {
+        void useSync.getState().triggerSync(shareId)
+      })
+    }, 1000)
+  }
+
   return {
     isSyncing: false,
     syncError: null,
-    lastSyncTimes: new Map(),
-    pendingQueues: new Map(),
+    lastSyncTimes: persisted.lastSyncTimes,
+    pendingQueues: persisted.pendingQueues,
     syncingShares: new Set(),
 
     triggerSync: async (shareId: string) => {
@@ -180,6 +260,8 @@ export const useSync = create<SyncState>((set, get) => {
           })
           if (!pushRes.ok) throw new Error(`Push failed for ${shareId}`)
           queue.clear()
+          get().pendingQueues.delete(shareId)
+          persistSyncState(get())
         }
 
         // 2. Pull Phase
@@ -198,6 +280,7 @@ export const useSync = create<SyncState>((set, get) => {
 
         if (isFiniteNumber(lastUpdatedAt) && lastUpdatedAt > since) {
           get().lastSyncTimes.set(shareId, lastUpdatedAt)
+          persistSyncState(get())
         }
       } catch (e: any) {
         console.error(`[Sync] Error for ${shareId}:`, e)

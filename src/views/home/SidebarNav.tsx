@@ -30,7 +30,7 @@ interface SortableNavItemProps {
   isEditing: boolean
   groupId: string
   inputVal: string
-  inputRef: React.RefObject<HTMLInputElement>
+  inputRef: React.RefObject<HTMLInputElement | null>
   onSubClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
   onMoreClick: (e: React.MouseEvent) => void
@@ -89,14 +89,14 @@ function SortableNavItem({
     <div
       ref={setNodeRef}
       style={style}
-      role="button"
-      tabIndex={0}
       className={`nav-item nav-item-hoverable${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}${isOver ? ' drop-over' : ''}`}
       data-nav-type="sub"
       data-group-id={groupId}
       data-sub-id={id}
       {...attributes}
       {...listeners}
+      role="button"
+      tabIndex={0}
       onClick={onSubClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSubClick() } }}
       onContextMenu={onContextMenu}

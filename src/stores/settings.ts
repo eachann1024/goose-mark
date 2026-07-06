@@ -106,7 +106,7 @@ export interface SettingsActions {
 
 export type SettingsStore = SettingsState & SettingsActions
 
-type PersistedSettingsState = Omit<SettingsState, 'localMirrorDirectory'>
+type PersistedSettingsState = SettingsState
 
 const createInitialState = (): SettingsState => {
   const defaults = getDefaultAISettings()
@@ -217,6 +217,7 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   gridColumns: state.gridColumns,
   autoCloseWindow: state.autoCloseWindow,
   preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
+  localMirrorDirectory: state.localMirrorDirectory,
   aiEnabled: state.aiEnabled,
   aiAllowLegacyUTools: state.aiAllowLegacyUTools,
   aiSelectedModelId: state.aiSelectedModelId,
