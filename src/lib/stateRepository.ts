@@ -29,7 +29,7 @@ const LEGACY_KEYS = {
 const ATTACHMENT_REF_PREFIX = 'att:'
 
 type BookmarkIconRef = Extract<IconSource, { type: 'remote' }> & { cacheRef?: string }
-type BookmarkCustomIconRef = Extract<IconSource, { type: 'custom' }> & { dataRef?: string }
+type BookmarkCustomIconRef = Omit<Extract<IconSource, { type: 'custom' }>, 'data'> & { data?: string; dataRef?: string }
 
 type PersistedIconSource =
   | Extract<IconSource, { type: 'file' }>
@@ -38,6 +38,7 @@ type PersistedIconSource =
   | BookmarkCustomIconRef
 
 type PersistedBookmark = Omit<Bookmark, 'icon'> & { icon?: PersistedIconSource }
+type PersistedGroup = Group & { orderIndex?: number }
 
 interface BookmarkMetaDoc {
   activeGroupId: string
@@ -129,7 +130,9 @@ const readAttachmentAsDataUrl = async (attachmentId: string): Promise<string | n
   const bytes = getAttachment(attachmentId)
   if (!bytes) return null
   const mimeType = getAttachmentType(attachmentId) || 'image/png'
-  const blob = new Blob([bytes], { type: mimeType })
+  const arrayBuffer = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(arrayBuffer).set(bytes)
+  const blob = new Blob([arrayBuffer], { type: mimeType })
   return new Promise((resolve) => {
     const reader = new FileReader()
     reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
@@ -271,7 +274,17 @@ const loadPersistedBookmarks = async (): Promise<Bookmark[]> => {
   return hydrated
 }
 
-const loadPersistedGroups = (): Group[] => allDocs<Group>(GROUP_DOC_PREFIX).map((doc) => clone(doc.data))
+const loadPersistedGroups = (): Group[] =>
+  allDocs<PersistedGroup>(GROUP_DOC_PREFIX)
+    .map((doc, fallbackIndex) => ({ ...clone(doc.data), fallbackIndex }))
+    .sort((a, b) => {
+      const aOrder = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY
+      const bOrder = typeof b.orderIndex === 'number' ? b.orderIndex : Number.POSITIVE_INFINITY
+      if (aOrder !== bOrder) return aOrder - bOrder
+      if (a.updatedAt !== b.updatedAt) return a.updatedAt - b.updatedAt
+      return a.fallbackIndex - b.fallbackIndex
+    })
+    .map(({ fallbackIndex: _fallbackIndex, ...group }) => group)
 
 export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
@@ -310,15 +323,15 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
   }
 
   const previousBookmarks = allDocs<PersistedBookmark>(BOOKMARK_DOC_PREFIX)
-  const previousGroups = allDocs<Group>(GROUP_DOC_PREFIX)
+  const previousGroups = allDocs<PersistedGroup>(GROUP_DOC_PREFIX)
   const previousAttachmentIds = new Set<string>()
   previousBookmarks.forEach((doc) => {
     collectAttachmentIdsFromPersistedIcon(doc.data.icon).forEach((id) => previousAttachmentIds.add(id))
   })
 
   const nextAttachmentIds = new Set<string>()
-  for (const group of snapshot.groups) {
-    const result = putDocWithRetry(`${GROUP_DOC_PREFIX}${group.id}`, clone(group))
+  for (const [orderIndex, group] of snapshot.groups.entries()) {
+    const result = putDocWithRetry(`${GROUP_DOC_PREFIX}${group.id}`, { ...clone(group), orderIndex } satisfies PersistedGroup)
     if (result.ok === false) {
       throw new Error(`保存分组失败: ${group.id}`)
     }

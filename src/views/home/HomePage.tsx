@@ -253,6 +253,11 @@ const isDetachedUToolsWindow = () => {
   }
 }
 
+type SearchSurface = 'utools-subinput' | 'inline'
+
+const getSearchSurface = (): SearchSurface =>
+  RUNTIME_PLATFORM === 'utools' && !isDetachedUToolsWindow() ? 'utools-subinput' : 'inline'
+
 const readCurrentWindowPosition = (): DetachedWindowPosition | null => {
   const fromBridge = window.__gooseMarksWindowControl?.getPosition?.()
   if (fromBridge && Number.isFinite(fromBridge.x) && Number.isFinite(fromBridge.y)) {
@@ -329,6 +334,35 @@ interface CtxState {
   y: number
 }
 
+const HOME_CONTINUITY_KEY = 'goose-marks.home-continuity'
+
+interface HomeContinuityState {
+  searchVal: string
+  activeGroupId: string
+  activeSubId: string | null
+  selectedId: string | null
+  scrollTop: number
+  updatedAt: number
+}
+
+const readHomeContinuityState = (): HomeContinuityState | null => {
+  const raw = getPersistentItem(HOME_CONTINUITY_KEY)
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as Partial<HomeContinuityState>
+    return {
+      searchVal: typeof parsed.searchVal === 'string' ? parsed.searchVal : '',
+      activeGroupId: typeof parsed.activeGroupId === 'string' ? parsed.activeGroupId : '',
+      activeSubId: typeof parsed.activeSubId === 'string' ? parsed.activeSubId : null,
+      selectedId: typeof parsed.selectedId === 'string' ? parsed.selectedId : null,
+      scrollTop: Number.isFinite(Number(parsed.scrollTop)) ? Math.max(0, Number(parsed.scrollTop)) : 0,
+      updatedAt: Number.isFinite(Number(parsed.updatedAt)) ? Number(parsed.updatedAt) : 0
+    }
+  } catch {
+    return null
+  }
+}
+
 const SET_NAV: Array<[string, string, string]> = [
   ['通用设置', 'settings', 'set-general'],
   ['列表设置', 'list', 'set-list'],
@@ -342,6 +376,7 @@ export default function HomePage() {
   const groups = useBookmarkStore((s) => s.groups)
   const bookmarks = useBookmarkStore((s) => s.bookmarks)
   const activeGroupId = useBookmarkStore((s) => s.activeGroupId)
+  const activeSubGroupId = useBookmarkStore((s) => s.activeSubGroupId)
   const setActiveGroup = useBookmarkStore((s) => s.setActiveGroup)
   const reorderGroups = useBookmarkStore((s) => s.reorderGroups)
   const reorderSubGroups = useBookmarkStore((s) => s.reorderSubGroups)
@@ -356,6 +391,7 @@ export default function HomePage() {
 
   // uTools 特性注册 / 进入文本解析
   const { AI_QUICK_SAVE_FEATURE_CODE, FEATURE_PREFIX, syncFeatures, getEnterText } = useUTools()
+  const searchSurface = getSearchSurface()
 
   // 业务操作 hook
   const {
@@ -391,6 +427,7 @@ export default function HomePage() {
   const setUiScale = useSettingsStore((s) => s.setUiScale)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
+  const panelContinuous = useSettingsStore((s) => s.panelContinuous)
   // AI 设置变化键（与 App.tsx 对齐），用于触发 syncFeatures 重跑
   const aiSettingsKey = useSettingsStore((s) => `${s.aiEnabled}|${s.aiAllowLegacyUTools}|${s.aiUseCustomProvider}|${s.aiSelectedModelId}|${s.aiCustomApiKey}`)
 
@@ -399,6 +436,9 @@ export default function HomePage() {
     [groups, bookmarks]
   )
   const trashN = useMemo(() => trashCount(groups), [groups])
+  const initialContinuityRef = useRef<HomeContinuityState | null>(
+    useSettingsStore.getState().panelContinuous ? readHomeContinuityState() : null
+  )
 
   // ---- UI 状态 ----
   // 主题偏好（system/light/dark）和实际渲染主题分开存储
@@ -417,7 +457,7 @@ export default function HomePage() {
     homeViewMode === 'grid' ? 'grid' : 'list'
   )
   const [screen, setScreen] = useState<Screen>('list')
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(() => initialContinuityRef.current?.selectedId ?? null)
   // 书签拖拽中的项（用于 DragOverlay 跟手预览）
   const [activeDragItem, setActiveDragItem] = useState<HomeItem | null>(null)
   // 标记本次 selectedId 变更来自键盘方向键（决定滚入时居中 vs 就近，避免鼠标点击触发跳动）
@@ -451,7 +491,7 @@ export default function HomePage() {
     }
     smoothRafRef.current = requestAnimationFrame(step)
   }, [])
-  const [activeSubId, setActiveSubId] = useState<string | null>(null)
+  const [activeSubId, setActiveSubId] = useState<string | null>(() => initialContinuityRef.current?.activeSubId ?? null)
   // 侧栏主动定位信号：点击侧栏 / 键盘导航时自增，让侧栏把高亮项居中（被动滚动跟随不动它）
   const [sidebarCenterSignal, setSidebarCenterSignal] = useState(0)
   const centerSidebar = useCallback(() => setSidebarCenterSignal((n) => n + 1), [])
@@ -472,7 +512,7 @@ export default function HomePage() {
   const [toastOpen, setToastOpen] = useState(false)
   const [toastTitle, setToastTitle] = useState('')
   const [toastKey, setToastKey] = useState(0)
-  const [searchVal, setSearchVal] = useState('')
+  const [searchVal, setSearchVal] = useState(() => initialContinuityRef.current?.searchVal ?? '')
   // ---- 个人菜单 + 帮助弹窗 ----
   const [paOpen, setPaOpen] = useState(false)
   const avatarRef = useRef<HTMLButtonElement>(null)
@@ -496,43 +536,107 @@ export default function HomePage() {
   const isAnchorScrollingRef = useRef(false)
   const anchorScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const anchorRaf = useRef(0)
+  const homeScrollTopRef = useRef(initialContinuityRef.current?.scrollTop ?? 0)
+  const homeContinuityLatestRef = useRef({
+    searchVal,
+    activeSubId,
+    selectedId,
+    activeGroupId
+  })
+  homeContinuityLatestRef.current = { searchVal, activeSubId, selectedId, activeGroupId }
+
+  const saveHomeContinuity = useCallback(() => {
+    if (!useSettingsStore.getState().panelContinuous) {
+      utoolsStorage.removeItem(HOME_CONTINUITY_KEY)
+      return
+    }
+
+    const latest = homeContinuityLatestRef.current
+    const store = useBookmarkStore.getState()
+    const payload: HomeContinuityState = {
+      searchVal: latest.searchVal,
+      activeGroupId: latest.activeGroupId || store.activeGroupId,
+      activeSubId: latest.activeSubId || store.activeSubGroupId || null,
+      selectedId: latest.selectedId,
+      scrollTop: homeScrollTopRef.current,
+      updatedAt: Date.now()
+    }
+    utoolsStorage.setItem(HOME_CONTINUITY_KEY, JSON.stringify(payload))
+  }, [])
 
   /** 网格列数：接 settings.gridColumns，键盘跳格与 CSS 列数始终一致 */
   const GRID_COLS = gridColumns
 
-  // 首个分组/子分组作为默认激活项（对齐设计稿首屏：常用/开发 高亮）
-  const firstGroup = homeGroups[0]
-  const firstSub = firstGroup?.subs[0]
+  const activeHomeGroup = useMemo(
+    () => (activeGroupId ? homeGroups.find((g) => g.id === activeGroupId) : null) ?? homeGroups[0],
+    [activeGroupId, homeGroups]
+  )
+  const defaultActiveSub = useMemo(
+    () => activeHomeGroup?.subs.find((s) => s.id === activeSubGroupId) ?? activeHomeGroup?.subs[0],
+    [activeHomeGroup, activeSubGroupId]
+  )
   useEffect(() => {
-    if (!activeSubId && firstSub) setActiveSubId(firstSub.id)
-  }, [activeSubId, firstSub])
+    if (!defaultActiveSub) return
+    setActiveSubId((prev) => {
+      const prevStillVisible = !!prev && !!activeHomeGroup?.subs.some((sub) => sub.id === prev)
+      return prevStillVisible ? prev : defaultActiveSub.id
+    })
+  }, [activeHomeGroup, defaultActiveSub])
   useEffect(() => {
-    // 默认选中首个分组首条书签（对齐设计稿列表首项 sel）
-    if (!selectedId && firstSub?.items[0]) setSelectedId(firstSub.items[0].id)
-  }, [selectedId, firstSub])
+    const currentSub = activeHomeGroup?.subs.find((sub) => sub.id === activeSubId) ?? defaultActiveSub
+    if (!selectedId && currentSub?.items[0]) setSelectedId(currentSub.items[0].id)
+  }, [activeHomeGroup, activeSubId, defaultActiveSub, selectedId])
 
-  // 软件打开后自动聚焦搜索框：uTools 模式下 dispatch RESTORE 让 subInput 挂载并聚焦；
-  // 非 uTools 模式保持 50ms 聚焦页内搜索框。
+  const continuityRestoredRef = useRef(false)
   useEffect(() => {
-    if (window.utools) {
-      window.dispatchEvent(new CustomEvent(UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT))
-    } else {
-      const timer = setTimeout(() => {
-        headerSearchRef.current?.focus()
-      }, 50)
-      return () => clearTimeout(timer)
+    if (continuityRestoredRef.current || !panelContinuous || homeGroups.length === 0) return
+    continuityRestoredRef.current = true
+
+    const saved = initialContinuityRef.current
+    if (!saved) return
+
+    const savedGroup = homeGroups.find((group) => group.id === saved.activeGroupId)
+    const savedSub = savedGroup?.subs.find((sub) => sub.id === saved.activeSubId)
+    if (savedGroup && savedSub) {
+      useBookmarkStore.getState().selectGroup(savedGroup.id, savedSub.id)
+      setActiveSubId(savedSub.id)
     }
-  }, [])
 
-  /** 聚焦顶栏搜索框并全选已有文本（方便直接覆盖输入） */
-  const focusHeaderSearch = () => {
+    if (saved.selectedId && homeGroups.some((group) => group.subs.some((sub) => sub.items.some((item) => item.id === saved.selectedId)))) {
+      setSelectedId(saved.selectedId)
+    }
+
+    requestAnimationFrame(() => {
+      if (contentRef.current && Number.isFinite(saved.scrollTop)) {
+        homeScrollTopRef.current = saved.scrollTop
+        contentRef.current.scrollTop = saved.scrollTop
+      }
+    })
+  }, [homeGroups, panelContinuous])
+
+  /** 聚焦当前搜索入口并全选已有文本（方便直接覆盖输入） */
+  const focusSearchInput = useCallback(() => {
+    if (searchSurface === 'utools-subinput') {
+      window.utools?.subInputFocus?.()
+      return
+    }
     requestAnimationFrame(() => {
       const el = headerSearchRef.current
       if (!el) return
       el.focus()
       el.select()
     })
-  }
+  }, [searchSurface])
+
+  // 软件打开后自动聚焦搜索入口：主面板挂载 uTools subInput，独立窗口/浏览器聚焦页内输入框。
+  useEffect(() => {
+    if (searchSurface === 'utools-subinput') {
+      window.dispatchEvent(new CustomEvent(UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT))
+      return
+    }
+    const timer = setTimeout(focusSearchInput, 50)
+    return () => clearTimeout(timer)
+  }, [focusSearchInput, searchSurface])
 
   // 面板内联搜索：searchVal 非空时直接过滤当前列表（保留分组段结构，空段隐藏），
   // 支持标题/链接/描述/标签 + 拼音匹配，取代原全屏搜索浮层。
@@ -659,15 +763,68 @@ export default function HomePage() {
    */
   const applySearchVal = useCallback((text: string, fromSubInput = false) => {
     setSearchVal(text)
-    if (window.utools && !fromSubInput) {
+    if (searchSurface === 'utools-subinput' && !fromSubInput) {
       window.dispatchEvent(new CustomEvent(UTOOLS_SYNC_EVENT, { detail: { text } }))
     }
-  }, [])
+  }, [searchSurface])
 
   // ---- 工具：清空面板内联搜索 ----
   const clearSearch = useCallback(() => {
     applySearchVal('')
   }, [applySearchVal])
+
+  const initialSearchSyncedRef = useRef(false)
+  useEffect(() => {
+    if (initialSearchSyncedRef.current) return
+    initialSearchSyncedRef.current = true
+    if (panelContinuous && searchVal) applySearchVal(searchVal)
+  }, [applySearchVal, panelContinuous, searchVal])
+
+  useEffect(() => {
+    if (!panelContinuous) utoolsStorage.removeItem(HOME_CONTINUITY_KEY)
+  }, [panelContinuous])
+
+  useEffect(() => {
+    if (!panelContinuous) return
+    const timer = window.setTimeout(saveHomeContinuity, 250)
+    return () => window.clearTimeout(timer)
+  }, [activeGroupId, activeSubId, panelContinuous, saveHomeContinuity, searchVal, selectedId])
+
+  useEffect(() => {
+    const save = () => saveHomeContinuity()
+    const saveWhenHidden = () => {
+      if (document.visibilityState === 'hidden') save()
+    }
+
+    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, save)
+    window.addEventListener('pagehide', save)
+    window.addEventListener('beforeunload', save)
+    document.addEventListener('visibilitychange', saveWhenHidden)
+    return () => {
+      save()
+      window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, save)
+      window.removeEventListener('pagehide', save)
+      window.removeEventListener('beforeunload', save)
+      document.removeEventListener('visibilitychange', saveWhenHidden)
+    }
+  }, [saveHomeContinuity])
+
+  useEffect(() => {
+    if (!panelContinuous || (screen !== 'list' && screen !== 'grid')) return
+    const root = contentRef.current
+    if (!root) return
+    let timer: number | undefined
+    const saveSoon = () => {
+      homeScrollTopRef.current = root.scrollTop
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(saveHomeContinuity, 300)
+    }
+    root.addEventListener('scroll', saveSoon, { passive: true })
+    return () => {
+      if (timer) window.clearTimeout(timer)
+      root.removeEventListener('scroll', saveSoon)
+    }
+  }, [panelContinuous, saveHomeContinuity, screen])
 
   // ---- 一级分组 Tab：切换当前分组（同步 store，首个子分组自动选中）----
   const changeActiveGroup = useCallback((groupId: string) => {
@@ -791,14 +948,10 @@ export default function HomePage() {
       // 搜索/设置/表单态下不切走（避免误关浮层丢状态）。
       setScreen((prev) => (prev === 'list' || prev === 'grid' || prev === 'trash' ? v : prev))
       // 网格与列表现已同为全量连续渲染，导航集合一致，无需再收敛回首组
-      // 切换布局后聚焦搜索框：uTools 模式聚焦 subInput，否则聚焦页内搜索框
-      if (window.utools) {
-        window.utools.subInputFocus?.()
-      } else {
-        focusHeaderSearch()
-      }
+      // 切换布局后聚焦当前搜索入口
+      focusSearchInput()
     },
-    [setHomeViewMode]
+    [setHomeViewMode, focusSearchInput]
   )
 
   // ---- 交互：右键菜单（记录被右键的书签项及精确位置） ----
@@ -1105,13 +1258,7 @@ export default function HomePage() {
         // 表单页（add/edit）正在编辑时忽略 Cmd+K，避免未保存草稿被卸载
         if (screen === 'add') return
         e.preventDefault()
-        // uTools 模式无页内搜索框：⌘K 回到 uTools 原生 subInput；其余环境聚焦页内搜索框
-        if (window.utools) {
-          window.utools.subInputFocus?.()
-        } else {
-          headerSearchRef.current?.focus()
-          headerSearchRef.current?.select()
-        }
+        focusSearchInput()
         return
       }
 
@@ -1220,7 +1367,8 @@ export default function HomePage() {
     bookmarks,
     openBookmarkLink,
     searchVal,
-    clearSearch
+    clearSearch,
+    focusSearchInput
   ])
 
   // ---- 全局点击：点空白关闭右键菜单 ----
@@ -1586,12 +1734,12 @@ export default function HomePage() {
       useBookmarkFormStore.getState().set({ showAdd: false })
       if (useSettingsStore.getState().panelContinuous) {
         // 连贯开：保留上次搜索内容和浏览位置，仅聚焦搜索框（全选方便直接覆盖）
-        focusHeaderSearch()
+        focusSearchInput()
       } else {
         // 连贯关（默认）：清搜索、回主视图，再聚焦
         applySearchValRef.current('')
         setScreenRef.current(view)
-        focusHeaderSearch()
+        focusSearchInput()
       }
       return
     }
@@ -1787,7 +1935,7 @@ export default function HomePage() {
     .join(' ')
 
   return (
-    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM}>
+    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface}>
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && <StarryBackground />}
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'blackhole' && (
         <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none">

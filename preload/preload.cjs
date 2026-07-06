@@ -216,10 +216,29 @@ if (typeof window !== 'undefined') {
       })
     }
 
-    // 挂载 uTools 顶部 subInput 搜索框（placeholder '搜索书签...'），
+    const shouldUseDefaultSearchInput = () => {
+      try {
+        const type = typeof utools.getWindowType === 'function' ? utools.getWindowType() : 'main'
+        return type !== 'detach' && type !== 'browser'
+      } catch {
+        return true
+      }
+    }
+
+    const removeDefaultSearchInput = () => {
+      if (typeof utools.removeSubInput === 'function') {
+        utools.removeSubInput()
+      }
+    }
+
+    // 主面板挂载 uTools 顶部 subInput 搜索框；分离/浏览器窗口改用页内搜索框。
     // 用户在 subInput 输入时 dispatch UTOOLS_INPUT_EVENT 通知渲染层；
     // __gooseMarksSuppressNextChange / __gooseMarksLastAppValue 防回环。
     const mountDefaultSearchInput = (focus = true) => {
+      if (!shouldUseDefaultSearchInput()) {
+        removeDefaultSearchInput()
+        return
+      }
       if (typeof utools.setSubInput !== 'function') return
       utools.setSubInput(({ text }) => {
         if (window.__gooseMarksSuppressNextChange && text === window.__gooseMarksLastAppValue) {
@@ -282,9 +301,7 @@ if (typeof window !== 'undefined') {
 
     if (typeof utools.onPluginOut === 'function') {
       utools.onPluginOut((isKill) => {
-        if (typeof utools.removeSubInput === 'function') {
-          utools.removeSubInput()
-        }
+        removeDefaultSearchInput()
         clearDefaultSearchCache()
         window.dispatchEvent(new CustomEvent(UTOOLS_PLUGIN_OUT_EVENT, {
           detail: { isKill: isKill === true },
@@ -296,6 +313,7 @@ if (typeof window !== 'undefined') {
     window.addEventListener(UTOOLS_SYNC_EVENT, (event) => {
       const detail = event.detail || {}
       const text = typeof detail.text === 'string' ? detail.text : ''
+      if (!shouldUseDefaultSearchInput()) return
       if (text === window.__gooseMarksLastAppValue) return
       window.__gooseMarksLastAppValue = text
       if (typeof utools.setSubInputValue === 'function') {
@@ -307,6 +325,7 @@ if (typeof window !== 'undefined') {
     // 重挂 subInput 并回填上次搜索值（渲染层初始化/布局切换时触发）
     window.addEventListener(UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT, () => {
       mountDefaultSearchInput(true)
+      if (!shouldUseDefaultSearchInput()) return
       if (typeof utools.setSubInputValue === 'function') {
         utools.setSubInputValue(window.__gooseMarksLastAppValue || '')
       }

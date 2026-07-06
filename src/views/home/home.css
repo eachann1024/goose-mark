@@ -197,7 +197,7 @@
   @apply shrink-0 size-[18px] flex items-center justify-center rounded-[4px] text-g-fg-faint transition-[color,background-color] duration-150;
 }
 .goose-home .header-search .search-clear:hover { @apply text-g-fg bg-g-surface-hover; }
-.goose-home[data-platform="utools"] .header-search { display:none; }
+.goose-home[data-search-surface="utools-subinput"] .header-search { display:none; }
 
 /* 一级 Tab 右键菜单（复用 ctx-menu 视觉） */
 .goose-home .tab-ctx-menu { flex-direction:column; min-width:150px; }
@@ -209,9 +209,8 @@
 .goose-home .icon-btn.on { @apply text-g-accent bg-g-accent-subtle; }
 .goose-home .h-divider { @apply w-px h-5 shrink-0 bg-g-border; }
 
-/* uTools 模式：搜索由顶部原生 subInput 承接，隐藏页内搜索框（避免重复，输入仍经
-   UTOOLS_INPUT_EVENT 同步过滤列表）。standalone（浏览器调试）保留页内搜索框。 */
-.goose-home[data-platform="utools"] .search-field { display:none; }
+/* 主面板：搜索由顶部原生 subInput 承接；独立窗口和浏览器调试保留页内搜索框。 */
+.goose-home[data-search-surface="utools-subinput"] .search-field { display:none; }
 
 /* ---------- Main layout ---------- */
 .goose-home .app-main { @apply flex-1 min-h-0 flex overflow-hidden; }
