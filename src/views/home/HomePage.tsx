@@ -1747,7 +1747,15 @@ export default function HomePage() {
   useEffect(() => {
     if (!window.utools) return
     // 绑定稳定的 wrapper，内部走 ref 取最新 handler
-    const wrapper = (e: Event) => pluginEnterHandlerRef.current(e)
+    const wrapper = (e: Event) => {
+      // preload 在 onPluginEnter 也会设高度，但可能读到旧存储；页面已挂载时在此用 store 纠正。
+      if (typeof window.utools?.setExpendHeight === 'function') {
+        try {
+          window.utools.setExpendHeight(useSettingsStore.getState().windowHeight)
+        } catch { /* ignore */ }
+      }
+      pluginEnterHandlerRef.current(e)
+    }
     window.addEventListener(UTOOLS_PLUGIN_ENTER_EVENT, wrapper)
 
     // 回放 preload 缓存的 pending plugin-enter 事件（对齐 App.tsx:1609-1623）
