@@ -3,7 +3,9 @@ if (typeof window !== 'undefined') {
   if (typeof utools !== 'undefined') {
     window.utools = utools
 
+    const SETTINGS_DOC_ID = 'gm:settings'
     const WINDOW_HEIGHT_STORAGE_KEY = 'settings'
+    const LEGACY_SETTINGS_DOC_ID = 'goose-marks:storage:settings'
     const MIN_WINDOW_HEIGHT = 600
     const MAX_WINDOW_HEIGHT = 1000
     const DEFAULT_WINDOW_HEIGHT = 800
@@ -14,9 +16,37 @@ if (typeof window !== 'undefined') {
       return Math.min(MAX_WINDOW_HEIGHT, Math.max(MIN_WINDOW_HEIGHT, Math.round(numericHeight)))
     }
 
-    // 仅当 settings 里确实存有历史 windowHeight 时才应用；
-    // 无存值时返回 null，不调用 setExpendHeight，高度交还 plugin.json 配置控制。
+    const readWindowHeightFromObject = (parsed) => {
+      if (parsed == null || typeof parsed !== 'object') return null
+      if ('windowHeight' in parsed) return clampWindowHeight(parsed.windowHeight)
+      if (parsed?.state != null && typeof parsed.state === 'object' && parsed.state.windowHeight != null) {
+        return clampWindowHeight(parsed.state.windowHeight)
+      }
+      if (parsed?.data != null && typeof parsed.data === 'object' && parsed.data.windowHeight != null) {
+        return clampWindowHeight(parsed.data.windowHeight)
+      }
+      return null
+    }
+
+    const readWindowHeightFromRawJson = (rawValue) => {
+      if (!rawValue) return null
+      try {
+        return readWindowHeightFromObject(JSON.parse(rawValue))
+      } catch {
+        return null
+      }
+    }
+
+    // 优先读 gm:settings（与 stateRepository 一致）；兼容旧 dbStorage / localStorage / 兜底 doc。
     const readStoredWindowHeight = () => {
+      try {
+        if (utools?.db && typeof utools.db.get === 'function') {
+          const doc = utools.db.get(SETTINGS_DOC_ID)
+          const fromDoc = readWindowHeightFromObject(doc)
+          if (fromDoc != null) return fromDoc
+        }
+      } catch {}
+
       let rawValue = null
 
       try {
@@ -31,20 +61,22 @@ if (typeof window !== 'undefined') {
         } catch {}
       }
 
-      if (!rawValue) return null
+      const fromLegacyStorage = readWindowHeightFromRawJson(rawValue)
+      if (fromLegacyStorage != null) return fromLegacyStorage
 
       try {
-        const parsed = JSON.parse(rawValue)
-        if (parsed != null && typeof parsed === 'object' && 'windowHeight' in parsed) {
-          return clampWindowHeight(parsed.windowHeight)
+        if (utools?.db && typeof utools.db.get === 'function') {
+          const legacyDoc = utools.db.get(LEGACY_SETTINGS_DOC_ID)
+          const fromLegacyDoc = readWindowHeightFromObject(legacyDoc)
+          if (fromLegacyDoc != null) return fromLegacyDoc
+          if (typeof legacyDoc?.data === 'string') {
+            const fromLegacyDocRaw = readWindowHeightFromRawJson(legacyDoc.data)
+            if (fromLegacyDocRaw != null) return fromLegacyDocRaw
+          }
         }
-        if (parsed?.state != null && typeof parsed.state === 'object' && parsed.state.windowHeight != null) {
-          return clampWindowHeight(parsed.state.windowHeight)
-        }
-        return null
-      } catch {
-        return null
-      }
+      } catch {}
+
+      return null
     }
 
     const applyStoredWindowHeight = () => {
