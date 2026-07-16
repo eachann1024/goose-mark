@@ -1,15 +1,18 @@
 import type { Bookmark, Group, IconSource } from '@/types/bookmark'
 import type { SettingsState } from '@/stores/settings'
 import {
-  allDocs,
+  allDocsAsync,
+  bulkWriteDocs,
   getAttachment,
   getAttachmentType,
   getDbStorage,
   getDoc,
+  getDocAsync,
   isUToolsDbAvailable,
   postAttachment,
   putDocWithRetry,
-  removeDoc
+  removeDoc,
+  type HostWriteDoc
 } from '@/lib/utoolsDb'
 
 const BOOKMARK_DOC_PREFIX = 'gm:bookmark:'
@@ -27,6 +30,8 @@ const LEGACY_KEYS = {
 } as const
 
 const ATTACHMENT_REF_PREFIX = 'att:'
+const ICON_HYDRATE_CONCURRENCY = 8
+const attachmentRefCache = new Map<string, string>()
 
 type BookmarkIconRef = Extract<IconSource, { type: 'remote' }> & { cacheRef?: string }
 type BookmarkCustomIconRef = Omit<Extract<IconSource, { type: 'custom' }>, 'data'> & { data?: string; dataRef?: string }
@@ -174,6 +179,9 @@ const sha256Hex = async (buffer: ArrayBuffer): Promise<string> => {
 }
 
 const persistDataUrlAsAttachment = async (dataUrl: string): Promise<string | null> => {
+  const cachedRef = attachmentRefCache.get(dataUrl)
+  if (cachedRef) return cachedRef
+
   const response = await fetch(dataUrl)
   const blob = await response.blob()
   const arrayBuffer = await blob.arrayBuffer()
@@ -189,7 +197,9 @@ const persistDataUrlAsAttachment = async (dataUrl: string): Promise<string | nul
     }
   }
 
-  return `${ATTACHMENT_REF_PREFIX}${attachmentId}`
+  const ref = `${ATTACHMENT_REF_PREFIX}${attachmentId}`
+  attachmentRefCache.set(dataUrl, ref)
+  return ref
 }
 
 const extractAttachmentId = (ref: string | undefined): string | null => {
@@ -215,6 +225,13 @@ const toPersistedIcon = async (icon?: IconSource): Promise<PersistedIconSource |
   if (!icon) return undefined
   if (icon.type === 'remote') {
     const next: BookmarkIconRef = { ...icon }
+    const canReuseCacheRef =
+      next.cacheRef?.startsWith(ATTACHMENT_REF_PREFIX) &&
+      (!isDataUrl(next.cache || '') || attachmentRefCache.get(next.cache || '') === next.cacheRef)
+    if (canReuseCacheRef) {
+      delete next.cache
+      return next
+    }
     if (typeof icon.cache === 'string' && isDataUrl(icon.cache)) {
       const cacheRef = await persistDataUrlAsAttachment(icon.cache)
       if (cacheRef) {
@@ -226,6 +243,13 @@ const toPersistedIcon = async (icon?: IconSource): Promise<PersistedIconSource |
   }
   if (icon.type === 'custom') {
     const next: BookmarkCustomIconRef = { ...icon }
+    const canReuseDataRef =
+      next.dataRef?.startsWith(ATTACHMENT_REF_PREFIX) &&
+      (!isDataUrl(next.data || '') || attachmentRefCache.get(next.data || '') === next.dataRef)
+    if (canReuseDataRef) {
+      delete next.data
+      return next
+    }
     if (typeof icon.data === 'string' && isDataUrl(icon.data)) {
       const dataRef = await persistDataUrlAsAttachment(icon.data)
       if (dataRef) {
@@ -243,14 +267,16 @@ const hydrateIcon = async (icon?: PersistedIconSource): Promise<IconSource | und
   if (icon.type === 'remote') {
     if (icon.cacheRef) {
       const dataUrl = await readAttachmentAsDataUrl(icon.cacheRef.slice(ATTACHMENT_REF_PREFIX.length))
-      return { ...icon, cache: dataUrl || icon.cache, cacheRef: undefined } as IconSource
+      if (dataUrl) attachmentRefCache.set(dataUrl, icon.cacheRef)
+      return { ...icon, cache: dataUrl || icon.cache } as IconSource
     }
     return clone(icon) as IconSource
   }
   if (icon.type === 'custom') {
     if (icon.dataRef) {
       const dataUrl = await readAttachmentAsDataUrl(icon.dataRef.slice(ATTACHMENT_REF_PREFIX.length))
-      return { ...icon, data: dataUrl || icon.data || '', dataRef: undefined } as IconSource
+      if (dataUrl) attachmentRefCache.set(dataUrl, icon.dataRef)
+      return { ...icon, data: dataUrl || icon.data || '' } as IconSource
     }
     return clone(icon) as IconSource
   }
@@ -264,18 +290,25 @@ const isPersistedBookmarkDoc = (doc: { _id: string; data: PersistedBookmark }): 
   typeof doc.data?.title === 'string'
 
 const loadPersistedBookmarks = async (): Promise<Bookmark[]> => {
-  const docs = allDocs<PersistedBookmark>(BOOKMARK_DOC_PREFIX)
-  const hydrated = await Promise.all(
-    docs.filter(isPersistedBookmarkDoc).map(async (doc) => {
+  const docs = (await allDocsAsync<PersistedBookmark>(BOOKMARK_DOC_PREFIX)).filter(isPersistedBookmarkDoc)
+  const hydrated = new Array<Bookmark>(docs.length)
+  let index = 0
+  const worker = async () => {
+    while (index < docs.length) {
+      const currentIndex = index++
+      const doc = docs[currentIndex]
       const icon = await hydrateIcon(doc.data.icon)
-      return { ...clone(doc.data), icon }
-    })
+      hydrated[currentIndex] = { ...clone(doc.data), icon }
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(ICON_HYDRATE_CONCURRENCY, docs.length) }, () => worker())
   )
   return hydrated
 }
 
-const loadPersistedGroups = (): Group[] =>
-  allDocs<PersistedGroup>(GROUP_DOC_PREFIX)
+const loadPersistedGroups = async (): Promise<Group[]> =>
+  (await allDocsAsync<PersistedGroup>(GROUP_DOC_PREFIX))
     .map((doc, fallbackIndex) => ({ ...clone(doc.data), fallbackIndex }))
     .sort((a, b) => {
       const aOrder = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY
@@ -289,9 +322,13 @@ const loadPersistedGroups = (): Group[] =>
 export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
 
-  const meta = getDoc<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)?.data ?? getDoc<BookmarkMetaDoc>(LEGACY_BOOKMARK_META_DOC_ID)?.data
-  const groups = loadPersistedGroups()
-  const bookmarks = await loadPersistedBookmarks()
+  const [primaryMeta, legacyMeta, groups, bookmarks] = await Promise.all([
+    getDocAsync<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID),
+    getDocAsync<BookmarkMetaDoc>(LEGACY_BOOKMARK_META_DOC_ID),
+    loadPersistedGroups(),
+    loadPersistedBookmarks()
+  ])
+  const meta = primaryMeta?.data ?? legacyMeta?.data
 
   if (groups.length || bookmarks.length) {
     return {
@@ -317,23 +354,42 @@ export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> =
   return snapshot
 }
 
-export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<string> => {
+export interface SaveBookmarkSnapshotResult {
+  serialized: string
+  dataChanged: boolean
+}
+
+const isSamePersistedData = (left: unknown, right: unknown): boolean =>
+  JSON.stringify(left) === JSON.stringify(right)
+
+export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<SaveBookmarkSnapshotResult> => {
   if (!isUToolsDbAvailable()) {
     throw new Error('uTools db 不可用，无法保存书签')
   }
 
-  const previousBookmarks = allDocs<PersistedBookmark>(BOOKMARK_DOC_PREFIX)
-  const previousGroups = allDocs<PersistedGroup>(GROUP_DOC_PREFIX)
+  const [previousBookmarks, previousGroups, previousMeta] = await Promise.all([
+    allDocsAsync<PersistedBookmark>(BOOKMARK_DOC_PREFIX),
+    allDocsAsync<PersistedGroup>(GROUP_DOC_PREFIX),
+    getDocAsync<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+  ])
+  const previousBookmarkMap = new Map(previousBookmarks.map((doc) => [doc._id, doc]))
+  const previousGroupMap = new Map(previousGroups.map((doc) => [doc._id, doc]))
   const previousAttachmentIds = new Set<string>()
   previousBookmarks.forEach((doc) => {
     collectAttachmentIdsFromPersistedIcon(doc.data.icon).forEach((id) => previousAttachmentIds.add(id))
   })
 
   const nextAttachmentIds = new Set<string>()
+  const mutations: HostWriteDoc[] = []
+  let dataChanged = false
+
   for (const [orderIndex, group] of snapshot.groups.entries()) {
-    const result = putDocWithRetry(`${GROUP_DOC_PREFIX}${group.id}`, { ...clone(group), orderIndex } satisfies PersistedGroup)
-    if (result.ok === false) {
-      throw new Error(`保存分组失败: ${group.id}`)
+    const id = `${GROUP_DOC_PREFIX}${group.id}`
+    const data = { ...clone(group), orderIndex } satisfies PersistedGroup
+    const previous = previousGroupMap.get(id)
+    if (!previous || !isSamePersistedData(previous.data, data)) {
+      mutations.push({ _id: id, _rev: previous?._rev, data })
+      dataChanged = true
     }
   }
 
@@ -344,40 +400,60 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
       ...clone(bookmark),
       ...(persistedIcon ? { icon: persistedIcon } : {})
     }
-    const result = putDocWithRetry(`${BOOKMARK_DOC_PREFIX}${bookmark.id}`, persistedBookmark)
-    if (result.ok === false) {
-      throw new Error(`保存书签失败: ${bookmark.id}`)
+    const id = `${BOOKMARK_DOC_PREFIX}${bookmark.id}`
+    const previous = previousBookmarkMap.get(id)
+    if (!previous || !isSamePersistedData(previous.data, persistedBookmark)) {
+      mutations.push({ _id: id, _rev: previous?._rev, data: persistedBookmark })
+      dataChanged = true
     }
   }
 
-  const metaResult = putDocWithRetry(BOOKMARK_META_DOC_ID, {
-    activeGroupId: snapshot.activeGroupId,
-    activeSubGroupId: snapshot.activeSubGroupId,
-    updatedAt: Date.now(),
-    schemaVersion: 1
-  } satisfies BookmarkMetaDoc)
-  if (metaResult.ok === false) {
-    throw new Error('保存书签元数据失败')
+  const previousMetaData = previousMeta?.data
+  const metaChanged =
+    !previousMetaData ||
+    previousMetaData.activeGroupId !== snapshot.activeGroupId ||
+    previousMetaData.activeSubGroupId !== snapshot.activeSubGroupId ||
+    previousMetaData.schemaVersion !== 1
+  if (metaChanged) {
+    mutations.push({
+      _id: BOOKMARK_META_DOC_ID,
+      _rev: previousMeta?._rev,
+      data: {
+        activeGroupId: snapshot.activeGroupId,
+        activeSubGroupId: snapshot.activeSubGroupId,
+        updatedAt: Date.now(),
+        schemaVersion: 1
+      } satisfies BookmarkMetaDoc
+    })
   }
-  removeDoc(LEGACY_BOOKMARK_META_DOC_ID)
 
   const nextGroupIds = new Set(snapshot.groups.map((group) => `${GROUP_DOC_PREFIX}${group.id}`))
   previousGroups.forEach((doc) => {
-    if (!nextGroupIds.has(doc._id)) removeDoc(doc._id)
+    if (!nextGroupIds.has(doc._id)) {
+      mutations.push({ _id: doc._id, _rev: doc._rev, _deleted: true })
+      dataChanged = true
+    }
   })
 
   const nextBookmarkIds = new Set(snapshot.bookmarks.map((bookmark) => `${BOOKMARK_DOC_PREFIX}${bookmark.id}`))
   previousBookmarks.forEach((doc) => {
-    if (!nextBookmarkIds.has(doc._id)) removeDoc(doc._id)
+    if (!nextBookmarkIds.has(doc._id)) {
+      mutations.push({ _id: doc._id, _rev: doc._rev, _deleted: true })
+      dataChanged = true
+    }
   })
 
+  const writeResult = await bulkWriteDocs(mutations)
+  if (!writeResult.ok) {
+    throw new Error(`保存书签数据失败: ${writeResult.failedIds.join(', ')}`)
+  }
   previousAttachmentIds.forEach((id) => {
     if (!nextAttachmentIds.has(id)) {
       removeDoc(id)
     }
   })
 
-  return JSON.stringify(snapshot)
+  return { serialized: JSON.stringify(snapshot), dataChanged }
 }
 
 export const loadSettingsSnapshot = (): Partial<SettingsState> | null => {

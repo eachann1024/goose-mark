@@ -70,7 +70,7 @@ const collectShareIds = (group?: ShareAwareGroup, sub?: ShareAwareSubGroup): str
 }
 
 const findSubOwner = (
-  draft: SyncStoreDraft,
+  draft: Pick<SyncStoreDraft, 'groups'>,
   subId: string
 ): { group: ShareAwareGroup; sub: ShareAwareSubGroup; groupIndex: number; subIndex: number } | null => {
   const groupIndex = draft.groups.findIndex((group: Group) => group.children.some((sub: SubGroup) => sub.id === subId))
@@ -96,7 +96,7 @@ const takeSyncDraft = (): SyncStoreDraft => {
   }
 }
 
-const getRelevantShareIds = (draft: SyncStoreDraft, item: SyncItem): string[] => {
+const getRelevantShareIds = (draft: Pick<SyncStoreDraft, 'groups'>, item: SyncItem): string[] => {
   const shareIds = new Set<string>()
 
   if (item.itemType === 'bookmark') {
@@ -297,10 +297,10 @@ export const useSync = create<SyncState>((set, get) => {
       const updatedAt = isFiniteNumber(item.updatedAt) ? item.updatedAt : Date.now()
       const normalizedItem: SyncItem = { ...item, updatedAt }
 
-      const draft = takeSyncDraft()
+      const store = useBookmarkStore.getState()
       const targetShareIds = options.targetShareIds
         ? normalizeShareIds(options.targetShareIds)
-        : getRelevantShareIds(draft, normalizedItem)
+        : getRelevantShareIds({ groups: store.groups }, normalizedItem)
 
       const previousShareIds = normalizeShareIds(options.previousShareIds || [])
 

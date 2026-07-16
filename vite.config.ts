@@ -34,6 +34,9 @@ export default defineConfig({
     }
   },
   build: {
+    // uTools 7.8.0 内核为 Chromium 108；显式锁定 JS/CSS 转译目标，避免 Vite 8 默认 Chrome 111 产物。
+    target: 'chrome108',
+    cssTarget: 'chrome108',
     // 禁用 modulePreload 避免 uTools 环境中的警告
     modulePreload: false,
     // sourcemap / minify 策略由 vite.debug 决定（GOOSE_DEBUG=1 调试构建带 map 且不压缩；

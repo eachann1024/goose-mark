@@ -56,6 +56,7 @@ interface GooseMarksWindowControl {
 }
 
 interface UToolsApi {
+  isWindows?(): boolean
   dbStorage?: {
     getItem: (key: string) => unknown
     setItem: (key: string, value: string) => void

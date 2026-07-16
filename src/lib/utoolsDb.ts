@@ -1,7 +1,8 @@
 interface UToolsDbDoc<T = unknown> {
   _id: string
   _rev?: string
-  data: T
+  _deleted?: boolean
+  data?: T
 }
 
 interface UToolsDbResult {
@@ -22,10 +23,16 @@ interface UToolsDbApi {
   put: <T>(doc: UToolsDbDoc<T>) => UToolsDbResult
   get: <T>(id: string) => UToolsDbDoc<T> | null
   remove: (id: string) => UToolsDbResult
+  bulkDocs?: (docs: Array<UToolsDbDoc<unknown>>) => UToolsDbResult[]
   allDocs: <T>(prefix?: string) => Array<UToolsDbDoc<T>>
   postAttachment?: (id: string, data: Uint8Array, type: string) => UToolsDbResult
   getAttachment?: (id: string) => Uint8Array | null
   getAttachmentType?: (id: string) => string | null
+  promises?: {
+    get?: <T>(id: string) => Promise<UToolsDbDoc<T> | null>
+    allDocs?: <T>(prefix?: string) => Promise<Array<UToolsDbDoc<T>>>
+    bulkDocs?: (docs: Array<UToolsDbDoc<unknown>>) => Promise<UToolsDbResult[]>
+  }
 }
 
 interface UToolsApi {
@@ -37,6 +44,13 @@ export interface HostDoc<T> {
   _id: string
   _rev?: string
   data: T
+}
+
+export interface HostWriteDoc<T = unknown> {
+  _id: string
+  _rev?: string
+  _deleted?: boolean
+  data?: T
 }
 
 const STORAGE_SYNC_CHANNEL = 'goose-marks-storage-sync'
@@ -61,7 +75,20 @@ export const getDbStorage = (): UToolsDbStorage | null => {
 
 export const getDoc = <T>(id: string): HostDoc<T> | null => {
   try {
-    return getUtoolsApi()?.db?.get<T>(id) ?? null
+    return (getUtoolsApi()?.db?.get<T>(id) as HostDoc<T> | null | undefined) ?? null
+  } catch {
+    return null
+  }
+}
+
+export const getDocAsync = async <T>(id: string): Promise<HostDoc<T> | null> => {
+  const db = getUtoolsApi()?.db
+  if (!db) return null
+  try {
+    if (db.promises?.get) {
+      return (await db.promises.get<T>(id)) as HostDoc<T> | null
+    }
+    return getDoc<T>(id)
   } catch {
     return null
   }
@@ -69,7 +96,20 @@ export const getDoc = <T>(id: string): HostDoc<T> | null => {
 
 export const allDocs = <T>(prefix = ''): Array<HostDoc<T>> => {
   try {
-    return getUtoolsApi()?.db?.allDocs<T>(prefix) ?? []
+    return (getUtoolsApi()?.db?.allDocs<T>(prefix) as Array<HostDoc<T>> | undefined) ?? []
+  } catch {
+    return []
+  }
+}
+
+export const allDocsAsync = async <T>(prefix = ''): Promise<Array<HostDoc<T>>> => {
+  const db = getUtoolsApi()?.db
+  if (!db) return []
+  try {
+    if (db.promises?.allDocs) {
+      return (await db.promises.allDocs<T>(prefix)) as Array<HostDoc<T>>
+    }
+    return allDocs<T>(prefix)
   } catch {
     return []
   }
@@ -93,6 +133,42 @@ export const putDocWithRetry = <T>(id: string, data: T): UToolsDbResult => {
   const latest = getDoc<T>(id)
   result = putDoc(id, data, latest?._rev)
   return result
+}
+
+const isFailedResult = (result: UToolsDbResult | undefined): boolean =>
+  !result || result.ok === false || result.error === true
+
+/**
+ * 优先走 uTools 官方 promises.bulkDocs，把多次同步 host 调用合并为一次异步批量写。
+ * 老版本没有 promises/bulkDocs 时保留逐条兼容路径；批量冲突仅重试失败文档。
+ */
+export const bulkWriteDocs = async (docs: HostWriteDoc[]): Promise<{ ok: boolean; failedIds: string[] }> => {
+  if (docs.length === 0) return { ok: true, failedIds: [] }
+  const db = getUtoolsApi()?.db
+  if (!db) return { ok: false, failedIds: docs.map((doc) => doc._id) }
+
+  let results: UToolsDbResult[]
+  try {
+    if (db.promises?.bulkDocs) {
+      results = await db.promises.bulkDocs(docs)
+    } else if (db.bulkDocs) {
+      results = db.bulkDocs(docs)
+    } else {
+      results = docs.map((doc) =>
+        doc._deleted ? removeDoc(doc._id) : putDoc(doc._id, doc.data, doc._rev)
+      )
+    }
+  } catch {
+    results = []
+  }
+
+  const failedIds: string[] = []
+  docs.forEach((doc, index) => {
+    if (!isFailedResult(results[index])) return
+    const retry = doc._deleted ? removeDoc(doc._id) : putDocWithRetry(doc._id, doc.data)
+    if (isFailedResult(retry)) failedIds.push(doc._id)
+  })
+  return { ok: failedIds.length === 0, failedIds }
 }
 
 export const removeDoc = (id: string): UToolsDbResult => {

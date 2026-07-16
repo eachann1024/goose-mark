@@ -190,7 +190,6 @@ export function useBookmarkOperations() {
         return
       }
 
-      store.updateBookmark(bookmark.id, {})
       // 记录本地使用排序数据：lastUsed = now、visits++（驱动「最近使用」虚拟视图）
       store.recordBookmarkUse(bookmark.id)
       openUrl(url)

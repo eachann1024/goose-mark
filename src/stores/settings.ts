@@ -201,14 +201,12 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
       setDetachedWindowPosition: (value) => {
         if (!value) {
           set({ detachedWindowPosition: null })
-          persistSettingsNow(useSettingsStore.getState())
           return
         }
         const x = Math.round(value.x)
         const y = Math.round(value.y)
         if (!Number.isFinite(x) || !Number.isFinite(y)) return
         set({ detachedWindowPosition: { x, y } })
-        persistSettingsNow(useSettingsStore.getState())
       },
       setUseUtoolsBrowser: (value) => set({ useUtoolsBrowser: !!value })
 }))
@@ -303,19 +301,6 @@ const normalizePersistedSettings = (state: Partial<SettingsState> | null | undef
 let settingsPersistenceStarted = false
 let settingsPersistPromise: Promise<void> = Promise.resolve()
 let lastPersistedSettings = ''
-
-function persistSettingsNow(state: SettingsStore): void {
-  if (!isUToolsDbAvailable()) return
-  const payload = pickPersistedSettings(state)
-  const serialized = JSON.stringify(payload)
-  try {
-    saveSettingsSnapshot(payload)
-    lastPersistedSettings = serialized
-    emitStorageSync('settings', serialized)
-  } catch (error) {
-    console.error('[settings] 立即保存失败:', error)
-  }
-}
 
 const enqueueSettingsPersist = (state: SettingsStore): void => {
   const payload = pickPersistedSettings(state)

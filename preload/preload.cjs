@@ -9,6 +9,13 @@ if (typeof window !== 'undefined') {
     const MIN_WINDOW_HEIGHT = 600
     const MAX_WINDOW_HEIGHT = 1000
     const DEFAULT_WINDOW_HEIGHT = 800
+    const isWindowsRuntime = (() => {
+      try {
+        return typeof utools.isWindows === 'function' ? utools.isWindows() : process.platform === 'win32'
+      } catch {
+        return false
+      }
+    })()
 
     const clampWindowHeight = (height) => {
       const numericHeight = Number(height)
@@ -89,17 +96,30 @@ if (typeof window !== 'undefined') {
     // 解决“首次有效、再次打开失效”的问题。
     applyStoredWindowHeight()
 
+    let currentElectronWindowResolved = false
+    let currentElectronWindow = null
     const getCurrentElectronWindow = () => {
+      // Windows 的 remote BrowserWindow 方法是同步跨进程 IPC；位置轮询/窗口退出阶段调用可能互锁。
+      // Electron 窗口本身支持 window.screenX/screenY + moveTo，Windows 直接走标准窗口 API。
+      if (isWindowsRuntime) return null
+      if (currentElectronWindowResolved) return currentElectronWindow
+      currentElectronWindowResolved = true
       try {
         const electron = typeof require === 'function' ? require('electron') : null
         const fromRemote = electron?.remote?.getCurrentWindow?.()
-        if (fromRemote) return fromRemote
+        if (fromRemote) {
+          currentElectronWindow = fromRemote
+          return currentElectronWindow
+        }
       } catch {}
 
       try {
         const remote = typeof require === 'function' ? require('@electron/remote') : null
         const fromRemotePackage = remote?.getCurrentWindow?.()
-        if (fromRemotePackage) return fromRemotePackage
+        if (fromRemotePackage) {
+          currentElectronWindow = fromRemotePackage
+          return currentElectronWindow
+        }
       } catch {}
 
       return null

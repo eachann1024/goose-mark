@@ -14,7 +14,19 @@ const ICON_API_URL = getIconApiBase() ? `${getIconApiBase()}/api/icon` : ''
 const isDataUrl = (value: string) => value.startsWith('data:image/')
 const FAVICON_COOLDOWN_MS = 10 * 60 * 1000
 const ICON_FETCH_TIMEOUT_MS = 4000
+const MAX_ICON_BYTES = 2 * 1024 * 1024
 const faviconOriginCooldowns = new Map<string, number>()
+
+const isWindowsUToolsRuntime = () => {
+  try {
+    if (typeof window.utools?.isWindows === 'function') return window.utools.isWindows()
+    return /Windows/i.test(navigator.userAgent)
+  } catch {
+    return false
+  }
+}
+
+const getBackgroundFetchConcurrency = () => (isWindowsUToolsRuntime() ? 2 : 4)
 
 const shouldCooldownStatus = (status: number) => status >= 400 && status < 500
 
@@ -82,11 +94,21 @@ const fetchImageViaNode = (url: string, redirectDepth = 0): Promise<string | nul
   if (typeof req !== 'function' || redirectDepth > 3) return Promise.resolve(null)
   return new Promise((resolve) => {
     let settled = false
-    const finish = (v: string | null) => { if (settled) return; settled = true; resolve(v) }
+    let request: any = null
+    const deadline = setTimeout(() => {
+      try { request?.destroy?.() } catch {}
+      finish(null)
+    }, ICON_FETCH_TIMEOUT_MS)
+    const finish = (v: string | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      resolve(v)
+    }
     try {
       const lib = req(url.startsWith('https:') ? 'https' : 'http')
       const { Buffer } = req('buffer')
-      const request = lib.get(url, (res: any) => {
+      request = lib.get(url, (res: any) => {
         const status = res.statusCode || 0
         const location = res.headers?.location
         // 跟随重定向（favicon 常有 301/302）
@@ -96,14 +118,31 @@ const fetchImageViaNode = (url: string, redirectDepth = 0): Promise<string | nul
           try { next = new URL(location, url).href } catch { finish(null); return }
           if (settled) return
           settled = true
+          clearTimeout(deadline)
           resolve(fetchImageViaNode(next, redirectDepth + 1))
           return
         }
         if (status !== 200) { res.resume(); finish(null); return }
         const contentType = String(res.headers?.['content-type'] || '')
         if (!contentType.startsWith('image/')) { res.resume(); finish(null); return }
+        const contentLength = Number(res.headers?.['content-length'] || 0)
+        if (Number.isFinite(contentLength) && contentLength > MAX_ICON_BYTES) {
+          res.destroy()
+          finish(null)
+          return
+        }
         const chunks: Uint8Array[] = []
-        res.on('data', (c: Uint8Array) => chunks.push(c))
+        let receivedBytes = 0
+        res.on('data', (c: Uint8Array) => {
+          receivedBytes += c.byteLength
+          if (receivedBytes > MAX_ICON_BYTES) {
+            res.destroy()
+            try { request.destroy() } catch {}
+            finish(null)
+            return
+          }
+          chunks.push(c)
+        })
         res.on('end', () => finish(`data:${contentType.split(';')[0].trim()};base64,${Buffer.concat(chunks).toString('base64')}`))
         res.on('error', () => finish(null))
       })
@@ -227,6 +266,9 @@ const hasFetchedPageData = (result: UToolsBrowserFetchResult | null | undefined)
 
 const fetchIconFromUToolsBrowser = async (url: string): Promise<UToolsBrowserFetchResult | null> => {
   if (isOriginInCooldown(url)) return null
+  // ubrowser.run 没有可用的取消句柄，Promise.race 超时后底层任务仍会存活。
+  // Windows 上连续残留隐藏 Chromium 任务会占满 GPU/句柄，因此禁用该不可取消路径。
+  if (isWindowsUToolsRuntime()) return null
   const utoolsApi = window.utools as unknown as { ubrowser?: any; createBrowserWindow?: any } | undefined
   const ubrowser = utoolsApi?.ubrowser
 
@@ -411,7 +453,15 @@ export const fetchPageMeta = async (url: string): Promise<{ title: string | null
   }
 }
 
-export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(IconSource & { title?: string | null; description?: string | null }) | null> => {
+type FetchIconOptions = {
+  allowBrowserAutomation?: boolean
+}
+
+export const fetchAndCacheIcon = async (
+  url: string,
+  _force = false,
+  options: FetchIconOptions = {}
+): Promise<(IconSource & { title?: string | null; description?: string | null }) | null> => {
   if (!url) return null
 
   let targetUrl = url
@@ -438,9 +488,20 @@ export const fetchAndCacheIcon = async (url: string, _force = false): Promise<(I
   }
 
   let fetchedMeta: { title?: string | null; description?: string | null } = {}
+  const avoidBrowserAutomation = options.allowBrowserAutomation === false || isWindowsUToolsRuntime()
+
+  if (avoidBrowserAutomation) {
+    try {
+      const faviconUrl = new URL('/favicon.ico', targetUrl).href
+      const cache = await fetchAsDataUrl(faviconUrl)
+      if (cache) {
+        return { type: 'remote', src: faviconUrl, cache, fetchedAt: Date.now() }
+      }
+    } catch {}
+  }
 
   // uTools 环境优先用内置浏览器获取图标
-  if (typeof window !== 'undefined' && window.utools) {
+  if (typeof window !== 'undefined' && window.utools && !avoidBrowserAutomation) {
     const utoolsResult = await withTimeout(fetchIconFromUToolsBrowser(targetUrl), 4000)
     if (utoolsResult) {
       fetchedMeta = {
@@ -494,21 +555,21 @@ export const ensureIconForBookmark = async (bookmark: Bookmark, force = false): 
 export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<string, IconSource>> => {
   const result = new Map<string, IconSource>()
   const missing = bookmarks.filter((b) => !b.icon || b.icon.type === 'text')
-  const CONCURRENCY = 6
+  const concurrency = getBackgroundFetchConcurrency()
 
   // 并发限制池：每次最多 CONCURRENCY 个并发 fetch
   let index = 0
   const worker = async () => {
     while (index < missing.length) {
       const bookmark = missing[index++]
-      const icon = await fetchAndCacheIcon(bookmark.url)
+      const icon = await fetchAndCacheIcon(bookmark.url, false, { allowBrowserAutomation: false })
       if (icon) {
         result.set(bookmark.id, icon)
       }
     }
   }
 
-  const workers = Array.from({ length: Math.min(CONCURRENCY, missing.length) }, () => worker())
+  const workers = Array.from({ length: Math.min(concurrency, missing.length) }, () => worker())
   await Promise.all(workers)
 
   return result
@@ -527,7 +588,7 @@ export const backfillRemoteIconCache = async (bookmarks: Bookmark[]): Promise<Ma
   })
   if (targets.length === 0) return result
 
-  const CONCURRENCY = 6
+  const concurrency = getBackgroundFetchConcurrency()
   let index = 0
   const worker = async () => {
     while (index < targets.length) {
@@ -538,7 +599,7 @@ export const backfillRemoteIconCache = async (bookmarks: Bookmark[]): Promise<Ma
     }
   }
 
-  const workers = Array.from({ length: Math.min(CONCURRENCY, targets.length) }, () => worker())
+  const workers = Array.from({ length: Math.min(concurrency, targets.length) }, () => worker())
   await Promise.all(workers)
 
   return result
