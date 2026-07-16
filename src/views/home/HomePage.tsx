@@ -105,7 +105,6 @@ const bookmarkCollision: CollisionDetection = (args) => {
 function SecBlock({
   groupId,
   subId,
-  groupName,
   subName,
   count,
   view,
@@ -113,7 +112,6 @@ function SecBlock({
 }: {
   groupId: string
   subId: string
-  groupName: string
   subName: string
   count: number
   view: 'list' | 'grid'
@@ -132,8 +130,8 @@ function SecBlock({
       data-view={view}
     >
       <div className="sec-head">
-        <span className="g">{groupName}</span>
-        <span className="s">/ {subName} · {count}</span>
+        <span className="g">{subName}</span>
+        <span className="s">· {count}</span>
       </div>
       {children}
     </div>
@@ -2377,7 +2375,6 @@ function ListContent({
             key={`${g.id}-${s.id}`}
             groupId={g.id}
             subId={s.id}
-            groupName={g.name}
             subName={s.name}
             count={s.items.length}
             view="list"
@@ -2557,7 +2554,6 @@ function GridContent({
             key={`${g.id}-${s.id}`}
             groupId={g.id}
             subId={s.id}
-            groupName={g.name}
             subName={s.name}
             count={s.items.length}
             view="grid"

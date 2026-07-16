@@ -102,14 +102,16 @@ function SortableNavItem({
       onContextMenu={onContextMenu}
     >
       <span>{name}</span>
-      <span className="count nav-item-count">{count}</span>
-      <button
-        className="nav-icon-btn nav-item-more"
-        title="更多操作"
-        onClick={onMoreClick}
-      >
-        <Ico name="more-horizontal" />
-      </button>
+      <span className="nav-item-trailing">
+        <span className="count nav-item-count">{count}</span>
+        <button
+          className="nav-icon-btn nav-item-more"
+          title="更多操作"
+          onClick={onMoreClick}
+        >
+          <Ico name="more-horizontal" />
+        </button>
+      </span>
     </div>
   )
 }
