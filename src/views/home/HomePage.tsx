@@ -233,10 +233,34 @@ const UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT = 'goose-marks:restore-default-search-
 
 // 运行平台：uTools 模式由顶部原生 subInput 承接搜索，页内搜索框隐藏（避免重复）。
 const RUNTIME_PLATFORM = getRuntimePlatform()
+const IS_WINDOWS_UTOOLS = (() => {
+  try {
+    if (RUNTIME_PLATFORM !== 'utools') return false
+    if (typeof window.utools?.isWindows === 'function') return window.utools.isWindows()
+    return /Windows/i.test(navigator.userAgent)
+  } catch {
+    return false
+  }
+})()
 
 // 模板/Universal 书签相关常量
 const UNIVERSAL_BOOKMARK_PAYLOAD_SPLIT_RE = /^[\s/|:：\-—–]+/
 const RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS = 1000
+const BROWSER_URL_READ_TIMEOUT_MS = 2500
+
+const withFallbackTimeout = async <T,>(promise: Promise<T>, fallback: T, timeoutMs: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), timeoutMs)
+      })
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
 
 // 窗口模式 toggle：plugin-enter 距最近一次窗口聚焦小于该间隔时，视为本次唤起带来的聚焦（不隐藏）。
 const DETACH_TOGGLE_FOCUS_GRACE_MS = 400
@@ -1586,7 +1610,9 @@ export default function HomePage() {
           try {
             const utoolsApi = window.utools as unknown as { readCurrentBrowserUrl?: () => Promise<string> } | undefined
             if (typeof utoolsApi?.readCurrentBrowserUrl === 'function') {
-              const browserUrl = (await utoolsApi.readCurrentBrowserUrl()).trim()
+              const browserUrl = (
+                await withFallbackTimeout(utoolsApi.readCurrentBrowserUrl(), '', BROWSER_URL_READ_TIMEOUT_MS)
+              ).trim()
               if (browserUrl) {
                 // 重新走同一处理器，带上拿到的 URL
                 pluginEnterHandlerRef.current({ detail: { code, payload: browserUrl } } as unknown as Event)
@@ -1945,7 +1971,13 @@ export default function HomePage() {
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && <StarryBackground />}
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'blackhole' && (
         <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none">
-          <BlackHole brightness={0.75} speed={0.9} quality="auto" />
+          <BlackHole
+            brightness={0.75}
+            speed={0.9}
+            quality={IS_WINDOWS_UTOOLS ? 'low' : 'auto'}
+            resolutionScale={IS_WINDOWS_UTOOLS ? 0.35 : undefined}
+            maxFps={IS_WINDOWS_UTOOLS ? 24 : undefined}
+          />
         </div>
       )}
       {/* zIndex 让窗口盖在彩蛋 canvas 上；position 必须保留 CSS 的 absolute+inset:0，否则高度约束链断裂导致设置页无法滚动 */}

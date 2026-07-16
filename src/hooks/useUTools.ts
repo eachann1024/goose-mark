@@ -181,24 +181,21 @@ const isTemplateBookmark = (b: Bookmark) =>
 
 const isUniversalBookmark = (b: Bookmark) => !!b.allowUniversal
 
-const syncFeaturesImpl = async (bookmarks: Bookmark[], options: SyncFeatureOptions = {}) => {
+const buildFeatureSetSignature = (bookmarks: Bookmark[], aiQuickSaveEnabled: boolean) =>
+  `${aiQuickSaveEnabled ? '1' : '0'}::${bookmarks
+    .map((bookmark) => `${bookmark.id}:${getBookmarkSignature(bookmark)}`)
+    .sort()
+    .join('||')}`
+
+let lastAppliedFeatureSetSignature = ''
+
+const syncFeaturesOnce = async (bookmarks: Bookmark[], options: SyncFeatureOptions = {}) => {
   const ut = window.utools
   if (!ut?.setFeature || !ut?.getFeatures || !ut?.removeFeature) return
 
-  // 1. 获取现有特性
-  const existingFeatures = ut.getFeatures().filter((f) => {
-    if (typeof f.code !== 'string') return false
-    return f.code.startsWith(FEATURE_PREFIX) || DYNAMIC_ENTRY_CODES.has(f.code)
-  })
-
-  if (options.force) {
-    existingFeatures.forEach((f) => ut.removeFeature!(f.code))
-    processedBookmarks.clear()
-  }
-
   const store = useBookmarkStore.getState()
 
-  // 2. 筛选并去重当前需要的书签
+  // 1. 筛选并去重当前需要的书签
   const desired = bookmarks.filter(
     (b) => (isTemplateBookmark(b) || isUniversalBookmark(b)) && !store.isBookmarkInTrash(b)
   )
@@ -209,6 +206,19 @@ const syncFeaturesImpl = async (bookmarks: Bookmark[], options: SyncFeatureOptio
     seenCmd.add(cmd)
     return true
   })
+  const featureSetSignature = buildFeatureSetSignature(unique, options.aiQuickSaveEnabled === true)
+  if (!options.force && featureSetSignature === lastAppliedFeatureSetSignature) return
+
+  // 2. 获取现有特性
+  const existingFeatures = ut.getFeatures().filter((f) => {
+    if (typeof f.code !== 'string') return false
+    return f.code.startsWith(FEATURE_PREFIX) || DYNAMIC_ENTRY_CODES.has(f.code)
+  })
+
+  if (options.force) {
+    existingFeatures.forEach((f) => ut.removeFeature!(f.code))
+    processedBookmarks.clear()
+  }
 
   // 3. 计算需要删除的特性（存在但不再需要的）
   const currentCodes = new Set(unique.map((b) => `${FEATURE_PREFIX}${b.id}`))
@@ -262,6 +272,38 @@ const syncFeaturesImpl = async (bookmarks: Bookmark[], options: SyncFeatureOptio
   if (options.aiQuickSaveEnabled && (options.force || !hasAiQuickSaveFeature)) {
     ut.setFeature(getAiQuickSaveFeature())
   }
+  lastAppliedFeatureSetSignature = featureSetSignature
+}
+
+interface FeatureSyncJob {
+  bookmarks: Bookmark[]
+  options: SyncFeatureOptions
+}
+
+let pendingFeatureSyncJob: FeatureSyncJob | null = null
+let featureSyncPromise: Promise<void> | null = null
+
+/** 合并批量图标/导入期间的重入调用，只串行执行当前任务与最新任务。 */
+const syncFeaturesImpl = (bookmarks: Bookmark[], options: SyncFeatureOptions = {}): Promise<void> => {
+  pendingFeatureSyncJob = { bookmarks: [...bookmarks], options: { ...options } }
+  if (featureSyncPromise) return featureSyncPromise
+
+  featureSyncPromise = (async () => {
+    while (pendingFeatureSyncJob) {
+      const job = pendingFeatureSyncJob
+      pendingFeatureSyncJob = null
+      try {
+        await syncFeaturesOnce(job.bookmarks, job.options)
+      } catch (error) {
+        console.warn('[uTools] 动态特性同步失败:', error)
+      }
+    }
+  })().finally(() => {
+    featureSyncPromise = null
+    if (pendingFeatureSyncJob) void syncFeaturesImpl(pendingFeatureSyncJob.bookmarks, pendingFeatureSyncJob.options)
+  })
+
+  return featureSyncPromise
 }
 
 const getEnterTextImpl = (payload: unknown): string => {

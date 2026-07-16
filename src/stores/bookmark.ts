@@ -1331,7 +1331,6 @@ export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
         refreshMissingIcons: async (force = false) => {
           const missing = get().getMissingIconCandidates(force)
           const result = await bulkMatchMissing(missing)
-          result.forEach((icon, id) => get().assignIcon(id, icon))
 
           const successList: string[] = []
           const failList: { id: string; title: string }[] = []
@@ -1343,9 +1342,11 @@ export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
             if (result.has(bookmark.id)) {
               successList.push(bookmark.title || bookmark.url)
               if (live) {
+                live.icon = result.get(bookmark.id)
                 live.iconMatchedAt = now
                 live.iconMatchFailedAt = undefined
                 live.iconMatchFailedReason = undefined
+                live.updatedAt = now
               }
             } else {
               failList.push({ id: bookmark.id, title: bookmark.title || bookmark.url })
@@ -1437,6 +1438,7 @@ export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
     })
 
 const UTOOLS_PLUGIN_OUT_EVENT = 'goose-marks:plugin-out'
+const BOOKMARK_PERSIST_DEBOUNCE_MS = 120
 
 interface BookmarkPersistJob {
   snapshot: BookmarkSnapshot
@@ -1455,9 +1457,27 @@ let bookmarkPersistPromise: Promise<void> | null = null
 let pendingBookmarkPersistJob: BookmarkPersistJob | null = null
 let lastPersistedBookmarkState = ''
 let bookmarkPersistenceFlushEventsStarted = false
+let bookmarkPersistTimer: ReturnType<typeof setTimeout> | null = null
+let lastQueuedGroups: Group[] | null = null
+let lastQueuedBookmarks: Bookmark[] | null = null
+let lastQueuedActiveGroupId = ''
+let lastQueuedActiveSubGroupId = ''
 
-const queueBookmarkPersistJob = (state: BookmarkStore): boolean => {
+const queueBookmarkPersistJob = (state: BookmarkStore, force = false): boolean => {
   if (!isUToolsDbAvailable()) return false
+  if (
+    !force &&
+    state.groups === lastQueuedGroups &&
+    state.bookmarks === lastQueuedBookmarks &&
+    state.activeGroupId === lastQueuedActiveGroupId &&
+    state.activeSubGroupId === lastQueuedActiveSubGroupId
+  ) {
+    return false
+  }
+  lastQueuedGroups = state.groups
+  lastQueuedBookmarks = state.bookmarks
+  lastQueuedActiveGroupId = state.activeGroupId
+  lastQueuedActiveSubGroupId = state.activeSubGroupId
   const snapshot = pickBookmarkSnapshot(state)
   const serialized = JSON.stringify(snapshot)
   if (serialized === lastPersistedBookmarkState && !pendingBookmarkPersistJob) return false
@@ -1476,7 +1496,7 @@ const drainBookmarkPersistQueue = (): Promise<void> => {
 
       const written = await saveBookmarkSnapshot(job.snapshot)
       lastPersistedBookmarkState = job.serialized
-      emitStorageSync('bookmark', written)
+      if (written.dataChanged) emitStorageSync('bookmark', written.serialized)
     }
   })()
     .catch((error) => {
@@ -1493,11 +1513,20 @@ const drainBookmarkPersistQueue = (): Promise<void> => {
 }
 
 const enqueueBookmarkPersist = (state: BookmarkStore): void => {
-  if (queueBookmarkPersistJob(state)) void drainBookmarkPersistQueue()
+  if (!queueBookmarkPersistJob(state)) return
+  if (bookmarkPersistTimer) clearTimeout(bookmarkPersistTimer)
+  bookmarkPersistTimer = setTimeout(() => {
+    bookmarkPersistTimer = null
+    void drainBookmarkPersistQueue()
+  }, BOOKMARK_PERSIST_DEBOUNCE_MS)
 }
 
 export const flushBookmarkStorePersistence = async (): Promise<void> => {
-  queueBookmarkPersistJob(useBookmarkStore.getState())
+  if (bookmarkPersistTimer) {
+    clearTimeout(bookmarkPersistTimer)
+    bookmarkPersistTimer = null
+  }
+  queueBookmarkPersistJob(useBookmarkStore.getState(), true)
   await drainBookmarkPersistQueue()
 }
 
