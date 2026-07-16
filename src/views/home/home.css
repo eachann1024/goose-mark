@@ -576,14 +576,22 @@
 .goose-home .grp-label-actions .nav-icon-btn { @apply opacity-0 transition-opacity duration-[120ms]; }
 .goose-home .grp-label-hoverable:hover .nav-icon-btn { @apply opacity-100; }
 
-/* nav-item：hover 时 count 隐藏、⋯ 按钮显示（Notion 风格） */
-.goose-home .nav-item-hoverable .nav-item-more { display:none; @apply ml-auto shrink-0; }
-.goose-home .nav-item-hoverable:hover .nav-item-count { display:none; }
-.goose-home .nav-item-hoverable:hover .nav-item-more { display:flex; }
-/* on 态也允许 hover 显示 ⋯ */
-.goose-home .nav-item-hoverable.on .nav-item-more { display:none; }
-.goose-home .nav-item-hoverable.on:hover .nav-item-count { display:none; }
-.goose-home .nav-item-hoverable.on:hover .nav-item-more { display:flex; }
+/* nav-item：count 与 ⋯ 共用固定槽位，hover 时只切换可见性，避免重排抖动 */
+.goose-home .nav-item-trailing {
+  @apply relative ml-auto shrink-0 size-[18px];
+}
+.goose-home .nav-item-trailing .nav-item-count,
+.goose-home .nav-item-trailing .nav-item-more {
+  @apply absolute inset-0 m-0 flex items-center justify-center;
+}
+.goose-home .nav-item-hoverable .nav-item-count {
+  @apply opacity-100;
+}
+.goose-home .nav-item-hoverable .nav-item-more {
+  @apply opacity-0 pointer-events-none;
+}
+.goose-home .nav-item-hoverable:hover .nav-item-count { @apply opacity-0; }
+.goose-home .nav-item-hoverable:hover .nav-item-more { @apply opacity-100 pointer-events-auto; }
 
 /* 通用小图标按钮（⋯ / +）：18×18，默认 fg-faint，hover fg + surface-hover */
 .goose-home .nav-icon-btn {
