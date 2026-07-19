@@ -13,4 +13,4 @@ command = "bun i && bun dev"
 [[actions]]
 name = "build"
 icon = "tool"
-command = "pnpm build"
+command = "bun run build"
