@@ -40,6 +40,7 @@ import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { useBookmarkForm, useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookmarkForm'
 import { useUIManager } from '@/hooks/useUIManager'
+import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { resolveBookmarkLaunchUrl, getTemplateLabel } from '@/lib/utils'
@@ -164,15 +165,17 @@ function SortableCard({
     opacity: isDragging ? 0.4 : undefined,
   }
   return (
-    <div
-      ref={setNodeRef}
+    <BookmarkCard
+      item={item}
+      selected={selected}
+      groupId={groupId}
+      subId={subId}
       style={style}
-      {...attributes}
-      {...listeners}
+      anchorRef={setNodeRef}
+      disabled={isDragging}
+      dndProps={{ ...attributes, ...listeners }}
       onClick={() => { onSelect(item.id); onOpen?.(item) }}
-    >
-      <BookmarkCard item={item} selected={selected} groupId={groupId} subId={subId} />
-    </div>
+    />
   )
 }
 
@@ -206,21 +209,24 @@ function SortableGridCell({
     opacity: isDragging ? 0.4 : undefined,
   }
   return (
-    <div
-      ref={setNodeRef}
+    <OverflowHoverTooltip
+      anchorRef={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
+      title={item.ttl}
+      description={subClass === 'dsc' ? subText : undefined}
+      disabled={isDragging}
       className={`gcard${selected ? ' sel' : ''}`}
       data-item-id={item.id}
       data-group-id={groupId}
       data-sub-id={subId}
       onClick={() => { onSelect(item.id); onOpen?.(item) }}
+      {...attributes}
+      {...listeners}
     >
       <Fav item={item} />
       <div className="ttl">{item.ttl}</div>
       {subText && <div className={subClass}>{subText}</div>}
-    </div>
+    </OverflowHoverTooltip>
   )
 }
 
@@ -2344,7 +2350,10 @@ function BookmarkCard({
   style,
   onClick,
   groupId,
-  subId
+  subId,
+  anchorRef,
+  disabled,
+  dndProps,
 }: {
   item: HomeItem
   selected?: boolean
@@ -2353,12 +2362,27 @@ function BookmarkCard({
   onClick?: () => void
   groupId?: string
   subId?: string
+  anchorRef?: React.Ref<HTMLDivElement>
+  disabled?: boolean
+  dndProps?: Record<string, unknown>
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
   const fullDescription = useSettingsStore((s) => s.listFullDescription)
   const hideUrlWithoutDescription = useSettingsStore((s) => s.listShowTags)
   return (
-    <div className={`card${selected ? ' sel' : ''}`} style={style} data-item-id={item.id} data-group-id={groupId} data-sub-id={subId} onClick={onClick}>
+    <OverflowHoverTooltip
+      className={`card${selected ? ' sel' : ''}`}
+      style={style}
+      title={item.ttl}
+      description={showDescription && item.dsc ? item.dsc : undefined}
+      data-item-id={item.id}
+      data-group-id={groupId}
+      data-sub-id={subId}
+      onClick={onClick}
+      anchorRef={anchorRef}
+      disabled={disabled}
+      {...(dndProps || {})}
+    >
       <Fav item={item} />
       <div className="meta">
         <div className="ttl">{item.ttl}</div>
@@ -2374,7 +2398,7 @@ function BookmarkCard({
       </div>
       {item.pin && <Ico name="pin" className="pin" />}
       {trailing}
-    </div>
+    </OverflowHoverTooltip>
   )
 }
 
@@ -2491,9 +2515,11 @@ function GridCells({
       )
     }
     return (
-      <div
+      <OverflowHoverTooltip
         key={b.id}
         className={`gcard${b.id === selectedId ? ' sel' : ''}`}
+        title={b.ttl}
+        description={subClass === 'dsc' ? subText : undefined}
         data-item-id={b.id}
         data-group-id={groupId}
         data-sub-id={subId}
@@ -2502,7 +2528,7 @@ function GridCells({
         <Fav item={b} />
         <div className="ttl">{b.ttl}</div>
         {subText && <div className={subClass}>{subText}</div>}
-      </div>
+      </OverflowHoverTooltip>
     )
   })
   return (
