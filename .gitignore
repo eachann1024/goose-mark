@@ -11,7 +11,6 @@ bun.lock
 .claude/worktrees/
 CHANGELOG.md
 .playwright-mcp/
-src-tauri/target/
 .design-check/
 .claude/launch.json
 .env
