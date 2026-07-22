@@ -1,6 +1,7 @@
 import type { Bookmark, Group } from '@/types/bookmark'
 import { TRASH_GROUP_ID } from '@/stores/bookmark'
 import { iconToDisplayUrl } from '@/services/iconCache'
+import { registeredDomainOf, siteColorOf, siteFgForBg } from '@/lib/siteColor'
 
 /**
  * 首页视图模型 —— 把真实 bookmark store 的数据组装成设计稿
@@ -14,10 +15,12 @@ export interface HomeItem {
   ttl: string          // 标题
   url: string          // 链接
   host: string         // 域名（网格视图小字 / fav 取色用）
+  regDomain: string    // 一级域名（无描述时的小字兜底，如 baidu.com）
   dsc: string          // 描述（保持真实描述，不用域名兜底）
   fav: string          // 文字图标（标题首字 / 域名首字母）
-  color?: string       // fav 背景色（仅用户在 icon.bgColor 主动设置时有值，否则不分配）
-  favHue: number       // 文字占位底色色调（拿不到 favicon 时按域名稳定分配，低饱和）
+  color?: string       // fav 背景色（icon.bgColor 有值时优先；否则由 favColor 算法色补齐并持久化）
+  favColor: string     // 占位底色（算法分配；用户自设 color 时不用）
+  favFg: string        // 与 favColor 配套的文字色（用户自设色时回退默认 accent 前景）
   iconUrl?: string     // 真实图标 URL（有则优先显示图片）
   pin: boolean
   tags: string[]
@@ -51,27 +54,22 @@ function favText(title: string, host: string): string {
   return /[a-zA-Z]/.test(first) ? first.toUpperCase() : first
 }
 
-// 低饱和度暖系调色板：拿不到 favicon 时按域名做稳定哈希分配色调，
-// 同一站点恒定同色；明度/文字色由 CSS 按深浅模式派生，这里只定 hue。
-const FAV_HUES = [16, 32, 45, 96, 150, 174, 200, 222, 255, 288, 322, 348]
-
-function favHueOf(seed: string): number {
-  let h = 0
-  for (let i = 0; i < seed.length; i++) h = (Math.imul(h, 31) + seed.charCodeAt(i)) >>> 0
-  return FAV_HUES[h % FAV_HUES.length]
-}
-
 function toItem(b: Bookmark): HomeItem {
   const host = hostOf(b.url)
+  const regDomain = registeredDomainOf(host)
+  const userColor = b.icon?.bgColor || undefined
+  const palette = siteColorOf(regDomain || host || b.title || b.url)
   return {
     id: b.id,
     ttl: b.title || host,
     url: b.url,
     host,
+    regDomain,
     dsc: b.desc || '',
     fav: favText(b.title, host),
-    color: b.icon?.bgColor || undefined,
-    favHue: favHueOf(host || b.title || b.url),
+    color: userColor,
+    favColor: userColor || palette.bg,
+    favFg: (userColor && siteFgForBg(userColor)) || palette.fg,
     iconUrl: iconToDisplayUrl(b.icon) || undefined,
     pin: !!b.pinned,
     tags: b.tags || []
