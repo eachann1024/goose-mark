@@ -2327,11 +2327,20 @@ function Fav({ item, cls = 'fav' }: { item: HomeItem; cls?: string }) {
   // 真实图标加载失败（如 favicon 服务 404）时优雅回退到文字首字母
   const [imgError, setImgError] = useState(false)
   const showImg = item.iconUrl && !imgError
-  // 有真实图标：不加背景（透明 PNG 不会透出底色）。文字占位：加 is-placeholder，
-  // 底色与文字色由 --fav-hue 在 CSS 里按深浅模式派生（低饱和、每站独立）；用户自设 color 优先覆盖
-  const placeholderStyle: React.CSSProperties = item.color
-    ? { background: item.color }
-    : ({ '--fav-hue': item.favHue } as React.CSSProperties)
+  // 无图标 / 图标加载失败 → 文字占位：底色 + 文字色全部由 item.favColor/favFg 实色 hex 内联，
+  // 不走 CSS 变量派生（Chromium 108 下 color-mix/oklch/hsl 变量语法会失效成透明）。
+  // 用户自设 icon.bgColor 时 favColor 即该色；否则为按一级域名哈希分配的算法色，
+  // 并在下方 useEffect 里懒持久化到 icon.bgColor，之后不受调色板调整影响。
+  const placeholderStyle: React.CSSProperties = { background: item.favColor, color: item.favFg }
+
+  useEffect(() => {
+    if (showImg || item.color) return
+    const { bookmarks, updateBookmark } = useBookmarkStore.getState()
+    const b = bookmarks.find((x) => x.id === item.id)
+    if (!b || b.icon?.bgColor) return
+    updateBookmark(item.id, { icon: b.icon ? { ...b.icon, bgColor: item.favColor } : { type: 'text', value: item.fav, bgColor: item.favColor } })
+  }, [showImg, item.id, item.color, item.favColor, item.fav])
+
   return (
     <div className={showImg ? cls : `${cls} is-placeholder`} style={showImg ? undefined : placeholderStyle}>
       {showImg ? (
@@ -2368,7 +2377,6 @@ function BookmarkCard({
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
   const fullDescription = useSettingsStore((s) => s.listFullDescription)
-  const hideUrlWithoutDescription = useSettingsStore((s) => s.listShowTags)
   return (
     <OverflowHoverTooltip
       className={`card${selected ? ' sel' : ''}`}
@@ -2387,7 +2395,7 @@ function BookmarkCard({
       <div className="meta">
         <div className="ttl">{item.ttl}</div>
         {showDescription && item.dsc && <div className={`dsc${fullDescription ? ' full' : ''}`}>{item.dsc}</div>}
-        {!hideUrlWithoutDescription && showDescription && !item.dsc && item.host && <div className="url">{item.host}</div>}
+        {showDescription && !item.dsc && item.regDomain && <div className="url">{item.regDomain}</div>}
         {item.tags.length > 0 && (
           <div className="tags">
             {item.tags.map((tag) => (
@@ -2493,11 +2501,10 @@ function GridCells({
   subId?: string
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
-  const hideUrlWithoutDescription = useSettingsStore((s) => s.listShowTags)
   // 非搜索态（有归属分组）才可拖拽；搜索扁平宫格无 groupId，保持普通渲染
   const canDrag = !!groupId && !!subId
   const cells = items.map((b) => {
-    const subText = showDescription && b.dsc ? b.dsc : (hideUrlWithoutDescription ? '' : b.host)
+    const subText = showDescription ? (b.dsc || b.regDomain) : ''
     const subClass = showDescription && b.dsc ? 'dsc' : 'url'
     if (canDrag) {
       return (
@@ -3039,8 +3046,6 @@ function SettingsContent({
   const setListShowDescription = useSettingsStore((s) => s.setListShowDescription)
   const listFullDescription = useSettingsStore((s) => s.listFullDescription)
   const setListFullDescription = useSettingsStore((s) => s.setListFullDescription)
-  const listHideUrlWithoutDescription = useSettingsStore((s) => s.listShowTags)
-  const setListHideUrlWithoutDescription = useSettingsStore((s) => s.setListShowTags)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const setEasterEggEnabled = useSettingsStore((s) => s.setEasterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
@@ -3294,13 +3299,6 @@ function SettingsContent({
             <div
               className={`g-switch${listFullDescription ? ' on' : ''}`}
               onClick={() => listShowDescription && setListFullDescription(!listFullDescription)}
-            />
-          </div>
-          <div className="set-row">
-            <div><div className="rt">无描述时隐藏网址</div><div className="rd">书签没有描述时，不用网址占位</div></div>
-            <div
-              className={`g-switch${listHideUrlWithoutDescription ? ' on' : ''}`}
-              onClick={() => setListHideUrlWithoutDescription(!listHideUrlWithoutDescription)}
             />
           </div>
         </div>

@@ -278,21 +278,17 @@
   @apply bg-g-surface-hover;
 }
 
-/* 文字首字母占位（拿不到 favicon）：按域名稳定分配的 --fav-hue 派生「低饱和底色 + 同色调文字」，
-   每个站点一种颜色而非统一珊瑚；有真实图标时不加背景，避免透明 PNG 透出底色。
-   用户自设 icon.bgColor 时由 inline background 覆盖（此时无 --fav-hue，回退默认珊瑚色调）。 */
+/* 文字首字母占位（拿不到 favicon）：底色与文字色由 Fav 组件按一级域名稳定分配并内联实色 hex
+   （见 src/lib/siteColor.ts，懒持久化到 icon.bgColor），不在 CSS 里用变量派生，
+   避免 Chromium 108 不支持的现代颜色语法导致占位变透明。有真实图标时不加背景，
+   避免透明 PNG 透出底色。 */
 .goose-home .fav {
   width:var(--list-fav-size);
   height:var(--list-fav-size);
   @apply rounded-g-md shrink-0 flex items-center justify-center font-semibold text-base text-g-accent-fg overflow-hidden;
   font-family:var(--font-serif);
-  box-shadow:var(--shadow-sm);
 }
-.goose-home[data-theme="dark"] .fav.is-placeholder {
-  background:linear-gradient(135deg,
-    hsl(var(--fav-hue) 26% 27%), hsl(var(--fav-hue) 23% 21%));
-  color:hsl(var(--fav-hue) 52% 74%);
-}
+.goose-home .fav.is-placeholder { box-shadow:var(--shadow-sm); }
 .goose-home .fav img { @apply w-full h-full object-cover; }
 .goose-home .card .meta { @apply flex-1 min-w-0 flex flex-col; gap:var(--list-meta-gap); }
 .goose-home .card .ttl { @apply font-semibold text-g-fg leading-[1.25] whitespace-nowrap overflow-hidden text-ellipsis; font-size:var(--list-title-size); font-family:var(--font-sans); }
