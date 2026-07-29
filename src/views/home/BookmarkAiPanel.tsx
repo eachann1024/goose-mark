@@ -1,306 +1,307 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  executeBookmarkAgentProposal,
-  runBookmarkAgent,
-  undoBookmarkAgentExecution,
-  type BookmarkAgentChangeProposal,
-  type BookmarkAgentMessage,
-  type BookmarkAgentToolEvent
-} from '@/services/bookmarkAgent'
+  BookmarkAiComposer,
+  type BookmarkAiComposerHandle,
+  type BookmarkAiComposerPayload,
+} from '@/components/ai-composer'
+import { useBookmarkAiChats } from '@/stores/bookmarkAiChats'
+import {
+  applyBookmarkAiProposal,
+  beginBookmarkAiRun,
+  cancelBookmarkAiProposal,
+  clearBookmarkAiRunError,
+  retryBookmarkAiRun,
+  stopBookmarkAiRun,
+  stopBookmarkAiRunForConversationChange,
+  undoBookmarkAiProposal,
+  undoRecoveredBookmarkAiApproval,
+  useBookmarkAiRun,
+} from '@/stores/bookmarkAiRun'
 import { Ico } from './icon'
+import { ChatMessages } from './bookmark-ai/ChatMessages'
+import { ConversationHistory } from './bookmark-ai/ConversationHistory'
+import { EmptyState } from './bookmark-ai/EmptyState'
+import { PanelResizeHandle } from './bookmark-ai/PanelResizeHandle'
+import { ProposalCards } from './bookmark-ai/ProposalCards'
+import { RecoveredApprovals } from './bookmark-ai/RecoveredApprovals'
+import { copyBookmarkAiText } from './bookmark-ai/clipboard'
+import type { BookmarkAiPanelMessage, BookmarkAiRunState } from './bookmark-ai/types'
 
-type PanelMessage = BookmarkAgentMessage & { id: number }
-
-const SUGGESTIONS = [
-  '帮我找出前端开发相关的书签',
-  '检查所有书签是否都能正常访问',
-  '帮我整理分组，并先给出修改清单',
-  '列出当前所有一级和二级分组'
-]
+function plainPayload(text: string): BookmarkAiComposerPayload {
+  return {
+    promptText: text,
+    freeformText: text,
+    tokens: [{ type: 'text', text }],
+    references: [],
+    images: [],
+    invokedSkill: null,
+    requiredCapabilities: { imageInput: false },
+  }
+}
 
 export default function BookmarkAiPanel({ onClose }: { onClose: () => void }) {
-  const [messages, setMessages] = useState<PanelMessage[]>([])
-  const [input, setInput] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [toolEvents, setToolEvents] = useState<BookmarkAgentToolEvent[]>([])
-  const [proposals, setProposals] = useState<BookmarkAgentChangeProposal[]>([])
-  const [applyingProposalId, setApplyingProposalId] = useState('')
-  const [undoAction, setUndoAction] = useState<{ token: string; label: string } | null>(null)
-  const [error, setError] = useState('')
-  const seqRef = useRef(0)
-  const abortRef = useRef<AbortController | null>(null)
-  const inputRef = useRef<HTMLTextAreaElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
+  const initialConversationIdRef = useRef<string | null>(null)
+  if (!initialConversationIdRef.current) {
+    const runningConversationId = useBookmarkAiRun.getState().active?.conversationId
+    initialConversationIdRef.current = runningConversationId
+      ?? useBookmarkAiChats.getState().ensureFreshCurrentConversation()
+    if (runningConversationId) {
+      useBookmarkAiChats.getState().setCurrentConversation(runningConversationId)
+    }
+  }
 
-  useEffect(() => {
-    requestAnimationFrame(() => inputRef.current?.focus())
-    return () => abortRef.current?.abort()
+  const [conversationId, setConversationId] = useState(initialConversationIdRef.current)
+  const [composerPayload, setComposerPayload] = useState<BookmarkAiComposerPayload | null>(null)
+  const [copyStatus, setCopyStatus] = useState('')
+  const [changingConversation, setChangingConversation] = useState(false)
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const composerRef = useRef<BookmarkAiComposerHandle>(null)
+
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
   }, [])
 
-  useEffect(() => {
-    const root = scrollRef.current
-    if (!root) return
-    root.scrollTop = root.scrollHeight
-  }, [messages, proposals, toolEvents, undoAction])
-
-  const handleToolEvent = useCallback((event: BookmarkAgentToolEvent) => {
-    setToolEvents((items) => {
-      const index = items.findIndex((item) => item.id === event.id)
-      if (index === -1) return [...items, event]
-      const next = [...items]
-      next[index] = event
-      return next
-    })
-  }, [])
-
-  const send = useCallback(
-    async (preset?: string) => {
-      const content = (preset ?? input).trim()
-      if (!content || busy) return
-      const userMessage: PanelMessage = { id: ++seqRef.current, role: 'user', content }
-      const nextMessages = [...messages, userMessage]
-      setMessages(nextMessages)
-      setInput('')
-      setError('')
-      setToolEvents([])
-      setBusy(true)
-      const controller = new AbortController()
-      abortRef.current = controller
-
-      try {
-        const result = await runBookmarkAgent(
-          nextMessages.map(({ role, content: messageContent }) => ({ role, content: messageContent })),
-          { abortSignal: controller.signal, onToolEvent: handleToolEvent }
-        )
-        setMessages((items) => [
-          ...items,
-          { id: ++seqRef.current, role: 'assistant', content: result.text }
-        ])
-        setProposals((items) => [...items, ...result.proposals])
-      } catch (cause) {
-        if (controller.signal.aborted) return
-        setError(cause instanceof Error ? cause.message : 'AI 请求失败，请稍后重试')
-      } finally {
-        if (abortRef.current === controller) abortRef.current = null
-        setBusy(false)
-      }
-    },
-    [busy, handleToolEvent, input, messages]
+  const conversationsRecord = useBookmarkAiChats((state) => state.conversations)
+  const approvalJournal = useBookmarkAiChats((state) => state.approvalJournal)
+  const draft = useBookmarkAiChats((state) => state.composerDraft)
+  const storedMessages = useBookmarkAiChats(
+    (state) => state.conversations[conversationId]?.messages ?? [],
+  )
+  const conversations = useMemo(
+    () => Object.values(conversationsRecord).sort((left, right) => right.updatedAt - left.updatedAt),
+    [conversationsRecord],
+  )
+  const recoveredApprovals = useMemo(
+    () => Object.values(approvalJournal)
+      .filter((entry) => entry.conversationId === conversationId)
+      .sort((left, right) => right.updatedAt - left.updatedAt),
+    [approvalJournal, conversationId],
   )
 
-  const stop = useCallback(() => {
-    abortRef.current?.abort()
-    abortRef.current = null
-    setBusy(false)
-  }, [])
+  const activeRun = useBookmarkAiRun((state) => state.active)
+  const allProposals = useBookmarkAiRun((state) => state.proposals)
+  const proposalConversationId = useBookmarkAiRun((state) => state.proposalConversationId)
+  const applyingProposalId = useBookmarkAiRun((state) => state.applyingProposalId)
+  const globalUndoAction = useBookmarkAiRun((state) => state.undoAction)
+  const globalError = useBookmarkAiRun((state) => state.error)
 
-  const applyProposal = useCallback(async (proposal: BookmarkAgentChangeProposal) => {
-    if (applyingProposalId || busy) return
-    setApplyingProposalId(proposal.id)
-    setError('')
+  const activeForConversation = activeRun?.conversationId === conversationId ? activeRun : null
+  const busy = !!activeRun
+  const interactionBusy = busy || !!applyingProposalId || changingConversation
+  const proposals = proposalConversationId === conversationId ? allProposals : []
+  const undoAction = globalUndoAction?.conversationId === conversationId ? globalUndoAction : null
+  const error = globalError?.conversationId === conversationId ? globalError : null
+
+  const messages = useMemo<BookmarkAiPanelMessage[]>(() => {
+    if (!activeForConversation?.accumulatedText.trim()) return storedMessages
+    const streamingMessage: BookmarkAiPanelMessage = {
+      id: activeForConversation.assistantMessageId,
+      role: 'assistant',
+      content: activeForConversation.accumulatedText,
+      createdAt: Date.now(),
+      state: 'streaming',
+    }
+    const existingIndex = storedMessages.findIndex((message) => message.id === streamingMessage.id)
+    if (existingIndex < 0) return [...storedMessages, streamingMessage]
+    const next = [...storedMessages]
+    next[existingIndex] = { ...next[existingIndex], ...streamingMessage }
+    return next
+  }, [activeForConversation, storedMessages])
+
+  const runState: BookmarkAiRunState | null = activeForConversation
+    ? {
+        requestId: activeForConversation.requestId,
+        phase: activeForConversation.phase,
+        toolEvents: activeForConversation.toolEvents,
+      }
+    : null
+
+  const handleCopy = async (text: string) => {
+    const copied = await copyBookmarkAiText(text)
+    setCopyStatus(copied ? '已复制' : '复制失败，请手动选择文字')
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current)
+    copyTimerRef.current = setTimeout(() => setCopyStatus(''), 2200)
+  }
+
+  const sendPayload = (payload: BookmarkAiComposerPayload) => {
+    if (interactionBusy || (!payload.promptText.trim() && payload.images.length === 0)) return false
+    const validation = composerRef.current?.validateReferences()
+    if (validation && validation.invalid.length > 0) {
+      useBookmarkAiRun.setState({
+        error: { conversationId, message: validation.invalid[0].message, recoverable: false },
+      })
+      return false
+    }
+    const started = beginBookmarkAiRun({ conversationId, payload })
+    if (!started) return false
+    composerRef.current?.clear()
+    useBookmarkAiChats.getState().clearComposerDraft()
+    setComposerPayload(null)
+    return true
+  }
+
+  const newConversation = async () => {
+    if (changingConversation || applyingProposalId) return
+    setChangingConversation(true)
     try {
-      const result = await executeBookmarkAgentProposal(proposal)
-      setProposals((items) => items.filter((item) => item.id !== proposal.id))
-      setUndoAction({ token: result.undoToken, label: proposal.summary })
-      setMessages((items) => [
-        ...items,
-        { id: ++seqRef.current, role: 'assistant', content: `${result.message} 如需恢复，请点击下方“撤回”。` }
-      ])
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '执行变更失败，请稍后重试')
+      await stopBookmarkAiRunForConversationChange()
+      const nextId = useBookmarkAiChats.getState().createConversation()
+      useBookmarkAiChats.getState().clearComposerDraft()
+      composerRef.current?.clear()
+      setComposerPayload(null)
+      setConversationId(nextId)
     } finally {
-      setApplyingProposalId('')
+      setChangingConversation(false)
+      requestAnimationFrame(() => composerRef.current?.focus())
     }
-  }, [applyingProposalId, busy])
+  }
 
-  const cancelProposal = useCallback((proposal: BookmarkAgentChangeProposal) => {
-    if (applyingProposalId) return
-    setProposals((items) => items.filter((item) => item.id !== proposal.id))
-    setMessages((items) => [
-      ...items,
-      { id: ++seqRef.current, role: 'assistant', content: `已取消“${proposal.summary}”，没有修改数据。` }
-    ])
-  }, [applyingProposalId])
-
-  const undoLastChange = useCallback(() => {
-    if (!undoAction || busy || applyingProposalId) return
-    setError('')
+  const selectConversation = async (nextId: string) => {
+    if (changingConversation || applyingProposalId || nextId === conversationId) return
+    setChangingConversation(true)
     try {
-      const message = undoBookmarkAgentExecution(undoAction.token)
-      setUndoAction(null)
-      setMessages((items) => [
-        ...items,
-        { id: ++seqRef.current, role: 'assistant', content: message }
-      ])
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '撤回失败')
+      await stopBookmarkAiRunForConversationChange()
+      useBookmarkAiChats.getState().setCurrentConversation(nextId)
+      setConversationId(nextId)
+    } finally {
+      setChangingConversation(false)
     }
-  }, [applyingProposalId, busy, undoAction])
+  }
+
+  const statusText = changingConversation
+    ? '正在安全切换会话'
+    : activeRun?.stopping
+      ? '正在停止本轮任务'
+      : activeForConversation?.phase === 'using-tools'
+        ? 'AI 正在使用书签工具'
+        : activeForConversation?.phase === 'answering'
+          ? 'AI 正在生成回答'
+          : activeRun
+            ? 'AI 正在理解任务'
+            : copyStatus
 
   return (
     <section className="bookmark-ai-panel" aria-label="AI 助手" onKeyDown={(event) => {
       if (event.key === 'Escape' && !event.defaultPrevented) onClose()
     }}>
+      <PanelResizeHandle />
+      <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">{statusText}</div>
       <header className="bookmark-ai-head">
         <div className="bookmark-ai-head-title">
           <span className="bookmark-ai-head-icon"><Ico name="sparkles" /></span>
           <div>
             <h2>AI <span className="bookmark-ai-alpha">alpha</span></h2>
-            <p>探索者版 · 书签与网页工具已连接</p>
+            <p>{activeRun ? '任务在后台持续运行 · 可关闭后再回来' : '书签与网页工具已连接 · 写入前确认'}</p>
           </div>
         </div>
-        <div className="bookmark-ai-head-actions">
-          <button
-            type="button"
-            title="新对话"
-            aria-label="新对话"
-            onClick={() => {
-              stop()
-              setMessages([])
-              setToolEvents([])
-              setProposals([])
-              setUndoAction(null)
-              setError('')
-              requestAnimationFrame(() => inputRef.current?.focus())
-            }}
-          >
+        <div className="bookmark-ai-head-actions" role="toolbar" aria-label="AI 对话工具栏">
+          <button type="button" title="新对话" aria-label="新对话" disabled={changingConversation || !!applyingProposalId} onClick={() => void newConversation()}>
             <Ico name="plus" />
           </button>
-          <button type="button" title="关闭 AI" aria-label="关闭 AI" onClick={onClose}>
+          <ConversationHistory
+            conversations={conversations}
+            activeId={conversationId}
+            disabled={changingConversation || !!applyingProposalId}
+            onSelect={(id) => void selectConversation(id)}
+          />
+          <button type="button" title="关闭 AI；运行中的任务会继续" aria-label="关闭 AI" onClick={onClose}>
             <Ico name="x" />
           </button>
         </div>
       </header>
 
-      <div className="bookmark-ai-messages" ref={scrollRef}>
-        {messages.length === 0 && !busy ? (
-          <div className="bookmark-ai-empty">
-            <span className="bookmark-ai-empty-icon"><Ico name="sparkles" /></span>
-            <h3>可以直接让 AI 操作书签</h3>
-            <p>可检查链接、调整书签位置并管理分组；写入前会先给你确认。</p>
-            <div className="bookmark-ai-suggestions">
-              {SUGGESTIONS.map((suggestion) => (
-                <button type="button" key={suggestion} onClick={() => void send(suggestion)}>
-                  {suggestion}
-                  <Ico name="arrow-up-right" />
-                </button>
-              ))}
+      {messages.length === 0 && !activeForConversation && recoveredApprovals.length === 0 ? (
+        <EmptyState disabled={interactionBusy} onSelect={(value) => void sendPayload(plainPayload(value))} />
+      ) : (
+        <ChatMessages messages={messages} runState={runState} onCopy={(text) => void handleCopy(text)}>
+          <RecoveredApprovals
+            entries={recoveredApprovals}
+            applyingProposalId={applyingProposalId}
+            onUndo={(entry) => void undoRecoveredBookmarkAiApproval({
+              conversationId,
+              proposalId: entry.proposalId,
+              summary: entry.summary,
+            })}
+          />
+          <ProposalCards
+            proposals={proposals}
+            applyingProposalId={applyingProposalId}
+            disabled={interactionBusy}
+            onApply={(proposal) => void applyBookmarkAiProposal(conversationId, proposal)}
+            onCancel={(proposal) => cancelBookmarkAiProposal(conversationId, proposal)}
+          />
+          {undoAction ? (
+            <div className="bookmark-ai-undo" role="status">
+              <div><Ico name="check-circle" /><span>变更已生效</span></div>
+              <button
+                type="button"
+                disabled={busy || !!applyingProposalId}
+                onClick={() => undoBookmarkAiProposal(conversationId)}
+              >
+                <Ico name="rotate-ccw" />撤回
+              </button>
+            </div>
+          ) : null}
+        </ChatMessages>
+      )}
+
+      {error ? (
+        <div className="bookmark-ai-error-card" role="alert">
+          <Ico name="alert-circle" />
+          <div className="bookmark-ai-error-copy">
+            <strong>本轮未完成</strong>
+            <p>{error.message}</p>
+            <div className="bookmark-ai-error-actions">
+              {error.recoverable ? (
+                <button type="button" disabled={interactionBusy} onClick={() => retryBookmarkAiRun(conversationId)}>重试</button>
+              ) : null}
+              <button type="button" onClick={() => clearBookmarkAiRunError(conversationId)}>关闭提示</button>
             </div>
           </div>
-        ) : null}
-
-        {messages.map((message) => (
-          <article className={`bookmark-ai-message ${message.role}`} key={message.id}>
-            {message.role === 'assistant' ? <span className="bookmark-ai-avatar"><Ico name="sparkles" /></span> : null}
-            <div className="bookmark-ai-bubble">{message.content}</div>
-          </article>
-        ))}
-
-        {toolEvents.length > 0 && (
-          <div className="bookmark-ai-tools" aria-label="工具执行进度">
-            {toolEvents.map((event) => (
-              <div className={`bookmark-ai-tool ${event.status}`} key={event.id}>
-                <span className="bookmark-ai-tool-icon">
-                  <Ico
-                    name={event.status === 'running' ? 'loader' : event.status === 'error' ? 'alert-circle' : 'check'}
-                    className={event.status === 'running' ? 'spin' : ''}
-                  />
-                </span>
-                <div>
-                  <div className="bookmark-ai-tool-label">{event.label}</div>
-                  <div className="bookmark-ai-tool-detail">{event.detail}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {proposals.map((proposal) => {
-          const applying = applyingProposalId === proposal.id
-          return (
-            <section
-              className={`bookmark-ai-confirm${proposal.destructive ? ' destructive' : ''}`}
-              key={proposal.id}
-              aria-label="待确认变更"
-            >
-              <div className="bookmark-ai-confirm-head">
-                <span><Ico name={proposal.destructive ? 'alert-circle' : 'file-text'} /></span>
-                <div>
-                  <h3>{proposal.summary}</h3>
-                  <p>确认前不会修改任何数据</p>
-                </div>
-              </div>
-              <ol>
-                {proposal.details.map((detail, index) => <li key={`${proposal.id}-${index}`}>{detail}</li>)}
-              </ol>
-              <div className="bookmark-ai-confirm-actions">
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={!!applyingProposalId || busy}
-                  onClick={() => cancelProposal(proposal)}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  className={proposal.destructive ? 'danger' : 'primary'}
-                  disabled={!!applyingProposalId || busy}
-                  onClick={() => void applyProposal(proposal)}
-                >
-                  {applying ? <><Ico name="loader" className="spin" />正在执行</> : '同意并执行'}
-                </button>
-              </div>
-            </section>
-          )
-        })}
-
-        {undoAction ? (
-          <div className="bookmark-ai-undo" role="status">
-            <div>
-              <Ico name="check-circle" />
-              <span>变更已生效</span>
-            </div>
-            <button type="button" disabled={busy || !!applyingProposalId} onClick={undoLastChange}>
-              <Ico name="rotate-ccw" />撤回
-            </button>
-          </div>
-        ) : null}
-
-        {busy && toolEvents.length === 0 ? (
-          <div className="bookmark-ai-thinking"><Ico name="loader" className="spin" /> 正在理解任务…</div>
-        ) : null}
-        {error ? <div className="bookmark-ai-error"><Ico name="alert-circle" />{error}</div> : null}
-      </div>
+        </div>
+      ) : null}
 
       <footer className="bookmark-ai-composer">
-        <div className="bookmark-ai-dock">
-          <textarea
-            ref={inputRef}
-            rows={1}
-            value={input}
-            disabled={busy}
-            placeholder={busy ? 'AI 正在执行任务…' : '向 AI 提问，或让它操作书签…'}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault()
-                void send()
-              }
+        <div className="bookmark-ai-dock bookmark-ai-dock-rich">
+          <BookmarkAiComposer
+            ref={composerRef}
+            key={conversationId}
+            className="bookmark-ai-composer-shell"
+            initialText={draft}
+            disabled={interactionBusy}
+            autoFocus
+            placeholder={busy ? 'AI 正在执行任务…' : '向 AI 提问，/ 调用 Skill，@ 引用书签或分组…'}
+            onChange={(payload) => {
+              setComposerPayload(payload)
+              useBookmarkAiChats.getState().setComposerDraft(payload.promptText)
             }}
+            onImageError={(message) => {
+              useBookmarkAiRun.setState({ error: { conversationId, message, recoverable: false } })
+            }}
+            onSubmit={(payload) => void sendPayload(payload)}
+            onEscape={onClose}
           />
-          <button
-            type="button"
-            className={`bookmark-ai-send${busy ? ' stop' : ''}`}
-            aria-label={busy ? '停止生成' : '发送'}
-            title={busy ? '停止生成' : '发送'}
-            disabled={!busy && !input.trim()}
-            onClick={() => busy ? stop() : void send()}
-          >
-            <Ico name={busy ? 'square' : 'arrow-up'} />
-          </button>
+          <div className="bookmark-ai-composer-actions">
+            <button
+              type="button"
+              className={`bookmark-ai-send${busy ? ' stop' : ''}`}
+              aria-label={busy ? (activeRun?.stopping ? '正在停止' : '停止生成') : '发送'}
+              title={busy ? (activeRun?.stopping ? '正在停止' : '停止生成') : '发送'}
+              disabled={busy
+                ? !!activeRun?.stopping
+                : interactionBusy || !(composerPayload?.promptText.trim() || composerPayload?.images.length)}
+              onClick={() => busy
+                ? void stopBookmarkAiRun()
+                : composerPayload && void sendPayload(composerPayload)}
+            >
+              <Ico name={busy ? 'square' : 'arrow-up'} />
+            </button>
+          </div>
         </div>
-        <p>写入先预览确认，执行后可撤回；AI 结果仍请核对</p>
+        <div className="bookmark-ai-composer-meta">
+          <span>Enter 发送 · Shift+Enter 换行 · 可粘贴图片</span>
+          <span className="bookmark-ai-copy-status" aria-live="polite">{copyStatus}</span>
+        </div>
       </footer>
     </section>
   )

@@ -31,6 +31,7 @@ import {
   selectAiSettings,
   WINDOW_HEIGHT_MIN,
   WINDOW_HEIGHT_MAX,
+  type AIReasoningEffort,
   type DetachedWindowPosition
 } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
@@ -3814,6 +3815,14 @@ function SettingsContent({
   const setEasterEggVariant = useSettingsStore((s) => s.setEasterEggVariant)
   const aiEnabled = useSettingsStore((s) => s.aiEnabled)
   const setAiEnabled = useSettingsStore((s) => s.setAiEnabled)
+  const readLocalSkills = useSettingsStore((s) => s.readLocalSkills)
+  const setReadLocalSkills = useSettingsStore((s) => s.setReadLocalSkills)
+  const userGlobalPrompt = useSettingsStore((s) => s.userGlobalPrompt)
+  const setUserGlobalPrompt = useSettingsStore((s) => s.setUserGlobalPrompt)
+  const aiDefaultReasoningEffort = useSettingsStore((s) => s.aiDefaultReasoningEffort)
+  const setAiDefaultReasoningEffort = useSettingsStore((s) => s.setAiDefaultReasoningEffort)
+  const aiDefaultTemperature = useSettingsStore((s) => s.aiDefaultTemperature)
+  const setAiDefaultTemperature = useSettingsStore((s) => s.setAiDefaultTemperature)
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
   const aiProtocol = useSettingsStore((s) => s.aiProtocol)
@@ -4225,6 +4234,85 @@ function SettingsContent({
                 value={aiSelectedModelId || protocolDefaultModel || DEFAULT_AI_MODEL}
                 options={modelOptions.map((m) => ({ id: m.id, label: m.label || m.id }))}
                 onChange={setAiSelectedModelId}
+              />
+            </div>
+
+            <div className="set-row">
+              <div>
+                <div className="rt">读取本地 Skill</div>
+                <div className="rd">允许 AI 输入框从 ~/.agents/skills 发现 Skill；默认关闭，仅在输入 / 时读取</div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={readLocalSkills}
+                aria-label="读取本地 Skill"
+                className={`g-switch ai${readLocalSkills ? ' on' : ''}`}
+                disabled={!aiEnabled}
+                onClick={() => aiEnabled && setReadLocalSkills(!readLocalSkills)}
+              />
+            </div>
+
+            <div className="ai-prov-label">Agent 默认</div>
+            <div className="set-row">
+              <div>
+                <div className="rt">推理强度</div>
+                <div className="rd">作为每次新请求的默认值；模型不支持时由供应商按兼容规则处理</div>
+              </div>
+              <SettingsSelect
+                wide
+                icon="cpu"
+                value={aiDefaultReasoningEffort ?? 'inherit'}
+                options={[
+                  { id: 'inherit', label: '模型默认' },
+                  { id: 'none', label: '关闭' },
+                  { id: 'minimal', label: '极低' },
+                  { id: 'low', label: '低' },
+                  { id: 'medium', label: '中' },
+                  { id: 'high', label: '高' },
+                  { id: 'xhigh', label: '极高' },
+                ]}
+                onChange={(value) => setAiDefaultReasoningEffort(
+                  value === 'inherit' ? null : value as AIReasoningEffort,
+                )}
+              />
+            </div>
+
+            <div className="set-row">
+              <label htmlFor="ai-default-temperature">
+                <div className="rt">Temperature</div>
+                <div className="rd">留空使用模型默认；可设置 0–2</div>
+              </label>
+              <input
+                id="ai-default-temperature"
+                className="ai-fld-input ai-default-temperature"
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                inputMode="decimal"
+                value={aiDefaultTemperature ?? ''}
+                placeholder="默认"
+                onChange={(event) => {
+                  const value = event.target.value
+                  setAiDefaultTemperature(value === '' ? null : Number(value))
+                }}
+              />
+            </div>
+
+            <div className="set-row ai-global-prompt-row">
+              <label htmlFor="ai-global-prompt">
+                <div className="rt">全局提示词</div>
+                <div className="rd">每次请求作为系统上下文注入，不显示在聊天消息中</div>
+              </label>
+              <textarea
+                id="ai-global-prompt"
+                className="ai-fld-input ai-global-prompt"
+                rows={4}
+                maxLength={24000}
+                value={userGlobalPrompt}
+                placeholder="例如：回答保持简洁；整理前先说明依据。"
+                onChange={(event) => setUserGlobalPrompt(event.target.value)}
               />
             </div>
 
