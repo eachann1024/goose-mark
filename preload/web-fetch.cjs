@@ -8,6 +8,27 @@ const { URL } = require('url')
 const MAX_REDIRECTS = 4
 const DEFAULT_TIMEOUT_MS = 12000
 const DEFAULT_MAX_BYTES = 2 * 1024 * 1024
+const DEFAULT_MAX_DECODED_BYTES = 4 * 1024 * 1024
+
+const WEB_FETCH_ERROR_CODES = Object.freeze({
+  RESPONSE_TOO_LARGE: 'WEB_FETCH_RESPONSE_TOO_LARGE',
+  DECOMPRESSED_TOO_LARGE: 'WEB_FETCH_DECOMPRESSED_TOO_LARGE'
+})
+
+function createWebFetchError(code, message) {
+  const error = new Error(message)
+  error.code = code
+  return error
+}
+
+function assertResponseBodySize(receivedBytes, maxBytes) {
+  if (receivedBytes > maxBytes) {
+    throw createWebFetchError(
+      WEB_FETCH_ERROR_CODES.RESPONSE_TOO_LARGE,
+      '网页响应体过大，已停止读取'
+    )
+  }
+}
 
 function isPrivateIPv4(address, options = {}) {
   const parts = address.split('.').map(Number)
@@ -91,17 +112,61 @@ function resolvePublicAddress(hostname) {
   })
 }
 
-function decodeBody(buffer, encoding) {
+function decodeBody(buffer, encoding, maxDecodedBytes = DEFAULT_MAX_DECODED_BYTES) {
   const normalized = String(encoding || '').toLowerCase()
-  if (normalized.includes('br')) return zlib.brotliDecompressSync(buffer)
-  if (normalized.includes('gzip')) return zlib.gunzipSync(buffer)
-  if (normalized.includes('deflate')) return zlib.inflateSync(buffer)
-  return buffer
+  const decoder = normalized.includes('br')
+    ? zlib.createBrotliDecompress()
+    : normalized.includes('gzip')
+      ? zlib.createGunzip()
+      : normalized.includes('deflate')
+        ? zlib.createInflate()
+        : null
+
+  if (!decoder) {
+    if (buffer.length > maxDecodedBytes) {
+      return Promise.reject(createWebFetchError(
+        WEB_FETCH_ERROR_CODES.DECOMPRESSED_TOO_LARGE,
+        '网页解压后内容过大，已停止读取'
+      ))
+    }
+    return Promise.resolve(buffer)
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let total = 0
+    let settled = false
+    const finish = (callback, value) => {
+      if (settled) return
+      settled = true
+      callback(value)
+    }
+
+    decoder.on('data', (chunk) => {
+      total += chunk.length
+      if (total > maxDecodedBytes) {
+        decoder.destroy()
+        finish(reject, createWebFetchError(
+          WEB_FETCH_ERROR_CODES.DECOMPRESSED_TOO_LARGE,
+          '网页解压后内容过大，已停止读取'
+        ))
+        return
+      }
+      chunks.push(chunk)
+    })
+    decoder.on('end', () => finish(resolve, Buffer.concat(chunks)))
+    decoder.on('error', (error) => finish(reject, error))
+    decoder.end(buffer)
+  })
 }
 
 async function fetchPublicText(rawUrl, options = {}) {
   const timeoutMs = Math.min(30000, Math.max(1000, Number(options.timeoutMs) || DEFAULT_TIMEOUT_MS))
   const maxBytes = Math.min(4 * 1024 * 1024, Math.max(64 * 1024, Number(options.maxBytes) || DEFAULT_MAX_BYTES))
+  const maxDecodedBytes = Math.min(
+    8 * 1024 * 1024,
+    Math.max(64 * 1024, Number(options.maxDecodedBytes) || Math.max(DEFAULT_MAX_DECODED_BYTES, maxBytes))
+  )
 
   async function visit(currentUrl, redirectsLeft) {
     const parsed = parsePublicUrl(currentUrl)
@@ -170,16 +235,23 @@ async function fetchPublicText(rawUrl, options = {}) {
         let total = 0
         response.on('data', (chunk) => {
           total += chunk.length
-          if (total > maxBytes) {
+          try {
+            assertResponseBodySize(total, maxBytes)
+          } catch (error) {
+            response.destroy()
             request.destroy()
-            finish(reject, new Error('网页内容过大，已停止读取'))
+            finish(reject, error)
             return
           }
           chunks.push(chunk)
         })
-        response.on('end', () => {
+        response.on('end', async () => {
           try {
-            const decoded = decodeBody(Buffer.concat(chunks), response.headers['content-encoding'])
+            const decoded = await decodeBody(
+              Buffer.concat(chunks),
+              response.headers['content-encoding'],
+              maxDecodedBytes
+            )
             finish(resolve, {
               ok: true,
               url: parsed.toString(),
@@ -187,7 +259,11 @@ async function fetchPublicText(rawUrl, options = {}) {
               contentType,
               text: decoded.toString('utf8')
             })
-          } catch {
+          } catch (error) {
+            if (error?.code === WEB_FETCH_ERROR_CODES.DECOMPRESSED_TOO_LARGE) {
+              finish(reject, error)
+              return
+            }
             finish(reject, new Error('网页内容解码失败'))
           }
         })
@@ -205,4 +281,11 @@ async function fetchPublicText(rawUrl, options = {}) {
   return visit(rawUrl, MAX_REDIRECTS)
 }
 
-module.exports = { fetchPublicText, isPrivateIp, parsePublicUrl }
+module.exports = {
+  WEB_FETCH_ERROR_CODES,
+  assertResponseBodySize,
+  decodeBody,
+  fetchPublicText,
+  isPrivateIp,
+  parsePublicUrl
+}

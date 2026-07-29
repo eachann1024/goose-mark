@@ -131,6 +131,13 @@ declare global {
         text: string
       }>
     }
+    gooseAiContext?: {
+      listLocalSkills: () => {
+        status: 'ready' | 'missing' | 'denied' | 'unavailable' | 'error'
+        skills: Array<{ path: string; content: string }>
+        message?: string
+      }
+    }
     __gooseMarksWindowControl?: GooseMarksWindowControl
     require?: NodeRequire
     __gooseMarksPluginEnterSerial?: number

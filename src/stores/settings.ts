@@ -21,6 +21,11 @@ import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepositor
 
 export type ViewMode = 'list' | 'grid' | 'cards'
 export type Density = 'compact' | 'regular' | 'comfy'
+export type AIReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+export interface AISessionGenerationOptions {
+  reasoningEffort?: AIReasoningEffort
+  temperature?: number
+}
 /** 界面缩放档位：大 / 正常 / 小 */
 export type UIScale = 'large' | 'normal' | 'small'
 /** 宫格图标尺寸：小 38px / 中 46px / 大 56px */
@@ -87,6 +92,15 @@ export interface SettingsState {
   preferLocalSnapshotOnStartup: boolean
   localMirrorDirectory: string
   aiEnabled: boolean
+  /** 是否允许从固定目录 ~/.agents/skills 发现本地 Skill；默认关闭。 */
+  readLocalSkills: boolean
+  /** 用户自定义全局提示词；作为系统上下文注入，不写入对话正文。 */
+  userGlobalPrompt: string
+  aiDefaultReasoningEffort: AIReasoningEffort | null
+  aiDefaultTemperature: number | null
+  /** undefined 表示继承默认值，null 表示本会话显式关闭；不持久化。 */
+  aiSessionReasoningEffort: AIReasoningEffort | null | undefined
+  aiSessionTemperature: number | null | undefined
   /** 历史兼容：仅老用户已手动开启过 AI 时保留 uTools 内置 AI 路径 */
   aiAllowLegacyUTools: boolean
   aiSelectedModelId: string
@@ -144,6 +158,12 @@ export interface SettingsActions {
   setPreferLocalSnapshotOnStartup: (value: boolean) => void
   setLocalMirrorDirectory: (value: string) => void
   setAiEnabled: (value: boolean) => void
+  setReadLocalSkills: (value: boolean) => void
+  setUserGlobalPrompt: (value: string) => void
+  setAiDefaultReasoningEffort: (value: AIReasoningEffort | null) => void
+  setAiDefaultTemperature: (value: number | null) => void
+  setAiSessionReasoningEffort: (value: AIReasoningEffort | null | undefined) => void
+  setAiSessionTemperature: (value: number | null | undefined) => void
   setAiSelectedModelId: (value: string | null) => void
   setAiCustomProviderEnabled: (value: boolean) => void
   /** 切换接入协议：写入默认 BaseURL，并清空旧协议的模型缓存 */
@@ -170,7 +190,37 @@ export interface SettingsActions {
 
 export type SettingsStore = SettingsState & SettingsActions
 
-type PersistedSettingsState = SettingsState
+type PersistedSettingsState = Omit<SettingsState, 'aiSessionReasoningEffort' | 'aiSessionTemperature'>
+
+export const USER_GLOBAL_PROMPT_MAX_CHARACTERS = 24_000
+const AI_REASONING_EFFORTS = new Set<AIReasoningEffort>([
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh'
+])
+
+export function normalizeUserGlobalPrompt(value: unknown) {
+  if (typeof value !== 'string') return ''
+  return Array.from(value.replace(/\r\n?/g, '\n').trim())
+    .slice(0, USER_GLOBAL_PROMPT_MAX_CHARACTERS)
+    .join('')
+}
+
+export function normalizeAiReasoningEffort(value: unknown): AIReasoningEffort | null {
+  return typeof value === 'string' && AI_REASONING_EFFORTS.has(value as AIReasoningEffort)
+    ? value as AIReasoningEffort
+    : null
+}
+
+export function normalizeAiTemperature(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return null
+  return Math.min(2, Math.max(0, Math.round(numeric * 100) / 100))
+}
 
 const createInitialState = (): SettingsState => {
   const defaults = getDefaultAISettings()
@@ -187,6 +237,12 @@ const createInitialState = (): SettingsState => {
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     aiEnabled: defaults.enabled,
+    readLocalSkills: false,
+    userGlobalPrompt: '',
+    aiDefaultReasoningEffort: null,
+    aiDefaultTemperature: null,
+    aiSessionReasoningEffort: undefined,
+    aiSessionTemperature: undefined,
     aiAllowLegacyUTools: defaults.allowLegacyUTools,
     aiSelectedModelId: active.selectedModelId,
     aiUseCustomProvider: defaults.useCustomProvider,
@@ -223,6 +279,18 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
       setPreferLocalSnapshotOnStartup: (value) => set({ preferLocalSnapshotOnStartup: !!value }),
       setLocalMirrorDirectory: (value) => set({ localMirrorDirectory: String(value || '').trim() }),
       setAiEnabled: (value) => set({ aiEnabled: !!value }),
+      setReadLocalSkills: (value) => set({ readLocalSkills: !!value }),
+      setUserGlobalPrompt: (value) => set({ userGlobalPrompt: normalizeUserGlobalPrompt(value) }),
+      setAiDefaultReasoningEffort: (value) => set({
+        aiDefaultReasoningEffort: normalizeAiReasoningEffort(value)
+      }),
+      setAiDefaultTemperature: (value) => set({ aiDefaultTemperature: normalizeAiTemperature(value) }),
+      setAiSessionReasoningEffort: (value) => set({
+        aiSessionReasoningEffort: value === undefined ? undefined : normalizeAiReasoningEffort(value)
+      }),
+      setAiSessionTemperature: (value) => set({
+        aiSessionTemperature: value === undefined ? undefined : normalizeAiTemperature(value)
+      }),
       setAiSelectedModelId: (value) => {
         const current = get()
         const protocol = current.aiProtocol
@@ -316,6 +384,10 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
   localMirrorDirectory: state.localMirrorDirectory,
   aiEnabled: state.aiEnabled,
+  readLocalSkills: state.readLocalSkills,
+  userGlobalPrompt: state.userGlobalPrompt,
+  aiDefaultReasoningEffort: state.aiDefaultReasoningEffort,
+  aiDefaultTemperature: state.aiDefaultTemperature,
   aiAllowLegacyUTools: state.aiAllowLegacyUTools,
   aiSelectedModelId: state.aiSelectedModelId,
   aiUseCustomProvider: state.aiUseCustomProvider,
@@ -372,6 +444,12 @@ const normalizePersistedSettings = (state: Partial<SettingsState> | null | undef
   if (!state) return {}
   const patch: Partial<SettingsState> = { ...state }
   if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
+  if (typeof patch.readLocalSkills !== 'boolean') patch.readLocalSkills = false
+  patch.userGlobalPrompt = normalizeUserGlobalPrompt(patch.userGlobalPrompt)
+  patch.aiDefaultReasoningEffort = normalizeAiReasoningEffort(patch.aiDefaultReasoningEffort)
+  patch.aiDefaultTemperature = normalizeAiTemperature(patch.aiDefaultTemperature)
+  delete patch.aiSessionReasoningEffort
+  delete patch.aiSessionTemperature
   patch.aiAllowLegacyUTools = false
   patch.aiUseCustomProvider = true
   // v2 中 "openai" 表示 Responses；更早的 OpenAI 配置是 Chat Completions。
@@ -502,3 +580,17 @@ export const selectAiSettings = (s: SettingsStore): AISettingsLike => ({
   customApiKey: s.aiCustomApiKey,
   customModelOptions: s.aiCustomModelOptions
 })
+
+/** runtime 在每次发送时读取；临时值不会进入设置持久化快照。 */
+export function selectAiSessionGenerationOptions(s: SettingsStore): AISessionGenerationOptions {
+  const reasoningEffort = s.aiSessionReasoningEffort === undefined
+    ? s.aiDefaultReasoningEffort
+    : s.aiSessionReasoningEffort
+  const temperature = s.aiSessionTemperature === undefined
+    ? s.aiDefaultTemperature
+    : s.aiSessionTemperature
+  return {
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+    ...(temperature !== null ? { temperature } : {})
+  }
+}
