@@ -39,6 +39,12 @@ try {
       console.warn('⚠️ 未找到 preload/preload.cjs');
   }
 
+  const webFetchSrc = path.join(rootDir, 'preload/web-fetch.cjs');
+  if (fs.existsSync(webFetchSrc)) {
+      fs.copyFileSync(webFetchSrc, path.join(distDir, 'web-fetch.cjs'));
+      console.log('✅ web-fetch.cjs 已复制');
+  }
+
   // 1.1 创建 dist/package.json 设置 type: commonjs
   const distPackageJson = { type: 'commonjs' };
   fs.writeFileSync(path.join(distDir, 'package.json'), JSON.stringify(distPackageJson, null, 2));

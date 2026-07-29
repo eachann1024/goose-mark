@@ -97,22 +97,51 @@ const requestText = async (url: string, timeoutMs = 8000, headers?: Record<strin
   return requestTextViaFetch(url, timeoutMs, headers)
 }
 
-const fetchMetadataViaJina = async (url: string): Promise<SearchFallbackResult | null> => {
+// Jina Reader 双域名容灾：主域名 r.jina.ai 在国内存在 DNS 污染，备用域名 r.jinaai.cn 国内可用。
+// 按顺序尝试，首个成功的域名会被记住（内存 + localStorage），后续请求优先直连。
+const JINA_READER_HOSTS = ['https://r.jina.ai', 'https://r.jinaai.cn']
+const JINA_HOST_STORAGE_KEY = 'gm-jina-reader-host'
+let cachedJinaHost: string | null = null
+
+const readPreferredJinaHost = (): string | null => {
+  if (cachedJinaHost) return cachedJinaHost
   try {
-    const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`
-    const target = `https://r.jina.ai/${normalized}`
-    const text = await requestText(target, 10000, { Accept: 'application/json' })
-    if (!text) return null
-    const payload = JSON.parse(text)
-    const title = (payload?.data?.title ?? payload?.title ?? '').trim()
-    const description = (payload?.data?.description ?? payload?.description ?? '').trim()
-    if (!title) return null
-    return { title, description: description || null, provider: 'jina' }
-  } catch {
-    return null
-  }
+    const saved = typeof window !== 'undefined' ? window.localStorage?.getItem(JINA_HOST_STORAGE_KEY) : null
+    if (saved && JINA_READER_HOSTS.includes(saved)) cachedJinaHost = saved
+  } catch {}
+  return cachedJinaHost
 }
 
-export const fetchMetadataFromNetwork = async (url: string): Promise<SearchFallbackResult | null> => {
-  return fetchMetadataViaJina(url)
+const rememberJinaHost = (host: string) => {
+  cachedJinaHost = host
+  try {
+    window.localStorage?.setItem(JINA_HOST_STORAGE_KEY, host)
+  } catch {}
+}
+
+const fetchMetadataViaJina = async (url: string, timeoutMs = 10000): Promise<SearchFallbackResult | null> => {
+  const normalized = /^https?:\/\//i.test(url) ? url : `https://${url}`
+  const preferred = readPreferredJinaHost()
+  const hosts = preferred ? [preferred, ...JINA_READER_HOSTS.filter((h) => h !== preferred)] : JINA_READER_HOSTS
+  const perHostTimeout = Math.max(2000, Math.floor(timeoutMs / hosts.length))
+
+  for (const host of hosts) {
+    try {
+      const text = await requestText(`${host}/${normalized}`, perHostTimeout, { Accept: 'application/json' })
+      if (!text) continue
+      const payload = JSON.parse(text)
+      const title = (payload?.data?.title ?? payload?.title ?? '').trim()
+      const description = (payload?.data?.description ?? payload?.description ?? '').trim()
+      if (!title) continue
+      rememberJinaHost(host)
+      return { title, description: description || null, provider: 'jina' }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
+export const fetchMetadataFromNetwork = async (url: string, timeoutMs = 10000): Promise<SearchFallbackResult | null> => {
+  return fetchMetadataViaJina(url, timeoutMs)
 }

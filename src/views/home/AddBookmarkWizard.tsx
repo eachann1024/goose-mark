@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, type UIEvent } from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
 import {
   useBookmarkForm,
   useBookmarkFormStore,
   isValidUrlInput,
-  URL_FETCH_DEBOUNCE_MS,
+  URL_FETCH_PASTE_DEBOUNCE_MS,
 } from '@/hooks/useBookmarkForm'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
@@ -40,6 +40,7 @@ export default function AddBookmarkWizard({
     isGenerating,
     editingId,
     originalUrl,
+    lastFetchedUrl,
     categorySuggestion,
     isSuggestingCategory,
     canUseAi,
@@ -59,6 +60,9 @@ export default function AddBookmarkWizard({
     onDescInput,
     isTitleDirty,
     isDescDirty,
+    isDraftTemplate,
+    titleSuggestion,
+    applyTitleSuggestion,
     takeOverTitle,
     takeOverDesc,
   } = useBookmarkForm()
@@ -67,6 +71,15 @@ export default function AddBookmarkWizard({
   const titleFetching = iconLoading && !isTitleDirty
   const descFetching = iconLoading && !isDescDirty
   const previewIconUrl = iconToDisplayUrl(previewIcon ?? undefined) || ''
+
+  // 新建时一旦识别到模板占位符，默认打开全局搜索（用户仍可关掉）
+  const wasTemplateRef = useRef(false)
+  useEffect(() => {
+    if (isDraftTemplate && !wasTemplateRef.current && !editingId) {
+      patchDraft({ allowUniversal: true })
+    }
+    wasTemplateRef.current = isDraftTemplate
+  }, [isDraftTemplate, editingId, patchDraft])
 
   // ---- 关闭联动：hook 保存成功后 set({ showAdd:false }) -> 触发 onBack ----
   const onBackRef = useRef(onBack)
@@ -102,15 +115,6 @@ export default function AddBookmarkWizard({
     [patchDraft],
   )
 
-  const handlePaste = useCallback(async () => {
-    try {
-      const text = await navigator.clipboard.readText()
-      if (text) setUrl(text.trim())
-    } catch {
-      /* 剪贴板不可用时静默 */
-    }
-  }, [setUrl])
-
   const handleSaveClick = useCallback(async () => {
     await handleSave()
     const after = useBookmarkFormStore.getState()
@@ -135,32 +139,14 @@ export default function AddBookmarkWizard({
   }, [isSaving, draftLocations.length, handleSaveClick])
 
   return (
-    <div className={`gm-wiz${isEdit ? ' is-edit' : ' is-new'}`}>
-      <aside className="gm-rail gm-rail-compact">
-        <div className="gm-rail-brand">
-          <span className="gm-rail-logo">
-            <Ico name="bookmark" />
-          </span>
-          <span className="gm-rail-name">鹅的书签</span>
-        </div>
-
-        <div className="gm-rail-panel">
-          <span className="gm-rail-panel-ico">
-            <Ico name={isEdit ? 'pencil' : 'plus'} />
-          </span>
-          <div>
-            <div className="gm-rail-panel-title">{isEdit ? '编辑书签' : '新增书签'}</div>
-            <div className="gm-rail-panel-sub">{isEdit ? '修改信息与归类' : '粘贴链接后直接完善信息'}</div>
-          </div>
-        </div>
-
-        <button className="gm-rail-back" onClick={handleCancel} disabled={isSaving}>
-          <Ico name="arrow-left" />
-          返回列表
-        </button>
-      </aside>
-
+    <div className={`gm-wiz${isEdit ? ' is-edit' : ' is-new'} no-rail`}>
       <div className="gm-wiz-main">
+        <div className="gm-wiz-topbar">
+          <button className="gm-rail-back gm-wiz-back" onClick={handleCancel} disabled={isSaving}>
+            <Ico name="arrow-left" />
+            返回列表
+          </button>
+        </div>
         <div className="gm-wiz-body">
           <ConfirmStep
             draft={draft}
@@ -179,6 +165,8 @@ export default function AddBookmarkWizard({
             patchDraft={patchDraft}
             onTitleInput={onTitleInput}
             onDescInput={onDescInput}
+            titleSuggestion={titleSuggestion}
+            applyTitleSuggestion={applyTitleSuggestion}
             takeOverTitle={takeOverTitle}
             takeOverDesc={takeOverDesc}
             setLocations={(v: BookmarkLocation[]) => set({ draftLocations: v })}
@@ -187,9 +175,11 @@ export default function AddBookmarkWizard({
             applyCategorySuggestion={applyCategorySuggestion}
             dismissCategorySuggestion={dismissCategorySuggestion}
             setUrl={setUrl}
-            onPaste={handlePaste}
+            allowUniversal={draft.allowUniversal}
+            isDraftTemplate={isDraftTemplate}
             editingId={editingId}
             originalUrl={originalUrl}
+            lastFetchedUrl={lastFetchedUrl}
             runUrlFetch={runUrlFetch}
           />
 
@@ -226,6 +216,13 @@ export default function AddBookmarkWizard({
   )
 }
 
+/** 把 URL 中的 {占位符} 标蓝，供镜像层渲染（任意 {q}/{关键词}/… 均匹配） */
+function highlightTemplateTokens(url: string): string {
+  const escape = (s: string) =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return escape(url).replace(/\{[^}]+\}/g, (token) => `<span class="gm-url-token">${token}</span>`)
+}
+
 function ConfirmStep({
   draft,
   draftLocations,
@@ -243,6 +240,8 @@ function ConfirmStep({
   patchDraft,
   onTitleInput,
   onDescInput,
+  titleSuggestion,
+  applyTitleSuggestion,
   takeOverTitle,
   takeOverDesc,
   setLocations,
@@ -251,9 +250,11 @@ function ConfirmStep({
   applyCategorySuggestion,
   dismissCategorySuggestion,
   setUrl,
-  onPaste,
+  allowUniversal,
+  isDraftTemplate,
   editingId,
   originalUrl,
+  lastFetchedUrl,
   runUrlFetch,
 }: {
   draft: { title: string; desc: string; url: string }
@@ -274,9 +275,11 @@ function ConfirmStep({
     confidence: number
   } | null
   isSuggestingCategory: boolean
-  patchDraft: (p: Partial<{ title: string; desc: string; url: string }>) => void
+  patchDraft: (p: Partial<{ title: string; desc: string; url: string; allowUniversal: boolean }>) => void
   onTitleInput: () => void
   onDescInput: (v: string) => void
+  titleSuggestion: string | null
+  applyTitleSuggestion: () => void
   takeOverTitle: () => void
   takeOverDesc: () => void
   setLocations: (v: BookmarkLocation[]) => void
@@ -285,44 +288,58 @@ function ConfirmStep({
   applyCategorySuggestion: () => void
   dismissCategorySuggestion: () => void
   setUrl: (v: string) => void
-  onPaste: () => void
+  allowUniversal: boolean
+  isDraftTemplate: boolean
   editingId: string
   originalUrl: string
+  lastFetchedUrl: string
   runUrlFetch: (debounceMs?: number) => void
 }) {
+  // 读取触发策略：打字不触发；粘贴后短防抖自动读；失焦时若链接有效且有未读取变更则自动读。
+  const pasteArmedRef = useRef(false)
+  const mirrorRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
+    if (!pasteArmedRef.current) return
+    pasteArmedRef.current = false
     const val = draft.url
     if (!val.trim()) return
     if (!isValidUrlInput(val)) return
     if (editingId && val === originalUrl) return
-    runUrlFetch(URL_FETCH_DEBOUNCE_MS)
+    runUrlFetch(URL_FETCH_PASTE_DEBOUNCE_MS)
   }, [draft.url, editingId, originalUrl, runUrlFetch])
 
   const isEdit = !!editingId
   const previewText = ((draft.title || draft.url) || 'ICON').trim().slice(0, 2).toUpperCase()
-  const normalizedHost = useMemo(() => {
-    if (!draft.url.trim()) return ''
-    try {
-      return new URL(/^https?:\/\//i.test(draft.url) ? draft.url : `https://${draft.url}`).host.replace(/^www\./, '')
-    } catch {
-      return draft.url
-    }
-  }, [draft.url])
+  const hasUrl = !!draft.url.trim()
+  const hasTemplateToken = /\{[^}]+\}/.test(draft.url)
+
+  // 链接有效、与上次读取时不一致、且不是编辑模式下未改动的原始链接 → 有「待读取」变更
+  const urlOutdated =
+    !!draft.url.trim() &&
+    isValidUrlInput(draft.url) &&
+    draft.url !== lastFetchedUrl &&
+    !(editingId && draft.url === originalUrl)
 
   const metadataStatus = useMemo(() => {
-    if (!draft.url.trim()) return '粘贴链接后自动读取标题、简介和图标'
+    if (!draft.url.trim()) return isEdit ? '粘贴或输入新链接后自动读取网页信息' : '粘贴或输入链接后自动读取标题、简介和图标'
     if (!isValidUrlInput(draft.url)) return '链接格式待确认'
     if (iconLoading) return '正在读取网页信息'
     if (isGenerating) return 'AI 正在整理标题和简介'
+    if (urlOutdated) return '链接已修改，失焦后自动更新网页信息'
     if (iconFetchPhase === 'success') return '已读取网页信息'
     if (iconFetchPhase === 'failed') return '未能读取网页信息，可手动填写'
-    return '链接变更后会自动读取网页信息'
-  }, [draft.url, iconFetchPhase, iconLoading, isGenerating])
+    return '修改链接不会立即读取，失焦后自动更新'
+  }, [draft.url, iconFetchPhase, iconLoading, isGenerating, isEdit, urlOutdated])
 
-  const handleReadNow = useCallback(() => {
-    if (!draft.url.trim() || !isValidUrlInput(draft.url)) return
+  // 失焦时链接有效且有未读取变更 → 自动读一次；打字过程中绝不触发
+  const handleUrlBlur = useCallback(() => {
+    if (!urlOutdated || iconLoading) return
     runUrlFetch()
-  }, [draft.url, runUrlFetch])
+  }, [urlOutdated, iconLoading, runUrlFetch])
+
+  const handleUrlScroll = useCallback((e: UIEvent<HTMLInputElement>) => {
+    if (mirrorRef.current) mirrorRef.current.scrollLeft = e.currentTarget.scrollLeft
+  }, [])
 
   const handleAskAI = useCallback(() => {
     askAI(true)
@@ -332,39 +349,77 @@ function ConfirmStep({
     <div className="gm-confirm">
       <div className="gm-confirm-head">
         <h2>{isEdit ? '编辑书签' : '新增书签'}</h2>
-        <p>{isEdit ? '调整链接、说明和归类后保存' : '粘贴链接，补齐标题、简介和归类后保存'}</p>
       </div>
 
       <section className="gm-confirm-url">
-        <div className="gm-id-label">链接 / 模板</div>
         <div className="gm-url-big">
           <Ico name="link" className="gm-url-icon" />
-          <input
-            className="gm-url-field"
-            value={draft.url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://… 或含 {query} 的搜索模板"
-            spellCheck={false}
-          />
-          {!draft.url.trim() ? (
-            <button type="button" className="gm-url-paste" onClick={onPaste} title="从剪贴板粘贴">
-              <Ico name="paste" />
-              粘贴
-            </button>
-          ) : (
-            <button type="button" className="gm-url-paste" onClick={handleReadNow} disabled={iconLoading} title="重新读取网页信息">
-              <Ico name={iconLoading ? 'loader' : 'refresh-cw'} className={iconLoading ? 'spin' : ''} />
-              读取
-            </button>
-          )}
+          <div className={`gm-url-field-wrap${hasUrl ? ' has-value' : ''}${hasTemplateToken ? ' has-token' : ''}`}>
+            {/* 空值：伪占位，{q} 标蓝 */}
+            {!hasUrl && (
+              <div className="gm-url-ph" aria-hidden="true">
+                https://… 或含 <span className="gm-url-ph-token">{'{q}'}</span> 的搜索模板
+              </div>
+            )}
+            {/* 有值：镜像层高亮任意 {占位符}，输入层透明描光标 */}
+            {hasUrl && (
+              <div
+                ref={mirrorRef}
+                className="gm-url-mirror"
+                aria-hidden="true"
+                dangerouslySetInnerHTML={{ __html: highlightTemplateTokens(draft.url) }}
+              />
+            )}
+            <input
+              className={`gm-url-field${hasUrl ? ' is-overlay' : ''}`}
+              value={draft.url}
+              onChange={(e) => setUrl(e.target.value)}
+              onPaste={() => {
+                pasteArmedRef.current = true
+              }}
+              onBlur={handleUrlBlur}
+              onScroll={handleUrlScroll}
+              placeholder=""
+              spellCheck={false}
+              aria-label="链接或含 {q} 的搜索模板"
+            />
+          </div>
         </div>
         <div className="gm-url-meta">
-          <span className={`gm-url-state${iconFetchPhase === 'failed' ? ' warn' : ''}`}>
-            <Ico name={iconLoading || isGenerating ? 'loader' : iconFetchPhase === 'failed' ? 'alert-circle' : 'check-circle'} className={iconLoading || isGenerating ? 'spin' : ''} />
+          <span className={`gm-url-state${iconFetchPhase === 'failed' && !urlOutdated ? ' warn' : urlOutdated && !iconLoading ? ' attention' : ''}`}>
+            <Ico
+              name={iconLoading || isGenerating ? 'loader' : urlOutdated ? 'refresh-cw' : iconFetchPhase === 'failed' ? 'alert-circle' : 'check-circle'}
+              className={iconLoading || isGenerating ? 'spin' : ''}
+            />
             {metadataStatus}
           </span>
-          {/{[^}]+}/.test(draft.url) && <span>模板链接会在呼出后要求输入关键词</span>}
         </div>
+        {isDraftTemplate && (
+          <div className={`gm-tpl-tip${allowUniversal ? ' on' : ''}`}>
+            <div className="gm-tpl-tip-body">
+              <div className="gm-tpl-tip-title">
+                <Ico name="sparkles" />
+                已识别搜索模板
+              </div>
+              <div className="gm-tpl-tip-desc">
+                支持 <span className="gm-url-ph-token">{'{q}'}</span>、<span className="gm-url-ph-token">{'{关键词}'}</span> 等任意 {'{占位符}'}。
+                {allowUniversal
+                  ? ' 已开启全局搜索：uTools 主输入框任意键入即可匹配，面板内无书签命中时也会列出。'
+                  : ' 开启全局搜索后，uTools 主输入框任意键入即可匹配，面板内无书签命中时也会列出。'}
+              </div>
+            </div>
+            <div className="gm-tpl-tip-switch">
+              <span className="gm-tpl-tip-switch-lbl">全局搜索</span>
+              <div
+                className={`g-switch${allowUniversal ? ' on' : ''}`}
+                role="switch"
+                aria-checked={allowUniversal}
+                aria-label="显示到 uTools 全局搜索"
+                onClick={() => patchDraft({ allowUniversal: !allowUniversal })}
+              />
+            </div>
+          </div>
+        )}
       </section>
 
       {canUseAi && (
@@ -426,11 +481,17 @@ function ConfirmStep({
                 onTitleInput()
               }}
             />
-            {normalizedHost && (
-              <div className="gm-id-host">
-                <Ico name="globe" />
-                {normalizedHost}
-              </div>
+            {titleSuggestion && titleSuggestion !== draft.title.trim() && (
+              <button
+                type="button"
+                className="gm-id-suggest"
+                onClick={applyTitleSuggestion}
+                title="点击替换为匹配到的标题"
+              >
+                <Ico name="sparkles" />
+                <span className="gm-id-suggest-label">匹配到</span>
+                <span className="gm-id-suggest-text">{titleSuggestion}</span>
+              </button>
             )}
           </div>
         </div>

@@ -271,6 +271,8 @@ const FRAG_SRC_BODY = /* glsl */ `
     // 实现：O(1) 网格 hash 星空，避免逐帧循环对弱 GPU 的压力。
     // 将逃逸方向映射为球面经纬 uv，乘密度后 floor 取 cell，
     // hash(cell) 决定该 cell 是否有星/亮度/颜色，fract 算到星心距离点亮。
+    // 动画层保持深空黑（不把 #262624 画进 shader，避免整屏发灰）；
+    // 纯色 #262624 只做 canvas 下方的 CSS 底层。
     vec3 skyColor = vec3(0.0);
 
     float lenP = length(p);
@@ -492,9 +494,9 @@ export function BlackHole({
       // ignore
     }
 
-    // WebGL 不可用：静默降级为纯黑
+    // WebGL 不可用：静默降级为纯色底（与星空彩蛋一致）
     if (!gl) {
-      canvas.style.background = '#000'
+      canvas.style.background = '#262624'
       return () => { canvas.remove() }
     }
 
@@ -717,7 +719,7 @@ export function BlackHole({
     const onRestored = () => {
       restoreAttempts += 1
       if (restoreAttempts > MAX_RESTORE_ATTEMPTS) {
-        canvas.style.background = '#000'
+        canvas.style.background = '#262624'
         return
       }
       isLost = false
@@ -783,6 +785,7 @@ export function BlackHole({
     inset:         0,
     overflow:      'hidden',
     pointerEvents: 'none',
+    backgroundColor: '#262624',
     ...style,
   }
 

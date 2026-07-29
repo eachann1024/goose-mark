@@ -10,11 +10,12 @@ bun.lock
 .trae
 .claude/worktrees/
 CHANGELOG.md
-.playwright-mcp/
 .design-check/
 .claude/launch.json
 .env
 .env.*
+!src/agent/AGENTS.md
+!src/agent/**/SKILL.md
 /[0-9][0-9]-*.png
 goose-polish/
 goose-shots-r2/

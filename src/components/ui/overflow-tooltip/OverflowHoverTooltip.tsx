@@ -11,12 +11,14 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { useUIManager } from '@/hooks/useUIManager'
+import { useSettingsStore } from '@/stores/settings'
 
 export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right'
 
 const GAP = 8
 const VIEW_PAD = 8
 const SHOW_DELAY_MS = 280
+const HIDE_DELAY_MS = 150
 const MAX_TIP_WIDTH = 280
 
 function isTextOverflowing(el: HTMLElement | null | undefined): boolean {
@@ -32,6 +34,7 @@ function readThemeTokens(): {
   shadow: string
   radius: string
   theme: string
+  accentBorder: string
 } {
   const root = document.querySelector('.goose-home') as HTMLElement | null
   const cs = root ? getComputedStyle(root) : null
@@ -47,6 +50,7 @@ function readThemeTokens(): {
     shadow: pick('--shadow-pop', '0 12px 36px -10px rgba(25,15,9,.22)'),
     radius: pick('--radius-sm', '8px'),
     theme: root?.getAttribute('data-theme') || 'light',
+    accentBorder: pick('--accent-border', '#e2b59f'),
   }
 }
 
@@ -149,7 +153,7 @@ export interface OverflowHoverTooltipProps {
 }
 
 export function OverflowHoverTooltip({
-  title,
+  title: _title,
   description,
   children,
   className,
@@ -165,12 +169,18 @@ export function OverflowHoverTooltip({
   const hostRef = useRef<HTMLDivElement | null>(null)
   const tipRef = useRef<HTMLDivElement | null>(null)
   const showTimer = useRef<number | undefined>(undefined)
+  const hideTimer = useRef<number | undefined>(undefined)
+  const selectingRef = useRef(false)
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ left: number; top: number; placement: TooltipPlacement } | null>(null)
   const [tokens, setTokens] = useState(() => readThemeTokens())
 
   const isTooltipEnabled = useUIManager((s) => s.isTooltipEnabled)
   const tooltipProviderKey = useUIManager((s) => s.tooltipProviderKey)
+  const descriptionSelectable = useSettingsStore((s) => s.descriptionSelectable)
+  // 浮层只展示描述；有描述时才允许选中交互
+  const tipText = description || ''
+  const canSelectDesc = Boolean(descriptionSelectable && tipText)
 
   // 合并 rest 中可能来自 dnd-kit listeners 的指针/鼠标事件，避免覆盖 hide
   const {
@@ -200,11 +210,44 @@ export function OverflowHoverTooltip({
     }
   }, [])
 
+  const clearHideTimer = useCallback(() => {
+    if (hideTimer.current !== undefined) {
+      window.clearTimeout(hideTimer.current)
+      hideTimer.current = undefined
+    }
+  }, [])
+
   const hide = useCallback(() => {
     clearShowTimer()
+    clearHideTimer()
+    selectingRef.current = false
     setOpen(false)
     setPos(null)
-  }, [clearShowTimer])
+  }, [clearShowTimer, clearHideTimer])
+
+  const scheduleHide = useCallback(() => {
+    clearHideTimer()
+    // 正在拖选时不关闭，避免选中中途浮层消失
+    if (selectingRef.current) return
+    if (!canSelectDesc) {
+      hide()
+      return
+    }
+    hideTimer.current = window.setTimeout(() => {
+      // 若浮层内仍有选区，再等一轮，避免选完立刻被关掉
+      const sel = window.getSelection()
+      const tip = tipRef.current
+      if (sel && !sel.isCollapsed && tip && (tip.contains(sel.anchorNode) || tip.contains(sel.focusNode))) {
+        hideTimer.current = window.setTimeout(hide, HIDE_DELAY_MS)
+        return
+      }
+      hide()
+    }, HIDE_DELAY_MS)
+  }, [canSelectDesc, clearHideTimer, hide])
+
+  const cancelHide = useCallback(() => {
+    clearHideTimer()
+  }, [clearHideTimer])
 
   useEffect(() => {
     hide()
@@ -214,14 +257,17 @@ export function OverflowHoverTooltip({
     if (!isTooltipEnabled) hide()
   }, [isTooltipEnabled, hide])
 
-  useEffect(() => () => clearShowTimer(), [clearShowTimer])
+  useEffect(() => () => {
+    clearShowTimer()
+    clearHideTimer()
+  }, [clearShowTimer, clearHideTimer])
 
   const hasOverflow = useCallback(() => {
     const host = hostRef.current
     if (!host) return false
-    const ttl = host.querySelector('.ttl') as HTMLElement | null
+    // 浮层只展示描述，仅描述溢出时弹出
     const dsc = host.querySelector('.dsc') as HTMLElement | null
-    return isTextOverflowing(ttl) || isTextOverflowing(dsc)
+    return isTextOverflowing(dsc)
   }, [])
 
   const reposition = useCallback(() => {
@@ -242,7 +288,7 @@ export function OverflowHoverTooltip({
     if (!open) return
     setTokens(readThemeTokens())
     reposition()
-  }, [open, title, description, reposition])
+  }, [open, tipText, canSelectDesc, reposition])
 
   useEffect(() => {
     if (!open) return
@@ -257,41 +303,62 @@ export function OverflowHoverTooltip({
 
   const tryShow = useCallback(() => {
     if (disabled || !isTooltipEnabled) return
-    if (!title && !description) return
+    if (!tipText) return
     if (!hasOverflow()) return
     setTokens(readThemeTokens())
     setOpen(true)
-  }, [disabled, isTooltipEnabled, title, description, hasOverflow])
+  }, [disabled, isTooltipEnabled, tipText, hasOverflow])
 
   const handleMouseEnter = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
       if (!disabled && isTooltipEnabled) {
+        cancelHide()
         clearShowTimer()
         showTimer.current = window.setTimeout(tryShow, SHOW_DELAY_MS)
       }
       ;(restMouseEnter as ((ev: React.MouseEvent<HTMLDivElement>) => void) | undefined)?.(e)
     },
-    [disabled, isTooltipEnabled, clearShowTimer, tryShow, restMouseEnter]
+    [disabled, isTooltipEnabled, cancelHide, clearShowTimer, tryShow, restMouseEnter]
   )
 
   const handleMouseLeave = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
-      hide()
+      clearShowTimer()
+      scheduleHide()
       ;(restMouseLeave as ((ev: React.MouseEvent<HTMLDivElement>) => void) | undefined)?.(e)
     },
-    [hide, restMouseLeave]
+    [clearShowTimer, scheduleHide, restMouseLeave]
   )
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      // 卡片上按下（拖拽/点击）立即收起，避免挡操作
       hide()
       ;(restPointerDown as ((ev: React.PointerEvent<HTMLDivElement>) => void) | undefined)?.(e)
     },
     [hide, restPointerDown]
   )
 
+  const handleTipMouseEnter = useCallback(() => {
+    cancelHide()
+  }, [cancelHide])
+
+  const handleTipMouseLeave = useCallback(() => {
+    scheduleHide()
+  }, [scheduleHide])
+
+  const handleDescPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation()
+    selectingRef.current = true
+    cancelHide()
+  }, [cancelHide])
+
+  const handleDescPointerUp = useCallback(() => {
+    selectingRef.current = false
+  }, [])
+
   const tipBody =
-    open && (title || description)
+    open && tipText
       ? createPortal(
           <div
             ref={tipRef}
@@ -299,7 +366,11 @@ export function OverflowHoverTooltip({
             role="tooltip"
             data-placement={pos?.placement ?? 'top'}
             data-theme={tokens.theme}
-            className="gm-overflow-tip"
+            className={`gm-overflow-tip${canSelectDesc ? ' gm-overflow-tip--selectable' : ''}`}
+            onMouseEnter={canSelectDesc ? handleTipMouseEnter : undefined}
+            onMouseLeave={canSelectDesc ? handleTipMouseLeave : undefined}
+            onPointerDown={canSelectDesc ? handleDescPointerDown : undefined}
+            onPointerUp={canSelectDesc ? handleDescPointerUp : undefined}
             style={{
               position: 'fixed',
               left: pos ? pos.left : -9999,
@@ -307,39 +378,30 @@ export function OverflowHoverTooltip({
               zIndex: 20050,
               maxWidth: Math.min(MAX_TIP_WIDTH, window.innerWidth - VIEW_PAD * 2),
               visibility: pos ? 'visible' : 'hidden',
-              pointerEvents: 'none',
+              pointerEvents: canSelectDesc ? 'auto' : 'none',
               boxSizing: 'border-box',
               padding: '8px 10px',
               borderRadius: tokens.radius || '8px',
               background: tokens.bg,
-              color: tokens.fg,
-              border: `1px solid ${tokens.border}`,
+              color: tokens.muted,
+              // 可选中时边框略偏 accent，提示可拖选
+              border: `1px solid ${canSelectDesc ? tokens.accentBorder : tokens.border}`,
               boxShadow: tokens.shadow,
               fontSize: 12,
               lineHeight: 1.45,
+              fontWeight: 500,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              cursor: canSelectDesc ? 'text' : undefined,
+              WebkitUserSelect: canSelectDesc ? 'auto' : undefined,
+              userSelect: canSelectDesc ? 'text' : undefined,
               fontFamily:
                 '-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,"PingFang SC","Microsoft YaHei",sans-serif',
             }}
           >
-            {title ? (
-              <div className="gm-overflow-tip-title" style={{ fontWeight: 600, wordBreak: 'break-word' }}>
-                {title}
-              </div>
-            ) : null}
-            {description ? (
-              <div
-                className="gm-overflow-tip-desc"
-                style={{
-                  marginTop: title ? 4 : 0,
-                  color: tokens.muted,
-                  fontSize: 11.5,
-                  fontWeight: 500,
-                  wordBreak: 'break-word',
-                }}
-              >
-                {description}
-              </div>
-            ) : null}
+            <div className={canSelectDesc ? 'user-select-text' : undefined}>
+              {tipText}
+            </div>
           </div>,
           document.body
         )

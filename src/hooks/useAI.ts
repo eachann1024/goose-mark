@@ -2,12 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
 import { probeUrl } from '@/services/siteProbe'
+import { normalizeAIConfidence, parseAIJsonObject, truncateAIText } from '@/lib/aiOutput'
 import {
   AIProviderRequestError,
   getAIAvailability,
   runAIText,
   type AIMessage
 } from '@/lib/aiProvider'
+import {
+  METADATA_SYSTEM_PROMPT,
+  METADATA_OUTPUT,
+  buildMetadataUserPrompt,
+  CATEGORY_SYSTEM_PROMPT,
+  CATEGORY_OUTPUT,
+  type AIStructuredOutput,
+  buildCategoryUserPrompt
+} from '@/constants/aiPrompts'
 
 /**
  * AI 元信息 / 分类建议（React 版）
@@ -107,14 +117,18 @@ export function useAI() {
         return `uTools 模型“${modelInfo.model}”当前不可用，请重新选择或稍后重试`
       }
       if (modelInfo.isCustom) {
-        return `AI ${action}失败，请稍后重试；若持续失败，请检查自定义供应商和模型“${modelInfo.model}”`
+        return `AI ${action}失败，请稍后重试；若持续失败，请检查接口配置和模型“${modelInfo.model}”`
       }
       return `AI ${action}失败，请稍后重试`
     },
     [getActiveModelInfo, isModelError]
   )
 
-  const callAi = useCallback((messages: AIMessage[]) => runAIText(getAiSettings(), messages), [getAiSettings])
+  const callAi = useCallback(
+    (messages: AIMessage[], output: AIStructuredOutput) =>
+      runAIText(getAiSettings(), messages, { output }),
+    [getAiSettings]
+  )
 
   // checkUrl 防抖（500ms），等价旧版 useDebounceFn
   const checkUrlTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -175,41 +189,26 @@ export function useAI() {
       setAiError('')
 
       try {
-        const prompt = `你是一个专业的书签整理助手。请基于已有线索，为该网址生成适合保存到书签里的中文标题和简介。
-
-网址：${params.url}
-页面标题：${params.title || '无'}
-页面描述：${params.desc || '无'}
-是否已触发联网兜底：${params.forceNetworkFallback ? '是' : '否'}
-
-请返回 JSON 格式：{"title":"...","desc":"...","source":"ai"|"network"}
-要求：
-1. 结合网址、页面标题、页面描述理解内容；优先输出自然、简洁、准确的中文。
-2. title: 极简且精准，去除“首页”“登录”“Documentation”等冗余词，不超过 15 字。
-3. desc: 一句话概括核心功能与价值，专业客观，不超过 40 字。
-4. 如果页面标题/描述较弱，但已通过联网兜底拿到线索，source 返回 "network"；否则返回 "ai"。
-5. 只返回 JSON，不要附加解释。`
+        const prompt = buildMetadataUserPrompt(params)
 
         const res = await callAi([
           {
             role: 'system',
-            content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。`
+            content: METADATA_SYSTEM_PROMPT
           },
           { role: 'user', content: prompt }
-        ])
+        ], METADATA_OUTPUT)
 
-        const match = res.match(/\{[\s\S]*\}/)
-        const jsonStr = match ? match[0] : res
         let data: Record<string, unknown>
         try {
-          data = JSON.parse(jsonStr) as Record<string, unknown>
+          data = parseAIJsonObject(res)
         } catch (parseErr) {
-          console.warn('[AI] generateMetadata JSON.parse 失败，原始内容片段:', jsonStr.slice(0, 200), parseErr)
+          console.warn('[AI] generateMetadata JSON 解析失败，原始内容片段:', res.slice(0, 200), parseErr)
           return null
         }
         const result = {
-          title: String(data.title || '').trim(),
-          desc: String(data.desc || '').trim(),
+          title: truncateAIText(data.title, 15),
+          desc: truncateAIText(data.desc, 40),
           source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
           usedNetworkFallback: params.forceNetworkFallback
         } satisfies GenerateMetadataResult
@@ -241,95 +240,49 @@ export function useAI() {
 
       try {
         const currentGroup = currentGroupId ? existingGroups.find((group) => group.id === currentGroupId) : null
-        const groupsDescription = existingGroups
-          .map((group) => {
-            const subNames = group.subGroups.map((subGroup) => subGroup.name).join('、')
-            const isCurrent = currentGroup && group.id === currentGroupId ? ' [当前选中]' : ''
-            return `- "${group.name}"${isCurrent}（子分组：${subNames || '无'}）`
-          })
-          .join('\n')
-
-        const avoidCurrentTip = currentGroup
-          ? `\n注意：用户当前在"${currentGroup.name}"分组中。除非该网址与当前分组高度相关（置信度>0.8），否则优先推荐其他分组，帮助用户发现更好的分类选择。`
-          : ''
-
-        const prompt = `你是一个专业的书签分类助手。请认真分析以下网址的内容和用途，从用户的分组结构中推荐最合适的分类。
-
-【待分类网址】
-${url}
-
-【用户现有分组】
-${groupsDescription}
-${avoidCurrentTip}
-
-【分析要求】
-第一步：分析网址特征
-- 识别网址的主要领域（如：开发工具、设计资源、社交媒体、文档等）
-- 判断内容类型（如：工具网站、教程文档、娱乐视频等）
-
-第二步：匹配分组
-- 对比网址特征与各分组的用途
-- 综合考虑主分组和子分组的匹配度
-
-第三步：返回推荐结果（JSON格式）
-{
-  "analysis": "简述你对该网址的分析（如：这是一个前端开发工具网站）",
-  "groupName": "推荐的主分组名称（必须是上面列表中存在的）",
-  "subGroupName": "推荐的子分组名称（必须是该主分组下存在的）",
-  "confidence": 0.85,
-  "reason": "推荐理由（10-15字，说明为什么这个分类合适）"
-}
-
-【重要规则】
-1. 必须从现有分组中选择，不要创造新分组
-2. confidence 范围 0-1，0.7以下表示不太确定，0.85以上表示高度匹配
-3. 如果没有任何合适的分组，groupName 返回空字符串
-4. analysis 要简洁准确地描述网址特征，帮助用户理解你的判断依据`
+        const prompt = buildCategoryUserPrompt({
+          url,
+          groups: existingGroups.map((group) => ({
+            name: group.name,
+            subGroups: group.subGroups,
+            isCurrent: !!(currentGroup && group.id === currentGroupId)
+          })),
+          currentGroupName: currentGroup?.name
+        })
 
         const res = await callAi([
           {
             role: 'system',
-            content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。`
+            content: CATEGORY_SYSTEM_PROMPT
           },
           { role: 'user', content: prompt }
-        ])
+        ], CATEGORY_OUTPUT)
 
-        const match = res.match(/\{[\s\S]*\}/)
-        const jsonStr = match ? match[0] : res
         let data: Record<string, unknown>
         try {
-          data = JSON.parse(jsonStr) as Record<string, unknown>
+          data = parseAIJsonObject(res)
         } catch (parseErr) {
-          console.warn('[AI] suggestCategory JSON.parse 失败，原始内容片段:', jsonStr.slice(0, 200), parseErr)
+          console.warn('[AI] suggestCategory JSON 解析失败，原始内容片段:', res.slice(0, 200), parseErr)
           return null
         }
 
         const dataGroupName = typeof data.groupName === 'string' ? data.groupName : ''
         const dataSubGroupName = typeof data.subGroupName === 'string' ? data.subGroupName : ''
-        const matchedGroup = existingGroups.find(
-          (group) =>
-            group.name === dataGroupName ||
-            group.name.includes(dataGroupName) ||
-            dataGroupName.includes(group.name)
-        )
+        const matchedGroup = existingGroups.find((group) => group.name === dataGroupName)
         if (!matchedGroup) return null
 
         const matchedSubGroup = dataSubGroupName
-          ? matchedGroup.subGroups.find(
-              (subGroup) =>
-                subGroup.name === dataSubGroupName ||
-                subGroup.name.includes(dataSubGroupName) ||
-                dataSubGroupName.includes(subGroup.name)
-            )
+          ? matchedGroup.subGroups.find((subGroup) => subGroup.name === dataSubGroupName)
           : matchedGroup.subGroups[0]
+        if (!matchedSubGroup) return null
 
         const result = {
           groupId: matchedGroup.id,
           groupName: matchedGroup.name,
           subGroupId: matchedSubGroup?.id || matchedGroup.subGroups[0]?.id || '',
           subGroupName: matchedSubGroup?.name || matchedGroup.subGroups[0]?.name || '',
-          confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
-          reason: typeof data.reason === 'string' ? data.reason : '基于 URL 内容推荐'
+          confidence: normalizeAIConfidence(data.confidence),
+          reason: truncateAIText(data.reason, 30) || '基于 URL 内容推荐'
         } satisfies CategorySuggestion
 
         return result

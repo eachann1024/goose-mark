@@ -13,11 +13,14 @@ import { useBookmarkStore } from '@/stores/bookmark'
  */
 
 const FEATURE_PREFIX = 'bm_tpl:'
-const AI_QUICK_SAVE_FEATURE_CODE = 'ai_quick_save'
-const DYNAMIC_ENTRY_CODES = new Set([AI_QUICK_SAVE_FEATURE_CODE])
+/** 历史 AI 快捷保存特性码：仅用于同步时清理，不再注册 */
+const LEGACY_AI_QUICK_SAVE_FEATURE_CODE = 'ai_quick_save'
+const AI_AGGRESSIVE_SAVE_FEATURE_CODE = 'ai_aggressive_save'
+const DYNAMIC_ENTRY_CODES = new Set([LEGACY_AI_QUICK_SAVE_FEATURE_CODE, AI_AGGRESSIVE_SAVE_FEATURE_CODE])
 
 type OverCmd = { type: 'over'; label: string; minLength?: number; icon?: string }
-type FeatureCmd = string | OverCmd
+type RegexCmd = { type: 'regex'; label: string; match: string; icon?: string }
+type FeatureCmd = string | OverCmd | RegexCmd
 type UToolsFeature = {
   code: string
   explain: string
@@ -166,13 +169,24 @@ const getBookmarkSignature = (bookmark: Bookmark) => {
 
 type SyncFeatureOptions = {
   force?: boolean
-  aiQuickSaveEnabled?: boolean
+  aiAggressiveSaveEnabled?: boolean
 }
 
-const getAiQuickSaveFeature = (): UToolsFeature => ({
-  code: AI_QUICK_SAVE_FEATURE_CODE,
-  explain: 'AI 快速保存当前页面到书签',
-  cmds: ['AI 快速保存', 'ai quick save'],
+const getAiSaveFeature = (): UToolsFeature => ({
+  code: AI_AGGRESSIVE_SAVE_FEATURE_CODE,
+  explain: 'AI 保存：仅网址，自动归类入库',
+  cmds: [
+    'AI 保存',
+    'ai save',
+    // 与 quick_save 的「保存到书签」并列：主搜索框粘贴 http(s) 网址时可选 AI 保存
+    {
+      type: 'regex',
+      label: 'AI 保存',
+      match: '/^https?:\\/\\/.*$/i'
+    },
+    // 无协议域名 / 任意粘贴文本（如 example.com）仍可走 AI 保存
+    { type: 'over', label: 'AI 保存', minLength: 4 }
+  ],
   mainHide: false
 })
 
@@ -181,8 +195,11 @@ const isTemplateBookmark = (b: Bookmark) =>
 
 const isUniversalBookmark = (b: Bookmark) => !!b.allowUniversal
 
-const buildFeatureSetSignature = (bookmarks: Bookmark[], aiQuickSaveEnabled: boolean) =>
-  `${aiQuickSaveEnabled ? '1' : '0'}::${bookmarks
+const buildFeatureSetSignature = (
+  bookmarks: Bookmark[],
+  aiAggressiveSaveEnabled: boolean
+) =>
+  `${aiAggressiveSaveEnabled ? '1' : '0'}::${bookmarks
     .map((bookmark) => `${bookmark.id}:${getBookmarkSignature(bookmark)}`)
     .sort()
     .join('||')}`
@@ -206,7 +223,10 @@ const syncFeaturesOnce = async (bookmarks: Bookmark[], options: SyncFeatureOptio
     seenCmd.add(cmd)
     return true
   })
-  const featureSetSignature = buildFeatureSetSignature(unique, options.aiQuickSaveEnabled === true)
+  const featureSetSignature = buildFeatureSetSignature(
+    unique,
+    options.aiAggressiveSaveEnabled === true
+  )
   if (!options.force && featureSetSignature === lastAppliedFeatureSetSignature) return
 
   // 2. 获取现有特性
@@ -220,10 +240,10 @@ const syncFeaturesOnce = async (bookmarks: Bookmark[], options: SyncFeatureOptio
     processedBookmarks.clear()
   }
 
-  // 3. 计算需要删除的特性（存在但不再需要的）
+  // 3. 计算需要删除的特性（存在但不再需要的；含历史 ai_quick_save）
   const currentCodes = new Set(unique.map((b) => `${FEATURE_PREFIX}${b.id}`))
-  if (options.aiQuickSaveEnabled) {
-    currentCodes.add(AI_QUICK_SAVE_FEATURE_CODE)
+  if (options.aiAggressiveSaveEnabled) {
+    currentCodes.add(AI_AGGRESSIVE_SAVE_FEATURE_CODE)
   }
   const toRemove = existingFeatures.filter((f) => !currentCodes.has(f.code))
 
@@ -268,9 +288,9 @@ const syncFeaturesOnce = async (bookmarks: Bookmark[], options: SyncFeatureOptio
     processedBookmarks.set(b.id, getBookmarkSignature(b))
   }
 
-  const hasAiQuickSaveFeature = existingFeatures.some((feature) => feature.code === AI_QUICK_SAVE_FEATURE_CODE)
-  if (options.aiQuickSaveEnabled && (options.force || !hasAiQuickSaveFeature)) {
-    ut.setFeature(getAiQuickSaveFeature())
+  // AI 保存特性每次同步都 setFeature：既补注册，也刷新 cmds（如 URL regex）
+  if (options.aiAggressiveSaveEnabled) {
+    ut.setFeature(getAiSaveFeature())
   }
   lastAppliedFeatureSetSignature = featureSetSignature
 }
@@ -359,7 +379,7 @@ export function useUTools() {
   const setExpendHeight = useCallback((height: number) => setExpendHeightImpl(height), [])
 
   return {
-    AI_QUICK_SAVE_FEATURE_CODE,
+    AI_AGGRESSIVE_SAVE_FEATURE_CODE,
     FEATURE_PREFIX,
     syncFeatures,
     getEnterText,
