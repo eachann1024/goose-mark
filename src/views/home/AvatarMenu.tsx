@@ -20,10 +20,13 @@ export interface AvatarMenuProps {
   view: ViewMode
   uiScale: UIScale
   trashN: number
+  aiEnabled?: boolean
+  aiPanelOpen?: boolean
   onClose: () => void
   onThemePrefChange: (pref: ThemePref) => void
   onViewChange: (v: ViewMode) => void
   onUiScaleChange: (s: UIScale) => void
+  onOpenAiPanel?: () => void
   onOpenSettings: () => void
   onOpenTrash: () => void
   onOpenHelp: () => void
@@ -52,10 +55,13 @@ export default function AvatarMenu({
   view,
   uiScale,
   trashN,
+  aiEnabled = false,
+  aiPanelOpen = false,
   onClose,
   onThemePrefChange,
   onViewChange,
   onUiScaleChange,
+  onOpenAiPanel,
   onOpenSettings,
   onOpenTrash,
   onOpenHelp,
@@ -66,7 +72,9 @@ export default function AvatarMenu({
   useEffect(() => {
     if (!open) return
     const onDown = (e: MouseEvent) => {
-      if (!(e.target as HTMLElement).closest('.pa-menu') && !(e.target as HTMLElement).closest('.avatar')) {
+      const t = e.target as HTMLElement
+      // 顶栏设置钮现为 .header-icon-btn，兼容旧 .avatar
+      if (!t.closest('.pa-menu') && !t.closest('.header-icon-btn') && !t.closest('.avatar')) {
         onClose()
       }
     }
@@ -152,17 +160,28 @@ export default function AvatarMenu({
 
       <div className="pa-sep" />
 
-      {/* 菜单项 */}
-      <button className="pa-row" onClick={onOpenSettings}>
+      {/* 菜单项：AI 助手从顶栏迁入，避免与 AI 保存双 sparkles */}
+      {onOpenAiPanel && (
+        <button
+          type="button"
+          className={`pa-row${aiPanelOpen ? ' on' : ''}`}
+          onClick={onOpenAiPanel}
+        >
+          <Ico name="sparkles" />
+          <span>{aiPanelOpen ? '关闭 AI 助手' : 'AI 助手'}</span>
+          {!aiEnabled && <span className="pa-hint">未启用</span>}
+        </button>
+      )}
+      <button type="button" className="pa-row" onClick={onOpenSettings}>
         <Ico name="settings" />
         <span>设置</span>
       </button>
-      <button className="pa-row" onClick={onOpenTrash}>
+      <button type="button" className="pa-row" onClick={onOpenTrash}>
         <Ico name="trash-2" />
         <span>回收站</span>
         {trashN > 0 && <span className="pa-badge">{trashN}</span>}
       </button>
-      <button className="pa-row" onClick={onOpenHelp}>
+      <button type="button" className="pa-row" onClick={onOpenHelp}>
         <Ico name="info" />
         <span>帮助与关于</span>
       </button>

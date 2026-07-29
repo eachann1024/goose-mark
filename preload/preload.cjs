@@ -1,4 +1,5 @@
 // preload 运行在 CJS，避免与主项目 ESM 冲突
+const { fetchPublicText } = require('./web-fetch.cjs')
 if (typeof window !== 'undefined') {
   if (typeof utools !== 'undefined') {
     window.utools = utools
@@ -168,6 +169,11 @@ if (typeof window !== 'undefined') {
       }
     }
 
+    // AI 网页研究桥：Node 端读取并执行 DNS/内网地址校验，避免渲染层直连任意地址。
+    window.gooseWeb = {
+      fetchText: (url) => fetchPublicText(url)
+    }
+
     const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
     const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'
     const UTOOLS_PLUGIN_ENTER_EVENT = 'goose-marks:plugin-enter'
@@ -268,14 +274,9 @@ if (typeof window !== 'undefined') {
       })
     }
 
-    const shouldUseDefaultSearchInput = () => {
-      try {
-        const type = typeof utools.getWindowType === 'function' ? utools.getWindowType() : 'main'
-        return type !== 'detach' && type !== 'browser'
-      } catch {
-        return true
-      }
-    }
+    // 主面板与独立/分离窗统一挂 uTools 顶部 subInput（避免与页内搜索重复）。
+    // 模板入口等场景仍会 removeSubInput，由 shouldUseDefaultSearchInput 之外的路径处理。
+    const shouldUseDefaultSearchInput = () => true
 
     const removeDefaultSearchInput = () => {
       if (typeof utools.removeSubInput === 'function') {
@@ -283,7 +284,7 @@ if (typeof window !== 'undefined') {
       }
     }
 
-    // 主面板挂载 uTools 顶部 subInput 搜索框；分离/浏览器窗口改用页内搜索框。
+    // 挂载 uTools 顶部 subInput 搜索框。
     // 用户在 subInput 输入时 dispatch UTOOLS_INPUT_EVENT 通知渲染层；
     // __gooseMarksSuppressNextChange / __gooseMarksLastAppValue 防回环。
     const mountDefaultSearchInput = (focus = true) => {
@@ -343,8 +344,19 @@ if (typeof window !== 'undefined') {
           ...(window.__gooseMarksPendingPluginEnterEvents || []),
           entry,
         ].slice(-8)
-        mountDefaultSearchInput(true)
-        applyStoredWindowHeight()
+        // 模板书签入口（前缀与 src/hooks/useUTools.ts 的 FEATURE_PREFIX 保持一致）：
+        // 渲染层首屏直接挂载模板输入页（仅 logo + 输入框），这里不挂 subInput
+        // （避免抢占页内输入框焦点），并先把窗口收紧到紧凑高度，避免先按主面板高度展示再压缩。
+        if (entry.params && typeof entry.params.code === 'string' && entry.params.code.startsWith('bm_tpl:')) {
+          removeDefaultSearchInput()
+          clearDefaultSearchCache()
+          if (typeof utools.setExpendHeight === 'function') {
+            try { utools.setExpendHeight(220) } catch (e) {}
+          }
+        } else {
+          mountDefaultSearchInput(true)
+          applyStoredWindowHeight()
+        }
         window.dispatchEvent(new CustomEvent(UTOOLS_PLUGIN_ENTER_EVENT, {
           detail: entry.params,
         }))

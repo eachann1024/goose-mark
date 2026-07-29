@@ -4,6 +4,7 @@ import { useShallow } from 'zustand/react/shallow'
 import type { Bookmark, IconSource, BookmarkLocation } from '@/types/bookmark'
 import { iconToDisplayUrl, fetchAndCacheIcon, fetchAsDataUrl } from '@/services/iconCache'
 import { getTemplateLabel } from '@/lib/utils'
+import { normalizeAIConfidence, parseAIJsonObject, truncateAIText } from '@/lib/aiOutput'
 import { notify } from '@/lib/notify'
 import { addBehaviorLog } from '@/lib/debugReport'
 import { fetchMetadataFromNetwork } from '@/services/metadataFallback'
@@ -15,6 +16,14 @@ import {
   type AISettingsLike
 } from '@/lib/aiProvider'
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
+import {
+  METADATA_SYSTEM_PROMPT,
+  METADATA_OUTPUT,
+  buildMetadataUserPrompt,
+  CATEGORY_SYSTEM_PROMPT,
+  CATEGORY_OUTPUT,
+  buildCategoryUserPrompt
+} from '@/constants/aiPrompts'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
 import { useUIManager } from './useUIManager'
@@ -70,7 +79,11 @@ interface BookmarkFormState {
   iconFetchPhase: 'idle' | 'loading' | 'success' | 'failed'
   isTitleDirty: boolean
   isDescDirty: boolean
+  /** 用户已手动填写标题时，抓到的匹配标题不直接覆盖，存为可点击采纳的建议 */
+  titleSuggestion: string | null
   originalUrl: string
+  /** 最近一次（排定）读取网页信息时的 URL，用于判断链接是否有未读取变更 */
+  lastFetchedUrl: string
   isGenerating: boolean
   isSuggestingCategory: boolean
   aiError: string
@@ -101,7 +114,9 @@ export const useBookmarkFormStore = create<BookmarkFormState>((set) => ({
   iconFetchPhase: 'idle' as const,
   isTitleDirty: false,
   isDescDirty: false,
+  titleSuggestion: null,
   originalUrl: '',
+  lastFetchedUrl: '',
   isGenerating: false,
   isSuggestingCategory: false,
   aiError: '',
@@ -147,7 +162,7 @@ const resolveErrorMessage = (error: unknown, action: '生成' | '分类') => {
     return `uTools 模型“${modelInfo.model}”当前不可用，请重新选择或稍后重试`
   }
   if (modelInfo.isCustom)
-    return `AI ${action}失败，请稍后重试；若持续失败，请检查自定义供应商和模型“${modelInfo.model}”`
+    return `AI ${action}失败，请稍后重试；若持续失败，请检查接口配置和模型“${modelInfo.model}”`
   return `AI ${action}失败，请稍后重试`
 }
 
@@ -165,37 +180,22 @@ const generateMetadataDirect = async (input: {
   }
   if (!params.url) return null
 
-  const prompt = `你是一个专业的书签整理助手。请基于已有线索，为该网址生成适合保存到书签里的中文标题和简介。
-
-网址：${params.url}
-页面标题：${params.title || '无'}
-页面描述：${params.desc || '无'}
-是否已触发联网兜底：${params.forceNetworkFallback ? '是' : '否'}
-
-请返回 JSON 格式：{"title":"...","desc":"...","source":"ai"|"network"}
-要求：
-1. 结合网址、页面标题、页面描述理解内容；优先输出自然、简洁、准确的中文。
-2. title: 极简且精准，去除“首页”“登录”“Documentation”等冗余词，不超过 15 字。
-3. desc: 一句话概括核心功能与价值，专业客观，不超过 40 字。
-4. 如果页面标题/描述较弱，但已通过联网兜底拿到线索，source 返回 "network"；否则返回 "ai"。
-5. 只返回 JSON，不要附加解释。`
+  const prompt = buildMetadataUserPrompt(params)
 
   const messages: AIMessage[] = [
     {
       role: 'system',
-      content: `你是一个专业的书签整理助手。请分析网址线索并返回 JSON。输出标题和简介必须适合中文书签展示。`
+      content: METADATA_SYSTEM_PROMPT
     },
     { role: 'user', content: prompt }
   ]
 
-  const res = await runAIText(getActiveAiSettings(), messages)
-  const match = res.match(/\{[\s\S]*\}/)
-  const jsonStr = match ? match[0] : res
+  const res = await runAIText(getActiveAiSettings(), messages, { output: METADATA_OUTPUT })
   try {
-    const data = JSON.parse(jsonStr)
+    const data = parseAIJsonObject(res)
     return {
-      title: String(data.title || '').trim(),
-      desc: String(data.desc || '').trim(),
+      title: truncateAIText(data.title, 15),
+      desc: truncateAIText(data.desc, 40),
       source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
       usedNetworkFallback: params.forceNetworkFallback
     }
@@ -329,8 +329,11 @@ let urlFetchTimer: ReturnType<typeof setTimeout> | null = null
 // 导致 iconLoading 永远停在 true、识别环一直转的竞态。
 let iconLoadingWatchdog: ReturnType<typeof setTimeout> | null = null
 const ICON_LOADING_WATCHDOG_MS = 6000
-export const URL_FETCH_DEBOUNCE_MS = 2000
+// 粘贴链接后自动读取的防抖（粘贴是「一次成型」的输入，短防抖即可；打字不触发自动读取）
+export const URL_FETCH_PASTE_DEBOUNCE_MS = 500
 export const URL_FETCH_IMMEDIATE_MS = 400
+// 表单内 Jina 兜底读取的预算（两个域名平分，避免拖长加载态）
+const JINA_FALLBACK_TIMEOUT_MS = 5000
 // 单调递增请求序号，用于丢弃乱序响应（慢请求覆盖后输入 URL 的竞态保护）
 let urlFetchRequestId = 0
 // askAI 请求代际计数器：区分同 URL 的并发请求与跨表单会话的在途请求
@@ -358,8 +361,10 @@ export function useBookmarkForm() {
       categorySuggestion: s.categorySuggestion,
       originalBeforeAI: s.originalBeforeAI,
       originalUrl: s.originalUrl,
+      lastFetchedUrl: s.lastFetchedUrl,
       isTitleDirty: s.isTitleDirty,
-      isDescDirty: s.isDescDirty
+      isDescDirty: s.isDescDirty,
+      titleSuggestion: s.titleSuggestion
     }))
   )
   const set = useBookmarkFormStore((s) => s.set)
@@ -453,7 +458,9 @@ export function useBookmarkForm() {
       formError: '',
       isTitleDirty: false,
       isDescDirty: false,
+      titleSuggestion: null,
       originalUrl: '',
+      lastFetchedUrl: '',
       showAdd: true
     })
   }, [resetPendingIconFetch, set])
@@ -474,7 +481,9 @@ export function useBookmarkForm() {
         previewIcon: bookmark.icon ?? null,
         formError: '',
         isTitleDirty: true,
+        titleSuggestion: null,
         originalUrl: bookmark.url,
+        lastFetchedUrl: bookmark.url,
         draftTags: [...(bookmark.tags ?? [])],
         draftLocations: store.getBookmarkLocations(bookmark.id),
         showAdd: true
@@ -543,6 +552,13 @@ export function useBookmarkForm() {
 
   const onTitleInput = useCallback(() => set({ isTitleDirty: true }), [set])
   const takeOverTitle = useCallback(() => set({ isTitleDirty: true }), [set])
+  // 采纳匹配到的标题：替换用户手动填写的内容（视为用户主动选择，保持 dirty）
+  const applyTitleSuggestion = useCallback(() => {
+    const { titleSuggestion } = useBookmarkFormStore.getState()
+    if (!titleSuggestion) return
+    patchDraft({ title: titleSuggestion })
+    set({ titleSuggestion: null, isTitleDirty: true })
+  }, [patchDraft, set])
   const takeOverDesc = useCallback(() => set({ isDescDirty: true }), [set])
   const onDescInput = useCallback(
     (val: string) => {
@@ -589,36 +605,26 @@ export function useBookmarkForm() {
     set({ isSuggestingCategory: true, aiError: '' })
 
     try {
-      const groupsDescription = existingGroups
-        .map((group) => {
-          const subNames = group.subGroups.map((s) => s.name).join('、')
-          return `- "${group.name}"（子分组：${subNames || '无'}）`
-        })
-        .join('\n')
-
-      const prompt = `你是一个专业的书签分类助手。请认真分析以下网址的内容和用途，从用户的分组结构中推荐最合适的分类。
-
-【待分类网址】
-${draft.url}
-
-【用户现有分组】
-${groupsDescription}
-
-请返回 JSON：{"groupName":"...","subGroupName":"...","confidence":0.85,"reason":"..."}
-必须从现有分组中选择，不要创造新分组；若无合适分组，groupName 返回空字符串。`
+      const prompt = buildCategoryUserPrompt({
+        url: draft.url,
+        groups: existingGroups.map((group) => ({
+          name: group.name,
+          subGroups: group.subGroups
+        })),
+        concise: true
+      })
 
       const res = await runAIText(getActiveAiSettings(), [
         {
           role: 'system',
-          content: `你是一个书签分类助手，根据用户分组结构推荐最佳分类。只返回JSON，不要其他内容。`
+          content: CATEGORY_SYSTEM_PROMPT
         },
         { role: 'user', content: prompt }
-      ])
+      ], { output: CATEGORY_OUTPUT })
 
-      const match = res.match(/\{[\s\S]*\}/)
       let data: Record<string, unknown>
       try {
-        data = JSON.parse(match ? match[0] : res)
+        data = parseAIJsonObject(res)
       } catch {
         showToast({ title: 'AI 返回格式异常，请重试', variant: 'warning' })
         return
@@ -626,30 +632,26 @@ ${groupsDescription}
       // groupName 为空字符串时 includes('') 会误选第一个分组，trim 后为空视为无建议（问题6）
       const groupNameStr = typeof data.groupName === 'string' ? data.groupName.trim() : ''
       const matchedGroup = groupNameStr
-        ? (existingGroups.find((group) => group.name === groupNameStr) ??
-            existingGroups.find(
-              (group) =>
-                group.name.includes(groupNameStr) || groupNameStr.includes(group.name)
-            ))
+        ? existingGroups.find((group) => group.name === groupNameStr)
         : undefined
 
       if (matchedGroup) {
         const matchedSubGroup = data.subGroupName
-          ? (matchedGroup.subGroups.find((s) => s.name === data.subGroupName) ??
-              matchedGroup.subGroups.find(
-                (s) =>
-                  typeof data.subGroupName === 'string' &&
-                  (s.name.includes(data.subGroupName as string) || (data.subGroupName as string).includes(s.name))
-              ))
+          ? matchedGroup.subGroups.find((s) => s.name === data.subGroupName)
           : matchedGroup.subGroups[0]
+
+        if (!matchedSubGroup) {
+          showToast({ title: 'AI 返回的子分组不在现有列表中', variant: 'info' })
+          return
+        }
 
         const result: CategorySuggestionState = {
           groupId: matchedGroup.id,
           groupName: matchedGroup.name,
           subGroupId: matchedSubGroup?.id || matchedGroup.subGroups[0]?.id || '',
           subGroupName: matchedSubGroup?.name || matchedGroup.subGroups[0]?.name || '',
-          confidence: typeof data.confidence === 'number' ? data.confidence : 0.5,
-          reason: typeof data.reason === 'string' ? data.reason : '基于 URL 内容推荐'
+          confidence: normalizeAIConfidence(data.confidence),
+          reason: truncateAIText(data.reason, 30) || '基于 URL 内容推荐'
         }
         set({ categorySuggestion: result })
       } else {
@@ -764,7 +766,7 @@ ${groupsDescription}
     [set, resolveLocationsForSave, buildTextIcon]
   )
 
-  // 手动触发抓取；debounceMs 默认 400（下一步/重试），确认页 URL 变更用 2s 防抖自动重抓。
+  // 手动触发抓取；debounceMs 默认 400（读取按钮/失焦/重试），粘贴后自动读取用 500ms 短防抖。
   const runUrlFetch = useCallback((debounceMs = URL_FETCH_IMMEDIATE_MS) => {
     const { editingId, originalUrl } = useBookmarkFormStore.getState()
     const val = useBookmarkFormStore.getState().draft.url
@@ -776,7 +778,7 @@ ${groupsDescription}
     // 每次发起前递增 id，响应回来后校验是否仍是最新请求
     const thisRequestId = ++urlFetchRequestId
     // 排定抓取即进入加载态：标题/描述流光在识别阶段开始转，避免快速响应时加载态一闪而过
-    set({ iconLoading: true, iconFetchFailed: false, iconFetchPhase: 'loading' })
+    set({ iconLoading: true, iconFetchFailed: false, iconFetchPhase: 'loading', lastFetchedUrl: val, titleSuggestion: null })
     // 启动加载态看门狗：即便本次请求回调因代际竞态被丢弃，也保证加载态在总预算后强制落定，
     // 识别环不会无限转。正常回调会在 finally 里清掉它。
     if (iconLoadingWatchdog) clearTimeout(iconLoadingWatchdog)
@@ -798,27 +800,49 @@ ${groupsDescription}
           fetchAndCacheIcon(val, true),
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
         ])
-        const latest = useBookmarkFormStore.getState()
+        let latest = useBookmarkFormStore.getState()
         // 双重校验：(1) 请求 id 仍是最新；(2) 当前 draft.url 与发起时一致
         // 任一不满足说明用户已切换 URL，丢弃本次响应
         if (thisRequestId !== urlFetchRequestId || latest.draft.url !== val) return
-        if (fetched) {
-          const newIcon = toIconSource(fetched)
+
+        let metaTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : ''
+        let metaDesc = typeof fetched?.description === 'string' ? fetched.description.trim() : ''
+        let titleUsable = !!metaTitle && !isHostLikeTitle(metaTitle, val)
+
+        // Jina 兜底：uTools 内置浏览器为主，标题缺失/仅主机名或缺描述时用 Reader 补齐
+        if ((!titleUsable && !latest.isTitleDirty) || (!metaDesc && !latest.isDescDirty)) {
+          const fallback = await fetchMetadataFromNetwork(val, JINA_FALLBACK_TIMEOUT_MS)
+          latest = useBookmarkFormStore.getState()
+          if (thisRequestId !== urlFetchRequestId || latest.draft.url !== val) return
+          if (fallback) {
+            if (!titleUsable && fallback.title && !isHostLikeTitle(fallback.title, val)) {
+              metaTitle = fallback.title
+              titleUsable = true
+            }
+            if (!metaDesc && fallback.description) metaDesc = fallback.description
+          }
+        }
+
+        if (fetched || titleUsable || metaDesc) {
+          const newIcon = fetched ? toIconSource(fetched) : buildTextIconFromValue(val)
           set({
             previewIcon: newIcon,
-            iconFetchFailed: fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src),
+            iconFetchFailed: fetched
+              ? fetched.type === 'text' || (fetched.type === 'remote' && !fetched.src)
+              : true,
             iconFetchPhase: 'success'
           })
-          const fetchedTitle = typeof fetched.title === 'string' ? fetched.title.trim() : ''
-          const titleUsable = !!fetchedTitle && !isHostLikeTitle(fetchedTitle, val)
           if (titleUsable && !latest.isTitleDirty) {
-            patchDraft({ title: fetchedTitle })
+            patchDraft({ title: metaTitle })
+          } else if (titleUsable) {
+            // 用户已手动填写标题：不覆盖，把匹配到的标题存为可点击采纳的建议
+            set({ titleSuggestion: metaTitle !== latest.draft.title.trim() ? metaTitle : null })
           }
-          if (fetched.description && !latest.isDescDirty) patchDraft({ desc: fetched.description })
+          if (metaDesc && !latest.isDescDirty) patchDraft({ desc: metaDesc })
           // 流光结束但有字段没拿到：告知原因，引导手动填写（用户接管的字段不计入）
           const missing = [
             !titleUsable && !latest.isTitleDirty ? '标题' : '',
-            !fetched.description && !latest.isDescDirty ? '描述' : ''
+            !metaDesc && !latest.isDescDirty ? '描述' : ''
           ].filter(Boolean)
           if (missing.length > 0) {
             showToast({
@@ -857,6 +881,8 @@ ${groupsDescription}
   useEffect(() => {
     const { isTitleDirty, isDescDirty, editingId } = useBookmarkFormStore.getState()
     const val = draftUrl
+    // 链接一变，旧链接的匹配标题建议即失效
+    set({ titleSuggestion: null })
 
     if (!val) {
       if (urlFetchTimer) {
@@ -897,8 +923,10 @@ ${groupsDescription}
         originalBeforeAI: null,
         categorySuggestion: null,
         originalUrl: '',
+        lastFetchedUrl: '',
         isTitleDirty: false,
-        isDescDirty: false
+        isDescDirty: false,
+        titleSuggestion: null
       })
       if (urlFetchTimer) {
         clearTimeout(urlFetchTimer)
@@ -944,6 +972,7 @@ ${groupsDescription}
     onDescInput,
     takeOverTitle,
     takeOverDesc,
+    applyTitleSuggestion,
     askCategorySuggestion,
     applyCategorySuggestion,
     dismissCategorySuggestion,

@@ -122,6 +122,15 @@ interface UToolsApi {
 declare global {
   interface Window {
     utools?: UToolsApi
+    gooseWeb?: {
+      fetchText: (url: string) => Promise<{
+        ok: true
+        url: string
+        status: number
+        contentType: string
+        text: string
+      }>
+    }
     __gooseMarksWindowControl?: GooseMarksWindowControl
     require?: NodeRequire
     __gooseMarksPluginEnterSerial?: number

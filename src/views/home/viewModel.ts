@@ -76,6 +76,11 @@ function toItem(b: Bookmark): HomeItem {
   }
 }
 
+/** 单条书签 → HomeItem（搜索空态的全局搜索回退等场景复用） */
+export function bookmarkToHomeItem(b: Bookmark): HomeItem {
+  return toItem(b)
+}
+
 /** 组装：把 groups + bookmarks 转成三层视图模型（跳过回收站分组与空子分组）。 */
 export function buildHomeGroups(groups: Group[], bookmarks: Bookmark[]): HomeGroup[] {
   const byId = new Map(bookmarks.map((b) => [b.id, b]))

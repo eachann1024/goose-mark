@@ -12,11 +12,8 @@ const SHOOTING_STAR_PROBABILITY = 0.0015
 const STAR_BASE_OPACITY_MIN = 0.1
 const STAR_BASE_OPACITY_MAX = 0.6
 const ROTATION_SPEED = 0.00001
-const SKY_BASE_STYLE = { backgroundColor: 'rgb(2, 2, 4)' }
-const SKY_GRADIENT_STYLE = {
-  background: 'radial-gradient(ellipse at top, rgb(13, 27, 42) 0%, rgb(2, 2, 4) 58%, rgb(4, 4, 3) 100%)',
-  opacity: 0.88
-}
+/** 星空底色：与深色模式默认背景一致，纯色实底，不用渐变 */
+const SKY_BASE_STYLE = { backgroundColor: '#262624' }
 
 interface Star {
   x: number
@@ -182,7 +179,6 @@ export function StarryBackground() {
 
   return (
     <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none" style={SKY_BASE_STYLE}>
-      <div className="absolute inset-0" style={SKY_GRADIENT_STYLE} />
       <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
     </div>
   )

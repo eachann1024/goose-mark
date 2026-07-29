@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -40,7 +40,14 @@ import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { useBookmarkForm, useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookmarkForm'
 import { useUIManager } from '@/hooks/useUIManager'
-import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
+import AggressiveAiSavePanel from './AggressiveAiSavePanel'
+import {
+  runAggressiveAiSave,
+  AggressiveAiSaveError,
+  undoAggressiveAiSave,
+  type AggressiveAiSaveResult
+} from '@/services/aggressiveAiSave'
+import { InstantTooltip, OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { resolveBookmarkLaunchUrl, getTemplateLabel } from '@/lib/utils'
@@ -52,7 +59,7 @@ import {
 } from '@/lib/inlineEditKeys'
 import { Ico } from './icon'
 import { Image } from '@/components/ui/image'
-import { buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './viewModel'
+import { bookmarkToHomeItem, buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './viewModel'
 import SidebarNav from './SidebarNav'
 import AddBookmarkWizard from './AddBookmarkWizard'
 import GroupManagePage from './GroupManagePage'
@@ -60,10 +67,17 @@ import AvatarMenu from './AvatarMenu'
 import HelpAboutDialog from './HelpAboutDialog'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
-import { DEFAULT_AI_MODEL, AI_PROVIDER_PRESETS } from '@/constants/ai'
-import { fetchCustomAIModels, getAIAvailability } from '@/lib/aiProvider'
+import { DEFAULT_AI_MODEL, AI_PROTOCOLS } from '@/constants/ai'
+import {
+  fetchCustomAIModels,
+  getAIAvailability,
+  getDefaultBaseURL,
+  getDefaultModelId
+} from '@/lib/aiProvider'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import './home.css'
+
+const BookmarkAiPanel = lazy(() => import('./BookmarkAiPanel'))
 
 // ── SortableTab：顶栏一级分组 Tab 可拖拽单项（模块顶层，避免 TDZ）──────────
 interface SortableTabProps {
@@ -237,7 +251,7 @@ const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
 const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'
 const UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT = 'goose-marks:restore-default-search-input'
 
-// 运行平台：uTools 模式由顶部原生 subInput 承接搜索，页内搜索框隐藏（避免重复）。
+// 运行平台：uTools（含独立/分离窗）由顶部原生 subInput 承接搜索，页内搜索框隐藏（避免重复）。
 const RUNTIME_PLATFORM = getRuntimePlatform()
 const IS_WINDOWS_UTOOLS = (() => {
   try {
@@ -283,8 +297,9 @@ const isDetachedUToolsWindow = () => {
 
 type SearchSurface = 'utools-subinput' | 'inline'
 
+/** uTools（含独立/分离窗）统一用顶部原生搜索；仅浏览器独立调试保留页内搜索框。 */
 const getSearchSurface = (): SearchSurface =>
-  RUNTIME_PLATFORM === 'utools' && !isDetachedUToolsWindow() ? 'utools-subinput' : 'inline'
+  RUNTIME_PLATFORM === 'utools' ? 'utools-subinput' : 'inline'
 
 const readCurrentWindowPosition = (): DetachedWindowPosition | null => {
   const fromBridge = window.__gooseMarksWindowControl?.getPosition?.()
@@ -343,11 +358,46 @@ interface UToolsPluginEnterPayload {
  * 明暗用根容器 data-theme 控制，配色全部来自 home.css 的独立 CSS 变量。
  */
 
-type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups'
+type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups' | 'ai-aggressive-save'
 type ViewMode = 'list' | 'grid'
 type Theme = 'light' | 'dark'
 type ThemePref = 'light' | 'dark' | 'system'
 type CtxMode = 'menu' | 'confirmDelete'
+
+const AGGRESSIVE_SAVE_STEPS = [
+  '解析链接…',
+  '抓取页面线索…',
+  '读取标题与摘要…',
+  '识别站点类型…',
+  '生成标题…',
+  '撰写简介…',
+  '匹配分组候选…',
+  '评估置信度…',
+  '写入书签…',
+  '整理完成'
+] as const
+const AGGRESSIVE_SAVE_STEP_DELAYS = [260, 300, 280, 320, 220, 180, 240, 280, 200] as const
+
+type AggressiveSaveJob = {
+  id: number
+  url: string
+  host: string
+  step: number
+  status: 'queued' | 'running'
+}
+
+type AggressiveSaveSuccess = {
+  id: number
+  result: AggressiveAiSaveResult
+}
+
+const aggressiveSaveHostOf = (url: string) => {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url.replace(/^https?:\/\//, '').split('/')[0] || url
+  }
+}
 
 function resolveTheme(pref: ThemePref): Theme {
   if (pref === 'system') {
@@ -418,7 +468,12 @@ export default function HomePage() {
   useUToolsMcpBridge()
 
   // uTools 特性注册 / 进入文本解析
-  const { AI_QUICK_SAVE_FEATURE_CODE, FEATURE_PREFIX, syncFeatures, getEnterText } = useUTools()
+  const {
+    AI_AGGRESSIVE_SAVE_FEATURE_CODE,
+    FEATURE_PREFIX,
+    syncFeatures,
+    getEnterText
+  } = useUTools()
   const searchSurface = getSearchSurface()
 
   // 业务操作 hook
@@ -456,8 +511,13 @@ export default function HomePage() {
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   const panelContinuous = useSettingsStore((s) => s.panelContinuous)
+  const aiEnabled = useSettingsStore((s) => s.aiEnabled)
+  const aiAggressiveSaveEnabled = useSettingsStore((s) => s.aiAggressiveSaveEnabled)
   // AI 设置变化键（与 App.tsx 对齐），用于触发 syncFeatures 重跑
-  const aiSettingsKey = useSettingsStore((s) => `${s.aiEnabled}|${s.aiAllowLegacyUTools}|${s.aiUseCustomProvider}|${s.aiSelectedModelId}|${s.aiCustomApiKey}`)
+  const aiSettingsKey = useSettingsStore(
+    (s) =>
+      `${s.aiEnabled}|${s.aiAllowLegacyUTools}|${s.aiUseCustomProvider}|${s.aiProtocol}|${s.aiSelectedModelId}|${s.aiCustomBaseURL}|${s.aiCustomApiKey}|${s.aiAggressiveSaveEnabled}`
+  )
 
   const homeGroups: HomeGroup[] = useMemo(
     () => buildHomeGroups(groups, bookmarks),
@@ -539,14 +599,47 @@ export default function HomePage() {
   const [formKey, setFormKey] = useState(0)
   const [toastOpen, setToastOpen] = useState(false)
   const [toastTitle, setToastTitle] = useState('')
+  const [toastDesc, setToastDesc] = useState('')
+  const [toastJump, setToastJump] = useState<BookmarkLocation | null>(null)
   const [toastKey, setToastKey] = useState(0)
+  /** AI 保存面板的预填 URL（uTools 特性带入） */
+  const [aggressiveSaveUrl, setAggressiveSaveUrl] = useState('')
+  const [aggressiveSaveJobs, setAggressiveSaveJobs] = useState<AggressiveSaveJob[]>([])
+  const [aggressiveSaveSuccesses, setAggressiveSaveSuccesses] = useState<AggressiveSaveSuccess[]>([])
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [searchVal, setSearchVal] = useState(() => initialContinuityRef.current?.searchVal ?? '')
   // ---- 个人菜单 + 帮助弹窗 ----
   const [paOpen, setPaOpen] = useState(false)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const [helpOpen, setHelpOpen] = useState(false)
-  // 模板输入态：当前处于模板输入模式的书签
-  const [activeTemplateBookmark, setActiveTemplateBookmark] = useState<Bookmark | null>(null)
+  // 模板输入态：当前处于模板输入模式的书签。
+  // 惰性初始化：uTools 搜索框呼出模板书签时首屏直接渲染模板页，
+  // 避免「先进首页闪一下、等 plugin-enter 事件回放后才跳模板页」。
+  const [activeTemplateBookmark, setActiveTemplateBookmark] = useState<Bookmark | null>(() => {
+    try {
+      if (!window.utools) return null
+      const pending = (window as unknown as {
+        __gooseMarksPendingPluginEnterEvents?: Array<{ params?: UToolsPluginEnterPayload }>
+      }).__gooseMarksPendingPluginEnterEvents
+      if (!pending?.length) return null
+      const entry = [...pending].reverse().find((e) => {
+        const c = e?.params?.code
+        return typeof c === 'string' && c.startsWith(FEATURE_PREFIX)
+      })
+      const params = entry?.params
+      const code = params?.code
+      if (!code) return null
+      const payloadText = getEnterText(params?.payload).trim()
+      const enterType = typeof params?.type === 'string' ? params.type : ''
+      const bookmark = useBookmarkStore.getState().bookmarks.find((b) => b.id === code.slice(FEATURE_PREFIX.length))
+      if (!bookmark || !/{[^}]+}/.test(bookmark.url)) return null
+      // 进入条件与 plugin-enter handler 一致：over 类型要求无 payload；其余要求无 payload 或 payload 恰为书签标题
+      const shouldEnter = enterType === 'over' ? !payloadText : !payloadText || payloadText === bookmark.title
+      return shouldEnter ? bookmark : null
+    } catch {
+      return null
+    }
+  })
   const [templateQuery, setTemplateQuery] = useState('')
   const templateQueryRef = useRef('')
   // 1000ms 防重入：模板 enter 后短时间内忽略 bookmarks 主入口
@@ -560,6 +653,12 @@ export default function HomePage() {
   const ctxMenuRef = useRef<HTMLDivElement>(null)
   const headerSearchRef = useRef<HTMLInputElement>(null)
   const toastTimer = useRef<number | undefined>(undefined)
+  const aggressiveSaveJobSeqRef = useRef(0)
+  const aggressiveSaveQueueRef = useRef<Array<{ id: number; url: string }>>([])
+  const aggressiveSaveRunnerRef = useRef(false)
+  const aggressiveSaveMountedRef = useRef(true)
+  const aggressiveSaveSuccessTimersRef = useRef<Set<number>>(new Set())
+  const pumpAggressiveSaveQueueRef = useRef<() => void>(() => {})
   // 侧栏点击触发的程序化滚动期间抑制 scroll-spy，避免高亮闪过中间分组
   const isAnchorScrollingRef = useRef(false)
   const anchorScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -704,14 +803,53 @@ export default function HomePage() {
       .filter((b) => (seen.has(b.id) ? false : (seen.add(b.id), true)))
   }, [isSearching, filteredGroups])
 
+  // 搜索无本地匹配时：展示已开启 allowUniversal 的模板/全局搜索书签，回车用当前搜索词跳转。
+  const universalFallbackItems = useMemo<HomeItem[]>(() => {
+    if (!isSearching) return []
+    const store = useBookmarkStore.getState()
+    const hasLocalMatch = filteredGroups.some((g) => g.subs.some((s) => s.items.length > 0))
+    if (hasLocalMatch) return []
+    return store.bookmarks
+      .filter(
+        (b) =>
+          b.allowUniversal === true &&
+          !store.isBookmarkInTrash(b) &&
+          typeof b.title === 'string' &&
+          !!b.title.trim()
+      )
+      .map(bookmarkToHomeItem)
+  }, [isSearching, filteredGroups, bookmarks])
+  const isUniversalFallback = isSearching && universalFallbackItems.length > 0
+
   // 当前视图下可键盘导航的扁平书签列表（基于过滤后的数据）
   // 网格与列表现已同为全量连续渲染，导航集合一致：全部分组扁平去重。
+  // 搜索无匹配且有全局搜索书签时，导航落到底部命令条。
   const navigableItems = useMemo<HomeItem[]>(() => {
+    if (isUniversalFallback) return universalFallbackItems
     const seen = new Set<string>()
     return filteredGroups
       .flatMap((g) => g.subs.flatMap((s) => s.items))
       .filter((b) => (seen.has(b.id) ? false : (seen.add(b.id), true)))
-  }, [filteredGroups])
+  }, [filteredGroups, isUniversalFallback, universalFallbackItems])
+
+  /** 打开列表项：全局搜索回退态用当前搜索词填模板并直跳；其余走常规 open（含模板输入页） */
+  const openHomeItem = useCallback(
+    (item: HomeItem) => {
+      const realBookmark = bookmarks.find((b) => b.id === item.id)
+      if (!realBookmark) return
+      if (isUniversalFallback && realBookmark.allowUniversal) {
+        const q = searchVal.trim()
+        openBookmarkLinkBase(realBookmark, {
+          query: q,
+          useUiQuery: false,
+          source: 'template-universal-fallback'
+        })
+        return
+      }
+      openBookmarkLink(realBookmark)
+    },
+    [bookmarks, isUniversalFallback, searchVal, openBookmarkLinkBase, openBookmarkLink]
+  )
 
   // 切换视图后，若当前选中项不在可导航列表内则回退到首项
   useEffect(() => {
@@ -1040,19 +1178,27 @@ export default function HomePage() {
   }, [bookmarks, closeCtx, ctxItem, ctxLocation, handleRemove])
 
   // fireToast 的稳定引用，供 plugin-enter effect 使用（声明在 fireToast 之前）
-  const fireToastRef = useRef<(title?: string) => void>(() => {})
+  const fireToastRef = useRef<
+    (title?: string, options?: { description?: string; jump?: BookmarkLocation | null; duration?: number }) => void
+  >(() => {})
 
   // ---- 交互：复制 → Toast ----
   // 用自增 toastKey 作为 Toast 元素 key：每次复制都强制重新挂载，CSS 飞入动画必从头重放
   // （比依赖 DOM reflow 更可靠，且符合 React 范式；连续复制也能看到动画重播）。
+  // options.jump：成功消息可点击，跳到对应分组/位置（AI 保存用）
   const fireToast = useCallback(
-    (title?: string) => {
+    (
+      title?: string,
+      options?: { description?: string; jump?: BookmarkLocation | null; duration?: number }
+    ) => {
       closeCtx()
       setToastTitle(title || '')
+      setToastDesc(options?.description || '')
+      setToastJump(options?.jump ?? null)
       setToastKey((k) => k + 1)
       setToastOpen(true)
       window.clearTimeout(toastTimer.current)
-      toastTimer.current = window.setTimeout(() => setToastOpen(false), 2600)
+      toastTimer.current = window.setTimeout(() => setToastOpen(false), options?.duration ?? 4200)
     },
     [closeCtx]
   )
@@ -1132,6 +1278,14 @@ export default function HomePage() {
     if (!root) return
     const sel = root.querySelector<HTMLElement>(`[data-item-id="${selectedId}"]`)
     if (!sel) return
+    // 全局搜索命令条：在条内滚动容器里就近露出，不要滚整个 content
+    const stripList = sel.closest('.usearch-list') as HTMLElement | null
+    if (stripList) {
+      const fromKbd = keyboardNavRef.current
+      keyboardNavRef.current = false
+      sel.scrollIntoView({ block: 'nearest', behavior: fromKbd ? 'auto' : 'smooth' })
+      return
+    }
     if (keyboardNavRef.current) {
       // 键盘方向键导航：把选中项滚到容器正中。
       // 用 rAF 自写缓动平滑跟随——长按连续触发时每次取消上一段动画、从当前 scrollTop 重新缓动到新目标，
@@ -1216,6 +1370,138 @@ export default function HomePage() {
     }
   }, [view, scrollToSection])
 
+  const openAggressiveSavePanel = useCallback((url = '') => {
+    setAggressiveSaveUrl(url)
+    setScreen('ai-aggressive-save')
+  }, [])
+
+  const dismissAggressiveSaveSuccess = useCallback((id: number) => {
+    setAggressiveSaveSuccesses((items) => items.filter((item) => item.id !== id))
+  }, [])
+
+  const jumpToAggressiveSaveResult = useCallback(
+    (result: AggressiveAiSaveResult) => {
+      const jump = result.locations[0]
+      if (!jump) return
+      setScreen(view)
+      setActiveSubId(jump.subGroupId)
+      useBookmarkStore.getState().selectGroup(jump.groupId, jump.subGroupId)
+      // 等主列表挂载后再滚，避免 screen 切换同一帧 scroll 失效
+      requestAnimationFrame(() => {
+        if (view === 'list' || view === 'grid') scrollToSection(jump.groupId, jump.subGroupId)
+      })
+    },
+    [view, scrollToSection]
+  )
+
+  const takeOverAggressiveSave = useCallback(
+    (notice: AggressiveSaveSuccess) => {
+      const bookmark = useBookmarkStore
+        .getState()
+        .bookmarks.find((item) => item.id === notice.result.bookmark.id && !item.isDeleted)
+      dismissAggressiveSaveSuccess(notice.id)
+      if (!bookmark) {
+        fireToast('书签已不存在，无法接管')
+        return
+      }
+      setFormEditItem(bookmarkToHomeItem(bookmark))
+      setFormKey((key) => key + 1)
+      setScreen('add')
+    },
+    [dismissAggressiveSaveSuccess, fireToast]
+  )
+
+  const undoAggressiveSave = useCallback(
+    (notice: AggressiveSaveSuccess) => {
+      const outcome = undoAggressiveAiSave(notice.result)
+      dismissAggressiveSaveSuccess(notice.id)
+      if (outcome === 'removed') fireToast('已撤销，书签已移入回收站')
+      else if (outcome === 'restored') fireToast('已撤销，本次 AI 修改已恢复')
+      else fireToast('书签已不存在，无需撤销')
+      void flushBookmarkStorePersistence()
+    },
+    [dismissAggressiveSaveSuccess, fireToast]
+  )
+
+  const runAggressiveSaveQueue = useCallback(async () => {
+    if (aggressiveSaveRunnerRef.current) return
+    aggressiveSaveRunnerRef.current = true
+
+    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+
+    while (aggressiveSaveQueueRef.current.length > 0) {
+      const job = aggressiveSaveQueueRef.current.shift()
+      if (!job) break
+      setAggressiveSaveJobs((items) =>
+        items.map((item) => (item.id === job.id ? { ...item, status: 'running', step: 0 } : item))
+      )
+
+      let cancelled = false
+      const animateProgress = async () => {
+        await wait(180)
+        for (let step = 1; step <= 9; step += 1) {
+          if (cancelled || !aggressiveSaveMountedRef.current) return
+          setAggressiveSaveJobs((items) =>
+            items.map((item) => (item.id === job.id ? { ...item, step } : item))
+          )
+          await wait(AGGRESSIVE_SAVE_STEP_DELAYS[step - 1] ?? 220)
+        }
+      }
+
+      try {
+        const [result] = await Promise.all([runAggressiveAiSave(job.url), animateProgress()])
+        if (!aggressiveSaveMountedRef.current) break
+        setAggressiveSaveJobs((items) =>
+          items.map((item) => (item.id === job.id ? { ...item, step: 10 } : item))
+        )
+        await wait(320)
+        if (!aggressiveSaveMountedRef.current) break
+        setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
+        const notice: AggressiveSaveSuccess = { id: job.id, result }
+        setAggressiveSaveSuccesses((items) => [notice, ...items].slice(0, 2))
+        jumpToAggressiveSaveResult(result)
+        const timer = window.setTimeout(() => {
+          aggressiveSaveSuccessTimersRef.current.delete(timer)
+          dismissAggressiveSaveSuccess(job.id)
+        }, 6200)
+        aggressiveSaveSuccessTimersRef.current.add(timer)
+        void flushBookmarkStorePersistence()
+      } catch (error) {
+        cancelled = true
+        setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
+        const message =
+          error instanceof AggressiveAiSaveError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'AI 保存失败'
+        setAggressiveSaveUrl(job.url)
+        fireToast(message, { description: '链接已保留，可再次打开 AI 保存重试', duration: 6200 })
+      }
+    }
+
+    aggressiveSaveRunnerRef.current = false
+  }, [dismissAggressiveSaveSuccess, fireToast, jumpToAggressiveSaveResult])
+  pumpAggressiveSaveQueueRef.current = () => {
+    void runAggressiveSaveQueue()
+  }
+
+  const enqueueAggressiveSave = useCallback(
+    (url: string) => {
+      const id = ++aggressiveSaveJobSeqRef.current
+      aggressiveSaveQueueRef.current.push({ id, url })
+      setAggressiveSaveJobs((items) => [
+        ...items,
+        { id, url, host: aggressiveSaveHostOf(url), step: 0, status: 'queued' }
+      ])
+      setAggressiveSaveUrl('')
+      // 核心交互：任务入队后立刻回首页，抓取、AI 与落库全部留在后台。
+      setScreen(view)
+      queueMicrotask(() => pumpAggressiveSaveQueueRef.current())
+    },
+    [view]
+  )
+
   // ---- SidebarNav：activeSubId 修复回调（删除/移动/提升后回退到首个子分组） ----
   const handleActiveSubIdFix = useCallback(
     (subId: string, groupId: string) => {
@@ -1267,7 +1553,13 @@ export default function HomePage() {
         if (useBookmarkFormStore.getState().isSaving) return
         // 退出 add 表单时统一走关闭逻辑（问题2）
         if (screen === 'add') useBookmarkFormStore.getState().set({ showAdd: false })
-        if (screen === 'add' || screen === 'settings' || screen === 'trash' || screen === 'groups') {
+        if (
+          screen === 'add' ||
+          screen === 'settings' ||
+          screen === 'trash' ||
+          screen === 'groups' ||
+          screen === 'ai-aggressive-save'
+        ) {
           setScreen(view)
           closeCtx()
           return
@@ -1284,7 +1576,7 @@ export default function HomePage() {
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         // 表单页（add/edit）正在编辑时忽略 Cmd+K，避免未保存草稿被卸载
-        if (screen === 'add') return
+        if (screen === 'add' || screen === 'ai-aggressive-save') return
         e.preventDefault()
         focusSearchInput()
         return
@@ -1302,13 +1594,13 @@ export default function HomePage() {
 
       // Enter：打开当前选中书签。无论焦点在顶栏搜索框、列表区还是无焦点（鼠标点击 / 方向键
       // 选中后焦点落在 body），都应直接打开；仅当焦点落在「搜索框以外」的其它输入控件时才放行给它。
+      // 全局搜索回退：用当前搜索词填入模板 URL 直接跳转（不进模板输入页）。
       if (e.key === 'Enter') {
         if (shouldDeferListEnterShortcut(e, headerSearchRef.current)) return
         const hit = navigableItems.find((i) => i.id === selectedId) ?? navigableItems[0]
         if (hit) {
           e.preventDefault()
-          const realBookmark = bookmarks.find((b) => b.id === hit.id)
-          if (realBookmark) openBookmarkLink(realBookmark)
+          openHomeItem(hit)
         }
         return
       }
@@ -1322,10 +1614,14 @@ export default function HomePage() {
       } else if (inEditable) {
         return
       } else if (!e.metaKey && !e.ctrlKey && !e.altKey && e.key.length === 1 && e.key !== ' ') {
-        // 列表区直接键入字符 → 聚焦顶栏搜索框接管输入（type-to-search）
+        // 列表区直接键入字符 → 聚焦当前搜索入口接管输入（type-to-search）
         e.preventDefault()
         applySearchValRef.current(searchVal + e.key)
-        headerSearchRef.current?.focus()
+        if (getSearchSurface() === 'utools-subinput') {
+          window.utools?.subInputFocus?.()
+        } else {
+          headerSearchRef.current?.focus()
+        }
         return
       }
       if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -1337,7 +1633,8 @@ export default function HomePage() {
       if (idx < 0) idx = 0
 
       const total = items.length
-      const isGrid = view === 'grid'
+      // 全局搜索命令条始终按竖条上下导航；网格宫格才用列跨步
+      const isGrid = view === 'grid' && !isUniversalFallback
       let newIdx = idx
 
       switch (e.key) {
@@ -1392,8 +1689,8 @@ export default function HomePage() {
     selectedId,
     syncSidebarForItem,
     GRID_COLS,
-    bookmarks,
-    openBookmarkLink,
+    isUniversalFallback,
+    openHomeItem,
     searchVal,
     clearSearch,
     focusSearchInput
@@ -1425,6 +1722,14 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), [])
+  useEffect(() => {
+    aggressiveSaveMountedRef.current = true
+    return () => {
+      aggressiveSaveMountedRef.current = false
+      aggressiveSaveSuccessTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+      aggressiveSaveSuccessTimersRef.current.clear()
+    }
+  }, [])
   useEffect(() => () => {
     if (setScrollTimeout.current) clearTimeout(setScrollTimeout.current)
     if (smoothRafRef.current != null) cancelAnimationFrame(smoothRafRef.current)
@@ -1446,7 +1751,7 @@ export default function HomePage() {
   activeTemplateBookmarkRef.current = activeTemplateBookmark
 
   // ---- 模板书签输入态 ----
-  // uTools subInput 已整体下线，模板参数改由页面内横幅输入框（tpl-banner）承接。
+  // uTools subInput 已整体下线，模板参数改由独立页面（tpl-page：仅 logo + 输入框）承接。
   const enterTemplateMode = useCallback((bookmark: Bookmark) => {
     setActiveTemplateBookmark(bookmark)
     activeTemplateBookmarkRef.current = bookmark
@@ -1490,6 +1795,8 @@ export default function HomePage() {
     if (!activeTemplateBookmark) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Enter') {
+        // 中文输入法组词中的 Enter 是确认候选，不能当作「执行搜索」
+        if (e.isComposing || e.keyCode === 229) return
         e.preventDefault()
         e.stopPropagation()
         executeTemplateSearchRef.current()
@@ -1497,11 +1804,44 @@ export default function HomePage() {
         e.preventDefault()
         e.stopPropagation()
         exitTemplateModeRef.current()
+        // 回到主页后重挂 uTools 顶部搜索框（模板入口时被 preload 移除）
+        window.dispatchEvent(new CustomEvent(UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT))
       }
     }
     // capture 阶段注册，先于全局 keydown 处理
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
+  }, [activeTemplateBookmark])
+
+  // 模板页输入框聚焦：首屏直挂 / 事件回放进入都要确保焦点落在页内输入框
+  const templateInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (!activeTemplateBookmark) return
+    const raf = requestAnimationFrame(() => templateInputRef.current?.focus())
+    return () => cancelAnimationFrame(raf)
+  }, [activeTemplateBookmark])
+
+  // 模板输入页：主面板拉高到更开阔的搜索态，退出恢复用户设置高度
+  const utoolsTplHeightRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (RUNTIME_PLATFORM !== 'utools' || typeof window.utools?.setExpendHeight !== 'function') return
+    if (isDetachedUToolsWindow()) return
+    if (activeTemplateBookmark) {
+      if (utoolsTplHeightRef.current === null) utoolsTplHeightRef.current = useSettingsStore.getState().windowHeight
+      try {
+        // 给 logo + 宽输入 + 提示留足纵向呼吸感（不低于用户当前高度）
+        const userH = utoolsTplHeightRef.current ?? 480
+        window.utools.setExpendHeight(Math.max(userH, 420))
+      } catch { /* ignore */ }
+      return
+    }
+    if (utoolsTplHeightRef.current !== null) {
+      const restore = utoolsTplHeightRef.current
+      utoolsTplHeightRef.current = null
+      try {
+        window.utools.setExpendHeight(restore)
+      } catch { /* ignore */ }
+    }
   }, [activeTemplateBookmark])
 
   // universal 书签匹配：payload 文本「标题 + 分隔符 + 关键词」→ 命中 allowUniversal 书签
@@ -1586,7 +1926,7 @@ export default function HomePage() {
     }
   }, [saveDetachedWindowPosition])
 
-  // 3.【致命】plugin-enter 事件：处理 bookmarks / quick_save / ai_quick_save / bm_tpl: 功能码
+  // 3.【致命】plugin-enter 事件：处理 bookmarks / quick_save / ai_aggressive_save / bm_tpl: 功能码
   // handler 用 ref 包裹，保持监听器长生命周期的同时始终调用最新逻辑
   const pluginEnterHandlerRef = useRef<(e: Event) => void>(() => {})
   pluginEnterHandlerRef.current = (e: Event) => {
@@ -1602,15 +1942,16 @@ export default function HomePage() {
     const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
     const store = useBookmarkStore.getState()
 
-    // ---- quick_save / ai_quick_save：保存当前网址 ----
-    if (code === 'quick_save' || code === AI_QUICK_SAVE_FEATURE_CODE) {
+    // ---- ai_aggressive_save：AI 保存（仅网址 → 自动归类入库）----
+    if (code === AI_AGGRESSIVE_SAVE_FEATURE_CODE) {
       let urlToSave = ''
       const payload = params?.payload
       if (typeof payload === 'string') urlToSave = payload.trim()
       else if (payload && typeof payload === 'object' && 'text' in payload) {
         urlToSave = String((payload as { text: unknown }).text).trim()
       }
-      // 无 payload（主入口直接执行）：读取当前浏览器页面 URL（对齐 App.tsx:949-956）
+      if (!urlToSave && payloadText) urlToSave = payloadText
+
       if (!urlToSave) {
         void (async () => {
           try {
@@ -1620,7 +1961,41 @@ export default function HomePage() {
                 await withFallbackTimeout(utoolsApi.readCurrentBrowserUrl(), '', BROWSER_URL_READ_TIMEOUT_MS)
               ).trim()
               if (browserUrl) {
-                // 重新走同一处理器，带上拿到的 URL
+                pluginEnterHandlerRef.current({ detail: { code, payload: browserUrl } } as unknown as Event)
+                return
+              }
+            }
+          } catch (err) {
+            console.warn('[ai_save] 获取浏览器 URL 失败:', err)
+          }
+          openAggressiveSavePanel('')
+        })()
+        return
+      }
+
+      // 有 URL：与面板粘贴共用同一后台队列，立即回首页显示右上角进度。
+      enqueueAggressiveSave(urlToSave)
+      return
+    }
+
+    // ---- quick_save：普通保存当前网址 ----
+    if (code === 'quick_save') {
+      let urlToSave = ''
+      const payload = params?.payload
+      if (typeof payload === 'string') urlToSave = payload.trim()
+      else if (payload && typeof payload === 'object' && 'text' in payload) {
+        urlToSave = String((payload as { text: unknown }).text).trim()
+      }
+      // 无 payload（主入口直接执行）：读取当前浏览器页面 URL
+      if (!urlToSave) {
+        void (async () => {
+          try {
+            const utoolsApi = window.utools as unknown as { readCurrentBrowserUrl?: () => Promise<string> } | undefined
+            if (typeof utoolsApi?.readCurrentBrowserUrl === 'function') {
+              const browserUrl = (
+                await withFallbackTimeout(utoolsApi.readCurrentBrowserUrl(), '', BROWSER_URL_READ_TIMEOUT_MS)
+              ).trim()
+              if (browserUrl) {
                 pluginEnterHandlerRef.current({ detail: { code, payload: browserUrl } } as unknown as Event)
                 return
               }
@@ -1638,7 +2013,6 @@ export default function HomePage() {
       }
       // URL 校验三段分类：
       //   1. 带 ://（http/https 之外拒绝）；2. 形如 scheme: 但非 host:port 拒绝；3. 无 scheme 补 https://
-      //   用例：example.com:8080 ✓、localhost:3000 ✓、ftp://x ✗、mailto:a@b.c ✗、data:text/html ✗、javascript:alert(1) ✗
       const normalizeQuickUrl = (raw: string): string | null => {
         if (!raw) return null
         try {
@@ -1658,21 +2032,17 @@ export default function HomePage() {
       const finalUrl = normalizeQuickUrl(urlToSave)
       if (finalUrl) {
         const bookmark = store.quickSaveBookmark(finalUrl)
-        // 复用表单的后台元信息水合：快存先即时落库（标题以 URL 兜底显示），随后抓取真实
-        // 标题/简介补全；ai_quick_save 变体追加 AI 整理（AI 不可用时自动降级为仅抓取）。
-        // 仅新建（标题为空）时触发，去重命中的既有书签不重复抓取。
+        // 快存先即时落库，随后后台抓取标题/简介；仅新建（标题为空）时触发
         if (!bookmark.title) {
           enqueueMetadataHydration(bookmark.id, {
             url: finalUrl,
             initialTitle: '',
-            initialDesc: '',
-            forceAi: code === AI_QUICK_SAVE_FEATURE_CODE
+            initialDesc: ''
           })
         }
         fireToastRef.current(`已保存：${bookmark.title || urlToSave}`)
         void flushBookmarkStorePersistence().finally(() => window.utools?.outPlugin())
       } else {
-        // 无有效 URL：打开新增表单作为兜底（对齐旧版 QuickSaveDialog 的意图）
         setFormEditItem(null)
         setFormKey((k) => k + 1)
         setScreen('add')
@@ -1691,6 +2061,12 @@ export default function HomePage() {
       }
       const hasTemplate = /{[^}]+}/.test(bookmark.url)
       const isInTemplateMode = activeTemplateBookmarkRef.current?.id === id
+      // 已在该书签的模板态（首屏直接挂载模板页后回放的同一 enter 事件）：
+      // 无 payload 视为重复进入，忽略并保持模板态，否则会走下方「拼接空关键词直接开链接」分支
+      if (isInTemplateMode && !payloadText) {
+        recentDynamicTemplateEnterAtRef.current = Date.now()
+        return
+      }
       const query = isInTemplateMode ? templateQueryRef.current.trim() : payloadText
 
       if (hasTemplate) {
@@ -1779,7 +2155,8 @@ export default function HomePage() {
     // 绑定稳定的 wrapper，内部走 ref 取最新 handler
     const wrapper = (e: Event) => {
       // preload 在 onPluginEnter 也会设高度，但可能读到旧存储；页面已挂载时在此用 store 纠正。
-      if (typeof window.utools?.setExpendHeight === 'function') {
+      // 模板输入态下跳过：避免 uTools 补发的 enter 把模板页高度重置回主面板高度。
+      if (!activeTemplateBookmarkRef.current && typeof window.utools?.setExpendHeight === 'function') {
         try {
           window.utools.setExpendHeight(useSettingsStore.getState().windowHeight)
         } catch { /* ignore */ }
@@ -1807,7 +2184,8 @@ export default function HomePage() {
       }
       ;(window as unknown as { __gooseMarksPendingPluginEnterEvents?: unknown[] }).__gooseMarksPendingPluginEnterEvents = []
     }
-    if (typeof window.utools?.setExpendHeight === 'function') {
+    // 模板页首屏直挂时跳过：高度已由模板页自己的 effect 收紧，不能重置回主面板高度
+    if (!activeTemplateBookmarkRef.current && typeof window.utools?.setExpendHeight === 'function') {
       try {
         window.utools.setExpendHeight(useSettingsStore.getState().windowHeight)
       } catch { /* ignore */ }
@@ -1825,7 +2203,7 @@ export default function HomePage() {
       const text = (e as CustomEvent<{ text: string }>).detail?.text ?? ''
       if (activeTemplateBookmarkRef.current) return
       const curScreen = screenRef.current
-      if (curScreen === 'add') return
+      if (curScreen === 'add' || curScreen === 'ai-aggressive-save') return
       if (curScreen === 'settings' || curScreen === 'trash' || curScreen === 'groups') {
         setScreenRef.current(viewRef.current)
       }
@@ -1898,9 +2276,10 @@ export default function HomePage() {
   const syncUToolsFeatures = useCallback(() => {
     if (!window.utools) return
     const settings = useSettingsStore.getState()
-    const { aiQuickSaveEnabled: quickSaveSetting } = settings
-    const aiQuickSaveEnabled = !!(quickSaveSetting && getAIAvailability(selectAiSettings(settings)).ok)
-    syncFeatures(useBookmarkStore.getState().bookmarks, { aiQuickSaveEnabled })
+    const { aiAggressiveSaveEnabled: aggressiveSetting } = settings
+    const aiOk = getAIAvailability(selectAiSettings(settings)).ok
+    const aiAggressiveSaveEnabled = !!(aggressiveSetting && aiOk)
+    syncFeatures(useBookmarkStore.getState().bookmarks, { aiAggressiveSaveEnabled })
   }, [syncFeatures])
 
   // 书签数据变化 → 同步 uTools 特性（对齐 App.tsx:1294-1297）
@@ -1963,9 +2342,15 @@ export default function HomePage() {
     return null
   }, [homeGroups, selectedId])
 
+  const activeAggressiveSaveJob =
+    aggressiveSaveJobs.find((job) => job.status === 'running') ??
+    aggressiveSaveJobs.find((job) => job.status === 'queued')
+  const aggressiveSaveWaitingCount = Math.max(0, aggressiveSaveJobs.length - (activeAggressiveSaveJob ? 1 : 0))
+
   const rootCls = [
     'goose-home',
     toastOpen ? 'toast-open' : '',
+    aiPanelOpen && (screen === 'list' || screen === 'grid') ? 'ai-panel-open' : '',
     // 彩蛋激活时加 egg-on，让 CSS 透出底层 canvas
     theme === 'dark' && easterEggEnabled ? 'egg-on' : '',
   ]
@@ -1976,7 +2361,10 @@ export default function HomePage() {
     <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface}>
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && <StarryBackground />}
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'blackhole' && (
-        <div className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none">
+        <div
+          className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none"
+          style={{ backgroundColor: '#262624' }}
+        >
           <BlackHole
             brightness={0.75}
             speed={0.9}
@@ -2044,39 +2432,73 @@ export default function HomePage() {
               </div>
             </SortableContext>
           </DndContext>
-          {/* 搜索框（收窄到右侧） */}
-          <div className="header-search">
-            <Ico name="search" />
-            <input
-              ref={headerSearchRef}
-              type="text"
-              placeholder="搜索书签…"
-              value={searchVal}
-              onChange={(e) => applySearchVal(e.target.value)}
-            />
-            {isSearching && (
-              <button className="search-clear" title="清空搜索 (Esc)" onClick={clearSearch}>
-                <Ico name="x" />
-              </button>
+          {/* 搜索框：仅浏览器独立调试显示；uTools（含独立窗）由顶部原生搜索承接 */}
+          {searchSurface === 'inline' && (
+            <div className="header-search">
+              <Ico name="search" />
+              <input
+                ref={headerSearchRef}
+                type="text"
+                placeholder="搜索书签…"
+                value={searchVal}
+                onChange={(e) => applySearchVal(e.target.value)}
+              />
+              {isSearching && (
+                <button className="search-clear" title="清空搜索 (Esc)" onClick={clearSearch}>
+                  <Ico name="x" />
+                </button>
+              )}
+            </div>
+          )}
+          {/* 方案 A：AI 保存开启时主操作独占胶囊；收集/设置仅图标；AI 助手入口在菜单
+              InstantTooltip：0 延迟 + portal，顶栏优先向下，不够再自动翻面 */}
+          <div className="header-actions">
+            {aiAggressiveSaveEnabled && aiEnabled ? (
+              <>
+                <InstantTooltip label="AI 保存：粘贴网址自动归类">
+                  <button
+                    type="button"
+                    className="collect-btn ag-collect-btn"
+                    onClick={() => openAggressiveSavePanel('')}
+                  >
+                    <Ico name="sparkles" />
+                    AI 保存
+                  </button>
+                </InstantTooltip>
+                <InstantTooltip label="手动收集">
+                  <button
+                    type="button"
+                    className="header-icon-btn"
+                    onClick={() => { setFormEditItem(null); setFormKey((k) => k + 1); setScreen('add') }}
+                  >
+                    <Ico name="plus" />
+                  </button>
+                </InstantTooltip>
+              </>
+            ) : (
+              <InstantTooltip label="手动填写网址与分组">
+                <button
+                  type="button"
+                  className="collect-btn"
+                  onClick={() => { setFormEditItem(null); setFormKey((k) => k + 1); setScreen('add') }}
+                >
+                  <Ico name="plus" />
+                  收集
+                </button>
+              </InstantTooltip>
             )}
+            <InstantTooltip label="设置">
+              <button
+                type="button"
+                ref={avatarRef}
+                className={`header-icon-btn${paOpen ? ' on' : ''}`}
+                aria-expanded={paOpen}
+                onClick={() => setPaOpen((o) => !o)}
+              >
+                <Ico name="settings" />
+              </button>
+            </InstantTooltip>
           </div>
-          {/* 收集按钮 */}
-          <button
-            className="collect-btn"
-            onClick={() => { setFormEditItem(null); setFormKey((k) => k + 1); setScreen('add') }}
-          >
-            <Ico name="plus" />
-            收集
-          </button>
-          {/* 头像按钮 */}
-          <button
-            ref={avatarRef}
-            className="avatar"
-            title="设置"
-            onClick={() => setPaOpen((o) => !o)}
-          >
-            <Ico name="settings" />
-          </button>
         </header>
 
         {/* 一级 Tab 右键菜单 */}
@@ -2107,10 +2529,22 @@ export default function HomePage() {
           view={view}
           uiScale={uiScale}
           trashN={trashN}
+          aiEnabled={aiEnabled}
+          aiPanelOpen={aiPanelOpen}
           onClose={() => setPaOpen(false)}
           onThemePrefChange={applyThemePref}
           onViewChange={changeView}
           onUiScaleChange={setUiScale}
+          onOpenAiPanel={() => {
+            setPaOpen(false)
+            if (!aiEnabled) {
+              setScreen('settings')
+              fireToast('请先启用并配置 AI 助手')
+              return
+            }
+            setScreen(view)
+            setAiPanelOpen((open) => !open)
+          }}
           onOpenSettings={() => { setPaOpen(false); setScreen('settings') }}
           onOpenTrash={() => { setPaOpen(false); setScreen('trash') }}
           onOpenHelp={() => { setPaOpen(false); setHelpOpen(true) }}
@@ -2118,22 +2552,51 @@ export default function HomePage() {
         {/* 帮助与关于弹窗 */}
         <HelpAboutDialog open={helpOpen} onClose={() => setHelpOpen(false)} onToast={fireToast} />
 
-        {/* 模板输入态横幅：参数输入框在页面内（uTools subInput 已下线） */}
+        {/* 模板输入页：整页接管，大 logo + 宽输入，Enter 打开 / Esc 退出 */}
         {activeTemplateBookmark && (
-          <div className="tpl-banner">
-            <Ico name="wand-sparkles" />
-            <span>{`「${activeTemplateBookmark.title}」`}</span>
-            <input
-              className="tpl-input"
-              type="text"
-              autoFocus
-              value={templateQuery}
-              placeholder={`输入${getTemplateLabel(activeTemplateBookmark.url) || '关键词'}后回车打开…`}
-              onChange={(e) => setTemplateQuery(e.target.value)}
-            />
-            <button className="tpl-banner-exit" title="退出模板模式 (Esc)" onClick={() => exitTemplateMode()}>
-              <Ico name="x" />
-            </button>
+          <div className="tpl-page">
+            <div className="tpl-page-stage">
+              <div
+                className="tpl-page-logo"
+                style={
+                  iconToDisplayUrl(activeTemplateBookmark.icon ?? undefined)
+                    ? undefined
+                    : { background: activeTemplateBookmark.icon?.bgColor || 'var(--accent)' }
+                }
+              >
+                {iconToDisplayUrl(activeTemplateBookmark.icon ?? undefined) ? (
+                  <Image bare src={iconToDisplayUrl(activeTemplateBookmark.icon ?? undefined)!} alt="" />
+                ) : (
+                  <span>
+                    {(activeTemplateBookmark.title || activeTemplateBookmark.url || '?')
+                      .trim()
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </span>
+                )}
+              </div>
+              <div className="tpl-page-title">
+                {activeTemplateBookmark.title?.trim() || '搜索'}
+              </div>
+              <div className="tpl-page-field">
+                <input
+                  ref={templateInputRef}
+                  className="tpl-page-input"
+                  type="text"
+                  autoFocus
+                  value={templateQuery}
+                  placeholder={`输入${getTemplateLabel(activeTemplateBookmark.url) || '关键词'}后回车打开…`}
+                  onChange={(e) => setTemplateQuery(e.target.value)}
+                />
+              </div>
+              <div className="tpl-page-hint">
+                <kbd>↵</kbd>
+                <span>打开</span>
+                <span className="tpl-page-hint-dot" aria-hidden="true" />
+                <kbd>Esc</kbd>
+                <span>返回</span>
+              </div>
+            </div>
           </div>
         )}
 
@@ -2190,10 +2653,9 @@ export default function HomePage() {
                     onSelect={setSelectedId}
                     searching={isSearching}
                     searchItems={gridSearchItems}
-                    onOpen={(item) => {
-                      const realBookmark = bookmarks.find((b) => b.id === item.id)
-                      if (realBookmark) openBookmarkLink(realBookmark)
-                    }}
+                    universalItems={universalFallbackItems}
+                    searchQuery={searchVal.trim()}
+                    onOpen={openHomeItem}
                   />
                 ) : (
                   <ListContent
@@ -2201,10 +2663,9 @@ export default function HomePage() {
                     selectedId={selectedId}
                     onSelect={setSelectedId}
                     searching={isSearching}
-                    onOpen={(item) => {
-                      const realBookmark = bookmarks.find((b) => b.id === item.id)
-                      if (realBookmark) openBookmarkLink(realBookmark)
-                    }}
+                    universalItems={universalFallbackItems}
+                    searchQuery={searchVal.trim()}
+                    onOpen={openHomeItem}
                   />
                 )}
               </div>
@@ -2263,8 +2724,93 @@ export default function HomePage() {
         {/* ---------- Add/Edit wizard (沉浸式三步) ---------- */}
         {screen === 'add' && <AddBookmarkWizard key={`wiz-${formKey}`} editItem={formEditItem} onBack={backToList} />}
 
+        {/* ---------- AI 保存（仅网址） ---------- */}
+        {screen === 'ai-aggressive-save' && (
+          <AggressiveAiSavePanel
+            key={`ag-save-${aggressiveSaveUrl || 'empty'}`}
+            initialUrl={aggressiveSaveUrl}
+            onBack={() => setScreen(view)}
+            onSubmit={enqueueAggressiveSave}
+          />
+        )}
+
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}
+
+        {aiPanelOpen && (screen === 'list' || screen === 'grid') && (
+          <Suspense fallback={<div className="bookmark-ai-panel bookmark-ai-loading"><Ico name="loader" className="spin" />正在加载 AI…</div>}>
+            <BookmarkAiPanel onClose={() => setAiPanelOpen(false)} />
+          </Suspense>
+        )}
+
+        {/* ---------- AI 保存：右上角后台进度 + S1 成功卡 ---------- */}
+        {(activeAggressiveSaveJob || aggressiveSaveSuccesses.length > 0) && (
+          <aside className="ag-save-stack" aria-label="AI 保存状态" aria-live="polite">
+            {activeAggressiveSaveJob && (
+              <div className="ag-save-progress-wrap">
+                <div className="ag-save-progress-pill">
+                  <span className="ag-save-progress-orb" aria-hidden="true" />
+                  <div className="ag-save-progress-copy">
+                    <div className="ag-save-progress-host">{activeAggressiveSaveJob.host}</div>
+                    <div className="ag-save-progress-step">
+                      步骤 {activeAggressiveSaveJob.step}/10 ·{' '}
+                      {activeAggressiveSaveJob.status === 'queued'
+                        ? '排队中…'
+                        : AGGRESSIVE_SAVE_STEPS[Math.max(0, activeAggressiveSaveJob.step - 1)]}
+                    </div>
+                  </div>
+                </div>
+                {aggressiveSaveWaitingCount > 0 && (
+                  <div className="ag-save-queue-hint">还有 {aggressiveSaveWaitingCount} 个排队</div>
+                )}
+              </div>
+            )}
+
+            {aggressiveSaveSuccesses.map((notice) => {
+              const result = notice.result
+              const groupText = result.groupLabels.join(' · ') || '未分组'
+              return (
+                <section className="ag-save-success-card" key={`ag-success-${notice.id}`}>
+                  <button
+                    type="button"
+                    className="ag-save-success-close"
+                    aria-label="关闭保存结果"
+                    onClick={() => dismissAggressiveSaveSuccess(notice.id)}
+                  >
+                    <Ico name="x" />
+                  </button>
+                  <span className="ag-save-success-icon" aria-hidden="true"><Ico name="check" /></span>
+                  <div className="ag-save-success-body">
+                    <div className="ag-save-success-title">已加入 {result.locations.length} 个分组</div>
+                    <div className="ag-save-success-detail">
+                      <span className="ag-save-success-bookmark">「{result.title || '书签'}」</span>
+                      <span aria-hidden="true"> → </span>
+                      <span className="ag-save-success-groups">{groupText}</span>
+                    </div>
+                    <div className="ag-save-success-actions">
+                      <button
+                        type="button"
+                        className="primary"
+                        onClick={() => {
+                          jumpToAggressiveSaveResult(result)
+                          dismissAggressiveSaveSuccess(notice.id)
+                        }}
+                      >
+                        查看
+                      </button>
+                      <button type="button" className="danger" onClick={() => undoAggressiveSave(notice)}>
+                        撤销
+                      </button>
+                      <button type="button" onClick={() => takeOverAggressiveSave(notice)}>
+                        我来接管
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              )
+            })}
+          </aside>
+        )}
 
         {/* ---------- Context menu ---------- */}
         <div ref={ctxMenuRef} className={`ctx-menu${ctx.open ? ' show' : ''}`} style={{ left: ctx.x, top: ctx.y }} onClick={(e) => e.stopPropagation()}>
@@ -2308,12 +2854,34 @@ export default function HomePage() {
         </div>
 
         {/* ---------- Toast ---------- */}
-        {/* 通用 toast：标题来自 fireToast 入参（此前写死「链接已复制」，
-            会让保存/恢复/打开等所有反馈都套复制文案） */}
-        <div className="toast" key={`toast-${toastKey}`}>
+        {/* 通用 toast：标题来自 fireToast 入参；可带 description + 点击跳转（AI 保存） */}
+        <div
+          className={`toast${toastJump ? ' is-action' : ''}`}
+          key={`toast-${toastKey}`}
+          role={toastJump ? 'button' : undefined}
+          tabIndex={toastJump ? 0 : undefined}
+          onClick={() => {
+            if (!toastJump) return
+            setScreen(view)
+            setActiveSubId(toastJump.subGroupId)
+            useBookmarkStore.getState().selectGroup(toastJump.groupId, toastJump.subGroupId)
+            requestAnimationFrame(() => {
+              if (view === 'list' || view === 'grid') scrollToSection(toastJump.groupId, toastJump.subGroupId)
+            })
+            setToastOpen(false)
+          }}
+          onKeyDown={(e) => {
+            if (!toastJump) return
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              ;(e.currentTarget as HTMLDivElement).click()
+            }
+          }}
+        >
           <span className="tic"><Ico name="check" /></span>
           <div>
             <div className="tt">{toastTitle || '操作完成'}</div>
+            {toastDesc ? <div className="td">{toastDesc}{toastJump ? ' · 点击跳转' : ''}</div> : null}
           </div>
         </div>
       </div>
@@ -2410,20 +2978,96 @@ function BookmarkCard({
   )
 }
 
+/** 搜索无匹配 + 全局搜索回退：居中空态 + 底部可滚动命令条（方案 B，列表/网格同布局） */
+function SearchEmptyUniversal({
+  items,
+  selectedId,
+  searchQuery,
+  onSelect,
+  onOpen
+}: {
+  items: HomeItem[]
+  selectedId: string | null
+  searchQuery: string
+  onSelect: (id: string) => void
+  onOpen?: (item: HomeItem) => void
+}) {
+  const q = searchQuery.trim()
+  return (
+    <div className="usearch">
+      <div className="usearch-main">
+        <Ico name="search-x" />
+        <div className="usearch-msg">没有找到匹配的书签</div>
+        <div className="usearch-sub">试试下方的全局搜索</div>
+      </div>
+      <div className="usearch-strip">
+        <div className="usearch-strip-h">
+          <span className="usearch-strip-l">全局搜索 · {items.length}</span>
+          <span className="usearch-strip-r">
+            <kbd className="usearch-kbd">↑</kbd>
+            <kbd className="usearch-kbd">↓</kbd>
+            <span>选择</span>
+            <kbd className="usearch-kbd">↵</kbd>
+            <span>打开</span>
+          </span>
+        </div>
+        <div className="usearch-list">
+          {items.map((item) => {
+            const sel = item.id === selectedId
+            return (
+              <div
+                key={item.id}
+                className={`usearch-cmd${sel ? ' sel' : ''}`}
+                data-item-id={item.id}
+                onClick={() => {
+                  onSelect(item.id)
+                  onOpen?.(item)
+                }}
+              >
+                <Fav item={item} />
+                <span className="usearch-ttl">{item.ttl}</span>
+                <span className="usearch-q">
+                  「{q ? <em>{q}</em> : '…'}」
+                </span>
+                {sel && <span className="usearch-enter">↵ 打开</span>}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function ListContent({
   groups,
   selectedId,
   onSelect,
   onOpen,
-  searching
+  searching,
+  universalItems,
+  searchQuery
 }: {
   groups: HomeGroup[]
   selectedId: string | null
   onSelect: (id: string) => void
   onOpen?: (item: HomeItem) => void
   searching?: boolean
+  universalItems?: HomeItem[]
+  searchQuery?: string
 }) {
   if (!groups.length) {
+    if (searching && universalItems && universalItems.length > 0) {
+      return (
+        <SearchEmptyUniversal
+          items={universalItems}
+          selectedId={selectedId}
+          searchQuery={searchQuery || ''}
+          onSelect={onSelect}
+          onOpen={onOpen}
+        />
+      )
+    }
     return (
       <div className="empty">
         <Ico name={searching ? 'search-x' : 'inbox'} />
@@ -2567,7 +3211,9 @@ function GridContent({
   onSelect,
   onOpen,
   searching,
-  searchItems
+  searchItems,
+  universalItems,
+  searchQuery
 }: {
   groups: HomeGroup[]
   columns: number
@@ -2576,6 +3222,8 @@ function GridContent({
   onOpen?: (item: HomeItem) => void
   searching?: boolean
   searchItems?: HomeItem[]
+  universalItems?: HomeItem[]
+  searchQuery?: string
 }) {
   const gridIconSize = useSettingsStore((s) => s.gridIconSize)
   const iconSize = GRID_ICON_SIZE_PX[gridIconSize] ?? '46px'
@@ -2583,6 +3231,17 @@ function GridContent({
   // 搜索态：全局匹配结果扁平成一个宫格，不分段
   if (searching) {
     if (!searchItems || !searchItems.length) {
+      if (universalItems && universalItems.length > 0) {
+        return (
+          <SearchEmptyUniversal
+            items={universalItems}
+            selectedId={selectedId}
+            searchQuery={searchQuery || ''}
+            onSelect={onSelect}
+            onOpen={onOpen}
+          />
+        )
+      }
       return (
         <div className="empty">
           <Ico name="search-x" />
@@ -2661,6 +3320,7 @@ function FormPage({ editItem, onBack }: { editItem: HomeItem | null; onBack: () 
     categorySuggestion,
     isSuggestingCategory,
     canUseAi,
+    isDraftTemplate,
     set,
     patchDraft,
     openAdd,
@@ -2763,9 +3423,31 @@ function FormPage({ editItem, onBack }: { editItem: HomeItem | null; onBack: () 
               )}
             </div>
             {/{[^}]+}/.test(draft.url) && (
-              <div className="hint-text">URL 含 {'{query}'} 可作为模板，呼出后直接输入关键词跳转</div>
+              <div className="hint-text">
+                URL 含 <span className="gm-url-ph-token">{'{q}'}</span> 等占位符可作为搜索模板；开启全局搜索后，uTools 主输入框任意键入即可匹配
+              </div>
             )}
           </section>
+
+          {/* 模板书签：显示到 uTools 全局搜索 */}
+          {isDraftTemplate && (
+            <section className="field">
+              <div className="set-row" style={{ padding: 0, minHeight: 0 }}>
+                <div>
+                  <div className="rt" style={{ fontSize: 13.5 }}>显示到 uTools 全局搜索</div>
+                  <div className="rd" style={{ fontSize: 11.5, marginTop: 2 }}>
+                    在 uTools 主输入框任意键入时出现；面板内搜索无匹配时也会列出
+                  </div>
+                </div>
+                <div
+                  className={`g-switch${draft.allowUniversal ? ' on' : ''}`}
+                  role="switch"
+                  aria-checked={draft.allowUniversal}
+                  onClick={() => patchDraft({ allowUniversal: !draft.allowUniversal })}
+                />
+              </div>
+            </section>
+          )}
 
           {/* 图标与标题 */}
           <section className="field">
@@ -3011,6 +3693,84 @@ function Seg<T extends string>({
   )
 }
 
+/**
+ * 设置页自定义下拉（替代原生 select，避免系统蓝底 option；视觉对齐 .select + ctx-menu）
+ */
+function SettingsSelect({
+  value,
+  options,
+  onChange,
+  icon = 'cpu',
+  wide
+}: {
+  value: string
+  options: { id: string; label: string }[]
+  onChange: (id: string) => void
+  icon?: string
+  /** 更宽的触发器（模型名等长文本） */
+  wide?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const selected = options.find((o) => o.id === value) ?? options[0]
+  const display = selected?.label || selected?.id || value
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  return (
+    <div className={`set-select${wide ? ' set-select--wide' : ''}${open ? ' open' : ''}`} ref={rootRef}>
+      <button
+        type="button"
+        className="select set-select-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Ico name={icon} />
+        <span className="set-select-value">{display}</span>
+        <Ico name="chevron-down" />
+      </button>
+      {open && (
+        <div className="set-select-menu" role="listbox">
+          {options.map((m) => {
+            const on = m.id === value
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="option"
+                aria-selected={on}
+                className={`set-select-opt${on ? ' on' : ''}`}
+                onClick={() => {
+                  onChange(m.id)
+                  setOpen(false)
+                }}
+              >
+                <span className="set-select-opt-check">{on ? <Ico name="check" /> : null}</span>
+                <span className="set-select-opt-label">{m.label || m.id}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ---------- 设置页内容（接真实 store） ---------- */
 function SettingsContent({
   theme,
@@ -3046,61 +3806,90 @@ function SettingsContent({
   const setListShowDescription = useSettingsStore((s) => s.setListShowDescription)
   const listFullDescription = useSettingsStore((s) => s.listFullDescription)
   const setListFullDescription = useSettingsStore((s) => s.setListFullDescription)
+  const descriptionSelectable = useSettingsStore((s) => s.descriptionSelectable)
+  const setDescriptionSelectable = useSettingsStore((s) => s.setDescriptionSelectable)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const setEasterEggEnabled = useSettingsStore((s) => s.setEasterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   const setEasterEggVariant = useSettingsStore((s) => s.setEasterEggVariant)
   const aiEnabled = useSettingsStore((s) => s.aiEnabled)
   const setAiEnabled = useSettingsStore((s) => s.setAiEnabled)
-  const aiAllowLegacyUTools = useSettingsStore((s) => s.aiAllowLegacyUTools)
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
-  const aiUseCustomProvider = useSettingsStore((s) => s.aiUseCustomProvider)
-  const setAiCustomProviderEnabled = useSettingsStore((s) => s.setAiCustomProviderEnabled)
-  const aiProviderPreset = useSettingsStore((s) => s.aiProviderPreset)
-  const setAiProviderPreset = useSettingsStore((s) => s.setAiProviderPreset)
+  const aiProtocol = useSettingsStore((s) => s.aiProtocol)
+  const setAiProtocol = useSettingsStore((s) => s.setAiProtocol)
   const aiCustomBaseURL = useSettingsStore((s) => s.aiCustomBaseURL)
   const aiCustomApiKey = useSettingsStore((s) => s.aiCustomApiKey)
   const aiCustomModelOptions = useSettingsStore((s) => s.aiCustomModelOptions)
   const saveAiCustomConfig = useSettingsStore((s) => s.saveAiCustomConfig)
-  const aiQuickSaveEnabled = useSettingsStore((s) => s.aiQuickSaveEnabled)
-  const setAiQuickSaveEnabled = useSettingsStore((s) => s.setAiQuickSaveEnabled)
+  const aiAggressiveSaveEnabled = useSettingsStore((s) => s.aiAggressiveSaveEnabled)
+  const setAiAggressiveSaveEnabled = useSettingsStore((s) => s.setAiAggressiveSaveEnabled)
   const windowHeight = useSettingsStore((s) => s.windowHeight)
   const setWindowHeight = useSettingsStore((s) => s.setWindowHeight)
 
-  const usingLegacyUToolsAi = aiAllowLegacyUTools && !aiUseCustomProvider
-  // 第三方模型列表取自用户拉取结果；历史兼容的 uTools AI 仍回落到默认模型占位。
-  const modelOptions = aiUseCustomProvider && aiCustomModelOptions.length > 0
+  const protocolDefaultModel = getDefaultModelId(aiProtocol)
+  const modelOptions = aiCustomModelOptions.length > 0
     ? aiCustomModelOptions
-    : [{ id: DEFAULT_AI_MODEL, label: DEFAULT_AI_MODEL }]
+    : [{ id: protocolDefaultModel, label: protocolDefaultModel }]
 
-  // 自愈：选中模型若不在可选项内（如换供应商后旧 provider 的模型 id 残留），归一到首个可选项。
-  // 否则下拉视觉显示首项、但持久化仍是旧 id，元数据生成会把旧模型发给新端点 → “旧模型不能访问”。
+  // 自愈：选中模型若不在可选项内（如换协议后旧模型 id 残留），归一到首个可选项。
   useEffect(() => {
     if (!modelOptions.some((m) => m.id === aiSelectedModelId)) {
-      setAiSelectedModelId(modelOptions[0]?.id ?? DEFAULT_AI_MODEL)
+      setAiSelectedModelId(modelOptions[0]?.id ?? protocolDefaultModel)
     }
-  }, [aiSelectedModelId, modelOptions, setAiSelectedModelId])
+  }, [aiSelectedModelId, modelOptions, protocolDefaultModel, setAiSelectedModelId])
 
-  // 自定义供应商：API Key 本地草稿 + 拉取模型列表状态（BaseURL 跟随预置，custom 时可编辑）
+  // Base URL / API Key 本地草稿 + 拉取模型列表状态
+  const protocolDefaultBaseURL = getDefaultBaseURL(aiProtocol)
+  const [baseUrlDraft, setBaseUrlDraft] = useState(aiCustomBaseURL || protocolDefaultBaseURL)
   const [apiKeyDraft, setApiKeyDraft] = useState(aiCustomApiKey)
-  const [customUrlDraft, setCustomUrlDraft] = useState(aiCustomBaseURL)
+  const [showApiKey, setShowApiKey] = useState(false)
   const [fetchingModels, setFetchingModels] = useState(false)
   const [modelFetchHint, setModelFetchHint] = useState<{ ok: boolean; msg: string } | null>(null)
-  // 切换供应商预置后，把草稿与 store 对齐（store 已在 setAiProviderPreset 里填好 BaseURL）
   useEffect(() => {
-    setCustomUrlDraft(aiCustomBaseURL)
-  }, [aiCustomBaseURL])
+    setModelFetchHint(null)
+    setShowApiKey(false)
+  }, [aiProtocol])
+  useEffect(() => {
+    setBaseUrlDraft(aiCustomBaseURL || protocolDefaultBaseURL)
+  }, [aiCustomBaseURL, protocolDefaultBaseURL])
   useEffect(() => {
     setApiKeyDraft(aiCustomApiKey)
   }, [aiCustomApiKey])
 
-  // 选预置：custom 用草稿地址，其余用预置内置地址
-  const effectiveBaseURL = aiProviderPreset === 'custom' ? customUrlDraft : aiCustomBaseURL
+  /** 失焦 / 切换协议前保存 Base URL / API Key，不强制重新拉模型。 */
+  const persistDraftCredentials = useCallback(() => {
+    const apiKey = apiKeyDraft.trim()
+    const baseURL = baseUrlDraft.trim() || protocolDefaultBaseURL
+    if (apiKey === aiCustomApiKey && baseURL === (aiCustomBaseURL || protocolDefaultBaseURL)) return
+    saveAiCustomConfig({
+      baseURL,
+      apiKey,
+      modelOptions: aiCustomModelOptions
+    })
+  }, [
+    apiKeyDraft,
+    baseUrlDraft,
+    protocolDefaultBaseURL,
+    aiCustomBaseURL,
+    aiCustomApiKey,
+    aiCustomModelOptions,
+    saveAiCustomConfig
+  ])
+
+  const handleSelectProtocol = useCallback(
+    (protocol: typeof aiProtocol) => {
+      if (!aiEnabled || protocol === aiProtocol) return
+      // 先把当前协议草稿写回独立槽位，再切协议
+      persistDraftCredentials()
+      setAiProtocol(protocol)
+    },
+    [aiEnabled, aiProtocol, persistDraftCredentials, setAiProtocol]
+  )
 
   const handleFetchModels = useCallback(async () => {
-    const baseURL = effectiveBaseURL.trim()
     const apiKey = apiKeyDraft.trim()
+    const baseURL = baseUrlDraft.trim() || protocolDefaultBaseURL
     if (!apiKey) {
       setModelFetchHint({ ok: false, msg: '请先填写 API Key' })
       return
@@ -3108,7 +3897,11 @@ function SettingsContent({
     setFetchingModels(true)
     setModelFetchHint(null)
     try {
-      const models = await fetchCustomAIModels({ baseURL, apiKey })
+      const models = await fetchCustomAIModels({
+        baseURL,
+        apiKey,
+        protocol: aiProtocol
+      })
       saveAiCustomConfig({ baseURL, apiKey, modelOptions: models })
       setModelFetchHint({ ok: true, msg: `已获取 ${models.length} 个模型` })
     } catch (err) {
@@ -3116,7 +3909,7 @@ function SettingsContent({
     } finally {
       setFetchingModels(false)
     }
-  }, [effectiveBaseURL, apiKeyDraft, saveAiCustomConfig])
+  }, [apiKeyDraft, baseUrlDraft, protocolDefaultBaseURL, aiProtocol, saveAiCustomConfig])
 
   // 主题：外观 seg 与 HomePage themePref 联动
   const themeSeg: '跟随' | '明亮' | '暗黑' =
@@ -3301,6 +4094,13 @@ function SettingsContent({
               onClick={() => listShowDescription && setListFullDescription(!listFullDescription)}
             />
           </div>
+          <div className="set-row">
+            <div><div className="rt">选中描述</div><div className="rd">hover 浮层仅展示描述，可拖选文字；离开 150ms 后关闭</div></div>
+            <div
+              className={`g-switch${descriptionSelectable ? ' on' : ''}`}
+              onClick={() => setDescriptionSelectable(!descriptionSelectable)}
+            />
+          </div>
         </div>
       </div>
 
@@ -3340,64 +4140,63 @@ function SettingsContent({
 
           {/* 下方所有 AI 配置：未启用时整体禁用置灰（pointer-events:none + 降透明度） */}
           <div className={`set-ai-body${aiEnabled ? '' : ' is-off'}`} aria-disabled={!aiEnabled}>
-            <div className="set-row">
-              <div>
-                <div className="rt">AI 供应商</div>
-                <div className="rd">
-                  {aiAllowLegacyUTools
-                    ? '默认仅支持第三方 OpenAI 协议端点；你之前已手动开启过 AI，可继续保留旧版 uTools AI'
-                    : '仅支持第三方 OpenAI 协议端点，不再为新用户启用 uTools 内置 AI'}
-                </div>
-              </div>
-              {aiAllowLegacyUTools ? (
-                <div
-                  className={`g-switch ai${aiUseCustomProvider ? ' on' : ''}`}
-                  onClick={() => aiEnabled && setAiCustomProviderEnabled(!aiUseCustomProvider)}
-                  title={aiUseCustomProvider ? '当前使用第三方供应商' : '当前使用历史兼容的 uTools AI'}
-                />
-              ) : (
-                <div className="ai-pill">仅第三方</div>
-              )}
-            </div>
 
-            {!usingLegacyUToolsAi && (
-              <>
-                <div className="ai-prov-label">选择供应商</div>
+            <>
+                <div className="ai-prov-label">选择协议</div>
                 <div className="ai-prov-grid">
-                  {AI_PROVIDER_PRESETS.map((p) => (
+                  {AI_PROTOCOLS.map((p) => (
                     <div
                       key={p.id}
-                      className={`ai-prov-card${aiProviderPreset === p.id ? ' on' : ''}`}
-                      onClick={() => aiEnabled && setAiProviderPreset(p.id)}
+                      className={`ai-prov-card${aiProtocol === p.id ? ' on' : ''}`}
+                      onClick={() => handleSelectProtocol(p.id)}
                     >
                       <div className="ai-prov-name"><span className="ai-prov-dot" />{p.label}</div>
-                      <div className="ai-prov-url">{p.hint}</div>
                     </div>
                   ))}
                 </div>
 
                 <div className="ai-prov-fields">
-                  {aiProviderPreset === 'custom' && (
-                    <div>
-                      <label className="ai-fld-lbl">Base URL（OpenAI 兼容）</label>
-                      <input
-                        className="ai-fld-input"
-                        value={customUrlDraft}
-                        placeholder="https://api.example.com/v1"
-                        onChange={(e) => setCustomUrlDraft(e.target.value)}
-                      />
-                    </div>
-                  )}
+                  <div>
+                    <label className="ai-fld-lbl">Base URL</label>
+                    <input
+                      className="ai-fld-input"
+                      type="text"
+                      value={baseUrlDraft}
+                      placeholder={protocolDefaultBaseURL}
+                      spellCheck={false}
+                      autoCapitalize="off"
+                      autoCorrect="off"
+                      onChange={(e) => setBaseUrlDraft(e.target.value)}
+                      onBlur={persistDraftCredentials}
+                    />
+                  </div>
                   <div>
                     <label className="ai-fld-lbl">API Key</label>
                     <div className="ai-fld-row">
-                      <input
-                        className="ai-fld-input"
-                        type="password"
-                        value={apiKeyDraft}
-                        placeholder="sk-..."
-                        onChange={(e) => setApiKeyDraft(e.target.value)}
-                      />
+                      <div className="ai-fld-input-wrap">
+                        <input
+                          className="ai-fld-input ai-fld-input--key"
+                          type={showApiKey ? 'text' : 'password'}
+                          value={apiKeyDraft}
+                          placeholder={aiProtocol === 'anthropic' ? 'sk-ant-...' : 'sk-...'}
+                          spellCheck={false}
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          autoComplete="off"
+                          onChange={(e) => setApiKeyDraft(e.target.value)}
+                          onBlur={persistDraftCredentials}
+                        />
+                        <button
+                          type="button"
+                          className="ai-fld-eye"
+                          aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+                          title={showApiKey ? '隐藏' : '显示'}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => setShowApiKey((v) => !v)}
+                        >
+                          <Ico name={showApiKey ? 'eye-off' : 'eye'} />
+                        </button>
+                      </div>
                       <button
                         className="btn btn-ai"
                         style={{ height: 36, whiteSpace: 'nowrap', flexShrink: 0 }}
@@ -3416,33 +4215,37 @@ function SettingsContent({
                     )}
                   </div>
                 </div>
-              </>
-            )}
+            </>
 
             <div className="set-row">
               <div><div className="rt">模型</div><div className="rd">用于生成元数据的对话模型</div></div>
-              <div className="select select-native">
-                <Ico name="cpu" />
-                <select
-                  value={aiSelectedModelId || DEFAULT_AI_MODEL}
-                  onChange={(e) => setAiSelectedModelId(e.target.value)}
-                >
-                  {modelOptions.map((m) => (
-                    <option key={m.id} value={m.id}>{m.label || m.id}</option>
-                  ))}
-                </select>
-                <Ico name="chevron-down" />
-              </div>
+              <SettingsSelect
+                wide
+                icon="cpu"
+                value={aiSelectedModelId || protocolDefaultModel || DEFAULT_AI_MODEL}
+                options={modelOptions.map((m) => ({ id: m.id, label: m.label || m.id }))}
+                onChange={setAiSelectedModelId}
+              />
             </div>
-            {usingLegacyUToolsAi && (
-              <div className="set-row">
-                <div><div className="rt">兼容模式</div><div className="rd">你沿用的是历史已开启的 uTools AI；切到第三方后将按新规则运行</div></div>
-                <div className="ai-pill">历史兼容</div>
-              </div>
-            )}
-            <div className="set-row">
-              <div><div className="rt">AI 快捷保存</div><div className="rd">全局快捷键直接由 AI 整理并保存当前网址</div></div>
-              <div className={`g-switch ai${aiQuickSaveEnabled ? ' on' : ''}`} onClick={() => aiEnabled && setAiQuickSaveEnabled(!aiQuickSaveEnabled)} />
+
+            <div className="ai-prov-label">AI 保存</div>
+            <div className="ai-save-mode-grid" role="group" aria-label="AI 保存">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={aiAggressiveSaveEnabled}
+                className={`ai-save-mode-card aggressive${aiAggressiveSaveEnabled ? ' on' : ''}`}
+                disabled={!aiEnabled}
+                onClick={() => aiEnabled && setAiAggressiveSaveEnabled(!aiAggressiveSaveEnabled)}
+              >
+                <div className="ai-save-mode-name">
+                  <span className="ai-prov-dot" />
+                  <span className="ai-save-mode-title-gradient">AI 保存</span>
+                </div>
+                <div className="ai-save-mode-desc">
+                  仅输入网址，AI 自动生成标题/简介并归入合适分组；关闭后仍可用普通保存
+                </div>
+              </button>
             </div>
           </div>
         </div>

@@ -6,8 +6,8 @@ import {
   Globe, Copy, Pencil, Folder, Database, RefreshCw, Info, MessageSquare,
   Upload, Download, Cpu, ChevronDown, ChevronRight, Inbox, Loader, AlertCircle,
   RotateCcw, CheckCircle, SearchX, MoreHorizontal, ChevronUp, ArrowRight,
-  ArrowUpToLine, Link2, ClipboardPaste, GitMerge, Layers, Bookmark, Eye,
-  RotateCw, ArrowUpRight, Minus, Monitor, ChevronLeft, ArrowRightLeft, FolderOpen
+  ArrowUpToLine, Link2, ClipboardPaste, GitMerge, Layers, Bookmark, Eye, EyeOff,
+  RotateCw, ArrowUpRight, ArrowUp, Square, Minus, Monitor, ChevronLeft, ArrowRightLeft, FolderOpen, Zap
 } from 'lucide-react'
 
 /**
@@ -62,12 +62,17 @@ const MAP: Record<string, LucideIcon> = {
   'arrow-up-to-line': ArrowUpToLine,
   link: Link2,
   paste: ClipboardPaste,
+  clipboard: ClipboardPaste,
+  zap: Zap,
   merge: GitMerge,
   layers: Layers,
   bookmark: Bookmark,
   eye: Eye,
+  'eye-off': EyeOff,
   rotate: RotateCw,
   'arrow-up-right': ArrowUpRight,
+  'arrow-up': ArrowUp,
+  square: Square,
   message: MessageSquare,
   monitor: Monitor,
 }

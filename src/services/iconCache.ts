@@ -154,6 +154,131 @@ const fetchImageViaNode = (url: string, redirectDepth = 0): Promise<string | nul
   })
 }
 
+const MAX_HTML_BYTES = 512 * 1024
+
+const decodeHtmlEntities = (text: string) =>
+  text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .trim()
+
+const pickHtmlCharset = (contentType: string, headSample: string) => {
+  const fromHeader = /charset=([\w-]+)/i.exec(contentType)?.[1]
+  const fromMeta = /<meta[^>]+charset=["']?([\w-]+)/i.exec(headSample)?.[1]
+  const label = (fromHeader || fromMeta || 'utf-8').toLowerCase()
+  // 仅放行常见 legacy 编码（gbk/big5 等），其余一律按 utf-8 解码
+  if (/^(gbk|gb2312|gb18030|big5|shift_jis|euc-jp|euc-kr|windows-125\d|iso-8859-\d+|latin1)$/.test(label)) return label
+  return 'utf-8'
+}
+
+const extractMetaFromHtml = (html: string) => {
+  const title = decodeHtmlEntities(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] || '')
+  let description = ''
+  const metaTags = html.match(/<meta\s[^>]*>/gi) || []
+  for (const tag of metaTags) {
+    if (!/(?:name|property)\s*=\s*["'](?:description|og:description|twitter:description)["']/i.test(tag)) continue
+    const content = /content\s*=\s*"([^"]*)"/i.exec(tag)?.[1] ?? /content\s*=\s*'([^']*)'/i.exec(tag)?.[1] ?? ''
+    const value = decodeHtmlEntities(content)
+    if (value) {
+      description = value
+      break
+    }
+  }
+  return { title: title || null, description: description || null }
+}
+
+/**
+ * uTools 端用 Node https/http 直抓网页 HTML，正则提取 <title> 与 meta description。
+ * uTools 文档说明 preload 放开了渲染线程沙箱，可直接用 Node.js API 访问跨域网络资源
+ * （preload.cjs 已暴露 window.require），因此这条链路无 CORS 限制。
+ * 作为 ubrowser 抓取失败 / Windows 禁用 ubrowser 时的标题与描述兜底。
+ */
+const fetchPageMetaViaNode = (
+  url: string,
+  redirectDepth = 0
+): Promise<{ title: string | null; description: string | null } | null> => {
+  const req = (window as unknown as { require?: (m: string) => any }).require
+  if (typeof req !== 'function' || redirectDepth > 3) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    let settled = false
+    let request: any = null
+    const deadline = setTimeout(() => {
+      try { request?.destroy?.() } catch {}
+      finish(null)
+    }, ICON_FETCH_TIMEOUT_MS)
+    const finish = (v: { title: string | null; description: string | null } | null) => {
+      if (settled) return
+      settled = true
+      clearTimeout(deadline)
+      resolve(v)
+    }
+    try {
+      const lib = req(url.startsWith('https:') ? 'https' : 'http')
+      const { Buffer } = req('buffer')
+      request = lib.get(
+        url,
+        {
+          headers: {
+            // 部分站点（豆瓣等）会拒绝无 UA 的 Node 请求
+            'User-Agent':
+              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
+            Accept: 'text/html,application/xhtml+xml'
+          }
+        },
+        (res: any) => {
+          const status = res.statusCode || 0
+          const location = res.headers?.location
+          if (status >= 300 && status < 400 && location) {
+            res.resume()
+            let next: string
+            try { next = new URL(location, url).href } catch { finish(null); return }
+            if (settled) return
+            settled = true
+            clearTimeout(deadline)
+            resolve(fetchPageMetaViaNode(next, redirectDepth + 1))
+            return
+          }
+          if (status !== 200) { res.resume(); finish(null); return }
+          const contentType = String(res.headers?.['content-type'] || '')
+          if (contentType && !/text\/html|application\/xhtml/i.test(contentType)) { res.resume(); finish(null); return }
+          const chunks: Uint8Array[] = []
+          let received = 0
+          // title/description 都在 <head>，截断后直接解析已收到的部分即可
+          const parseAndFinish = () => {
+            try {
+              const buf = Buffer.concat(chunks)
+              const sample = new TextDecoder('latin1').decode(buf.slice(0, 4096))
+              const html = new TextDecoder(pickHtmlCharset(contentType, sample)).decode(buf)
+              const meta = extractMetaFromHtml(html)
+              finish(meta.title || meta.description ? meta : null)
+            } catch {
+              finish(null)
+            }
+          }
+          res.on('data', (c: Uint8Array) => {
+            if (received < MAX_HTML_BYTES) chunks.push(c)
+            received += c.byteLength
+            if (received > MAX_HTML_BYTES) {
+              try { res.destroy() } catch {}
+              parseAndFinish()
+            }
+          })
+          res.on('end', parseAndFinish)
+          res.on('error', () => finish(null))
+        }
+      )
+      request.on('error', () => finish(null))
+      request.setTimeout(ICON_FETCH_TIMEOUT_MS, () => { try { request.destroy() } catch {} finish(null) })
+    } catch {
+      finish(null)
+    }
+  })
+}
+
 export const fetchAsDataUrl = async (url: string): Promise<string | null> => {
   if (!url) return null
   if (isOriginInCooldown(url)) return null
@@ -490,12 +615,24 @@ export const fetchAndCacheIcon = async (
   let fetchedMeta: { title?: string | null; description?: string | null } = {}
   const avoidBrowserAutomation = options.allowBrowserAutomation === false || isWindowsUToolsRuntime()
 
+  // Node 直抓 HTML 的懒加载兜底：仅在 ubrowser 没拿到标题/描述（或被禁用）时触发一次
+  let nodeMetaPromise: Promise<{ title: string | null; description: string | null } | null> | null = null
+  const fillMetaViaNode = async () => {
+    if (fetchedMeta.title && fetchedMeta.description) return
+    if (!nodeMetaPromise) nodeMetaPromise = fetchPageMetaViaNode(targetUrl)
+    const nodeMeta = await nodeMetaPromise
+    if (!nodeMeta) return
+    if (!fetchedMeta.title && nodeMeta.title) fetchedMeta.title = nodeMeta.title
+    if (!fetchedMeta.description && nodeMeta.description) fetchedMeta.description = nodeMeta.description
+  }
+
   if (avoidBrowserAutomation) {
     try {
       const faviconUrl = new URL('/favicon.ico', targetUrl).href
-      const cache = await fetchAsDataUrl(faviconUrl)
+      // Windows 禁用 ubrowser：favicon 与标题/描述并行直抓（Node 无 CORS）
+      const [cache] = await Promise.all([fetchAsDataUrl(faviconUrl), fillMetaViaNode()])
       if (cache) {
-        return { type: 'remote', src: faviconUrl, cache, fetchedAt: Date.now() }
+        return { type: 'remote', src: faviconUrl, cache, fetchedAt: Date.now(), ...fetchedMeta }
       }
     } catch {}
   }
@@ -522,6 +659,9 @@ export const fetchAndCacheIcon = async (
       }
     }
   }
+
+  // ubrowser 没拿到标题/描述时，用 Node 直抓 HTML 兜底一次
+  await fillMetaViaNode()
 
   if (fetchedMeta.title || fetchedMeta.description) {
     const fallbackText = fetchedMeta.title || (() => {

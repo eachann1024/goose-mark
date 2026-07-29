@@ -1,8 +1,14 @@
 import { create } from 'zustand'
-import type { AIProviderPreset } from '@/constants/ai'
-import { DEFAULT_AI_MODEL, getPresetMeta, resolvePresetByBaseURL } from '@/constants/ai'
+import type { AIProtocol } from '@/constants/ai'
+import { DEFAULT_AI_MODEL, isAIProtocol, resolveProtocolByBaseURL } from '@/constants/ai'
 import type { AIModelOption, AISettingsLike } from '@/lib/aiProvider'
-import { getDefaultAISettings, getDefaultBaseURL, normalizeAIModelOptions } from '@/lib/aiProvider'
+import {
+  getDefaultAISettings,
+  getDefaultBaseURL,
+  getDefaultModelId,
+  getProtocolDefaults,
+  normalizeAIModelOptions
+} from '@/lib/aiProvider'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepository'
 
@@ -25,6 +31,56 @@ export interface DetachedWindowPosition {
   x: number
   y: number
 }
+
+/** 单一协议下的 Base URL / Key / 模型列表（按协议独立持久化） */
+export interface AIProtocolConfig {
+  baseURL: string
+  apiKey: string
+  modelOptions: AIModelOption[]
+  selectedModelId: string
+}
+
+export type AIProtocolConfigs = Partial<Record<AIProtocol, AIProtocolConfig>>
+
+function createProtocolConfig(protocol: AIProtocol, partial?: Partial<AIProtocolConfig>): AIProtocolConfig {
+  const defaults = getProtocolDefaults(protocol)
+  return {
+    baseURL: typeof partial?.baseURL === 'string' && partial.baseURL.trim()
+      ? partial.baseURL.trim()
+      : defaults.baseURL,
+    apiKey: typeof partial?.apiKey === 'string' ? partial.apiKey : '',
+    modelOptions: normalizeAIModelOptions(partial?.modelOptions ?? []),
+    selectedModelId:
+      typeof partial?.selectedModelId === 'string' && partial.selectedModelId.trim()
+        ? partial.selectedModelId.trim()
+        : defaults.defaultModel
+  }
+}
+
+function snapshotActiveProtocolConfig(state: {
+  aiCustomBaseURL: string
+  aiCustomApiKey: string
+  aiCustomModelOptions: AIModelOption[]
+  aiSelectedModelId: string
+}): AIProtocolConfig {
+  return {
+    baseURL: state.aiCustomBaseURL,
+    apiKey: state.aiCustomApiKey,
+    modelOptions: state.aiCustomModelOptions,
+    selectedModelId: state.aiSelectedModelId
+  }
+}
+
+function applyProtocolConfig(protocol: AIProtocol, config: AIProtocolConfig) {
+  return {
+    aiProtocol: protocol,
+    aiCustomBaseURL: config.baseURL,
+    aiCustomApiKey: config.apiKey,
+    aiCustomModelOptions: config.modelOptions,
+    aiSelectedModelId: config.selectedModelId
+  }
+}
+
 export interface SettingsState {
   gridColumns: number
   autoCloseWindow: boolean
@@ -35,11 +91,16 @@ export interface SettingsState {
   aiAllowLegacyUTools: boolean
   aiSelectedModelId: string
   aiUseCustomProvider: boolean
-  /** 当前选中的 OpenAI 协议供应商预置（仅 aiUseCustomProvider 为 true 时生效） */
-  aiProviderPreset: AIProviderPreset
+  /** 接入协议：openai = OpenAI 官方 Responses API；anthropic = Anthropic 原生 */
+  aiProtocol: AIProtocol
+  /** AI 协议配置结构版本，用于区分 Responses 与 OpenAI-compatible */
+  aiProtocolVersion: number
+  /** 当前协议对应的 Base URL / Key / 模型（与 aiProtocolConfigs[aiProtocol] 同步） */
   aiCustomBaseURL: string
   aiCustomApiKey: string
   aiCustomModelOptions: AIModelOption[]
+  /** 各协议独立配置；切换协议时读写对应槽位，避免互相覆盖 */
+  aiProtocolConfigs: AIProtocolConfigs
   homeViewMode: ViewMode
   density: Density
   easterEggEnabled: boolean
@@ -52,14 +113,16 @@ export interface SettingsState {
   listShowDescription: boolean
   /** 列表模式：描述完整展示（多行换行，不单行省略） */
   listFullDescription: boolean
+  /** hover 浮层中是否支持选中/拖选描述文字（默认开启） */
+  descriptionSelectable: boolean
   /** 列表/宫格模式：书签没有描述时隐藏网址占位 */
   listShowTags: boolean
   /** 界面缩放档位：大 / 正常 / 小（默认正常） */
   uiScale: UIScale
   /** 宫格模式：图标大小 */
   gridIconSize: GridIconSize
-  /** AI 快捷保存：控制 ai_quick_save uTools 特性是否注册 */
-  aiQuickSaveEnabled: boolean
+  /** AI 保存：仅输网址，AI 自动生成元信息并归入合适分组（控制 uTools 特性是否注册） */
+  aiAggressiveSaveEnabled: boolean
   /** uTools 主窗口展开高度（px），preload 启动时读取并 setExpendHeight 恢复 */
   windowHeight: number
   /** uTools 分离窗口最后一次停留位置，下次切换独立窗口时恢复 */
@@ -83,8 +146,8 @@ export interface SettingsActions {
   setAiEnabled: (value: boolean) => void
   setAiSelectedModelId: (value: string | null) => void
   setAiCustomProviderEnabled: (value: boolean) => void
-  /** 选择供应商预置：非 custom 时自动填入对应 BaseURL 并清空已缓存模型（供应商变了，旧模型列表失效） */
-  setAiProviderPreset: (preset: AIProviderPreset) => void
+  /** 切换接入协议：写入默认 BaseURL，并清空旧协议的模型缓存 */
+  setAiProtocol: (protocol: AIProtocol) => void
   saveAiCustomConfig: (config: { baseURL: string; apiKey: string; modelOptions: AIModelOption[] }) => void
   setEasterEggEnabled: (value: boolean) => void
   setEasterEggVariant: (value: EasterEggVariant) => void
@@ -94,10 +157,11 @@ export interface SettingsActions {
   setPanelContinuous: (value: boolean) => void
   setListShowDescription: (value: boolean) => void
   setListFullDescription: (value: boolean) => void
+  setDescriptionSelectable: (value: boolean) => void
   setListShowTags: (value: boolean) => void
   setUiScale: (value: UIScale) => void
   setGridIconSize: (value: GridIconSize) => void
-  setAiQuickSaveEnabled: (value: boolean) => void
+  setAiAggressiveSaveEnabled: (value: boolean) => void
   /** 设置 uTools 窗口高度：持久化 + 即时 setExpendHeight 应用 */
   setWindowHeight: (value: number) => void
   setDetachedWindowPosition: (value: DetachedWindowPosition | null) => void
@@ -110,6 +174,13 @@ type PersistedSettingsState = SettingsState
 
 const createInitialState = (): SettingsState => {
   const defaults = getDefaultAISettings()
+  const protocol = defaults.protocol
+  const active = createProtocolConfig(protocol, {
+    baseURL: defaults.customBaseURL,
+    apiKey: defaults.customApiKey,
+    modelOptions: defaults.customModelOptions,
+    selectedModelId: defaults.selectedModelId ?? DEFAULT_AI_MODEL
+  })
   return {
     gridColumns: 3,
     autoCloseWindow: true,
@@ -117,12 +188,14 @@ const createInitialState = (): SettingsState => {
     localMirrorDirectory: '',
     aiEnabled: defaults.enabled,
     aiAllowLegacyUTools: defaults.allowLegacyUTools,
-    aiSelectedModelId: defaults.selectedModelId ?? DEFAULT_AI_MODEL,
+    aiSelectedModelId: active.selectedModelId,
     aiUseCustomProvider: defaults.useCustomProvider,
-    aiProviderPreset: 'glm',
-    aiCustomBaseURL: defaults.customBaseURL,
-    aiCustomApiKey: defaults.customApiKey,
-    aiCustomModelOptions: defaults.customModelOptions,
+    aiProtocol: protocol,
+    aiProtocolVersion: 4,
+    aiCustomBaseURL: active.baseURL,
+    aiCustomApiKey: active.apiKey,
+    aiCustomModelOptions: active.modelOptions,
+    aiProtocolConfigs: { [protocol]: active },
     homeViewMode: 'grid',
     density: 'regular',
     easterEggEnabled: true,
@@ -131,10 +204,11 @@ const createInitialState = (): SettingsState => {
     panelContinuous: false,
     listShowDescription: true,
     listFullDescription: true,
+    descriptionSelectable: true,
     listShowTags: true,
     uiScale: 'normal',
     gridIconSize: 'medium',
-    aiQuickSaveEnabled: false,
+    aiAggressiveSaveEnabled: false,
     windowHeight: WINDOW_HEIGHT_DEFAULT,
     detachedWindowPosition: null,
     useUtoolsBrowser: false
@@ -149,33 +223,57 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
       setPreferLocalSnapshotOnStartup: (value) => set({ preferLocalSnapshotOnStartup: !!value }),
       setLocalMirrorDirectory: (value) => set({ localMirrorDirectory: String(value || '').trim() }),
       setAiEnabled: (value) => set({ aiEnabled: !!value }),
-      setAiSelectedModelId: (value) => set({ aiSelectedModelId: String(value || '').trim() || DEFAULT_AI_MODEL }),
-      setAiCustomProviderEnabled: (value) => set({ aiUseCustomProvider: !!value }),
-      setAiProviderPreset: (preset) => {
-        const meta = getPresetMeta(preset)
-        // 切换供应商即清空上一供应商缓存的模型列表与选中模型（避免旧 provider 的模型 id 残留，
-        // 导致下拉视觉显示默认值、但实际仍把旧模型 id 发给新端点 → “旧模型不能访问”）。
-        // 归一到 DEFAULT_AI_MODEL，与模型下拉的兜底显示一致；用户拉取模型后 saveAiCustomConfig 再校正。
-        // custom 保留用户已填的 baseURL。
+      setAiSelectedModelId: (value) => {
+        const current = get()
+        const protocol = current.aiProtocol
+        const nextSelected = String(value || '').trim() || getDefaultModelId(protocol)
+        const slot = createProtocolConfig(protocol, {
+          ...snapshotActiveProtocolConfig(current),
+          selectedModelId: nextSelected
+        })
         set({
-          aiProviderPreset: preset,
-          aiCustomBaseURL: preset === 'custom' ? get().aiCustomBaseURL : meta.baseURL,
-          aiCustomModelOptions: [],
-          aiSelectedModelId: DEFAULT_AI_MODEL
+          aiSelectedModelId: nextSelected,
+          aiProtocolConfigs: { ...current.aiProtocolConfigs, [protocol]: slot }
+        })
+      },
+      setAiCustomProviderEnabled: (value) => set({ aiUseCustomProvider: !!value }),
+      setAiProtocol: (protocol) => {
+        const next = isAIProtocol(protocol) ? protocol : 'openai-responses'
+        const current = get()
+        if (current.aiProtocol === next) return
+
+        // 先把当前协议的值写回独立槽位，再加载目标协议已保存的配置
+        const configs: AIProtocolConfigs = {
+          ...current.aiProtocolConfigs,
+          [current.aiProtocol]: createProtocolConfig(
+            current.aiProtocol,
+            snapshotActiveProtocolConfig(current)
+          )
+        }
+        const saved = configs[next]
+        const restored = createProtocolConfig(next, saved)
+        set({
+          ...applyProtocolConfig(next, restored),
+          aiProtocolConfigs: { ...configs, [next]: restored }
         })
       },
       saveAiCustomConfig: (config) => {
         const modelOptions = normalizeAIModelOptions(config.modelOptions)
         const current = get()
+        const protocol = current.aiProtocol
         let nextSelected = current.aiSelectedModelId
         if (!modelOptions.some((model) => model.id === nextSelected)) {
-          nextSelected = modelOptions[0]?.id ?? nextSelected ?? DEFAULT_AI_MODEL
+          nextSelected = modelOptions[0]?.id ?? nextSelected ?? getDefaultModelId(protocol)
         }
+        const slot = createProtocolConfig(protocol, {
+          baseURL: config.baseURL.trim() || getDefaultBaseURL(protocol),
+          apiKey: config.apiKey.trim(),
+          modelOptions,
+          selectedModelId: nextSelected
+        })
         set({
-          aiCustomBaseURL: config.baseURL.trim() || getDefaultBaseURL(),
-          aiCustomApiKey: config.apiKey.trim(),
-          aiCustomModelOptions: modelOptions,
-          aiSelectedModelId: nextSelected
+          ...applyProtocolConfig(protocol, slot),
+          aiProtocolConfigs: { ...current.aiProtocolConfigs, [protocol]: slot }
         })
       },
       setEasterEggEnabled: (value) => set({ easterEggEnabled: !!value }),
@@ -186,10 +284,11 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
       setPanelContinuous: (value) => set({ panelContinuous: !!value }),
       setListShowDescription: (value) => set({ listShowDescription: !!value }),
       setListFullDescription: (value) => set({ listFullDescription: !!value }),
+      setDescriptionSelectable: (value) => set({ descriptionSelectable: !!value }),
       setListShowTags: (value) => set({ listShowTags: !!value }),
       setUiScale: (value) => set({ uiScale: (['large', 'normal', 'small'] as const).includes(value) ? value : 'normal' }),
       setGridIconSize: (value) => set({ gridIconSize: ['small', 'medium', 'large'].includes(value) ? value : 'medium' }),
-      setAiQuickSaveEnabled: (value) => set({ aiQuickSaveEnabled: !!value }),
+      setAiAggressiveSaveEnabled: (value) => set({ aiAggressiveSaveEnabled: !!value }),
       setWindowHeight: (value) => {
         const next = clampWindowHeight(value)
         set({ windowHeight: next })
@@ -220,10 +319,12 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   aiAllowLegacyUTools: state.aiAllowLegacyUTools,
   aiSelectedModelId: state.aiSelectedModelId,
   aiUseCustomProvider: state.aiUseCustomProvider,
-  aiProviderPreset: state.aiProviderPreset,
+  aiProtocol: state.aiProtocol,
+  aiProtocolVersion: state.aiProtocolVersion,
   aiCustomBaseURL: state.aiCustomBaseURL,
   aiCustomApiKey: state.aiCustomApiKey,
   aiCustomModelOptions: state.aiCustomModelOptions,
+  aiProtocolConfigs: state.aiProtocolConfigs,
   homeViewMode: state.homeViewMode,
   density: state.density,
   easterEggEnabled: state.easterEggEnabled,
@@ -232,47 +333,83 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   panelContinuous: state.panelContinuous,
   listShowDescription: state.listShowDescription,
   listFullDescription: state.listFullDescription,
+  descriptionSelectable: state.descriptionSelectable,
   listShowTags: state.listShowTags,
   uiScale: state.uiScale,
   gridIconSize: state.gridIconSize,
-  aiQuickSaveEnabled: state.aiQuickSaveEnabled,
+  aiAggressiveSaveEnabled: state.aiAggressiveSaveEnabled,
   windowHeight: state.windowHeight,
   detachedWindowPosition: state.detachedWindowPosition,
   useUtoolsBrowser: state.useUtoolsBrowser
 })
 
+const normalizeProtocolConfigs = (
+  raw: unknown,
+  fallbackProtocol: AIProtocol,
+  fallback: AIProtocolConfig
+): AIProtocolConfigs => {
+  const result: AIProtocolConfigs = {}
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!isAIProtocol(key) || !value || typeof value !== 'object' || Array.isArray(value)) continue
+      const entry = value as Partial<AIProtocolConfig>
+      result[key] = createProtocolConfig(key, {
+        baseURL: typeof entry.baseURL === 'string' ? entry.baseURL : undefined,
+        apiKey: typeof entry.apiKey === 'string' ? entry.apiKey : undefined,
+        modelOptions: Array.isArray(entry.modelOptions) ? entry.modelOptions : undefined,
+        selectedModelId: typeof entry.selectedModelId === 'string' ? entry.selectedModelId : undefined
+      })
+    }
+  }
+  // 旧数据只有扁平字段：至少把当前协议的配置落进槽位
+  if (!result[fallbackProtocol]) {
+    result[fallbackProtocol] = fallback
+  }
+  return result
+}
+
 const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
   if (!state) return {}
   const patch: Partial<SettingsState> = { ...state }
-  const rawAiEnabled = state.aiEnabled
-  const rawAiUseCustomProvider = state.aiUseCustomProvider
-  const rawAiAllowLegacyUTools = state.aiAllowLegacyUTools
-
-  if (typeof patch.aiSelectedModelId !== 'string' || !patch.aiSelectedModelId.trim()) {
-    patch.aiSelectedModelId = DEFAULT_AI_MODEL
-  }
   if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
-  const allowLegacyUTools = typeof rawAiAllowLegacyUTools === 'boolean'
-    ? rawAiAllowLegacyUTools
-    : rawAiEnabled === true && rawAiUseCustomProvider === false
-  patch.aiAllowLegacyUTools = allowLegacyUTools
-  patch.aiUseCustomProvider = allowLegacyUTools
-    ? (typeof rawAiUseCustomProvider === 'boolean' ? rawAiUseCustomProvider : false)
-    : true
-  if (typeof patch.aiCustomBaseURL !== 'string') patch.aiCustomBaseURL = getDefaultBaseURL()
-  if (!['glm', 'glm-coding', 'deepseek', 'custom'].includes(patch.aiProviderPreset as string)) {
-    patch.aiProviderPreset = resolvePresetByBaseURL(patch.aiCustomBaseURL ?? '')
+  patch.aiAllowLegacyUTools = false
+  patch.aiUseCustomProvider = true
+  // v2 中 "openai" 表示 Responses；更早的 OpenAI 配置是 Chat Completions。
+  const rawProtocol = (patch as { aiProtocol?: unknown }).aiProtocol
+  if (isAIProtocol(rawProtocol)) {
+    patch.aiProtocol = rawProtocol
+  } else if (rawProtocol === 'openai' && patch.aiProtocolVersion === 2) {
+    patch.aiProtocol = 'openai-responses'
+  } else {
+    patch.aiProtocol = resolveProtocolByBaseURL(
+      typeof patch.aiCustomBaseURL === 'string' ? patch.aiCustomBaseURL : ''
+    )
   }
+  const protocol = patch.aiProtocol ?? 'openai-responses'
+  const defaultBaseURL = getDefaultBaseURL(protocol)
+  if (typeof patch.aiCustomBaseURL !== 'string' || !patch.aiCustomBaseURL.trim()) {
+    patch.aiCustomBaseURL = defaultBaseURL
+  } else {
+    patch.aiCustomBaseURL = patch.aiCustomBaseURL.trim()
+  }
+  if (typeof patch.aiSelectedModelId !== 'string' || !patch.aiSelectedModelId.trim()) {
+    patch.aiSelectedModelId = getDefaultModelId(protocol)
+  }
+  // 丢弃旧字段，避免再次被持久化
+  delete (patch as { aiProviderPreset?: unknown }).aiProviderPreset
   if (typeof patch.aiCustomApiKey !== 'string') patch.aiCustomApiKey = ''
   if (typeof patch.panelContinuous !== 'boolean') patch.panelContinuous = false
   if (typeof patch.listShowDescription !== 'boolean') patch.listShowDescription = true
   if (typeof patch.listFullDescription !== 'boolean') patch.listFullDescription = true
+  if (typeof patch.descriptionSelectable !== 'boolean') patch.descriptionSelectable = true
   if (typeof patch.listShowTags !== 'boolean') patch.listShowTags = true
   if (!['small', 'medium', 'large'].includes(String(patch.gridIconSize))) patch.gridIconSize = 'medium'
   if (!['large', 'normal', 'small'].includes(String(patch.uiScale))) patch.uiScale = 'normal'
   if (typeof patch.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
   if (!['starry', 'blackhole'].includes(String(patch.easterEggVariant))) patch.easterEggVariant = 'starry'
-  if (typeof patch.aiQuickSaveEnabled !== 'boolean') patch.aiQuickSaveEnabled = false
+  if (typeof patch.aiAggressiveSaveEnabled !== 'boolean') patch.aiAggressiveSaveEnabled = false
+  // 丢弃已移除的「AI 快捷保存」字段
+  delete (patch as { aiQuickSaveEnabled?: unknown }).aiQuickSaveEnabled
   if (
     patch.detachedWindowPosition == null ||
     typeof patch.detachedWindowPosition !== 'object' ||
@@ -294,6 +431,23 @@ const normalizePersistedSettings = (state: Partial<SettingsState> | null | undef
   } else {
     patch.aiCustomModelOptions = normalizeAIModelOptions(rawModelOptions)
   }
+
+  const activeFallback = createProtocolConfig(protocol, {
+    baseURL: patch.aiCustomBaseURL,
+    apiKey: patch.aiCustomApiKey,
+    modelOptions: patch.aiCustomModelOptions,
+    selectedModelId: patch.aiSelectedModelId
+  })
+  const configs = normalizeProtocolConfigs(patch.aiProtocolConfigs, protocol, activeFallback)
+  // 以当前协议槽位为准同步扁平字段（切换协议后的权威数据源）
+  const active = configs[protocol] ?? activeFallback
+  configs[protocol] = active
+  patch.aiProtocolConfigs = configs
+  patch.aiCustomBaseURL = active.baseURL
+  patch.aiCustomApiKey = active.apiKey
+  patch.aiCustomModelOptions = active.modelOptions
+  patch.aiSelectedModelId = active.selectedModelId
+  patch.aiProtocolVersion = 4
 
   return patch
 }
@@ -343,6 +497,7 @@ export const selectAiSettings = (s: SettingsStore): AISettingsLike => ({
   allowLegacyUTools: s.aiAllowLegacyUTools,
   selectedModelId: s.aiSelectedModelId?.trim() || null,
   useCustomProvider: s.aiUseCustomProvider,
+  protocol: isAIProtocol(s.aiProtocol) ? s.aiProtocol : 'openai-responses',
   customBaseURL: s.aiCustomBaseURL,
   customApiKey: s.aiCustomApiKey,
   customModelOptions: s.aiCustomModelOptions

@@ -1,15 +1,24 @@
-// 注意：@ai-sdk/openai-compatible 与 ai 体积较大，仅在真正发起自定义 AI 调用时才需要。
+// 注意：@ai-sdk/* 与 ai 体积较大，仅在真正发起自定义 AI 调用时才需要。
 // 本模块被 stores/settings 在启动期静态引入（取默认配置/归一化模型列表），若在此顶层
 // 静态导入会把整个 AI SDK 图打进启动包。故改为在 runCustomText 内 await import() 懒加载，
 // 使 ai-sdk 拆到独立 chunk、按需加载（见 vite.config.ts codeSplitting 的 vendor-ai-sdk 组）。
-import { DEFAULT_AI_MODEL } from '@/constants/ai'
-import { getAvailableUToolsAiModels, isUToolsAiSupported, resolvePreferredUToolsModel } from '@/lib/utoolsAi'
+import {
+  DEFAULT_AI_MODEL,
+  DEFAULT_ANTHROPIC_MODEL,
+  getProtocolMeta,
+  type AIProtocol
+} from '@/constants/ai'
+import { isUToolsAiSupported, resolvePreferredUToolsModel } from '@/lib/utoolsAi'
+import type { AIStructuredOutput } from '@/constants/aiPrompts'
 
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
+const DEFAULT_ANTHROPIC_BASE_URL = 'https://api.anthropic.com/v1'
+const ANTHROPIC_API_VERSION = '2023-06-01'
 const SETTINGS_ENTRY_HINT = '请前往“设置 -> AI 助手”检查配置。'
 
 export type AIProviderMode = 'utools' | 'custom'
+export type { AIProtocol }
 
 export interface AIModelOption {
   id: string
@@ -22,6 +31,8 @@ export interface AISettingsLike {
   allowLegacyUTools: boolean
   selectedModelId: string | null
   useCustomProvider: boolean
+  /** OpenAI Responses / OpenAI-compatible Chat Completions / Anthropic */
+  protocol: AIProtocol
   customBaseURL: string
   customApiKey: string
   customModelOptions: AIModelOption[]
@@ -30,6 +41,10 @@ export interface AISettingsLike {
 export interface AIMessage {
   role: 'system' | 'user' | 'assistant'
   content?: string
+}
+
+export interface RunAITextOptions {
+  output?: AIStructuredOutput
 }
 
 export class AIProviderRequestError extends Error {
@@ -120,12 +135,31 @@ function getOpenAIModelsUrl(baseURL: string) {
   return `${baseURL.replace(/\/+$/, '')}/models`
 }
 
-function getOpenAIChatCompletionsUrl(baseURL: string) {
-  return `${baseURL.replace(/\/+$/, '')}/chat/completions`
+function getOpenAIResponsesUrl(baseURL: string) {
+  return `${baseURL.replace(/\/+$/, '')}/responses`
 }
 
-export function getDefaultBaseURL() {
-  return DEFAULT_OPENAI_BASE_URL
+export function getDefaultBaseURL(protocol: AIProtocol = 'openai-responses') {
+  return protocol === 'anthropic' ? DEFAULT_ANTHROPIC_BASE_URL : DEFAULT_OPENAI_BASE_URL
+}
+
+/** 解析用户自定义 Base URL，空值回落到协议官方默认 */
+export function resolveCustomBaseURL(
+  protocol: AIProtocol,
+  customBaseURL?: string | null
+): string {
+  const trimmed = (customBaseURL || '').trim().replace(/\/+$/, '')
+  return trimmed || getDefaultBaseURL(protocol).replace(/\/+$/, '')
+}
+
+export function getDefaultModelId(protocol: AIProtocol = 'openai-responses') {
+  return protocol === 'anthropic' ? DEFAULT_ANTHROPIC_MODEL : DEFAULT_AI_MODEL
+}
+
+function getProtocolLabel(protocol: AIProtocol) {
+  if (protocol === 'anthropic') return 'Anthropic 原生接口'
+  if (protocol === 'openai-compatible') return 'OpenAI 兼容接口'
+  return 'OpenAI Responses API'
 }
 
 async function readErrorMessage(response: Response) {
@@ -299,63 +333,6 @@ function extractTextFromJsonPayload(payload: unknown): string {
   return ''
 }
 
-function extractTextFromSSEPayload(rawText: string) {
-  const dataLines = rawText
-    .split(/\r?\n/)
-    .map(line => line.trim())
-    .filter(line => line.startsWith('data:'))
-    .map(line => line.slice(5).trim())
-    .filter(line => line && line !== '[DONE]')
-
-  if (!dataLines.length) {
-    return ''
-  }
-
-  const deltaParts: string[] = []
-
-  for (const line of dataLines) {
-    try {
-      const payload = JSON.parse(line)
-      const text = extractTextFromJsonPayload(payload)
-      if (text) {
-        if (isRecord(payload) && Array.isArray(payload.choices)) {
-          deltaParts.push(text)
-          continue
-        }
-        return text
-      }
-    } catch {
-      continue
-    }
-  }
-
-  return deltaParts.join('').trim()
-}
-
-async function readCustomOpenAIResponse(response: Response) {
-  const rawText = (await response.text()).trim()
-  if (!rawText) {
-    throw new Error('AI 没有返回可用内容')
-  }
-
-  try {
-    const payload = JSON.parse(rawText)
-    const text = extractTextFromJsonPayload(payload)
-    if (text) return text
-  } catch {
-    // ignore and continue with tolerant fallbacks
-  }
-
-  const sseText = extractTextFromSSEPayload(rawText)
-  if (sseText) return sseText
-
-  if (!/<\/?[a-z][\s\S]*>/i.test(rawText)) {
-    return rawText
-  }
-
-  throw new Error('AI 返回格式无法识别，请检查自定义供应商的响应格式')
-}
-
 function isInvalidJsonResponseError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   const lower = message.toLowerCase()
@@ -364,39 +341,391 @@ function isInvalidJsonResponseError(error: unknown) {
     || (lower.includes('json') && lower.includes('response'))
 }
 
-async function runCustomOpenAICompatibleText(settings: AISettingsLike, messages: AIMessage[], selectedModelId: string) {
-  const baseURL = settings.customBaseURL.trim() || getDefaultBaseURL()
-  // 文本生成最多等待 30 秒，防止错误地址永久挂起（含响应体读取阶段）
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 30_000)
+function normalizeStructuredOutputError(error: unknown, enabled: boolean) {
+  if (!enabled) return error
+  const message = error instanceof Error ? error.message : String(error)
+  const lower = message.toLowerCase()
+  if (
+    lower.includes('json schema') ||
+    lower.includes('json_schema') ||
+    lower.includes('response format') ||
+    lower.includes('structured output') ||
+    lower.includes('no object generated')
+  ) {
+    return new Error('当前模型不支持所需的结构化输出，请切换到支持 JSON Schema 或原生工具调用的模型')
+  }
+  return error
+}
+
+function isOfficialOpenAIBaseURL(baseURL: string) {
   try {
-    const response = await fetch(getOpenAIChatCompletionsUrl(baseURL), {
+    const host = new URL(baseURL.includes('://') ? baseURL : `https://${baseURL}`).hostname.toLowerCase()
+    return host === 'api.openai.com' || host.endsWith('.openai.com')
+  } catch {
+    return false
+  }
+}
+
+function buildResponsesTextFormat(output?: AIStructuredOutput) {
+  if (!output) return undefined
+  return {
+    format: {
+      type: 'json_schema' as const,
+      name: output.name,
+      description: output.description,
+      schema: output.schema,
+      strict: true
+    }
+  }
+}
+
+/** 读取 OpenAI Responses SSE 流，拼接 output_text.delta */
+async function readResponsesSSE(response: Response): Promise<string> {
+  if (!response.body) {
+    throw new Error('OpenAI Responses API 没有返回可读流')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let text = ''
+  let streamError: string | null = null
+
+  const consumeEventData = (data: string) => {
+    if (!data || data === '[DONE]') return
+    let event: unknown
+    try {
+      event = JSON.parse(data)
+    } catch {
+      return
+    }
+    if (!isRecord(event)) return
+
+    const type = typeof event.type === 'string' ? event.type : ''
+    if (type === 'response.output_text.delta' && typeof event.delta === 'string') {
+      text += event.delta
+      return
+    }
+    if (type === 'response.completed' && isRecord(event.response)) {
+      const finalText = extractTextFromJsonPayload(event.response)
+      if (finalText) text = finalText
+      return
+    }
+    if (type === 'response.failed' || type === 'error') {
+      const errObj = isRecord(event.error) ? event.error : isRecord(event.response) ? event.response.error : null
+      const msg =
+        (isRecord(errObj) && typeof errObj.message === 'string' && errObj.message) ||
+        (typeof event.message === 'string' && event.message) ||
+        'OpenAI Responses 流式调用失败'
+      streamError = msg
+    }
+  }
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split(/\r?\n/)
+    buffer = lines.pop() ?? ''
+    for (const line of lines) {
+      const trimmed = line.trim()
+      if (!trimmed.startsWith('data:')) continue
+      consumeEventData(trimmed.slice(5).trim())
+    }
+  }
+
+  // 处理末尾残留
+  const tail = buffer.trim()
+  if (tail.startsWith('data:')) {
+    consumeEventData(tail.slice(5).trim())
+  }
+
+  if (streamError) throw new Error(streamError)
+  return text.trim()
+}
+
+/**
+ * Chat Completions 兜底：部分兼容网关对 Responses 参数更严，但 chat/completions 可用。
+ * 仅用于结构化文本任务（书签元信息），不承担工具连续调用。
+ */
+async function runOpenAIChatCompletionsText(
+  settings: AISettingsLike,
+  messages: AIMessage[],
+  selectedModelId: string,
+  output?: AIStructuredOutput
+) {
+  const baseURL = resolveCustomBaseURL('openai-compatible', settings.customBaseURL)
+  const url = `${baseURL.replace(/\/+$/, '')}/chat/completions`
+  const normalized = normalizeMessages(messages)
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 60_000)
+  try {
+    const body: Record<string, unknown> = {
+      model: selectedModelId,
+      messages: normalized.map((m) => ({ role: m.role, content: m.content })),
+      temperature: 0.2
+    }
+    if (output) {
+      // 优先 json_schema；网关不支持时下面会再试 json_object / 无 format
+      body.response_format = {
+        type: 'json_schema',
+        json_schema: {
+          name: output.name,
+          description: output.description,
+          schema: output.schema,
+          strict: true
+        }
+      }
+    }
+
+    let response = await fetch(url, {
       signal: controller.signal,
       method: 'POST',
       headers: {
         Authorization: `Bearer ${settings.customApiKey.trim()}`,
         'Content-Type': 'application/json',
-        Accept: 'application/json, text/event-stream, text/plain, */*'
+        Accept: 'application/json'
       },
-      body: JSON.stringify({
-        model: selectedModelId,
-        messages: normalizeMessages(messages),
-        stream: false
-      })
+      body: JSON.stringify(body)
     })
+
+    // 部分网关不支持 json_schema，降级 json_object
+    if (!response.ok && output) {
+      const detail = (await readErrorMessage(response)) || ''
+      const lower = detail.toLowerCase()
+      if (
+        lower.includes('response_format') ||
+        lower.includes('json_schema') ||
+        lower.includes('unsupported') ||
+        response.status === 400
+      ) {
+        response = await fetch(url, {
+          signal: controller.signal,
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${settings.customApiKey.trim()}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+          },
+          body: JSON.stringify({
+            model: selectedModelId,
+            messages: [
+              ...normalized.map((m) => ({ role: m.role, content: m.content })),
+              ...(output
+                ? [{
+                    role: 'system' as const,
+                    content: `只输出合法 JSON 对象，字段符合：${output.name}（${output.description}）。不要使用 Markdown 代码块。`
+                  }]
+                : [])
+            ],
+            temperature: 0.2,
+            response_format: { type: 'json_object' }
+          })
+        })
+      } else {
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
+        }
+        throw new Error(detail || `调用 Chat Completions 失败（${response.status}）`)
+      }
+    }
 
     if (!response.ok) {
       const detail = await readErrorMessage(response)
       if (response.status === 401 || response.status === 403) {
         throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
       }
-      throw new Error(detail || `调用自定义 AI 失败（${response.status}）`)
+      throw new Error(detail || `调用 Chat Completions 失败（${response.status}）`)
     }
 
-    return await readCustomOpenAIResponse(response)
+    const payload = await response.json()
+    const text = extractTextFromJsonPayload(payload)
+    if (!text) throw new Error('Chat Completions 没有返回可用内容')
+    return text
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') {
-      throw new Error('请求超时，请检查供应商地址是否可达')
+      throw new Error('请求超时，请检查接口地址是否可达')
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function runOfficialOpenAIResponsesText(
+  settings: AISettingsLike,
+  messages: AIMessage[],
+  selectedModelId: string,
+  output?: AIStructuredOutput
+) {
+  const normalized = normalizeMessages(messages)
+  const instructions = normalized
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content)
+    .join('\n\n')
+    .trim()
+  const input = normalized
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) => ({ role: message.role, content: message.content }))
+
+  const baseURL = resolveCustomBaseURL('openai-responses', settings.customBaseURL)
+  const official = isOfficialOpenAIBaseURL(baseURL)
+  const textFormat = buildResponsesTextFormat(output)
+
+  // 官方：非流式 + max_output_tokens；兼容网关常要求 store=false、stream=true，且拒 max_output_tokens
+  const attemptBodies: Record<string, unknown>[] = official
+    ? [
+        {
+          model: selectedModelId,
+          store: false,
+          ...(instructions ? { instructions } : {}),
+          input,
+          max_output_tokens: 1024,
+          ...(textFormat ? { text: textFormat } : {})
+        }
+      ]
+    : [
+        {
+          model: selectedModelId,
+          store: false,
+          stream: true,
+          ...(instructions ? { instructions } : {}),
+          input,
+          ...(textFormat ? { text: textFormat } : {})
+        },
+        // 个别网关不接受 json_schema text.format，再试纯文本流
+        {
+          model: selectedModelId,
+          store: false,
+          stream: true,
+          ...(instructions
+            ? {
+                instructions: `${instructions}\n\n只输出合法 JSON 对象，不要使用 Markdown 代码块。`
+              }
+            : {
+                instructions: '只输出合法 JSON 对象，不要使用 Markdown 代码块。'
+              }),
+          input
+        }
+      ]
+
+  let lastError: unknown = null
+  for (const body of attemptBodies) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), official ? 45_000 : 90_000)
+    try {
+      const response = await fetch(getOpenAIResponsesUrl(baseURL), {
+        signal: controller.signal,
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${settings.customApiKey.trim()}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream, text/plain, */*'
+        },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const detail = await readErrorMessage(response)
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(getAuthFailedMessage('OpenAI 官方 Responses API'))
+        }
+        lastError = new Error(detail || `调用 OpenAI Responses API 失败（${response.status}）`)
+        continue
+      }
+
+      const contentType = (response.headers.get('content-type') || '').toLowerCase()
+      const useStream = Boolean(body.stream) || contentType.includes('text/event-stream')
+      const text = useStream
+        ? await readResponsesSSE(response)
+        : extractTextFromJsonPayload(await response.json())
+
+      if (!text) {
+        lastError = new Error('OpenAI Responses API 没有返回可用内容')
+        continue
+      }
+      return text
+    } catch (err) {
+      if ((err as Error)?.name === 'AbortError') {
+        lastError = new Error('请求超时，请检查接口地址是否可达')
+      } else {
+        lastError = err
+      }
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+
+  // 兼容网关：Responses 参数受限时降级到 chat/completions（仅文本结构化任务）
+  if (!official) {
+    try {
+      return await runOpenAIChatCompletionsText(settings, messages, selectedModelId, output)
+    } catch (fallbackErr) {
+      // 保留更具体的原始错误，便于排查
+      if (lastError) throw lastError
+      throw fallbackErr
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('OpenAI Responses API 调用失败')
+}
+
+/** Anthropic Messages API 原生兜底（SDK 解析失败时） */
+async function runCustomAnthropicText(settings: AISettingsLike, messages: AIMessage[], selectedModelId: string) {
+  const baseURL = resolveCustomBaseURL('anthropic', settings.customBaseURL)
+  const normalized = normalizeMessages(messages)
+  const system = normalized.filter((m) => m.role === 'system').map((m) => m.content).join('\n').trim()
+  const chatMessages = normalized
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 30_000)
+  try {
+    const response = await fetch(`${baseURL}/messages`, {
+      signal: controller.signal,
+      method: 'POST',
+      headers: {
+        'x-api-key': settings.customApiKey.trim(),
+        'anthropic-version': ANTHROPIC_API_VERSION,
+        'anthropic-dangerous-direct-browser-access': 'true',
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify({
+        model: selectedModelId,
+        max_tokens: 1024,
+        ...(system ? { system } : {}),
+        messages: chatMessages.length ? chatMessages : [{ role: 'user', content: '' }]
+      })
+    })
+
+    if (!response.ok) {
+      const detail = await readErrorMessage(response)
+      if (response.status === 401 || response.status === 403) {
+        throw new Error(getAuthFailedMessage('Anthropic'))
+      }
+      throw new Error(detail || `调用 Anthropic 失败（${response.status}）`)
+    }
+
+    const payload = await response.json()
+    const text = extractTextFromJsonPayload(payload)
+    if (!text) {
+      // Anthropic content 数组：[{ type: 'text', text: '...' }]
+      if (isRecord(payload) && Array.isArray(payload.content)) {
+        const joined = payload.content
+          .map((part) => (isRecord(part) && typeof part.text === 'string' ? part.text : ''))
+          .join('')
+          .trim()
+        if (joined) return joined
+      }
+      throw new Error('AI 没有返回可用内容')
+    }
+    return text
+  } catch (err) {
+    if ((err as Error)?.name === 'AbortError') {
+      throw new Error('请求超时，请检查接口地址是否可达')
     }
     throw err
   } finally {
@@ -450,45 +779,121 @@ async function runUToolsText(settings: AISettingsLike, messages: AIMessage[]) {
   }
 }
 
-async function runCustomText(settings: AISettingsLike, messages: AIMessage[]) {
+async function runCustomText(
+  settings: AISettingsLike,
+  messages: AIMessage[],
+  options: RunAITextOptions
+) {
   const selectedModelId = getSelectedCustomModelId(settings)
   if (!selectedModelId) {
     throw new AIProviderRequestError({
-      cause: new Error('请先保存自定义 AI 配置并获取模型列表'),
+      cause: new Error('请先保存 AI 配置并获取模型列表'),
       provider: 'custom',
       model: '',
       isCustomModel: true
     })
   }
 
-  // 懒加载 AI SDK：仅在真正调用时拉取，保持启动包轻量。
-  const [{ createOpenAICompatible }, { generateText }] = await Promise.all([
-    import('@ai-sdk/openai-compatible'),
-    import('ai')
-  ])
-
-  const model = createOpenAICompatible({
-    baseURL: settings.customBaseURL.trim() || getDefaultBaseURL(),
-    apiKey: settings.customApiKey.trim(),
-    name: 'custom.openai'
-  }).chatModel(selectedModelId)
+  const protocol: AIProtocol =
+    settings.protocol === 'anthropic' ||
+    settings.protocol === 'openai-compatible' ||
+    settings.protocol === 'openai-responses'
+      ? settings.protocol
+      : 'openai-responses'
+  const { generateText, Output, jsonSchema } = await import('ai')
+  const normalizedMessages = normalizeMessages(messages)
+  const system = normalizedMessages
+    .filter((message) => message.role === 'system')
+    .map((message) => message.content)
+    .join('\n\n')
+    .trim()
+  const chatMessages = normalizedMessages.filter(
+    (message): message is { role: 'user' | 'assistant'; content: string } =>
+      message.role === 'user' || message.role === 'assistant'
+  )
 
   try {
-    const { text } = await generateText({
+    const model = protocol === 'openai-responses'
+      ? (await import('@ai-sdk/openai')).createOpenAI({
+          baseURL: resolveCustomBaseURL(protocol, settings.customBaseURL),
+          apiKey: settings.customApiKey.trim(),
+          name: 'openai.responses'
+        }).responses(selectedModelId)
+      : protocol === 'openai-compatible'
+        ? (await import('@ai-sdk/openai-compatible')).createOpenAICompatible({
+            baseURL: resolveCustomBaseURL(protocol, settings.customBaseURL),
+            apiKey: settings.customApiKey.trim(),
+            name: 'openai.compatible'
+          }).chatModel(selectedModelId)
+        : (await import('@ai-sdk/anthropic')).createAnthropic({
+            baseURL: resolveCustomBaseURL(protocol, settings.customBaseURL),
+            apiKey: settings.customApiKey.trim(),
+            name: 'anthropic.official',
+            headers: {
+              'anthropic-dangerous-direct-browser-access': 'true'
+            }
+          }).languageModel(selectedModelId)
+
+    const result = await generateText({
       model,
-      messages: normalizeMessages(messages)
+      ...(system ? { system } : {}),
+      messages: chatMessages,
+      ...(options.output
+        ? {
+            output: Output.object({
+              schema: jsonSchema(options.output.schema as Parameters<typeof jsonSchema>[0]),
+              name: options.output.name,
+              description: options.output.description
+            })
+          }
+        : {})
     })
-
-    const normalizedText = text.trim()
-    if (!normalizedText) {
-      throw new Error('AI 没有返回可用内容')
-    }
-
+    const normalizedText = options.output
+      ? JSON.stringify(result.output)
+      : result.text.trim()
+    if (!normalizedText) throw new Error('AI 没有返回可用内容')
     return normalizedText
   } catch (error) {
-    if (isInvalidJsonResponseError(error)) {
+    // Vercel AI SDK 是主链；兼容服务返回非标准 JSON 时保留原生 HTTP 兜底。
+    if (protocol === 'openai-compatible') {
       try {
-        return await runCustomOpenAICompatibleText(settings, messages, selectedModelId)
+        return await runOpenAIChatCompletionsText(
+          settings,
+          messages,
+          selectedModelId,
+          options.output
+        )
+      } catch (fallbackError) {
+        throw new AIProviderRequestError({
+          cause: normalizeStructuredOutputError(fallbackError, Boolean(options.output)),
+          provider: 'custom',
+          model: selectedModelId,
+          isCustomModel: true
+        })
+      }
+    }
+
+    if (protocol === 'openai-responses' && isInvalidJsonResponseError(error)) {
+      try {
+        return await runOfficialOpenAIResponsesText(
+          settings,
+          messages,
+          selectedModelId,
+          options.output
+        )
+      } catch (fallbackError) {
+        throw new AIProviderRequestError({
+          cause: normalizeStructuredOutputError(fallbackError, Boolean(options.output)),
+          provider: 'custom',
+          model: selectedModelId,
+          isCustomModel: true
+        })
+      }
+    }
+
+    if (protocol === 'anthropic' && !options.output && isInvalidJsonResponseError(error)) {
+      try {
+        return await runCustomAnthropicText(settings, messages, selectedModelId)
       } catch (fallbackError) {
         throw new AIProviderRequestError({
           cause: fallbackError,
@@ -500,7 +905,7 @@ async function runCustomText(settings: AISettingsLike, messages: AIMessage[]) {
     }
 
     throw new AIProviderRequestError({
-      cause: error,
+      cause: normalizeStructuredOutputError(error, Boolean(options.output)),
       provider: 'custom',
       model: selectedModelId,
       isCustomModel: true
@@ -544,7 +949,7 @@ export function getAIAvailability(settings: AISettingsLike) {
     }
 
     if (!getSelectedCustomModelId(settings)) {
-      return { ok: false as const, reason: '请先保存自定义 AI 配置并获取模型列表' }
+      return { ok: false as const, reason: '请先填写 API Key 并拉取模型列表' }
     }
 
     return { ok: true as const, provider: 'custom' as const }
@@ -552,7 +957,7 @@ export function getAIAvailability(settings: AISettingsLike) {
 
   const utools = getUToolsApi()
   if (!utools) {
-    return { ok: false as const, reason: '当前不在 uTools 环境中运行，请切换到自定义 AI' }
+    return { ok: false as const, reason: '当前不在 uTools 环境中运行，请配置 AI 服务' }
   }
 
   if (!isUToolsAiSupported() || typeof utools.ai !== 'function') {
@@ -565,9 +970,16 @@ export function getAIAvailability(settings: AISettingsLike) {
 export async function fetchCustomAIModels(config: {
   baseURL: string
   apiKey: string
+  protocol?: AIProtocol
 }) {
+  const protocol: AIProtocol =
+    config.protocol === 'anthropic' ||
+    config.protocol === 'openai-compatible' ||
+    config.protocol === 'openai-responses'
+      ? config.protocol
+      : 'openai-responses'
   const apiKey = config.apiKey.trim()
-  const baseURL = config.baseURL.trim() || getDefaultBaseURL()
+  const baseURL = resolveCustomBaseURL(protocol, config.baseURL)
   if (!apiKey) {
     throw new Error(getApiKeyMissingMessage())
   }
@@ -576,17 +988,25 @@ export async function fetchCustomAIModels(config: {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 15_000)
   try {
+    const headers: Record<string, string> =
+      protocol === 'anthropic'
+        ? {
+            'x-api-key': apiKey,
+            'anthropic-version': ANTHROPIC_API_VERSION
+          }
+        : {
+            Authorization: `Bearer ${apiKey}`
+          }
+
     const response = await fetch(getOpenAIModelsUrl(baseURL), {
       signal: controller.signal,
-      headers: {
-        Authorization: `Bearer ${apiKey}`
-      }
+      headers
     })
 
     if (!response.ok) {
       const detail = await readErrorMessage(response)
       if (response.status === 401 || response.status === 403) {
-        throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
+        throw new Error(getAuthFailedMessage(getProtocolLabel(protocol)))
       }
       throw new Error(detail || `读取模型列表失败（${response.status}）`)
     }
@@ -597,14 +1017,12 @@ export async function fetchCustomAIModels(config: {
       .map((item: unknown) => normalizeModelOption(item))
       .filter((item: AIModelOption | null): item is AIModelOption => Boolean(item))
 
-    if (!models.length) {
-      throw new Error('未读取到可用模型')
-    }
+    if (!models.length) throw new Error('未读取到可用模型')
 
     return models
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') {
-      throw new Error('请求超时，请检查供应商地址是否可达')
+      throw new Error('请求超时，请检查接口地址是否可达')
     }
     throw err
   } finally {
@@ -612,26 +1030,48 @@ export async function fetchCustomAIModels(config: {
   }
 }
 
-export async function runAIText(settings: AISettingsLike, messages: AIMessage[]) {
+export async function runAIText(
+  settings: AISettingsLike,
+  messages: AIMessage[],
+  options: RunAITextOptions = {}
+) {
   const availability = getAIAvailability(settings)
   if (!availability.ok) {
     throw new Error(availability.reason)
   }
 
-  return availability.provider === 'custom'
-    ? runCustomText(settings, messages)
-    : runUToolsText(settings, messages)
+  if (availability.provider === 'custom') {
+    return runCustomText(settings, messages, options)
+  }
+
+  if (options.output) {
+    throw new Error('历史 uTools AI 不支持结构化输出，请切换到自定义 AI 服务')
+  }
+
+  return runUToolsText(settings, messages)
 }
 
 
 export function getDefaultAISettings() {
+  const protocol: AIProtocol = 'openai-responses'
   return {
     enabled: false,
     allowLegacyUTools: false,
-    selectedModelId: DEFAULT_AI_MODEL,
+    selectedModelId: getDefaultModelId(protocol),
     useCustomProvider: true,
-    customBaseURL: getDefaultBaseURL(),
+    protocol,
+    customBaseURL: getDefaultBaseURL(protocol),
     customApiKey: '',
     customModelOptions: [] as AIModelOption[]
+  }
+}
+
+/** 切换协议时的默认字段（BaseURL / 默认模型），供 settings store 使用 */
+export function getProtocolDefaults(protocol: AIProtocol) {
+  const meta = getProtocolMeta(protocol)
+  return {
+    protocol: meta.id,
+    baseURL: meta.baseURL,
+    defaultModel: meta.defaultModel
   }
 }
