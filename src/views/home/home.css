@@ -889,6 +889,9 @@
 .goose-home .toast .tic { @apply size-[26px] rounded-lg shrink-0 flex items-center justify-center text-[15px]; background:var(--success-subtle); color:var(--success); }
 .goose-home .toast .tt { @apply text-[13px] font-semibold; }
 .goose-home .toast .td { @apply text-[11.5px] text-g-fg-muted mt-px; }
+.goose-home .toast.is-error { border-color:var(--danger-border); }
+.goose-home .toast.is-error .tic { background:var(--danger-panel); color:var(--danger); }
+.goose-home .toast.is-error .tt { color:var(--danger); }
 .goose-home .toast.is-action { cursor:pointer; max-width:420px; }
 .goose-home .toast.is-action:hover { border-color:var(--ai-border); background:var(--ai-subtle); }
 .goose-home .toast.is-action:hover .tt { color:var(--ai); }
@@ -1328,6 +1331,69 @@
   color:var(--ai);
 }
 .goose-home .ag-save-status .lucide { @apply text-[15px]; }
+.goose-home .ag-save-inline-status,
+.goose-home .ag-save-failure {
+  display:flex;
+  align-items:flex-start;
+  gap:10px;
+  margin-top:14px;
+  padding:12px 13px;
+  border-radius:10px;
+}
+.goose-home .ag-save-inline-status {
+  color:var(--ai);
+  background:var(--ai-subtle);
+  border:1px solid var(--ai-border);
+}
+.goose-home .ag-save-inline-status > .lucide { flex-shrink:0; margin-top:2px; }
+.goose-home .ag-save-inline-title,
+.goose-home .ag-save-failure-title {
+  color:var(--fg);
+  font-size:13px;
+  font-weight:650;
+  line-height:1.4;
+}
+.goose-home .ag-save-inline-detail,
+.goose-home .ag-save-failure-detail,
+.goose-home .ag-save-failure-recovery {
+  margin-top:3px;
+  color:var(--fg-muted);
+  font-size:12px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.goose-home .ag-save-failure {
+  background:var(--danger-panel);
+  border:1px solid var(--danger-border);
+}
+.goose-home .ag-save-failure-icon {
+  width:28px;
+  height:28px;
+  flex-shrink:0;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  color:var(--danger);
+  background:var(--input);
+}
+.goose-home .ag-save-failure-body { min-width:0; flex:1; }
+.goose-home .ag-save-failure-recovery { color:var(--fg); }
+.goose-home .ag-save-failure-settings {
+  display:inline-flex;
+  align-items:center;
+  gap:5px;
+  min-height:28px;
+  margin-top:8px;
+  padding:4px 9px;
+  border:1px solid var(--danger-border);
+  border-radius:7px;
+  color:var(--danger);
+  background:var(--input);
+  font-size:11.5px;
+  font-weight:650;
+}
+.goose-home .ag-save-failure-settings:hover { background:var(--surface-hover); }
+.goose-home .ag-save-failure-settings:focus-visible { outline:2px solid var(--danger); outline-offset:1px; }
 .goose-home .ag-save-tips {
   @apply flex flex-col gap-2 mt-1 text-[12px] text-g-fg-muted;
 }
@@ -1425,7 +1491,8 @@
 }
 
 /* S1 · 胶囊行成功卡：分组是主结果，操作保持轻量。 */
-.goose-home .ag-save-success-card {
+.goose-home .ag-save-success-card,
+.goose-home .ag-save-failure-card {
   position:relative;
   width:min(292px, 100%);
   display:flex;
@@ -1438,6 +1505,7 @@
   box-shadow:var(--shadow-pop);
   animation:ag-save-card-in .28s cubic-bezier(.16,1,.3,1);
 }
+.goose-home .ag-save-failure-card { border-color:var(--danger-border); }
 .goose-home .ag-save-success-close {
   position:absolute;
   top:7px;
@@ -1461,6 +1529,32 @@
   background:var(--success-subtle);
   color:var(--success);
   font-size:13px;
+}
+.goose-home .ag-save-failure-card-icon {
+  width:26px;
+  height:26px;
+  flex-shrink:0;
+  display:grid;
+  place-items:center;
+  border-radius:50%;
+  background:var(--danger-panel);
+  color:var(--danger);
+  font-size:13px;
+}
+.goose-home .ag-save-failure-card-host {
+  margin-top:2px;
+  overflow:hidden;
+  color:var(--fg-faint);
+  font-size:11px;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.goose-home .ag-save-failure-card-detail {
+  margin-top:4px;
+  color:var(--fg-muted);
+  font-size:11.5px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
 }
 .goose-home .ag-save-success-body { min-width:0; flex:1; }
 .goose-home .ag-save-success-title {
@@ -1503,6 +1597,7 @@
 @media (prefers-reduced-motion: reduce) {
   .goose-home .ag-save-progress-pill,
   .goose-home .ag-save-success-card,
+  .goose-home .ag-save-failure-card,
   .goose-home .ag-save-progress-orb,
   .goose-home .ag-save-progress-orb::after { animation:none; }
 }

@@ -2,7 +2,6 @@
  * AI 保存：只给 URL → 抓取线索 → 一次 AI 决策（标题/简介/多分组）→ 落库
  */
 import type { Bookmark, BookmarkLocation, IconSource } from '@/types/bookmark'
-import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { normalizeAIConfidence, parseAIJsonObject, truncateAIText } from '@/lib/aiOutput'
 import {
   AGGRESSIVE_SAVE_SYSTEM_PROMPT,
@@ -12,13 +11,22 @@ import {
 import {
   getAIAvailability,
   runAIText,
-  AIProviderRequestError,
   type AISettingsLike
 } from '@/lib/aiProvider'
 import { fetchAndCacheIcon } from '@/services/iconCache'
 import { fetchMetadataFromNetwork } from '@/services/metadataFallback'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
+import {
+  AggressiveAiSaveError,
+  describeAggressiveAiSaveProviderError
+} from '@/services/aggressiveAiSaveErrors'
+
+export {
+  AggressiveAiSaveError,
+  type AggressiveAiSaveErrorCode,
+  type AggressiveAiSaveFailure
+} from '@/services/aggressiveAiSaveErrors'
 
 export type AggressiveCategoryHit = {
   groupId: string
@@ -42,24 +50,6 @@ export type AggressiveAiSaveResult = {
     | { kind: 'created' }
     | { kind: 'updated'; bookmark: Bookmark; locations: BookmarkLocation[] }
 }
-
-export type AggressiveAiSaveErrorCode =
-  | 'invalid_url'
-  | 'ai_unavailable'
-  | 'no_groups'
-  | 'ai_failed'
-  | 'save_failed'
-
-export class AggressiveAiSaveError extends Error {
-  code: AggressiveAiSaveErrorCode
-  constructor(code: AggressiveAiSaveErrorCode, message: string) {
-    super(message)
-    this.name = 'AggressiveAiSaveError'
-    this.code = code
-  }
-}
-
-const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
 
 function getActiveAiSettings(): AISettingsLike {
   return selectAiSettings(useSettingsStore.getState())
@@ -162,40 +152,25 @@ function matchCategories(
   return hits
 }
 
-function resolveErrorMessage(error: unknown): string {
-  const providerError = error instanceof AIProviderRequestError ? error : null
-  const errMsg = error instanceof Error ? error.message : String(error)
-  const model = providerError?.model || useSettingsStore.getState().aiSelectedModelId || DEFAULT_AI_MODEL
-  const isCustom = providerError?.isCustomModel ?? useSettingsStore.getState().aiUseCustomProvider
-  const lower = errMsg.toLowerCase()
-
-  if (errMsg.includes('余额') || lower.includes('balance') || lower.includes('quota')) {
-    return 'AI 余额不足，请检查当前供应商额度'
-  }
-  if (lower.includes('network') || lower.includes('timeout') || errMsg.includes('连接')) {
-    return 'AI 服务连接失败，请检查网络'
-  }
-  if (MODEL_ERROR_KEYWORDS.some((k) => lower.includes(k.toLowerCase()))) {
-    return isCustom
-      ? `自定义模型“${model}”不可用，请检查配置后重试`
-      : `模型“${model}”不可用，请重新选择或稍后重试`
-  }
-  return 'AI 保存失败，请稍后重试'
-}
-
 /**
  * 执行 AI 保存。失败抛 AggressiveAiSaveError。
  */
 export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiSaveResult> {
   const finalUrl = normalizeAggressiveSaveUrl(rawUrl)
   if (!finalUrl) {
-    throw new AggressiveAiSaveError('invalid_url', '请输入有效链接')
+    throw new AggressiveAiSaveError('invalid_url', '链接格式不正确', {
+      detail: '只支持 http 或 https 链接。',
+      recovery: '请修改链接后重试。'
+    })
   }
 
   const aiSettings = getActiveAiSettings()
   const availability = getAIAvailability(aiSettings)
   if (!availability.ok) {
-    throw new AggressiveAiSaveError('ai_unavailable', availability.reason)
+    throw new AggressiveAiSaveError('ai_unavailable', 'AI 服务尚未配置完成', {
+      detail: availability.reason,
+      recovery: '请前往“设置 → AI 助手”补全配置后重试。'
+    })
   }
 
   const store = useBookmarkStore.getState()
@@ -209,7 +184,10 @@ export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiS
     .filter((g) => g.subGroups.length > 0)
 
   if (existingGroups.length === 0) {
-    throw new AggressiveAiSaveError('no_groups', '请先创建至少一个分组')
+    throw new AggressiveAiSaveError('no_groups', '没有可用的书签分组', {
+      detail: 'AI 保存需要至少一个包含子分组的书签分组。',
+      recovery: '请先创建分组，再重新保存。'
+    })
   }
 
   // 1) 页面线索
@@ -269,7 +247,10 @@ export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiS
     categories = matchCategories(data.categories, existingGroups)
   } catch (error) {
     console.error('[aggressiveAiSave] AI 失败:', error)
-    throw new AggressiveAiSaveError('ai_failed', resolveErrorMessage(error))
+    throw describeAggressiveAiSaveProviderError(error, {
+      model: aiSettings.selectedModelId || undefined,
+      isCustomModel: aiSettings.useCustomProvider
+    })
   }
 
   // 3) 标题兜底
@@ -353,7 +334,10 @@ export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiS
   }
 
   if (!bookmark) {
-    throw new AggressiveAiSaveError('save_failed', '保存失败，请重试')
+    throw new AggressiveAiSaveError('save_failed', '书签写入失败', {
+      detail: 'AI 已完成整理，但书签没有成功写入本地数据库。',
+      recovery: '请确认书签库可写后重试。'
+    })
   }
 
   const first = locations[0]

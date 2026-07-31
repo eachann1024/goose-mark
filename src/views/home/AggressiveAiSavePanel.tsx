@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import {
   normalizeAggressiveSaveUrl,
+  type AggressiveAiSaveFailure,
   type AggressiveAiSaveResult
 } from '@/services/aggressiveAiSave'
 import { Ico } from './icon'
@@ -10,16 +11,26 @@ type Phase = 'idle' | 'error'
 
 /**
  * AI 保存面板：只输入网址，自动整理标题/简介/分组并保存。
- * 校验通过后立即把任务交给主页队列并卸载，让 AI 在首页后台继续工作。
+ * 校验通过后把任务交给主页队列，并在当前页显示进度或失败详情。
  */
 export default function AggressiveAiSavePanel({
   initialUrl = '',
+  autoStart = false,
+  job,
+  failure,
   onBack,
-  onSubmit
+  onSubmit,
+  onClearFailure,
+  onOpenSettings
 }: {
   initialUrl?: string
+  autoStart?: boolean
+  job?: { host: string; step: number; status: 'queued' | 'running' } | null
+  failure?: AggressiveAiSaveFailure | null
   onBack: () => void
   onSubmit: (url: string) => void
+  onClearFailure: () => void
+  onOpenSettings: () => void
 }) {
   const [url, setUrl] = useState(initialUrl)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -27,6 +38,7 @@ export default function AggressiveAiSavePanel({
   const inputRef = useRef<HTMLInputElement>(null)
   const submittedRef = useRef(false)
   const autoStartedRef = useRef(false)
+  const busy = Boolean(job)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -35,7 +47,7 @@ export default function AggressiveAiSavePanel({
 
   const submitSave = useCallback(
     (raw: string) => {
-      if (submittedRef.current) return
+      if (submittedRef.current || busy) return
       const normalized = normalizeAggressiveSaveUrl(raw)
       if (!normalized) {
         setError('请输入有效链接（http/https）')
@@ -45,18 +57,24 @@ export default function AggressiveAiSavePanel({
 
       submittedRef.current = true
       setError('')
+      onClearFailure()
       onSubmit(normalized)
     },
-    [onSubmit]
+    [busy, onClearFailure, onSubmit]
   )
 
   // 外部带入 URL（如 uTools 特性）时自动开跑
   useEffect(() => {
     if (autoStartedRef.current) return
-    if (!initialUrl.trim()) return
+    if (!autoStart || !initialUrl.trim()) return
     autoStartedRef.current = true
     submitSave(initialUrl)
-  }, [initialUrl, submitSave])
+  }, [autoStart, initialUrl, submitSave])
+
+  // 后台任务结束后允许用户重试；首次提交期间继续阻止粘贴/按钮造成重复入队。
+  useEffect(() => {
+    if (!busy) submittedRef.current = false
+  }, [busy, failure])
 
   const handlePaste = useCallback(async () => {
     try {
@@ -111,7 +129,7 @@ export default function AggressiveAiSavePanel({
               <p>AI 会生成标题与简介，并归入一个或多个合适分组，无需再点保存。</p>
             </div>
 
-            <div className="gm-url-big ag-save-url">
+            <div className={`gm-url-big ag-save-url${busy ? ' is-busy' : ''}`}>
               <Ico name="link" className="gm-url-icon" />
               <div className="gm-url-field-wrap">
                 <input
@@ -122,8 +140,10 @@ export default function AggressiveAiSavePanel({
                   spellCheck={false}
                   autoCapitalize="off"
                   autoCorrect="off"
+                  disabled={busy}
                   onChange={(e) => {
                     setUrl(e.target.value)
+                    if (failure) onClearFailure()
                     if (phase === 'error') {
                       setPhase('idle')
                       setError('')
@@ -145,6 +165,7 @@ export default function AggressiveAiSavePanel({
                 className="ag-save-paste"
                 onClick={() => void handlePaste()}
                 title="从剪贴板粘贴并保存"
+                disabled={busy}
               >
                 <Ico name="clipboard" />
                 粘贴
@@ -155,6 +176,40 @@ export default function AggressiveAiSavePanel({
               <div className="gm-wiz-error">
                 <Ico name="alert-circle" />
                 {error}
+              </div>
+            )}
+
+            {job && (
+              <div className="ag-save-inline-status" role="status" aria-live="polite">
+                <Ico name="loader" className="spin" />
+                <div>
+                  <div className="ag-save-inline-title">
+                    {job.status === 'queued' ? '等待处理' : `正在整理 ${job.host}`}
+                  </div>
+                  <div className="ag-save-inline-detail">
+                    步骤 {job.step}/10 ·{' '}
+                    {job.status === 'queued'
+                      ? '即将开始…'
+                      : ['解析链接…', '抓取页面线索…', '读取标题与摘要…', '识别站点类型…', '生成中文标题…', '撰写中文简介…', '匹配分组候选…', '评估置信度…', '写入书签…', '整理完成'][Math.max(0, job.step - 1)]}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {failure && !job && (
+              <div className="ag-save-failure" role="alert">
+                <span className="ag-save-failure-icon" aria-hidden="true"><Ico name="alert-circle" /></span>
+                <div className="ag-save-failure-body">
+                  <div className="ag-save-failure-title">{failure.message}</div>
+                  <div className="ag-save-failure-detail">{failure.detail}</div>
+                  <div className="ag-save-failure-recovery">{failure.recovery}</div>
+                  {(failure.code === 'ai_unavailable' || failure.code === 'ai_failed') && (
+                    <button type="button" className="ag-save-failure-settings" onClick={onOpenSettings}>
+                      <Ico name="settings" />
+                      检查 AI 设置
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
@@ -176,9 +231,9 @@ export default function AggressiveAiSavePanel({
           <button className="btn btn-ghost" onClick={onBack}>
             取消
           </button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={!url.trim()}>
-            <Ico name="sparkles" />
-            AI 保存
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={!url.trim() || busy}>
+            <Ico name={busy ? 'loader' : 'sparkles'} className={busy ? 'spin' : ''} />
+            {busy ? '正在保存…' : failure ? '重新尝试' : 'AI 保存'}
           </button>
         </footer>
       </div>
