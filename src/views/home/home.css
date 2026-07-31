@@ -728,17 +728,6 @@
 .goose-home .ai-fld-lbl { @apply block text-[11.5px] text-g-fg-muted mb-1.5; }
 .goose-home .ai-fld-input { @apply h-9 w-full box-border rounded-g-md border border-g-border bg-g-input text-g-fg px-3 text-[13px]; font-family:inherit; }
 .goose-home .ai-fld-input:focus { @apply outline-none; border-color:var(--ai); }
-.goose-home .ai-global-prompt-row { align-items:flex-start; flex-direction:column; }
-.goose-home .ai-global-prompt-row > label { width:100%; }
-.goose-home .ai-global-prompt {
-  width:100%;
-  min-height:92px;
-  height:auto;
-  max-height:220px;
-  resize:vertical;
-  padding:9px 10px;
-  line-height:1.5;
-}
 .goose-home .ai-fld-row { @apply flex gap-2 items-center; }
 .goose-home .ai-fld-input-wrap {
   @apply relative flex-1 min-w-0;

@@ -3854,8 +3854,6 @@ function SettingsContent({
   const setEasterEggEnabled = useSettingsStore((s) => s.setEasterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   const setEasterEggVariant = useSettingsStore((s) => s.setEasterEggVariant)
-  const userGlobalPrompt = useSettingsStore((s) => s.userGlobalPrompt)
-  const setUserGlobalPrompt = useSettingsStore((s) => s.setUserGlobalPrompt)
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
   const aiProtocol = useSettingsStore((s) => s.aiProtocol)
@@ -4264,22 +4262,6 @@ function SettingsContent({
                 value={aiSelectedModelId || protocolDefaultModel || DEFAULT_AI_MODEL}
                 options={modelOptions.map((m) => ({ id: m.id, label: m.label || m.id }))}
                 onChange={setAiSelectedModelId}
-              />
-            </div>
-
-            <div className="set-row ai-global-prompt-row">
-              <label htmlFor="ai-global-prompt">
-                <div className="rt">全局提示词</div>
-                <div className="rd">每次请求作为系统上下文注入，不显示在聊天消息中</div>
-              </label>
-              <textarea
-                id="ai-global-prompt"
-                className="ai-fld-input ai-global-prompt"
-                rows={4}
-                maxLength={24000}
-                value={userGlobalPrompt}
-                placeholder="例如：回答保持简洁；整理前先说明依据。"
-                onChange={(event) => setUserGlobalPrompt(event.target.value)}
               />
             </div>
 
