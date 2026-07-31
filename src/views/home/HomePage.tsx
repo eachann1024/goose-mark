@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -3713,8 +3713,16 @@ function SettingsSelect({
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const optionRefs = useRef<Array<HTMLButtonElement | null>>([])
+  const menuId = useId()
   const selected = options.find((o) => o.id === value) ?? options[0]
   const display = selected?.label || selected?.id || value
+
+  const closeAndRestoreFocus = useCallback(() => {
+    setOpen(false)
+    window.requestAnimationFrame(() => triggerRef.current?.focus())
+  }, [])
 
   useEffect(() => {
     if (!open) return
@@ -3722,7 +3730,7 @@ function SettingsSelect({
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') closeAndRestoreFocus()
     }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
@@ -3730,35 +3738,69 @@ function SettingsSelect({
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [closeAndRestoreFocus, open])
+
+  useEffect(() => {
+    if (!open) return
+    const selectedIndex = Math.max(0, options.findIndex((option) => option.id === value))
+    const frame = window.requestAnimationFrame(() => optionRefs.current[selectedIndex]?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [open, options, value])
+
+  const handleOptionKeyDown = useCallback((event: React.KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex = index
+    if (event.key === 'ArrowDown') nextIndex = Math.min(options.length - 1, index + 1)
+    else if (event.key === 'ArrowUp') nextIndex = Math.max(0, index - 1)
+    else if (event.key === 'Home') nextIndex = 0
+    else if (event.key === 'End') nextIndex = options.length - 1
+    else if (event.key === 'Tab') {
+      setOpen(false)
+      return
+    } else {
+      return
+    }
+    event.preventDefault()
+    optionRefs.current[nextIndex]?.focus()
+  }, [options.length])
 
   return (
     <div className={`set-select${wide ? ' set-select--wide' : ''}${open ? ' open' : ''}`} ref={rootRef}>
       <button
+        ref={triggerRef}
         type="button"
         className="select set-select-trigger"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={menuId}
+        title={display}
         onClick={() => setOpen((v) => !v)}
+        onKeyDown={(event) => {
+          if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+          event.preventDefault()
+          setOpen(true)
+        }}
       >
         <Ico name={icon} />
         <span className="set-select-value">{display}</span>
         <Ico name="chevron-down" />
       </button>
       {open && (
-        <div className="set-select-menu" role="listbox">
-          {options.map((m) => {
+        <div id={menuId} className="set-select-menu" role="listbox">
+          {options.map((m, index) => {
             const on = m.id === value
             return (
               <button
+                ref={(node) => { optionRefs.current[index] = node }}
                 key={m.id}
                 type="button"
                 role="option"
                 aria-selected={on}
                 className={`set-select-opt${on ? ' on' : ''}`}
+                title={m.label || m.id}
+                onKeyDown={(event) => handleOptionKeyDown(event, index)}
                 onClick={() => {
                   onChange(m.id)
-                  setOpen(false)
+                  closeAndRestoreFocus()
                 }}
               >
                 <span className="set-select-opt-check">{on ? <Ico name="check" /> : null}</span>
@@ -3830,6 +3872,7 @@ function SettingsContent({
   const aiCustomBaseURL = useSettingsStore((s) => s.aiCustomBaseURL)
   const aiCustomApiKey = useSettingsStore((s) => s.aiCustomApiKey)
   const aiCustomModelOptions = useSettingsStore((s) => s.aiCustomModelOptions)
+  const setAiCustomCredentials = useSettingsStore((s) => s.setAiCustomCredentials)
   const saveAiCustomConfig = useSettingsStore((s) => s.saveAiCustomConfig)
   const aiAggressiveSaveEnabled = useSettingsStore((s) => s.aiAggressiveSaveEnabled)
   const setAiAggressiveSaveEnabled = useSettingsStore((s) => s.setAiAggressiveSaveEnabled)
@@ -3860,7 +3903,7 @@ function SettingsContent({
     setShowApiKey(false)
   }, [aiProtocol])
   useEffect(() => {
-    setBaseUrlDraft(aiCustomBaseURL || protocolDefaultBaseURL)
+    setBaseUrlDraft(aiCustomBaseURL)
   }, [aiCustomBaseURL, protocolDefaultBaseURL])
   useEffect(() => {
     setApiKeyDraft(aiCustomApiKey)
@@ -4135,9 +4178,9 @@ function SettingsContent({
         </div>
       </div>
 
-      <div className="set-section" id="set-ai">
+      <div className="set-section set-section--ai" id="set-ai">
         <h2><Ico name="sparkles" />AI 助手</h2>
-        <div className="set-card">
+        <div className="set-card set-card--ai">
           {/* 第一项：总开关。关闭后下方全部禁用置灰 */}
           <div className="set-row">
             <div><div className="rt">启用 AI 智能整理</div><div className="rd">自动预填标题、描述并推荐分类</div></div>
@@ -4175,7 +4218,11 @@ function SettingsContent({
                       spellCheck={false}
                       autoCapitalize="off"
                       autoCorrect="off"
-                      onChange={(e) => setBaseUrlDraft(e.target.value)}
+                      onChange={(e) => {
+                        const baseURL = e.target.value
+                        setBaseUrlDraft(baseURL)
+                        setAiCustomCredentials({ baseURL, apiKey: apiKeyDraft })
+                      }}
                       onBlur={persistDraftCredentials}
                     />
                   </div>
@@ -4192,7 +4239,11 @@ function SettingsContent({
                           autoCapitalize="off"
                           autoCorrect="off"
                           autoComplete="off"
-                          onChange={(e) => setApiKeyDraft(e.target.value)}
+                          onChange={(e) => {
+                            const apiKey = e.target.value
+                            setApiKeyDraft(apiKey)
+                            setAiCustomCredentials({ baseURL: baseUrlDraft, apiKey })
+                          }}
                           onBlur={persistDraftCredentials}
                         />
                         <button

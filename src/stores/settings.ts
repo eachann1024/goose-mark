@@ -168,6 +168,8 @@ export interface SettingsActions {
   setAiCustomProviderEnabled: (value: boolean) => void
   /** 切换接入协议：写入默认 BaseURL，并清空旧协议的模型缓存 */
   setAiProtocol: (protocol: AIProtocol) => void
+  /** 实时更新当前协议的连接草稿，避免 uTools 收起时输入框尚未失焦而丢失。 */
+  setAiCustomCredentials: (config: { baseURL: string; apiKey: string }) => void
   saveAiCustomConfig: (config: { baseURL: string; apiKey: string; modelOptions: AIModelOption[] }) => void
   setEasterEggEnabled: (value: boolean) => void
   setEasterEggVariant: (value: EasterEggVariant) => void
@@ -323,6 +325,20 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
         set({
           ...applyProtocolConfig(next, restored),
           aiProtocolConfigs: { ...configs, [next]: restored }
+        })
+      },
+      setAiCustomCredentials: (config) => {
+        const current = get()
+        const protocol = current.aiProtocol
+        const slot: AIProtocolConfig = {
+          ...snapshotActiveProtocolConfig(current),
+          baseURL: String(config.baseURL || ''),
+          apiKey: String(config.apiKey || '')
+        }
+        set({
+          aiCustomBaseURL: slot.baseURL,
+          aiCustomApiKey: slot.apiKey,
+          aiProtocolConfigs: { ...current.aiProtocolConfigs, [protocol]: slot }
         })
       },
       saveAiCustomConfig: (config) => {
@@ -533,6 +549,7 @@ const normalizePersistedSettings = (state: Partial<SettingsState> | null | undef
 let settingsPersistenceStarted = false
 let settingsPersistPromise: Promise<void> = Promise.resolve()
 let lastPersistedSettings = ''
+let settingsPersistenceFlushEventsStarted = false
 
 const enqueueSettingsPersist = (state: SettingsStore): void => {
   const payload = pickPersistedSettings(state)
@@ -550,6 +567,39 @@ const enqueueSettingsPersist = (state: SettingsStore): void => {
     })
 }
 
+/**
+ * uTools 收起/退出时同步写入最新快照。
+ * 常规更新仍走串行队列；生命周期边界不能依赖下一轮微任务，否则输入框尚未失焦时可能丢设置。
+ */
+export const flushSettingsStorePersistence = (): void => {
+  if (!isUToolsDbAvailable()) return
+  const state = useSettingsStore.getState()
+  const payload = pickPersistedSettings(state)
+  const serialized = JSON.stringify(payload)
+  try {
+    saveSettingsSnapshot(payload)
+    lastPersistedSettings = serialized
+    emitStorageSync('settings', serialized)
+  } catch (error) {
+    console.error('[settings] 立即保存失败:', error)
+  }
+}
+
+const bindSettingsPersistenceFlushEvents = (): void => {
+  if (settingsPersistenceFlushEventsStarted || typeof window === 'undefined') return
+  settingsPersistenceFlushEventsStarted = true
+
+  const flush = () => flushSettingsStorePersistence()
+  const flushWhenHidden = () => {
+    if (document.visibilityState === 'hidden') flush()
+  }
+
+  window.addEventListener('goose-marks:plugin-out', flush)
+  window.addEventListener('pagehide', flush)
+  window.addEventListener('beforeunload', flush)
+  document.addEventListener('visibilitychange', flushWhenHidden)
+}
+
 export const initializeSettingsStorePersistence = async (): Promise<void> => {
   if (settingsPersistenceStarted) return
   settingsPersistenceStarted = true
@@ -564,6 +614,7 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
   useSettingsStore.subscribe((state) => {
     enqueueSettingsPersist(state)
   })
+  bindSettingsPersistenceFlushEvents()
   lastPersistedSettings = ''
   enqueueSettingsPersist(useSettingsStore.getState())
 }
