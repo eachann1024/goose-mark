@@ -10,6 +10,7 @@ import {
 } from '@/constants/ai'
 import { isUToolsAiSupported, resolvePreferredUToolsModel } from '@/lib/utoolsAi'
 import type { AIStructuredOutput } from '@/constants/aiPrompts'
+import { parseAIJsonObject } from '@/lib/aiOutput'
 
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
 const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
@@ -89,6 +90,71 @@ function normalizeMessages(messages: AIMessage[]) {
       role: message.role,
       content: message.content!.trim()
     }))
+}
+
+function appendStructuredOutputInstruction(
+  messages: AIMessage[],
+  output?: AIStructuredOutput
+): AIMessage[] {
+  if (!output) return messages
+
+  const instruction = [
+    '只输出单个合法 JSON 对象，不要输出 Markdown、解释或其他文字。',
+    `输出必须严格符合以下 JSON Schema，字段名不得替换：${JSON.stringify(output.schema)}`
+  ].join('\n')
+  const systemIndex = messages.findIndex((message) => message.role === 'system')
+  if (systemIndex < 0) {
+    return [{ role: 'system', content: instruction }, ...messages]
+  }
+
+  return messages.map((message, index) => index === systemIndex
+    ? { ...message, content: `${message.content?.trim() || ''}\n\n${instruction}`.trim() }
+    : message)
+}
+
+function extractStructuredText(payload: unknown, output?: AIStructuredOutput) {
+  const text = extractTextFromJsonPayload(payload)
+  if (!text) return ''
+  if (!output) return text
+
+  try {
+    const parsed = parseAIJsonObject(text)
+    return matchesJsonSchemaShape(parsed, output.schema) ? text : ''
+  } catch {
+    return ''
+  }
+}
+
+function matchesJsonSchemaShape(value: unknown, schema: unknown): boolean {
+  if (!isRecord(schema)) return true
+
+  if (schema.type === 'object') {
+    if (!isRecord(value)) return false
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter((field): field is string => typeof field === 'string')
+      : []
+    if (required.some((field) => !Object.prototype.hasOwnProperty.call(value, field))) {
+      return false
+    }
+
+    if (isRecord(schema.properties)) {
+      for (const [field, fieldSchema] of Object.entries(schema.properties)) {
+        if (Object.prototype.hasOwnProperty.call(value, field)
+          && !matchesJsonSchemaShape(value[field], fieldSchema)) {
+          return false
+        }
+      }
+    }
+  }
+
+  if (schema.type === 'array') {
+    if (!Array.isArray(value)) return false
+    if (schema.items && value.some((item) => !matchesJsonSchemaShape(item, schema.items))) {
+      return false
+    }
+  }
+
+  return true
 }
 
 function normalizeModelOption(input: unknown): AIModelOption | null {
@@ -461,88 +527,70 @@ async function runOpenAIChatCompletionsText(
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 60_000)
   try {
-    const body: Record<string, unknown> = {
+    const baseBody: Record<string, unknown> = {
       model: selectedModelId,
       messages: normalized.map((m) => ({ role: m.role, content: m.content })),
       temperature: 0.2
     }
-    if (output) {
-      // 优先 json_schema；网关不支持时下面会再试 json_object / 无 format
-      body.response_format = {
-        type: 'json_schema',
-        json_schema: {
-          name: output.name,
-          description: output.description,
-          schema: output.schema,
-          strict: true
-        }
-      }
-    }
-
-    let response = await fetch(url, {
-      signal: controller.signal,
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${settings.customApiKey.trim()}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
-      body: JSON.stringify(body)
-    })
-
-    // 部分网关不支持 json_schema，降级 json_object
-    if (!response.ok && output) {
-      const detail = (await readErrorMessage(response)) || ''
-      const lower = detail.toLowerCase()
-      if (
-        lower.includes('response_format') ||
-        lower.includes('json_schema') ||
-        lower.includes('unsupported') ||
-        response.status === 400
-      ) {
-        response = await fetch(url, {
-          signal: controller.signal,
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${settings.customApiKey.trim()}`,
-            'Content-Type': 'application/json',
-            Accept: 'application/json'
+    const attempts: Record<string, unknown>[] = output
+      ? [
+          {
+            ...baseBody,
+            response_format: {
+              type: 'json_schema',
+              json_schema: {
+                name: output.name,
+                description: output.description,
+                schema: output.schema,
+                strict: true
+              }
+            }
           },
-          body: JSON.stringify({
-            model: selectedModelId,
-            messages: [
-              ...normalized.map((m) => ({ role: m.role, content: m.content })),
-              ...(output
-                ? [{
-                    role: 'system' as const,
-                    content: `只输出合法 JSON 对象，字段符合：${output.name}（${output.description}）。不要使用 Markdown 代码块。`
-                  }]
-                : [])
-            ],
-            temperature: 0.2,
-            response_format: { type: 'json_object' }
-          })
-        })
-      } else {
+          { ...baseBody, response_format: { type: 'json_object' } },
+          baseBody
+        ]
+      : [baseBody]
+
+    let lastError: Error | null = null
+    for (const body of attempts) {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${settings.customApiKey.trim()}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify(body)
+      })
+
+      if (!response.ok) {
+        const detail = await readErrorMessage(response)
         if (response.status === 401 || response.status === 403) {
           throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
         }
-        throw new Error(detail || `调用 Chat Completions 失败（${response.status}）`)
+        lastError = new Error(detail || `调用 Chat Completions 失败（${response.status}）`)
+        const lower = (detail || '').toLowerCase()
+        const canDowngrade = Boolean(output) && (
+          response.status === 400
+          || response.status === 404
+          || response.status === 422
+          || lower.includes('response_format')
+          || lower.includes('json_schema')
+          || lower.includes('unsupported')
+        )
+        if (!canDowngrade) throw lastError
+        continue
       }
+
+      const text = extractStructuredText(await response.json(), output)
+      if (text) return text
+      lastError = new Error(output
+        ? 'AI 返回内容不是可解析的 JSON 对象'
+        : 'Chat Completions 没有返回可用内容')
     }
 
-    if (!response.ok) {
-      const detail = await readErrorMessage(response)
-      if (response.status === 401 || response.status === 403) {
-        throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
-      }
-      throw new Error(detail || `调用 Chat Completions 失败（${response.status}）`)
-    }
-
-    const payload = await response.json()
-    const text = extractTextFromJsonPayload(payload)
-    if (!text) throw new Error('Chat Completions 没有返回可用内容')
-    return text
+    throw lastError ?? new Error('Chat Completions 没有返回可用内容')
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') {
       throw new Error('请求超时，请检查接口地址是否可达')
@@ -641,8 +689,10 @@ async function runOfficialOpenAIResponsesText(
         ? await readResponsesSSE(response)
         : extractTextFromJsonPayload(await response.json())
 
-      if (!text) {
-        lastError = new Error('OpenAI Responses API 没有返回可用内容')
+      if (!text || (output && !extractStructuredText(text, output))) {
+        lastError = new Error(output
+          ? 'AI 返回内容不是可解析的 JSON 对象'
+          : 'OpenAI Responses API 没有返回可用内容')
         continue
       }
       return text
@@ -801,7 +851,8 @@ async function runCustomText(
       ? settings.protocol
       : 'openai-responses'
   const { generateText, Output, jsonSchema } = await import('ai')
-  const normalizedMessages = normalizeMessages(messages)
+  const requestMessages = appendStructuredOutputInstruction(messages, options.output)
+  const normalizedMessages = normalizeMessages(requestMessages)
   const system = normalizedMessages
     .filter((message) => message.role === 'system')
     .map((message) => message.content)
@@ -859,7 +910,7 @@ async function runCustomText(
       try {
         return await runOpenAIChatCompletionsText(
           settings,
-          messages,
+          requestMessages,
           selectedModelId,
           options.output
         )
@@ -873,11 +924,14 @@ async function runCustomText(
       }
     }
 
-    if (protocol === 'openai-responses' && isInvalidJsonResponseError(error)) {
+    if (
+      protocol === 'openai-responses'
+      && (isInvalidJsonResponseError(error) || Boolean(options.output))
+    ) {
       try {
         return await runOfficialOpenAIResponsesText(
           settings,
-          messages,
+          requestMessages,
           selectedModelId,
           options.output
         )
