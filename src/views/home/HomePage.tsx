@@ -2842,7 +2842,7 @@ export default function HomePage() {
               const result = notice.result
               const groupText = result.groupLabels.join(' · ') || '未分组'
               return (
-                <section className="ag-save-success-card" key={`ag-success-${notice.id}`}>
+                <section className="ag-save-success-card is-highlighted" key={`ag-success-${notice.id}`}>
                   <button
                     type="button"
                     className="ag-save-success-close"
