@@ -45,6 +45,7 @@ import {
   runAggressiveAiSave,
   AggressiveAiSaveError,
   undoAggressiveAiSave,
+  type AggressiveAiSaveFailure,
   type AggressiveAiSaveResult
 } from '@/services/aggressiveAiSave'
 import { InstantTooltip, OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
@@ -391,6 +392,15 @@ type AggressiveSaveSuccess = {
   result: AggressiveAiSaveResult
 }
 
+type AggressiveSaveFailure = AggressiveAiSaveFailure & {
+  id: number
+  url: string
+  host: string
+}
+
+type ToastTone = 'success' | 'error'
+type ToastAction = 'open-ai-save' | null
+
 const aggressiveSaveHostOf = (url: string) => {
   try {
     return new URL(url).hostname.replace(/^www\./, '')
@@ -601,11 +611,15 @@ export default function HomePage() {
   const [toastTitle, setToastTitle] = useState('')
   const [toastDesc, setToastDesc] = useState('')
   const [toastJump, setToastJump] = useState<BookmarkLocation | null>(null)
+  const [toastTone, setToastTone] = useState<ToastTone>('success')
+  const [toastAction, setToastAction] = useState<ToastAction>(null)
   const [toastKey, setToastKey] = useState(0)
   /** AI 保存面板的预填 URL（uTools 特性带入） */
   const [aggressiveSaveUrl, setAggressiveSaveUrl] = useState('')
+  const [aggressiveSaveAutoStart, setAggressiveSaveAutoStart] = useState(false)
   const [aggressiveSaveJobs, setAggressiveSaveJobs] = useState<AggressiveSaveJob[]>([])
   const [aggressiveSaveSuccesses, setAggressiveSaveSuccesses] = useState<AggressiveSaveSuccess[]>([])
+  const [aggressiveSaveFailure, setAggressiveSaveFailure] = useState<AggressiveSaveFailure | null>(null)
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [searchVal, setSearchVal] = useState(() => initialContinuityRef.current?.searchVal ?? '')
   // ---- 个人菜单 + 帮助弹窗 ----
@@ -1179,7 +1193,13 @@ export default function HomePage() {
 
   // fireToast 的稳定引用，供 plugin-enter effect 使用（声明在 fireToast 之前）
   const fireToastRef = useRef<
-    (title?: string, options?: { description?: string; jump?: BookmarkLocation | null; duration?: number }) => void
+    (title?: string, options?: {
+      description?: string
+      jump?: BookmarkLocation | null
+      duration?: number
+      tone?: ToastTone
+      action?: ToastAction
+    }) => void
   >(() => {})
 
   // ---- 交互：复制 → Toast ----
@@ -1189,12 +1209,20 @@ export default function HomePage() {
   const fireToast = useCallback(
     (
       title?: string,
-      options?: { description?: string; jump?: BookmarkLocation | null; duration?: number }
+      options?: {
+        description?: string
+        jump?: BookmarkLocation | null
+        duration?: number
+        tone?: ToastTone
+        action?: ToastAction
+      }
     ) => {
       closeCtx()
       setToastTitle(title || '')
       setToastDesc(options?.description || '')
       setToastJump(options?.jump ?? null)
+      setToastTone(options?.tone ?? 'success')
+      setToastAction(options?.action ?? null)
       setToastKey((k) => k + 1)
       setToastOpen(true)
       window.clearTimeout(toastTimer.current)
@@ -1370,8 +1398,13 @@ export default function HomePage() {
     }
   }, [view, scrollToSection])
 
-  const openAggressiveSavePanel = useCallback((url = '') => {
-    setAggressiveSaveUrl(url)
+  const openAggressiveSavePanel = useCallback((
+    url?: string,
+    options: { autoStart?: boolean; clearFailure?: boolean } = {}
+  ) => {
+    if (url !== undefined) setAggressiveSaveUrl(url)
+    setAggressiveSaveAutoStart(Boolean(options.autoStart))
+    if (options.clearFailure) setAggressiveSaveFailure(null)
     setScreen('ai-aggressive-save')
   }, [])
 
@@ -1457,6 +1490,9 @@ export default function HomePage() {
         await wait(320)
         if (!aggressiveSaveMountedRef.current) break
         setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
+        setAggressiveSaveFailure((failure) => (failure?.id === job.id ? null : failure))
+        setAggressiveSaveUrl('')
+        setAggressiveSaveAutoStart(false)
         const notice: AggressiveSaveSuccess = { id: job.id, result }
         setAggressiveSaveSuccesses((items) => [notice, ...items].slice(0, 2))
         jumpToAggressiveSaveResult(result)
@@ -1469,14 +1505,29 @@ export default function HomePage() {
       } catch (error) {
         cancelled = true
         setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
-        const message =
-          error instanceof AggressiveAiSaveError
-            ? error.message
-            : error instanceof Error
-              ? error.message
-              : 'AI 保存失败'
+        const normalized = error instanceof AggressiveAiSaveError
+          ? error
+          : new AggressiveAiSaveError('ai_failed', 'AI 保存失败', {
+              detail: error instanceof Error ? error.message : String(error || '未知错误'),
+              recovery: '请检查 AI 设置后重试。'
+            })
+        const failure: AggressiveSaveFailure = {
+          id: job.id,
+          url: job.url,
+          host: aggressiveSaveHostOf(job.url),
+          ...normalized.toFailure()
+        }
         setAggressiveSaveUrl(job.url)
-        fireToast(message, { description: '链接已保留，可再次打开 AI 保存重试', duration: 6200 })
+        setAggressiveSaveAutoStart(false)
+        setAggressiveSaveFailure(failure)
+        if (screenRef.current !== 'ai-aggressive-save') {
+          fireToast(failure.message, {
+            description: `${failure.detail} 链接已保留。`,
+            duration: 10_000,
+            tone: 'error',
+            action: 'open-ai-save'
+          })
+        }
       }
     }
 
@@ -1490,16 +1541,17 @@ export default function HomePage() {
     (url: string) => {
       const id = ++aggressiveSaveJobSeqRef.current
       aggressiveSaveQueueRef.current.push({ id, url })
+      setAggressiveSaveFailure(null)
       setAggressiveSaveJobs((items) => [
         ...items,
         { id, url, host: aggressiveSaveHostOf(url), step: 0, status: 'queued' }
       ])
-      setAggressiveSaveUrl('')
-      // 核心交互：任务入队后立刻回首页，抓取、AI 与落库全部留在后台。
-      setScreen(view)
+      setAggressiveSaveUrl(url)
+      setAggressiveSaveAutoStart(false)
+      // 当前页展示进度；用户主动返回主页后，任务仍在右上角后台状态区继续。
       queueMicrotask(() => pumpAggressiveSaveQueueRef.current())
     },
-    [view]
+    []
   )
 
   // ---- SidebarNav：activeSubId 修复回调（删除/移动/提升后回退到首个子分组） ----
@@ -1968,13 +2020,13 @@ export default function HomePage() {
           } catch (err) {
             console.warn('[ai_save] 获取浏览器 URL 失败:', err)
           }
-          openAggressiveSavePanel('')
+          openAggressiveSavePanel(undefined, { autoStart: false })
         })()
         return
       }
 
-      // 有 URL：与面板粘贴共用同一后台队列，立即回首页显示右上角进度。
-      enqueueAggressiveSave(urlToSave)
+      // uTools 带入 URL 时进入面板并自动开始；失败重开只回填，不再自动提交。
+      openAggressiveSavePanel(urlToSave, { autoStart: true, clearFailure: true })
       return
     }
 
@@ -2459,7 +2511,7 @@ export default function HomePage() {
                   <button
                     type="button"
                     className="collect-btn ag-collect-btn"
-                    onClick={() => openAggressiveSavePanel('')}
+                    onClick={() => openAggressiveSavePanel()}
                   >
                     <Ico name="sparkles" />
                     AI 保存
@@ -2729,8 +2781,13 @@ export default function HomePage() {
           <AggressiveAiSavePanel
             key={`ag-save-${aggressiveSaveUrl || 'empty'}`}
             initialUrl={aggressiveSaveUrl}
+            autoStart={aggressiveSaveAutoStart}
+            job={activeAggressiveSaveJob}
+            failure={aggressiveSaveFailure}
             onBack={() => setScreen(view)}
             onSubmit={enqueueAggressiveSave}
+            onClearFailure={() => setAggressiveSaveFailure(null)}
+            onOpenSettings={() => setScreen('settings')}
           />
         )}
 
@@ -2744,7 +2801,7 @@ export default function HomePage() {
         )}
 
         {/* ---------- AI 保存：右上角后台进度 + S1 成功卡 ---------- */}
-        {(activeAggressiveSaveJob || aggressiveSaveSuccesses.length > 0) && (
+        {(activeAggressiveSaveJob || aggressiveSaveSuccesses.length > 0 || (aggressiveSaveFailure && screen !== 'ai-aggressive-save')) && (
           <aside className="ag-save-stack" aria-label="AI 保存状态" aria-live="polite">
             {activeAggressiveSaveJob && (
               <div className="ag-save-progress-wrap">
@@ -2809,6 +2866,40 @@ export default function HomePage() {
                 </section>
               )
             })}
+
+            {aggressiveSaveFailure && screen !== 'ai-aggressive-save' && (
+              <section className="ag-save-failure-card">
+                <button
+                  type="button"
+                  className="ag-save-success-close"
+                  aria-label="关闭失败记录"
+                  onClick={() => setAggressiveSaveFailure(null)}
+                >
+                  <Ico name="x" />
+                </button>
+                <span className="ag-save-failure-card-icon" aria-hidden="true"><Ico name="alert-circle" /></span>
+                <div className="ag-save-success-body">
+                  <div className="ag-save-success-title">{aggressiveSaveFailure.message}</div>
+                  <div className="ag-save-failure-card-host">{aggressiveSaveFailure.host}</div>
+                  <div className="ag-save-failure-card-detail">{aggressiveSaveFailure.detail}</div>
+                  <div className="ag-save-success-actions">
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={() => openAggressiveSavePanel(aggressiveSaveFailure.url, { autoStart: false })}
+                    >
+                      查看原因
+                    </button>
+                    <button type="button" onClick={() => enqueueAggressiveSave(aggressiveSaveFailure.url)}>
+                      重试
+                    </button>
+                    <button type="button" onClick={() => setScreen('settings')}>
+                      AI 设置
+                    </button>
+                  </div>
+                </div>
+              </section>
+            )}
           </aside>
         )}
 
@@ -2854,13 +2945,19 @@ export default function HomePage() {
         </div>
 
         {/* ---------- Toast ---------- */}
-        {/* 通用 toast：标题来自 fireToast 入参；可带 description + 点击跳转（AI 保存） */}
+        {/* 通用 toast：支持成功/错误语义，以及跳转或重新打开 AI 保存。 */}
         <div
-          className={`toast${toastJump ? ' is-action' : ''}`}
+          className={`toast is-${toastTone}${toastJump || toastAction ? ' is-action' : ''}`}
           key={`toast-${toastKey}`}
-          role={toastJump ? 'button' : undefined}
-          tabIndex={toastJump ? 0 : undefined}
+          role={toastJump || toastAction ? 'button' : undefined}
+          tabIndex={toastJump || toastAction ? 0 : undefined}
           onClick={() => {
+            if (toastAction === 'open-ai-save') {
+              setAggressiveSaveAutoStart(false)
+              setScreen('ai-aggressive-save')
+              setToastOpen(false)
+              return
+            }
             if (!toastJump) return
             setScreen(view)
             setActiveSubId(toastJump.subGroupId)
@@ -2871,17 +2968,22 @@ export default function HomePage() {
             setToastOpen(false)
           }}
           onKeyDown={(e) => {
-            if (!toastJump) return
+            if (!toastJump && !toastAction) return
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
               ;(e.currentTarget as HTMLDivElement).click()
             }
           }}
         >
-          <span className="tic"><Ico name="check" /></span>
+          <span className="tic"><Ico name={toastTone === 'error' ? 'alert-circle' : 'check'} /></span>
           <div>
             <div className="tt">{toastTitle || '操作完成'}</div>
-            {toastDesc ? <div className="td">{toastDesc}{toastJump ? ' · 点击跳转' : ''}</div> : null}
+            {toastDesc ? (
+              <div className="td">
+                {toastDesc}
+                {toastJump ? ' · 点击跳转' : toastAction === 'open-ai-save' ? ' · 点击查看并重试' : ''}
+              </div>
+            ) : null}
           </div>
         </div>
       </div>
