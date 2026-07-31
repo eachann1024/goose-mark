@@ -10,6 +10,12 @@
 
 
 
+## 授权
+
+本项目为闭源专有软件，未授予公开使用、复制、修改或分发源码的许可。详情见 [LICENSE](./LICENSE)。项目使用的第三方组件仍分别遵循其各自许可证。
+
+
+
 ## 图标持久化策略
 
 - 首选本地文件缓存：图标抓取后写入 `utools.getPath('userData')/bookmarks-icons`，Pinia 仅存文件路径 + hash。
@@ -75,6 +81,17 @@
 - 图标服务：本机网络抓取并写入 `userData/bookmarks-icons`，24h 冷却；缺失图标可在设置页一键补全；编辑 URL 时若无图标会自动尝试获取。
 - 设置页：缺失图标批量匹配、无效地址探测（HEAD 请求，3s 超时）、多来源导入（JSON/HTML/网址精灵 data.json）。
 
+## MCP（uTools 原生工具）
+
+本插件采用 uTools 当前提供的 MCP 工具契约，而不是另起一个无法被 uTools 调用的 HTTP/stdio 服务：`plugin.json` 负责声明 JSON Schema，preload 使用 `utools.registerTool` 注册，再经受限的事件桥接访问 React/Pinia 中的本地书签数据。
+
+- 新增 `get_mcp_capabilities`：返回协议、传输方式、完整工具清单和写入安全提示，供 MCP 客户端先发现能力。
+- 可读取分组树、分页列出/搜索/读取书签，也可打开书签；支持分组、子分组、书签和归属位置管理。
+- 参数在 preload 侧会再次限制为 JSON 兼容的有限深度/大小，并过滤原型污染字段；具体字段仍以 `plugin.json` 的 `inputSchema` 为准。
+- MCP 写入工具会修改本机书签数据。调用方应先取得用户确认；AI 助手内部的写入仍遵循“先生成待确认变更”的既有规则。
+
+开发验收：`bun run test:mcp` 校验声明、注册表及一次 preload → 渲染层请求/响应往返；`bun run build` 校验插件构建。
+
 
 
 ## 目录预期
@@ -92,4 +109,3 @@
 - 书签列表虚拟化以支撑 1000+ 规模。
 - 导出时可选 base64 内联以便跨设备迁移。
 - 允许从 UnoCSS 图标集手动选图标作为替代。
-

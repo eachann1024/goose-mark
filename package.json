@@ -2,6 +2,7 @@
   "name": "utools-bookmarks",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "scripts": {
     "dev": "vite --port 7001",
@@ -9,6 +10,7 @@
     "build:web": "vite build",
     "build:sites": "node scripts/sites-build.mjs",
     "watch-build": "node scripts/watch-build.mjs",
+    "test:mcp": "bun test tests/unit/mcpBridge.test.ts",
     "e2e": "playwright test",
     "preview": "vite preview",
     "type-check": "tsc --noEmit"
