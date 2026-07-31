@@ -659,7 +659,10 @@ export const BookmarkAiComposer = forwardRef<BookmarkAiComposerHandle, BookmarkA
           contentEditable={!disabled}
           suppressContentEditableWarning
           data-bookmark-ai-composer="true"
-          onInput={() => {
+          onInput={(event) => {
+            // composition 期间禁止 emitChange：父级 setState / zustand 会 re-render，
+            // 旧 Chromium / uTools 内核上容易打断 IME 组词，把未确认拼音提交成字面量。
+            if (composingRef.current || event.nativeEvent.isComposing) return
             emitChange()
             detectMenu()
           }}
@@ -680,6 +683,7 @@ export const BookmarkAiComposer = forwardRef<BookmarkAiComposerHandle, BookmarkA
           }}
           onBlur={() => window.setTimeout(() => setMenu(null), 120)}
           onCompositionStart={() => { composingRef.current = true }}
+          onCompositionUpdate={() => { composingRef.current = true }}
           onCompositionEnd={() => {
             composingRef.current = false
             emitChange()
