@@ -578,6 +578,9 @@
 .goose-home .set-section h2 { @apply text-[17px] font-semibold flex items-center gap-2 mb-3; font-family:var(--font-serif); }
 .goose-home .set-section h2 .lucide { @apply text-g-fg-faint text-[17px]; }
 .goose-home .set-card { @apply border border-g-border rounded-g bg-g-surface overflow-hidden; }
+/* AI 下拉需要越过卡片底边覆盖后续区块；仅放开该卡片，避免扩大其他设置卡的溢出范围。 */
+.goose-home .set-section--ai { position:relative; z-index:2; }
+.goose-home .set-card--ai { overflow:visible; }
 /* 暗黑：去掉硬边框，卡片靠比窗口底色更亮的 --surface 自然浮起 */
 .goose-home[data-theme="dark"] .set-card { border-color:transparent; }
 .goose-home .set-row { @apply flex items-center justify-between gap-[14px] px-4 py-[14px] min-w-0; }
