@@ -51,6 +51,22 @@ export type AggressiveAiSaveResult = {
     | { kind: 'updated'; bookmark: Bookmark; locations: BookmarkLocation[] }
 }
 
+export type AggressiveAiSavePhase =
+  | 'validating'
+  | 'fetching'
+  | 'analyzing'
+  | 'saving'
+  | 'completed'
+
+export type AggressiveAiSaveProgress = {
+  phase: AggressiveAiSavePhase
+  detail: string
+}
+
+type AggressiveAiSaveOptions = {
+  onProgress?: (progress: AggressiveAiSaveProgress) => void
+}
+
 function getActiveAiSettings(): AISettingsLike {
   return selectAiSettings(useSettingsStore.getState())
 }
@@ -155,7 +171,19 @@ function matchCategories(
 /**
  * 执行 AI 保存。失败抛 AggressiveAiSaveError。
  */
-export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiSaveResult> {
+export async function runAggressiveAiSave(
+  rawUrl: string,
+  options: AggressiveAiSaveOptions = {}
+): Promise<AggressiveAiSaveResult> {
+  const reportProgress = (phase: AggressiveAiSavePhase, detail: string) => {
+    try {
+      options.onProgress?.({ phase, detail })
+    } catch {
+      // 进度展示不能影响真实保存流程。
+    }
+  }
+
+  reportProgress('validating', '正在检查链接和 AI 设置…')
   const finalUrl = normalizeAggressiveSaveUrl(rawUrl)
   if (!finalUrl) {
     throw new AggressiveAiSaveError('invalid_url', '链接格式不正确', {
@@ -191,6 +219,7 @@ export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiS
   }
 
   // 1) 页面线索
+  reportProgress('fetching', '正在读取网页标题、简介和图标…')
   let pageTitle = ''
   let pageDesc = ''
   let icon: IconSource | null = null
@@ -225,6 +254,7 @@ export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiS
   let categories: AggressiveCategoryHit[] = []
 
   try {
+    reportProgress('analyzing', 'AI 正在生成标题、简介并选择分组…')
     const res = await runAIText(aiSettings, [
       { role: 'system', content: AGGRESSIVE_SAVE_SYSTEM_PROMPT },
       {
@@ -291,6 +321,7 @@ export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiS
   const iconToSave = icon ?? buildTextIcon(title || finalUrl)
 
   // 5) 落库（同 URL 已存在则更新元信息并合并分组）
+  reportProgress('saving', '正在写入本地书签库…')
   const live = useBookmarkStore.getState()
   const existing = live.bookmarks.find((b) => b.url === finalUrl && !b.isDeleted)
   const previousLocations = existing ? live.getBookmarkLocations(existing.id) : []
@@ -349,6 +380,8 @@ export async function runAggressiveAiSave(rawUrl: string): Promise<AggressiveAiS
   const groupLabels = categories.map((c) =>
     c.subGroupName && c.subGroupName !== c.groupName ? `${c.groupName} / ${c.subGroupName}` : c.groupName
   )
+
+  reportProgress('completed', '书签已写入，正在展示结果…')
 
   return {
     bookmark,

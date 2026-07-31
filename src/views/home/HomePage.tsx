@@ -46,6 +46,7 @@ import {
   AggressiveAiSaveError,
   undoAggressiveAiSave,
   type AggressiveAiSaveFailure,
+  type AggressiveAiSavePhase,
   type AggressiveAiSaveResult
 } from '@/services/aggressiveAiSave'
 import { InstantTooltip, OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
@@ -365,25 +366,12 @@ type Theme = 'light' | 'dark'
 type ThemePref = 'light' | 'dark' | 'system'
 type CtxMode = 'menu' | 'confirmDelete'
 
-const AGGRESSIVE_SAVE_STEPS = [
-  '解析链接…',
-  '抓取页面线索…',
-  '读取标题与摘要…',
-  '识别站点类型…',
-  '生成标题…',
-  '撰写简介…',
-  '匹配分组候选…',
-  '评估置信度…',
-  '写入书签…',
-  '整理完成'
-] as const
-const AGGRESSIVE_SAVE_STEP_DELAYS = [260, 300, 280, 320, 220, 180, 240, 280, 200] as const
-
 type AggressiveSaveJob = {
   id: number
   url: string
   host: string
-  step: number
+  phase: AggressiveAiSavePhase | 'queued'
+  detail: string
   status: 'queued' | 'running'
 }
 
@@ -1467,28 +1455,23 @@ export default function HomePage() {
       const job = aggressiveSaveQueueRef.current.shift()
       if (!job) break
       setAggressiveSaveJobs((items) =>
-        items.map((item) => (item.id === job.id ? { ...item, status: 'running', step: 0 } : item))
+        items.map((item) => item.id === job.id
+          ? { ...item, status: 'running', phase: 'validating', detail: '正在检查链接和 AI 设置…' }
+          : item)
       )
 
-      let cancelled = false
-      const animateProgress = async () => {
-        await wait(180)
-        for (let step = 1; step <= 9; step += 1) {
-          if (cancelled || !aggressiveSaveMountedRef.current) return
-          setAggressiveSaveJobs((items) =>
-            items.map((item) => (item.id === job.id ? { ...item, step } : item))
-          )
-          await wait(AGGRESSIVE_SAVE_STEP_DELAYS[step - 1] ?? 220)
-        }
-      }
-
       try {
-        const [result] = await Promise.all([runAggressiveAiSave(job.url), animateProgress()])
+        const result = await runAggressiveAiSave(job.url, {
+          onProgress: ({ phase, detail }) => {
+            if (!aggressiveSaveMountedRef.current) return
+            setAggressiveSaveJobs((items) =>
+              items.map((item) => item.id === job.id ? { ...item, phase, detail } : item)
+            )
+          }
+        })
         if (!aggressiveSaveMountedRef.current) break
-        setAggressiveSaveJobs((items) =>
-          items.map((item) => (item.id === job.id ? { ...item, step: 10 } : item))
-        )
-        await wait(320)
+        // 完成态稍作停留，让用户看清真实流程的结束，而不是一闪而过。
+        await wait(650)
         if (!aggressiveSaveMountedRef.current) break
         setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
         setAggressiveSaveFailure((failure) => (failure?.id === job.id ? null : failure))
@@ -1504,7 +1487,6 @@ export default function HomePage() {
         aggressiveSaveSuccessTimersRef.current.add(timer)
         void flushBookmarkStorePersistence()
       } catch (error) {
-        cancelled = true
         setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
         const normalized = error instanceof AggressiveAiSaveError
           ? error
@@ -1545,7 +1527,14 @@ export default function HomePage() {
       setAggressiveSaveFailure(null)
       setAggressiveSaveJobs((items) => [
         ...items,
-        { id, url, host: aggressiveSaveHostOf(url), step: 0, status: 'queued' }
+        {
+          id,
+          url,
+          host: aggressiveSaveHostOf(url),
+          phase: 'queued',
+          detail: '排队中…',
+          status: 'queued'
+        }
       ])
       setAggressiveSaveUrl(url)
       setAggressiveSaveAutoStart(false)
@@ -2839,10 +2828,7 @@ export default function HomePage() {
                   <div className="ag-save-progress-copy">
                     <div className="ag-save-progress-host">{activeAggressiveSaveJob.host}</div>
                     <div className="ag-save-progress-step">
-                      步骤 {activeAggressiveSaveJob.step}/10 ·{' '}
-                      {activeAggressiveSaveJob.status === 'queued'
-                        ? '排队中…'
-                        : AGGRESSIVE_SAVE_STEPS[Math.max(0, activeAggressiveSaveJob.step - 1)]}
+                      {activeAggressiveSaveJob.detail}
                     </div>
                   </div>
                 </div>

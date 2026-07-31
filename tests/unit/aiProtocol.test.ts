@@ -205,6 +205,20 @@ test('AI 保存使用后台结构化流程，不触发聊天助手的确认提�
   expect(prompt).not.toContain('等待用户确认')
 })
 
+test('AI 保存进度来自真实执行阶段，不再按固定延时模拟十步', () => {
+  const serviceSource = readFileSync(new URL('../../src/services/aggressiveAiSave.ts', import.meta.url), 'utf8')
+  const homeSource = readFileSync(new URL('../../src/views/home/HomePage.tsx', import.meta.url), 'utf8')
+
+  expect(serviceSource).toContain("reportProgress('fetching'")
+  expect(serviceSource).toContain("reportProgress('analyzing'")
+  expect(serviceSource).toContain("reportProgress('saving'")
+  expect(serviceSource).toContain("reportProgress('completed'")
+  expect(homeSource).toContain('onProgress: ({ phase, detail })')
+  expect(homeSource).not.toContain('AGGRESSIVE_SAVE_STEP_DELAYS')
+  expect(homeSource).not.toContain('animateProgress')
+  expect(homeSource).not.toContain('步骤 {activeAggressiveSaveJob.step}/10')
+})
+
 test('兼容接口收到 200 空内容时继续降级，并向模型明确 JSON Schema', async () => {
   const originalFetch = globalThis.fetch
   const requestBodies: Record<string, unknown>[] = []

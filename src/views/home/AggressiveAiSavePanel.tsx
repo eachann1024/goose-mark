@@ -25,7 +25,7 @@ export default function AggressiveAiSavePanel({
 }: {
   initialUrl?: string
   autoStart?: boolean
-  job?: { host: string; step: number; status: 'queued' | 'running' } | null
+  job?: { host: string; detail: string; status: 'queued' | 'running' } | null
   failure?: AggressiveAiSaveFailure | null
   onBack: () => void
   onSubmit: (url: string) => void
@@ -187,10 +187,7 @@ export default function AggressiveAiSavePanel({
                     {job.status === 'queued' ? '等待处理' : `正在整理 ${job.host}`}
                   </div>
                   <div className="ag-save-inline-detail">
-                    步骤 {job.step}/10 ·{' '}
-                    {job.status === 'queued'
-                      ? '即将开始…'
-                      : ['解析链接…', '抓取页面线索…', '读取标题与摘要…', '识别站点类型…', '生成中文标题…', '撰写中文简介…', '匹配分组候选…', '评估置信度…', '写入书签…', '整理完成'][Math.max(0, job.step - 1)]}
+                    {job.detail}
                   </div>
                 </div>
               </div>
