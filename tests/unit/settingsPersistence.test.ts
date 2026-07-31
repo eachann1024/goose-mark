@@ -1,8 +1,42 @@
 import { expect, test } from '@playwright/test'
 import {
+  createDefaultSettingsState,
   flushSettingsStorePersistence,
+  normalizePersistedSettings,
   useSettingsStore,
 } from '../../src/stores/settings'
+import { getDefaultAISettings } from '../../src/lib/aiProvider'
+
+test('AI 助手能力对新用户默认全部开启', () => {
+  expect(getDefaultAISettings().enabled).toBe(true)
+  expect(createDefaultSettingsState()).toMatchObject({
+    aiEnabled: true,
+    readLocalSkills: true,
+    aiAggressiveSaveEnabled: true,
+  })
+})
+
+test('缺失的 AI 能力字段补为开启，同时保留旧用户明确保存的值和生成参数', () => {
+  expect(normalizePersistedSettings({})).toMatchObject({
+    aiEnabled: true,
+    readLocalSkills: true,
+    aiAggressiveSaveEnabled: true,
+  })
+
+  expect(normalizePersistedSettings({
+    aiEnabled: false,
+    readLocalSkills: false,
+    aiAggressiveSaveEnabled: false,
+    aiDefaultReasoningEffort: 'high',
+    aiDefaultTemperature: 0.7,
+  })).toMatchObject({
+    aiEnabled: false,
+    readLocalSkills: false,
+    aiAggressiveSaveEnabled: false,
+    aiDefaultReasoningEffort: 'high',
+    aiDefaultTemperature: 0.7,
+  })
+})
 
 test('AI 连接草稿在收起边界同步写入 uTools 云同步数据库', () => {
   const docs = new Map<string, { _id: string; _rev: string; data: unknown }>()

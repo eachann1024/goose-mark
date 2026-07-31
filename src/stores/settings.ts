@@ -224,7 +224,7 @@ export function normalizeAiTemperature(value: unknown): number | null {
   return Math.min(2, Math.max(0, Math.round(numeric * 100) / 100))
 }
 
-const createInitialState = (): SettingsState => {
+export const createDefaultSettingsState = (): SettingsState => {
   const defaults = getDefaultAISettings()
   const protocol = defaults.protocol
   const active = createProtocolConfig(protocol, {
@@ -239,7 +239,7 @@ const createInitialState = (): SettingsState => {
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     aiEnabled: defaults.enabled,
-    readLocalSkills: false,
+    readLocalSkills: true,
     userGlobalPrompt: '',
     aiDefaultReasoningEffort: null,
     aiDefaultTemperature: null,
@@ -266,7 +266,7 @@ const createInitialState = (): SettingsState => {
     listShowTags: true,
     uiScale: 'normal',
     gridIconSize: 'medium',
-    aiAggressiveSaveEnabled: false,
+    aiAggressiveSaveEnabled: true,
     windowHeight: WINDOW_HEIGHT_DEFAULT,
     detachedWindowPosition: null,
     useUtoolsBrowser: false
@@ -274,7 +274,7 @@ const createInitialState = (): SettingsState => {
 }
 
 export const useSettingsStore = create<SettingsStore>()((set, get) => ({
-  ...createInitialState(),
+  ...createDefaultSettingsState(),
 
       setGridColumns: (value) => set({ gridColumns: Math.min(5, Math.max(2, Math.round(value))) }),
       setAutoCloseWindow: (value) => set({ autoCloseWindow: !!value }),
@@ -456,11 +456,11 @@ const normalizeProtocolConfigs = (
   return result
 }
 
-const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
+export const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
   if (!state) return {}
   const patch: Partial<SettingsState> = { ...state }
-  if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
-  if (typeof patch.readLocalSkills !== 'boolean') patch.readLocalSkills = false
+  if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = true
+  if (typeof patch.readLocalSkills !== 'boolean') patch.readLocalSkills = true
   patch.userGlobalPrompt = normalizeUserGlobalPrompt(patch.userGlobalPrompt)
   patch.aiDefaultReasoningEffort = normalizeAiReasoningEffort(patch.aiDefaultReasoningEffort)
   patch.aiDefaultTemperature = normalizeAiTemperature(patch.aiDefaultTemperature)
@@ -501,7 +501,7 @@ const normalizePersistedSettings = (state: Partial<SettingsState> | null | undef
   if (!['large', 'normal', 'small'].includes(String(patch.uiScale))) patch.uiScale = 'normal'
   if (typeof patch.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
   if (!['starry', 'blackhole'].includes(String(patch.easterEggVariant))) patch.easterEggVariant = 'starry'
-  if (typeof patch.aiAggressiveSaveEnabled !== 'boolean') patch.aiAggressiveSaveEnabled = false
+  if (typeof patch.aiAggressiveSaveEnabled !== 'boolean') patch.aiAggressiveSaveEnabled = true
   // 丢弃已移除的「AI 快捷保存」字段
   delete (patch as { aiQuickSaveEnabled?: unknown }).aiQuickSaveEnabled
   if (

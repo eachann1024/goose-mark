@@ -31,7 +31,6 @@ import {
   selectAiSettings,
   WINDOW_HEIGHT_MIN,
   WINDOW_HEIGHT_MAX,
-  type AIReasoningEffort,
   type DetachedWindowPosition
 } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
@@ -3855,16 +3854,8 @@ function SettingsContent({
   const setEasterEggEnabled = useSettingsStore((s) => s.setEasterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   const setEasterEggVariant = useSettingsStore((s) => s.setEasterEggVariant)
-  const aiEnabled = useSettingsStore((s) => s.aiEnabled)
-  const setAiEnabled = useSettingsStore((s) => s.setAiEnabled)
-  const readLocalSkills = useSettingsStore((s) => s.readLocalSkills)
-  const setReadLocalSkills = useSettingsStore((s) => s.setReadLocalSkills)
   const userGlobalPrompt = useSettingsStore((s) => s.userGlobalPrompt)
   const setUserGlobalPrompt = useSettingsStore((s) => s.setUserGlobalPrompt)
-  const aiDefaultReasoningEffort = useSettingsStore((s) => s.aiDefaultReasoningEffort)
-  const setAiDefaultReasoningEffort = useSettingsStore((s) => s.setAiDefaultReasoningEffort)
-  const aiDefaultTemperature = useSettingsStore((s) => s.aiDefaultTemperature)
-  const setAiDefaultTemperature = useSettingsStore((s) => s.setAiDefaultTemperature)
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
   const aiProtocol = useSettingsStore((s) => s.aiProtocol)
@@ -3874,8 +3865,6 @@ function SettingsContent({
   const aiCustomModelOptions = useSettingsStore((s) => s.aiCustomModelOptions)
   const setAiCustomCredentials = useSettingsStore((s) => s.setAiCustomCredentials)
   const saveAiCustomConfig = useSettingsStore((s) => s.saveAiCustomConfig)
-  const aiAggressiveSaveEnabled = useSettingsStore((s) => s.aiAggressiveSaveEnabled)
-  const setAiAggressiveSaveEnabled = useSettingsStore((s) => s.setAiAggressiveSaveEnabled)
   const windowHeight = useSettingsStore((s) => s.windowHeight)
   const setWindowHeight = useSettingsStore((s) => s.setWindowHeight)
 
@@ -3931,12 +3920,12 @@ function SettingsContent({
 
   const handleSelectProtocol = useCallback(
     (protocol: typeof aiProtocol) => {
-      if (!aiEnabled || protocol === aiProtocol) return
+      if (protocol === aiProtocol) return
       // 先把当前协议草稿写回独立槽位，再切协议
       persistDraftCredentials()
       setAiProtocol(protocol)
     },
-    [aiEnabled, aiProtocol, persistDraftCredentials, setAiProtocol]
+    [aiProtocol, persistDraftCredentials, setAiProtocol]
   )
 
   const handleFetchModels = useCallback(async () => {
@@ -4181,17 +4170,7 @@ function SettingsContent({
       <div className="set-section set-section--ai" id="set-ai">
         <h2><Ico name="sparkles" />AI 助手</h2>
         <div className="set-card set-card--ai">
-          {/* 第一项：总开关。关闭后下方全部禁用置灰 */}
-          <div className="set-row">
-            <div><div className="rt">启用 AI 智能整理</div><div className="rd">自动预填标题、描述并推荐分类</div></div>
-            <div
-              className={`g-switch ai${aiEnabled ? ' on' : ''}`}
-              onClick={() => setAiEnabled(!aiEnabled)}
-            />
-          </div>
-
-          {/* 下方所有 AI 配置：未启用时整体禁用置灰（pointer-events:none + 降透明度） */}
-          <div className={`set-ai-body${aiEnabled ? '' : ' is-off'}`} aria-disabled={!aiEnabled}>
+          <div className="set-ai-body">
 
             <>
                 <div className="ai-prov-label">选择协议</div>
@@ -4288,69 +4267,6 @@ function SettingsContent({
               />
             </div>
 
-            <div className="set-row">
-              <div>
-                <div className="rt">读取本地 Skill</div>
-                <div className="rd">允许 AI 输入框从 ~/.agents/skills 发现 Skill；默认关闭，仅在输入 / 时读取</div>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={readLocalSkills}
-                aria-label="读取本地 Skill"
-                className={`g-switch ai${readLocalSkills ? ' on' : ''}`}
-                disabled={!aiEnabled}
-                onClick={() => aiEnabled && setReadLocalSkills(!readLocalSkills)}
-              />
-            </div>
-
-            <div className="ai-prov-label">Agent 默认</div>
-            <div className="set-row">
-              <div>
-                <div className="rt">推理强度</div>
-                <div className="rd">作为每次新请求的默认值；模型不支持时由供应商按兼容规则处理</div>
-              </div>
-              <SettingsSelect
-                wide
-                icon="cpu"
-                value={aiDefaultReasoningEffort ?? 'inherit'}
-                options={[
-                  { id: 'inherit', label: '模型默认' },
-                  { id: 'none', label: '关闭' },
-                  { id: 'minimal', label: '极低' },
-                  { id: 'low', label: '低' },
-                  { id: 'medium', label: '中' },
-                  { id: 'high', label: '高' },
-                  { id: 'xhigh', label: '极高' },
-                ]}
-                onChange={(value) => setAiDefaultReasoningEffort(
-                  value === 'inherit' ? null : value as AIReasoningEffort,
-                )}
-              />
-            </div>
-
-            <div className="set-row">
-              <label htmlFor="ai-default-temperature">
-                <div className="rt">Temperature</div>
-                <div className="rd">留空使用模型默认；可设置 0–2</div>
-              </label>
-              <input
-                id="ai-default-temperature"
-                className="ai-fld-input ai-default-temperature"
-                type="number"
-                min="0"
-                max="2"
-                step="0.1"
-                inputMode="decimal"
-                value={aiDefaultTemperature ?? ''}
-                placeholder="默认"
-                onChange={(event) => {
-                  const value = event.target.value
-                  setAiDefaultTemperature(value === '' ? null : Number(value))
-                }}
-              />
-            </div>
-
             <div className="set-row ai-global-prompt-row">
               <label htmlFor="ai-global-prompt">
                 <div className="rt">全局提示词</div>
@@ -4367,25 +4283,6 @@ function SettingsContent({
               />
             </div>
 
-            <div className="ai-prov-label">AI 保存</div>
-            <div className="ai-save-mode-grid" role="group" aria-label="AI 保存">
-              <button
-                type="button"
-                role="switch"
-                aria-checked={aiAggressiveSaveEnabled}
-                className={`ai-save-mode-card aggressive${aiAggressiveSaveEnabled ? ' on' : ''}`}
-                disabled={!aiEnabled}
-                onClick={() => aiEnabled && setAiAggressiveSaveEnabled(!aiAggressiveSaveEnabled)}
-              >
-                <div className="ai-save-mode-name">
-                  <span className="ai-prov-dot" />
-                  <span className="ai-save-mode-title-gradient">AI 保存</span>
-                </div>
-                <div className="ai-save-mode-desc">
-                  仅输入网址，AI 自动生成标题/简介并归入合适分组；关闭后仍可用普通保存
-                </div>
-              </button>
-            </div>
           </div>
         </div>
       </div>
