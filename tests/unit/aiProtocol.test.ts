@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import {
   AI_PROTOCOLS,
   DEFAULT_AI_MODEL,
@@ -13,7 +14,28 @@ import {
   getDefaultBaseURL,
   getDefaultModelId,
   getProtocolDefaults,
+  runAIText,
 } from '../../src/lib/aiProvider'
+
+const structuredSaveOutput = {
+  name: 'organized_bookmark',
+  description: '书签元信息和分类位置',
+  schema: {
+    type: 'object',
+    properties: {
+      title: { type: 'string' },
+      desc: { type: 'string' },
+      categories: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: { groupName: { type: 'string' } },
+        },
+      },
+    },
+    required: ['title', 'desc', 'categories'],
+  },
+}
 import { useSettingsStore } from '../../src/stores/settings'
 
 const responsesConfig = {
@@ -173,3 +195,74 @@ for (const protocol of [
     }
   })
 }
+
+test('AI 保存使用后台结构化流程，不触发聊天助手的确认提案', () => {
+  const promptSource = readFileSync(new URL('../../src/constants/aiPrompts.ts', import.meta.url), 'utf8')
+  const prompt = promptSource.match(/AGGRESSIVE_SAVE_SYSTEM_PROMPT = `([\s\S]*?)`/)?.[1] || ''
+  expect(prompt).toContain('后台书签整理器')
+  expect(prompt).toContain('不生成变更提案')
+  expect(prompt).not.toContain('proposeChanges')
+  expect(prompt).not.toContain('等待用户确认')
+})
+
+test('兼容接口收到 200 空内容时继续降级，并向模型明确 JSON Schema', async () => {
+  const originalFetch = globalThis.fetch
+  const requestBodies: Record<string, unknown>[] = []
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>
+    requestBodies.push(body)
+    const attempt = requestBodies.length
+
+    if (attempt === 1) {
+      return new Response(JSON.stringify({ error: { message: 'SDK structured output unsupported' } }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    if (attempt === 2) {
+      return new Response(JSON.stringify({
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: '{"title":"GitHub","description":"开发者平台","categories":[]}',
+          },
+        }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }
+
+    return new Response(JSON.stringify({
+      choices: [{
+        message: {
+          role: 'assistant',
+          content: '{"title":"GitHub","desc":"开发者平台","categories":[]}',
+        },
+      }],
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
+
+  try {
+    const result = await runAIText({
+      enabled: true,
+      allowLegacyUTools: false,
+      selectedModelId: 'flash-test',
+      useCustomProvider: true,
+      protocol: 'openai-compatible',
+      customBaseURL: 'https://chat.example.test/v1',
+      customApiKey: 'test-key',
+      customModelOptions: [],
+    }, [
+      { role: 'system', content: '你是后台书签整理器。' },
+      { role: 'user', content: '{"url":"https://github.com","groups":[]}' },
+    ], { output: structuredSaveOutput })
+
+    expect(result).toContain('"title":"GitHub"')
+    expect(requestBodies).toHaveLength(3)
+    expect(requestBodies[2].response_format).toEqual({ type: 'json_object' })
+    const messages = requestBodies[2].messages as Array<{ role: string; content: string }>
+    expect(messages[0].content).toContain('输出必须严格符合以下 JSON Schema')
+    expect(messages[0].content).toContain('"groupName"')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})

@@ -111,9 +111,9 @@ export function describeAggressiveAiSaveProviderError(
     lower.includes('结构化输出') ||
     lower.includes('返回格式')
   ) {
-    return new AggressiveAiSaveError('ai_failed', '当前模型不支持 AI 保存', {
-      detail: '模型返回格式不符合标题、简介和分组所需的结构化输出。',
-      recovery: '请重试，或更换支持 JSON Schema / 结构化输出的模型。'
+    return new AggressiveAiSaveError('ai_failed', 'AI 返回内容格式不正确', {
+      detail: 'AI 已响应，但内容无法解析为标题、简介和分组。',
+      recovery: '请重试；如果持续失败，再尝试切换模型或接口协议。'
     })
   }
 

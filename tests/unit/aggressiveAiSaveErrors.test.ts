@@ -15,7 +15,7 @@ describe('AI 保存错误说明', () => {
     expect(describeAggressiveAiSaveProviderError(new Error('fetch failed: CORS')).message)
       .toBe('无法连接 AI 服务')
     expect(describeAggressiveAiSaveProviderError(new Error('No object generated: JSON schema unsupported')).message)
-      .toBe('当前模型不支持 AI 保存')
+      .toBe('AI 返回内容格式不正确')
   })
 
   test('未知错误保留安全诊断并给出恢复动作', () => {
