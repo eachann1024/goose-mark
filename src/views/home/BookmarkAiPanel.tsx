@@ -63,7 +63,8 @@ export default function BookmarkAiPanel({ onClose }: { onClose: () => void }) {
 
   const conversationsRecord = useBookmarkAiChats((state) => state.conversations)
   const approvalJournal = useBookmarkAiChats((state) => state.approvalJournal)
-  const draft = useBookmarkAiChats((state) => state.composerDraft)
+  // 不订阅 composerDraft：每次击键会 re-render 整个面板，旧内核上易打断 IME。
+  // composer 有 key={conversationId}，挂载/会话切换 remount 时再读 getState() 即可。
   const storedMessages = useBookmarkAiChats(
     (state) => state.conversations[conversationId]?.messages ?? [],
   )
@@ -267,7 +268,7 @@ export default function BookmarkAiPanel({ onClose }: { onClose: () => void }) {
             ref={composerRef}
             key={conversationId}
             className="bookmark-ai-composer-shell"
-            initialText={draft}
+            initialText={useBookmarkAiChats.getState().composerDraft}
             disabled={interactionBusy}
             autoFocus
             placeholder={busy ? 'AI 正在执行任务…' : '向 AI 提问，/ 调用 Skill，@ 引用书签或分组…'}

@@ -20,6 +20,8 @@ import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepositor
  */
 
 export type ViewMode = 'list' | 'grid' | 'cards'
+/** 搜索结果布局：列表 / 格子（与首页 homeViewMode 独立） */
+export type SearchViewMode = 'list' | 'grid'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type AIReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 export interface AISessionGenerationOptions {
@@ -116,6 +118,8 @@ export interface SettingsState {
   /** 各协议独立配置；切换协议时读写对应槽位，避免互相覆盖 */
   aiProtocolConfigs: AIProtocolConfigs
   homeViewMode: ViewMode
+  /** 搜索结果布局偏好（列表/格子），与首页视图独立 */
+  searchViewMode: SearchViewMode
   density: Density
   easterEggEnabled: boolean
   /** 彩蛋背景样式：星空或黑洞 */
@@ -175,6 +179,7 @@ export interface SettingsActions {
   setEasterEggVariant: (value: EasterEggVariant) => void
   setSkipFailedIconMatch: (value: boolean) => void
   setHomeViewMode: (mode: ViewMode) => void
+  setSearchViewMode: (mode: SearchViewMode) => void
   setDensity: (value: Density) => void
   setPanelContinuous: (value: boolean) => void
   setListShowDescription: (value: boolean) => void
@@ -255,6 +260,7 @@ export const createDefaultSettingsState = (): SettingsState => {
     aiCustomModelOptions: active.modelOptions,
     aiProtocolConfigs: { [protocol]: active },
     homeViewMode: 'grid',
+    searchViewMode: 'list',
     density: 'regular',
     easterEggEnabled: true,
     easterEggVariant: 'starry' as EasterEggVariant,
@@ -364,6 +370,7 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
       setEasterEggVariant: (value) => set({ easterEggVariant: ['starry', 'blackhole'].includes(value) ? value : 'starry' }),
       setSkipFailedIconMatch: (value) => set({ skipFailedIconMatch: !!value }),
       setHomeViewMode: (mode) => set({ homeViewMode: mode }),
+      setSearchViewMode: (mode) => set({ searchViewMode: mode === 'grid' ? 'grid' : 'list' }),
       setDensity: (value) => set({ density: ['compact', 'regular', 'comfy'].includes(value) ? value : 'regular' }),
       setPanelContinuous: (value) => set({ panelContinuous: !!value }),
       setListShowDescription: (value) => set({ listShowDescription: !!value }),
@@ -414,6 +421,7 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   aiCustomModelOptions: state.aiCustomModelOptions,
   aiProtocolConfigs: state.aiProtocolConfigs,
   homeViewMode: state.homeViewMode,
+  searchViewMode: state.searchViewMode,
   density: state.density,
   easterEggEnabled: state.easterEggEnabled,
   easterEggVariant: state.easterEggVariant,
@@ -492,6 +500,7 @@ export const normalizePersistedSettings = (state: Partial<SettingsState> | null 
   // 丢弃旧字段，避免再次被持久化
   delete (patch as { aiProviderPreset?: unknown }).aiProviderPreset
   if (typeof patch.aiCustomApiKey !== 'string') patch.aiCustomApiKey = ''
+  if (patch.searchViewMode !== 'grid' && patch.searchViewMode !== 'list') patch.searchViewMode = 'list'
   if (typeof patch.panelContinuous !== 'boolean') patch.panelContinuous = false
   if (typeof patch.listShowDescription !== 'boolean') patch.listShowDescription = true
   if (typeof patch.listFullDescription !== 'boolean') patch.listFullDescription = true

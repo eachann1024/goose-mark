@@ -513,6 +513,8 @@ export default function HomePage() {
   // settings store
   const homeViewMode = useSettingsStore((s) => s.homeViewMode)
   const setHomeViewMode = useSettingsStore((s) => s.setHomeViewMode)
+  const searchViewMode = useSettingsStore((s) => s.searchViewMode)
+  const setSearchViewMode = useSettingsStore((s) => s.setSearchViewMode)
   const useUtoolsBrowser = useSettingsStore((s) => s.useUtoolsBrowser)
   const gridColumns = useSettingsStore((s) => s.gridColumns)
   const density = useSettingsStore((s) => s.density)
@@ -779,8 +781,8 @@ export default function HomePage() {
     return () => clearTimeout(timer)
   }, [focusSearchInput, searchSurface])
 
-  // 面板内联搜索：searchVal 非空时直接过滤当前列表（保留分组段结构，空段隐藏），
-  // 支持标题/链接/描述/标签 + 拼音匹配，取代原全屏搜索浮层。
+  // 面板内联搜索：searchVal 非空时跨全部分组过滤，
+  // 支持标题/链接/描述/标签 + 拼音匹配；UI 以扁平结果面展示。
   const filteredGroups = useMemo<HomeGroup[]>(() => {
     const q = searchVal.trim().toLowerCase()
     // 非搜索态：两层导航 —— 只显示当前选中的一级分组（activeGroupId 为空则回退首个）
@@ -807,9 +809,8 @@ export default function HomePage() {
   }, [homeGroups, searchVal, activeGroupId])
   const isSearching = searchVal.trim().length > 0
 
-  // 网格搜索态：全局匹配的扁平集合（按 id 去重），展示为单个无分组宫格。
-  // 非搜索态网格已改为全量分组段渲染（见 GridContent），无需再算当前子分组。
-  const gridSearchItems = useMemo<HomeItem[]>(() => {
+  // 搜索态：全局匹配的扁平结果（按 id 去重），列表/格子共用，不再按分组分段展示。
+  const searchResultItems = useMemo<HomeItem[]>(() => {
     if (!isSearching) return []
     const seen = new Set<string>()
     return filteredGroups
@@ -1136,7 +1137,7 @@ export default function HomePage() {
 
   // ---- 交互：右键菜单（记录被右键的书签项及精确位置） ----
   const openCtx = useCallback((e: React.MouseEvent) => {
-    const card = (e.target as HTMLElement).closest('.card,.gcard') as HTMLElement | null
+    const card = (e.target as HTMLElement).closest('.card,.gcard,.search-row') as HTMLElement | null
     if (!card) return
     e.preventDefault()
     const root = rootRef.current
@@ -1635,11 +1636,20 @@ export default function HomePage() {
       }
 
       const active = document.activeElement as HTMLElement | null
+      const eventTarget = e.target instanceof Element ? e.target : null
+      const isEditableElement = (el: Element | null): el is HTMLElement => {
+        if (!(el instanceof HTMLElement)) return false
+        return (
+          el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.isContentEditable
+        )
+      }
+      // 同时看 activeElement 与 event.target，避免焦点抖动时 type-to-search 抢走 contentEditable 按键
       const inEditable =
-        !!active &&
-        (active.tagName === 'INPUT' ||
-          active.tagName === 'TEXTAREA' ||
-          active.isContentEditable)
+        isEditableElement(active) ||
+        isEditableElement(eventTarget) ||
+        !!eventTarget?.closest('[contenteditable="true"], [contenteditable=""], textarea, input')
 
       if (screen !== 'list' && screen !== 'grid') return
       if (ctx.open) return
@@ -1685,8 +1695,8 @@ export default function HomePage() {
       if (idx < 0) idx = 0
 
       const total = items.length
-      // 全局搜索命令条始终按竖条上下导航；网格宫格才用列跨步
-      const isGrid = view === 'grid' && !isUniversalFallback
+      // 全局搜索命令条始终按竖条上下导航；搜索格子 / 首页网格才用列跨步
+      const isGrid = (isSearching ? searchViewMode === 'grid' : view === 'grid') && !isUniversalFallback
       let newIdx = idx
 
       switch (e.key) {
@@ -1742,6 +1752,8 @@ export default function HomePage() {
     syncSidebarForItem,
     GRID_COLS,
     isUniversalFallback,
+    isSearching,
+    searchViewMode,
     openHomeItem,
     searchVal,
     clearSearch,
@@ -2405,6 +2417,7 @@ export default function HomePage() {
     aiPanelOpen && (screen === 'list' || screen === 'grid') ? 'ai-panel-open' : '',
     // 彩蛋激活时加 egg-on，让 CSS 透出底层 canvas
     theme === 'dark' && easterEggEnabled ? 'egg-on' : '',
+    isSearching ? 'is-searching' : '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -2653,34 +2666,35 @@ export default function HomePage() {
         )}
 
         {/* ---------- Main ---------- */}
-        <div className="app-main">
+        <div className={`app-main${isSearching ? ' is-searching' : ''}`}>
           <DndContext
             sensors={dndSensors}
             collisionDetection={bookmarkCollision}
             onDragStart={handleDndDragStart}
             onDragEnd={handleDndDragEnd}
           >
-          {/* Sidebar */}
-          <SidebarNav
-            homeGroups={homeGroups}
-            activeGroupId={activeGroupId}
-            activeSubId={activeSubId}
-            screen={screen}
-            onSubClick={(groupId, subId) => {
-              setActiveSubId(subId)
-              centerSidebar() // 主动点击 → 侧栏高亮居中
-              // 同步 store，让 MCP create_bookmark fallback 位置与界面一致
-              useBookmarkStore.getState().selectGroup(groupId, subId)
-              // 搜索中点侧栏 = 放弃搜索回到该分组；回收站中点侧栏 = 切回书签视图
-              if (isSearching) clearSearch()
-              if (screen === 'trash') setScreen(view)
-              // 列表 / 网格视图都滚动到对应分组段
-              if (view === 'list' || view === 'grid') scrollToSection(groupId, subId)
-            }}
-            fireToast={fireToast}
-            onActiveSubIdFix={handleActiveSubIdFix}
-            centerSignal={sidebarCenterSignal}
-          />
+          {/* Sidebar：搜索态隐藏，内容区占满全宽 */}
+          {!isSearching && (
+            <SidebarNav
+              homeGroups={homeGroups}
+              activeGroupId={activeGroupId}
+              activeSubId={activeSubId}
+              screen={screen}
+              onSubClick={(groupId, subId) => {
+                setActiveSubId(subId)
+                centerSidebar() // 主动点击 → 侧栏高亮居中
+                // 同步 store，让 MCP create_bookmark fallback 位置与界面一致
+                useBookmarkStore.getState().selectGroup(groupId, subId)
+                // 回收站中点侧栏 = 切回书签视图
+                if (screen === 'trash') setScreen(view)
+                // 列表 / 网格视图都滚动到对应分组段
+                if (view === 'list' || view === 'grid') scrollToSection(groupId, subId)
+              }}
+              fireToast={fireToast}
+              onActiveSubIdFix={handleActiveSubIdFix}
+              centerSignal={sidebarCenterSignal}
+            />
+          )}
 
           {/* Center */}
           <div className="center">
@@ -2689,6 +2703,28 @@ export default function HomePage() {
                 groups={groups}
                 onToast={fireToast}
               />
+            ) : isSearching ? (
+              <div
+                ref={contentRef}
+                className="content search-content"
+                data-view={searchViewMode}
+                data-search-view={searchViewMode}
+                tabIndex={-1}
+                onContextMenu={openCtx}
+              >
+                <SearchResultsSurface
+                  query={searchVal.trim()}
+                  items={searchResultItems}
+                  viewMode={searchViewMode}
+                  columns={gridColumns}
+                  selectedId={selectedId}
+                  universalItems={universalFallbackItems}
+                  onViewModeChange={setSearchViewMode}
+                  onSelect={setSelectedId}
+                  onOpen={openHomeItem}
+                  onClear={clearSearch}
+                />
+              </div>
             ) : (
               <div
                 ref={contentRef}
@@ -2703,10 +2739,6 @@ export default function HomePage() {
                     columns={gridColumns}
                     selectedId={selectedId}
                     onSelect={setSelectedId}
-                    searching={isSearching}
-                    searchItems={gridSearchItems}
-                    universalItems={universalFallbackItems}
-                    searchQuery={searchVal.trim()}
                     onOpen={openHomeItem}
                   />
                 ) : (
@@ -2714,9 +2746,6 @@ export default function HomePage() {
                     groups={filteredGroups}
                     selectedId={selectedId}
                     onSelect={setSelectedId}
-                    searching={isSearching}
-                    universalItems={universalFallbackItems}
-                    searchQuery={searchVal.trim()}
                     onOpen={openHomeItem}
                   />
                 )}
@@ -2725,7 +2754,7 @@ export default function HomePage() {
           </div>
           <DragOverlay dropAnimation={null}>
             {activeDragItem ? (
-              view === 'grid' ? (
+              (isSearching ? searchViewMode === 'grid' : view === 'grid') ? (
                 <div className="gcard drag-overlay">
                   <Fav item={activeDragItem} />
                   <div className="ttl">{activeDragItem.ttl}</div>
@@ -3080,6 +3109,168 @@ function BookmarkCard({
   )
 }
 
+/** 宫格图标尺寸映射 */
+const GRID_ICON_SIZE_PX: Record<string, string> = {
+  small: '38px',
+  medium: '46px',
+  large: '56px'
+}
+
+/** 搜索结果行（列表布局）：密度按搜索场景收紧，扁平无分组段 */
+function SearchResultRow({
+  item,
+  selected,
+  onSelect,
+  onOpen,
+}: {
+  item: HomeItem
+  selected?: boolean
+  onSelect: (id: string) => void
+  onOpen?: (item: HomeItem) => void
+}) {
+  const showTags = useSettingsStore((s) => s.listShowTags)
+  const sub = item.dsc?.trim() || item.url || item.host
+  return (
+    <div
+      className={`search-row${selected ? ' sel' : ''}`}
+      data-item-id={item.id}
+      onClick={() => {
+        onSelect(item.id)
+        onOpen?.(item)
+      }}
+    >
+      <Fav item={item} />
+      <div className="search-row-body">
+        <div className="search-row-top">
+          <span className="search-row-ttl">{item.ttl}</span>
+          {item.pin && <Ico name="pin" className="pin" />}
+        </div>
+        {sub && <div className="search-row-sub">{sub}</div>}
+        {showTags && item.tags.length > 0 && (
+          <div className="search-row-tags">
+            {item.tags.map((tag) => (
+              <span key={tag} className="tag">{tag}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** 搜索独立结果面：工具条 + 列表/格子两版布局；搜索态禁用拖拽（无分组上下文） */
+function SearchResultsSurface({
+  query,
+  items,
+  viewMode,
+  columns,
+  selectedId,
+  universalItems,
+  onViewModeChange,
+  onSelect,
+  onOpen,
+  onClear,
+}: {
+  query: string
+  items: HomeItem[]
+  viewMode: 'list' | 'grid'
+  columns: number
+  selectedId: string | null
+  universalItems: HomeItem[]
+  onViewModeChange: (mode: 'list' | 'grid') => void
+  onSelect: (id: string) => void
+  onOpen?: (item: HomeItem) => void
+  onClear: () => void
+}) {
+  const gridIconSize = useSettingsStore((s) => s.gridIconSize)
+  const iconSize = GRID_ICON_SIZE_PX[gridIconSize] ?? '46px'
+  const count = items.length
+  const hasUniversal = count === 0 && universalItems.length > 0
+
+  return (
+    <div className="search-surface">
+      <div className="search-toolbar">
+        <div className="search-toolbar-meta">
+          <span className="search-toolbar-label">搜索</span>
+          <span className="search-toolbar-query" title={query}>
+            {query}
+          </span>
+          <span className="search-toolbar-count">
+            {hasUniversal ? '无本地匹配' : `${count} 个结果`}
+          </span>
+        </div>
+        <div className="search-toolbar-actions">
+          <div className="search-view-toggle" role="group" aria-label="搜索结果布局">
+            <button
+              type="button"
+              className={viewMode === 'list' ? 'on' : ''}
+              title="列表布局"
+              aria-pressed={viewMode === 'list'}
+              onClick={() => onViewModeChange('list')}
+            >
+              <Ico name="list" />
+            </button>
+            <button
+              type="button"
+              className={viewMode === 'grid' ? 'on' : ''}
+              title="格子布局"
+              aria-pressed={viewMode === 'grid'}
+              onClick={() => onViewModeChange('grid')}
+            >
+              <Ico name="layout-grid" />
+            </button>
+          </div>
+          <button type="button" className="search-exit" title="清空搜索 (Esc)" onClick={onClear}>
+            <Ico name="x" />
+            <span>清空</span>
+          </button>
+        </div>
+      </div>
+
+      {count === 0 ? (
+        hasUniversal ? (
+          <SearchEmptyUniversal
+            items={universalItems}
+            selectedId={selectedId}
+            searchQuery={query}
+            onSelect={onSelect}
+            onOpen={onOpen}
+          />
+        ) : (
+          <div className="empty search-empty">
+            <Ico name="search-x" />
+            <span>没有找到匹配的书签</span>
+          </div>
+        )
+      ) : viewMode === 'grid' ? (
+        <div className="search-grid-wrap">
+          <GridCells
+            items={items}
+            columns={columns}
+            selectedId={selectedId}
+            iconSize={iconSize}
+            onSelect={onSelect}
+            onOpen={onOpen}
+            subtitleMode="host"
+          />
+        </div>
+      ) : (
+        <div className="search-list">
+          {items.map((item) => (
+            <SearchResultRow
+              key={item.id}
+              item={item}
+              selected={item.id === selectedId}
+              onSelect={onSelect}
+              onOpen={onOpen}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** 搜索无匹配 + 全局搜索回退：居中空态 + 底部可滚动命令条（方案 B，列表/网格同布局） */
 function SearchEmptyUniversal({
   items,
@@ -3219,13 +3410,6 @@ function ListContent({
   )
 }
 
-/** 宫格图标尺寸映射 */
-const GRID_ICON_SIZE_PX: Record<string, string> = {
-  small: '38px',
-  medium: '46px',
-  large: '56px'
-}
-
 /** 单个宫格集合（共用：分组段内与搜索扁平态） */
 function GridCells({
   items,
@@ -3235,7 +3419,8 @@ function GridCells({
   onSelect,
   onOpen,
   groupId,
-  subId
+  subId,
+  subtitleMode = 'default',
 }: {
   items: HomeItem[]
   columns: number
@@ -3245,13 +3430,25 @@ function GridCells({
   onOpen?: (item: HomeItem) => void
   groupId?: string
   subId?: string
+  /** default=首页设置；host=搜索格子固定展示 host */
+  subtitleMode?: 'default' | 'host'
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
   // 非搜索态（有归属分组）才可拖拽；搜索扁平宫格无 groupId，保持普通渲染
   const canDrag = !!groupId && !!subId
   const cells = items.map((b) => {
-    const subText = showDescription ? (b.dsc || b.regDomain) : ''
-    const subClass = showDescription && b.dsc ? 'dsc' : 'url'
+    const subText =
+      subtitleMode === 'host'
+        ? (b.host || b.regDomain || '')
+        : showDescription
+          ? (b.dsc || b.regDomain)
+          : ''
+    const subClass =
+      subtitleMode === 'host'
+        ? 'url'
+        : showDescription && b.dsc
+          ? 'dsc'
+          : 'url'
     if (canDrag) {
       return (
         <SortableGridCell
