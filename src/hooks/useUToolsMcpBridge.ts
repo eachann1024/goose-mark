@@ -21,6 +21,33 @@ const MCP_TOOL_REQUEST_EVENT = 'goose-marks:mcp-tool-request'
 const MCP_TOOL_RESPONSE_EVENT = 'goose-marks:mcp-tool-response'
 const MCP_TOOL_READY_EVENT = 'goose-marks:mcp-tool-ready'
 
+const MCP_TOOL_CAPABILITIES = {
+  protocol: 'utools-mcp-tools',
+  version: '1.0',
+  transport: 'uTools plugin.json.tools + utools.registerTool',
+  tools: [
+    'get_mcp_capabilities',
+    'get_bookmark_tree',
+    'list_groups',
+    'list_bookmarks',
+    'search_bookmarks',
+    'get_bookmark',
+    'open_bookmark',
+    'create_group',
+    'update_group',
+    'remove_group',
+    'create_sub_group',
+    'update_sub_group',
+    'remove_sub_group',
+    'create_bookmark',
+    'update_bookmark',
+    'set_bookmark_locations',
+    'remove_bookmark',
+    'restore_bookmark'
+  ],
+  writeSafety: '写入工具直接修改本地书签库；调用方应在执行前取得用户确认。'
+} as const
+
 type ToolParams = Record<string, unknown>
 
 const str = (value: unknown): string => (typeof value === 'string' ? value : '')
@@ -93,6 +120,9 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
   const store = getStore()
 
   switch (tool) {
+    case 'get_mcp_capabilities':
+      return MCP_TOOL_CAPABILITIES
+
     case 'get_bookmark_tree': {
       // plugin.json 契约：includeBookmarks 默认 true，includeTrash 默认 false。
       const includeBookmarks = params.includeBookmarks !== false

@@ -264,6 +264,7 @@ if (typeof window !== 'undefined') {
     const MCP_TOOL_READY_TIMEOUT_MS = 15000
     const MCP_TOOL_EXEC_TIMEOUT_MS = 30000
     const MCP_TOOL_NAMES = [
+      'get_mcp_capabilities',
       'get_bookmark_tree',
       'list_groups',
       'list_bookmarks',
@@ -295,9 +296,27 @@ if (typeof window !== 'undefined') {
 
     const buildMcpRequestId = () => `mcp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 
+    // plugin.json 负责声明 JSON Schema；这里再做一次边界收敛，避免任意原型、
+    // 过深对象或超大参数跨 preload/renderer 事件边界。
     const normalizeToolParams = (params) => {
+      const sanitize = (value, depth = 0) => {
+        if (depth > 6 || value == null) return null
+        if (typeof value === 'string') return value.slice(0, 10000)
+        if (typeof value === 'boolean') return value
+        if (typeof value === 'number') return Number.isFinite(value) ? value : null
+        if (Array.isArray(value)) return value.slice(0, 100).map((item) => sanitize(item, depth + 1))
+        if (typeof value !== 'object') return null
+
+        const safe = {}
+        for (const [key, item] of Object.entries(value).slice(0, 100)) {
+          if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue
+          safe[key] = sanitize(item, depth + 1)
+        }
+        return safe
+      }
+
       if (!params || typeof params !== 'object' || Array.isArray(params)) return {}
-      return params
+      return sanitize(params)
     }
 
     const waitForMcpBridgeReady = (timeoutMs = MCP_TOOL_READY_TIMEOUT_MS) => new Promise((resolve, reject) => {
@@ -481,8 +500,17 @@ if (typeof window !== 'undefined') {
 
     if (typeof utools.registerTool === 'function') {
       MCP_TOOL_NAMES.forEach((toolName) => {
-        utools.registerTool(toolName, async (params) => {
-          return await invokeRendererMcpTool(toolName, params)
+        utools.registerTool(toolName, async (params, context) => {
+          const reportProgress = (progress, message) => {
+            try {
+              const reported = context?.sendProgress?.({ progress, total: 1, message })
+              if (reported && typeof reported.catch === 'function') reported.catch(() => {})
+            } catch {}
+          }
+          reportProgress(0, `正在执行 ${toolName}`)
+          const result = await invokeRendererMcpTool(toolName, params)
+          reportProgress(1, `${toolName} 执行完成`)
+          return result
         })
       })
     }

@@ -11,6 +11,14 @@
   },
   "logo": "logo.png",
   "tools": {
+    "get_mcp_capabilities": {
+      "description": "获取鹅的书签 MCP 能力、版本与写入确认约束，用于客户端发现可用工具。",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      }
+    },
     "get_bookmark_tree": {
       "description": "获取书签分组树，可选是否返回每个子分组下的书签列表。",
       "inputSchema": {
@@ -296,7 +304,7 @@
             }
           }
         },
-        "required": ["title", "url"]
+        "required": ["url"]
       }
     },
     "update_bookmark": {
