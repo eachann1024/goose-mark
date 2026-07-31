@@ -661,7 +661,8 @@ export default function HomePage() {
   const aggressiveSaveQueueRef = useRef<Array<{ id: number; url: string }>>([])
   const aggressiveSaveRunnerRef = useRef(false)
   const aggressiveSaveMountedRef = useRef(true)
-  const aggressiveSaveSuccessTimersRef = useRef<Set<number>>(new Set())
+  const aggressiveSaveSuccessTimersRef = useRef<Map<number, number>>(new Map())
+  const aggressiveSaveRevealTimersRef = useRef<Set<number>>(new Set())
   const pumpAggressiveSaveQueueRef = useRef<() => void>(() => {})
   // 侧栏点击触发的程序化滚动期间抑制 scroll-spy，避免高亮闪过中间分组
   const isAnchorScrollingRef = useRef(false)
@@ -1397,23 +1398,100 @@ export default function HomePage() {
     setScreen('ai-aggressive-save')
   }, [])
 
-  const dismissAggressiveSaveSuccess = useCallback((id: number) => {
-    setAggressiveSaveSuccesses((items) => items.filter((item) => item.id !== id))
+  const clearAggressiveSaveSuccessTimer = useCallback((id: number) => {
+    const timer = aggressiveSaveSuccessTimersRef.current.get(id)
+    if (timer !== undefined) window.clearTimeout(timer)
+    aggressiveSaveSuccessTimersRef.current.delete(id)
   }, [])
+
+  const dismissAggressiveSaveSuccess = useCallback((id: number) => {
+    clearAggressiveSaveSuccessTimer(id)
+    setAggressiveSaveSuccesses((items) => items.filter((item) => item.id !== id))
+  }, [clearAggressiveSaveSuccessTimer])
+
+  const scheduleAggressiveSaveSuccessDismiss = useCallback((id: number, delay = 6200) => {
+    clearAggressiveSaveSuccessTimer(id)
+    const timer = window.setTimeout(() => dismissAggressiveSaveSuccess(id), delay)
+    aggressiveSaveSuccessTimersRef.current.set(id, timer)
+  }, [clearAggressiveSaveSuccessTimer, dismissAggressiveSaveSuccess])
 
   const jumpToAggressiveSaveResult = useCallback(
     (result: AggressiveAiSaveResult) => {
       const jump = result.locations[0]
       if (!jump) return
+      applySearchVal('')
       setScreen(view)
       setActiveSubId(jump.subGroupId)
       useBookmarkStore.getState().selectGroup(jump.groupId, jump.subGroupId)
-      // 等主列表挂载后再滚，避免 screen 切换同一帧 scroll 失效
-      requestAnimationFrame(() => {
-        if (view === 'list' || view === 'grid') scrollToSection(jump.groupId, jump.subGroupId)
-      })
+
+      let attempts = 0
+      const locateBookmark = () => {
+        const root = contentRef.current
+        const target = root
+          ? Array.from(root.querySelectorAll<HTMLElement>('[data-item-id]')).find((item) =>
+              item.dataset.itemId === result.bookmark.id &&
+              item.dataset.groupId === jump.groupId &&
+              item.dataset.subId === jump.subGroupId
+            )
+          : null
+
+        if (!root || !target) {
+          if (attempts++ < 12) {
+            const timer = window.setTimeout(() => {
+              aggressiveSaveRevealTimersRef.current.delete(timer)
+              locateBookmark()
+            }, 40)
+            aggressiveSaveRevealTimersRef.current.add(timer)
+          }
+          return
+        }
+
+        const rootRect = root.getBoundingClientRect()
+        const targetRect = target.getBoundingClientRect()
+        const desiredTop = root.scrollTop + targetRect.top - rootRect.top - (root.clientHeight - targetRect.height) / 2
+        const maxTop = Math.max(0, root.scrollHeight - root.clientHeight)
+        const from = root.scrollTop
+        const to = Math.max(0, Math.min(desiredTop, maxTop))
+        const distance = to - from
+        const duration = Math.min(1100, 720 + Math.abs(distance) * 0.12)
+        const startedAt = performance.now()
+
+        if (smoothRafRef.current != null) cancelAnimationFrame(smoothRafRef.current)
+        isAnchorScrollingRef.current = true
+        const finishReveal = () => {
+          smoothRafRef.current = null
+          isAnchorScrollingRef.current = false
+          setSelectedId(result.bookmark.id)
+          target.classList.remove('is-ai-save-target')
+          void target.offsetWidth
+          target.classList.add('is-ai-save-target')
+          const timer = window.setTimeout(() => {
+            aggressiveSaveRevealTimersRef.current.delete(timer)
+            target.classList.remove('is-ai-save-target')
+          }, 3500)
+          aggressiveSaveRevealTimersRef.current.add(timer)
+        }
+
+        if (Math.abs(distance) < 1 || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          root.scrollTop = to
+          finishReveal()
+          return
+        }
+
+        // ease-in cubic：先慢后快，让用户能看清页面从当前位置流转到新书签。
+        const step = (now: number) => {
+          const progress = Math.min(1, (now - startedAt) / duration)
+          const eased = progress * progress * progress
+          root.scrollTop = from + distance * eased
+          if (progress < 1) smoothRafRef.current = requestAnimationFrame(step)
+          else finishReveal()
+        }
+        smoothRafRef.current = requestAnimationFrame(step)
+      }
+
+      requestAnimationFrame(() => requestAnimationFrame(locateBookmark))
     },
-    [view, scrollToSection]
+    [applySearchVal, view]
   )
 
   const takeOverAggressiveSave = useCallback(
@@ -1480,11 +1558,7 @@ export default function HomePage() {
         const notice: AggressiveSaveSuccess = { id: job.id, result }
         setAggressiveSaveSuccesses((items) => [notice, ...items].slice(0, 2))
         jumpToAggressiveSaveResult(result)
-        const timer = window.setTimeout(() => {
-          aggressiveSaveSuccessTimersRef.current.delete(timer)
-          dismissAggressiveSaveSuccess(job.id)
-        }, 6200)
-        aggressiveSaveSuccessTimersRef.current.add(timer)
+        scheduleAggressiveSaveSuccessDismiss(job.id)
         void flushBookmarkStorePersistence()
       } catch (error) {
         setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
@@ -1515,7 +1589,7 @@ export default function HomePage() {
     }
 
     aggressiveSaveRunnerRef.current = false
-  }, [dismissAggressiveSaveSuccess, fireToast, jumpToAggressiveSaveResult])
+  }, [fireToast, jumpToAggressiveSaveResult, scheduleAggressiveSaveSuccessDismiss])
   pumpAggressiveSaveQueueRef.current = () => {
     void runAggressiveSaveQueue()
   }
@@ -1538,10 +1612,12 @@ export default function HomePage() {
       ])
       setAggressiveSaveUrl(url)
       setAggressiveSaveAutoStart(false)
-      // 当前页展示进度；用户主动返回主页后，任务仍在右上角后台状态区继续。
+      // 粘贴或提交后立即回首页；任务在右上角后台状态区继续执行。
+      applySearchVal('')
+      setScreen(view)
       queueMicrotask(() => pumpAggressiveSaveQueueRef.current())
     },
-    []
+    [applySearchVal, view]
   )
 
   // ---- SidebarNav：activeSubId 修复回调（删除/移动/提升后回退到首个子分组） ----
@@ -1781,6 +1857,8 @@ export default function HomePage() {
       aggressiveSaveMountedRef.current = false
       aggressiveSaveSuccessTimersRef.current.forEach((timer) => window.clearTimeout(timer))
       aggressiveSaveSuccessTimersRef.current.clear()
+      aggressiveSaveRevealTimersRef.current.forEach((timer) => window.clearTimeout(timer))
+      aggressiveSaveRevealTimersRef.current.clear()
     }
   }, [])
   useEffect(() => () => {
@@ -2842,7 +2920,18 @@ export default function HomePage() {
               const result = notice.result
               const groupText = result.groupLabels.join(' · ') || '未分组'
               return (
-                <section className="ag-save-success-card is-highlighted" key={`ag-success-${notice.id}`}>
+                <section
+                  className="ag-save-success-card"
+                  key={`ag-success-${notice.id}`}
+                  onPointerEnter={() => clearAggressiveSaveSuccessTimer(notice.id)}
+                  onPointerLeave={() => scheduleAggressiveSaveSuccessDismiss(notice.id, 2200)}
+                  onFocusCapture={() => clearAggressiveSaveSuccessTimer(notice.id)}
+                  onBlurCapture={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                      scheduleAggressiveSaveSuccessDismiss(notice.id, 2200)
+                    }
+                  }}
+                >
                   <button
                     type="button"
                     className="ag-save-success-close"
@@ -2868,13 +2957,13 @@ export default function HomePage() {
                           dismissAggressiveSaveSuccess(notice.id)
                         }}
                       >
-                        查看
+                        查看位置
                       </button>
                       <button type="button" className="danger" onClick={() => undoAggressiveSave(notice)}>
                         撤销
                       </button>
                       <button type="button" onClick={() => takeOverAggressiveSave(notice)}>
-                        我来接管
+                        编辑书签
                       </button>
                     </div>
                   </div>

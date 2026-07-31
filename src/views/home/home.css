@@ -1672,7 +1672,7 @@
   top:12px;
   right:12px;
   z-index:80;
-  width:min(300px, calc(100% - 24px));
+  width:min(340px, calc(100% - 24px));
   display:flex;
   flex-direction:column;
   align-items:flex-end;
@@ -1688,7 +1688,7 @@
 }
 .goose-home .ag-save-progress-pill {
   min-width:200px;
-  max-width:300px;
+  max-width:340px;
   display:flex;
   align-items:center;
   gap:10px;
@@ -1698,6 +1698,58 @@
   background:var(--input);
   box-shadow:var(--shadow-pop);
   animation:ag-save-card-in .28s cubic-bezier(.16,1,.3,1);
+}
+
+/* AI 保存完成：先慢后快流转到新书签，目标本体持续高亮 3.5 秒。 */
+.goose-home .card.is-ai-save-target,
+.goose-home .gcard.is-ai-save-target {
+  isolation:isolate;
+  overflow:hidden;
+  animation:ag-save-target-highlight 3.5s cubic-bezier(.72,0,1,1) both !important;
+}
+.goose-home .card.is-ai-save-target::after,
+.goose-home .gcard.is-ai-save-target::after {
+  content:"";
+  position:absolute;
+  z-index:0;
+  top:-55%;
+  bottom:-55%;
+  left:-38%;
+  width:30%;
+  pointer-events:none;
+  transform:translateX(-140%) skewX(-18deg);
+  background:linear-gradient(
+    90deg,
+    rgba(217,119,87,0),
+    rgba(217,119,87,.2),
+    rgba(255,222,204,.55),
+    rgba(217,119,87,0)
+  );
+  animation:ag-save-target-flow 3.5s cubic-bezier(.72,0,1,1) both;
+}
+.goose-home .card.is-ai-save-target > *,
+.goose-home .gcard.is-ai-save-target > * {
+  position:relative;
+  z-index:1;
+}
+@keyframes ag-save-target-highlight {
+  0% {
+    background:var(--accent-tint);
+    box-shadow:0 0 0 1px var(--accent-border), 0 0 0 rgba(217,119,87,0);
+  }
+  42% {
+    background:var(--accent-tint);
+    box-shadow:0 0 0 2px var(--accent-border), 0 0 12px rgba(217,119,87,.12);
+  }
+  100% {
+    background:var(--accent-subtle);
+    box-shadow:0 0 0 3px var(--accent), 0 0 26px rgba(217,119,87,.28);
+  }
+}
+@keyframes ag-save-target-flow {
+  0% { transform:translateX(-140%) skewX(-18deg); opacity:0; }
+  12% { opacity:.35; }
+  100% { transform:translateX(520%) skewX(-18deg); opacity:1; }
 }
 .goose-home .ag-save-progress-orb {
   position:relative;
@@ -1755,72 +1807,30 @@
 .goose-home .ag-save-success-card,
 .goose-home .ag-save-failure-card {
   position:relative;
-  width:min(292px, 100%);
+  width:100%;
   display:flex;
   align-items:flex-start;
-  gap:10px;
-  padding:11px 30px 10px 11px;
+  gap:11px;
+  padding:13px 38px 12px 13px;
   border:1px solid var(--border);
   border-radius:12px;
   background:var(--input);
   box-shadow:var(--shadow-pop);
   animation:ag-save-card-in .28s cubic-bezier(.16,1,.3,1);
+  transition:border-color .15s ease, box-shadow .15s ease;
 }
-.goose-home .ag-save-success-card.is-highlighted {
-  overflow:hidden;
-  animation:
-    ag-save-card-in .28s cubic-bezier(.16,1,.3,1),
-    ag-save-success-highlight 3.5s ease-out both;
-}
-.goose-home .ag-save-success-card.is-highlighted::before {
-  content:"";
-  position:absolute;
-  z-index:0;
-  top:-45%;
-  bottom:-45%;
-  left:-52%;
-  width:34%;
-  pointer-events:none;
-  transform:skewX(-18deg);
-  background:linear-gradient(
-    90deg,
-    rgba(124,82,224,0),
-    rgba(167,139,250,.22),
-    rgba(216,205,255,.42),
-    rgba(124,82,224,0)
-  );
-  animation:ag-save-success-flow 1.1667s ease-in-out 3;
-}
-.goose-home .ag-save-success-card.is-highlighted > * {
-  position:relative;
-  z-index:1;
-}
-@keyframes ag-save-success-highlight {
-  0%, 18% {
-    border-color:var(--ai);
-    box-shadow:var(--shadow-pop), 0 0 0 3px rgba(124,82,224,.24), 0 0 22px rgba(124,82,224,.18);
-  }
-  72% {
-    border-color:var(--ai-border);
-    box-shadow:var(--shadow-pop), 0 0 0 2px rgba(124,82,224,.14), 0 0 14px rgba(124,82,224,.1);
-  }
-  100% {
-    border-color:var(--border);
-    box-shadow:var(--shadow-pop);
-  }
-}
-@keyframes ag-save-success-flow {
-  from { transform:translateX(0) skewX(-18deg); opacity:0; }
-  12%, 82% { opacity:1; }
-  to { transform:translateX(455%) skewX(-18deg); opacity:0; }
+.goose-home .ag-save-success-card:hover,
+.goose-home .ag-save-success-card:focus-within {
+  border-color:var(--ai-border);
+  box-shadow:var(--shadow-pop), 0 0 0 1px rgba(124,82,224,.1);
 }
 .goose-home .ag-save-failure-card { border-color:var(--danger-border); }
 .goose-home .ag-save-success-close {
   position:absolute;
-  top:7px;
-  right:7px;
-  width:24px;
-  height:24px;
+  top:8px;
+  right:8px;
+  width:28px;
+  height:28px;
   display:grid;
   place-items:center;
   border-radius:6px;
@@ -1865,38 +1875,45 @@
   line-height:1.4;
   overflow-wrap:anywhere;
 }
-.goose-home .ag-save-success-body { min-width:0; flex:1; }
+.goose-home .ag-save-success-body { min-width:0; flex:1; padding-top:1px; }
 .goose-home .ag-save-success-title {
   overflow:hidden;
   color:var(--fg);
-  font-size:13px;
-  font-weight:650;
+  font-size:13.5px;
+  font-weight:700;
   text-overflow:ellipsis;
   white-space:nowrap;
 }
 .goose-home .ag-save-success-detail {
-  margin-top:3px;
+  margin-top:4px;
   color:var(--fg-muted);
   font-size:12px;
-  line-height:1.35;
+  line-height:1.5;
+  overflow-wrap:anywhere;
 }
 .goose-home .ag-save-success-bookmark { color:var(--fg-faint); }
 .goose-home .ag-save-success-groups { color:var(--ai); font-weight:650; }
 .goose-home .ag-save-success-actions {
   display:flex;
   flex-wrap:wrap;
-  gap:2px;
-  margin-top:7px;
+  gap:4px;
+  margin-top:10px;
+  padding-top:8px;
+  border-top:1px solid var(--border-soft);
 }
 .goose-home .ag-save-success-actions button {
-  min-height:26px;
-  padding:3px 8px;
+  min-height:30px;
+  padding:4px 9px;
   border-radius:6px;
   color:var(--fg-muted);
   font-size:11.5px;
 }
 .goose-home .ag-save-success-actions button:hover { color:var(--fg); background:var(--surface); }
-.goose-home .ag-save-success-actions button.primary { color:var(--ai); font-weight:650; }
+.goose-home .ag-save-success-actions button.primary {
+  color:var(--ai);
+  background:var(--ai-subtle);
+  font-weight:700;
+}
 .goose-home .ag-save-success-actions button.danger { color:var(--danger); }
 .goose-home .ag-save-success-close:focus-visible,
 .goose-home .ag-save-success-actions button:focus-visible {
@@ -1909,7 +1926,14 @@
   .goose-home .ag-save-failure-card,
   .goose-home .ag-save-progress-orb,
   .goose-home .ag-save-progress-orb::after { animation:none; }
-  .goose-home .ag-save-success-card.is-highlighted::before { display:none; }
+  .goose-home .card.is-ai-save-target,
+  .goose-home .gcard.is-ai-save-target {
+    animation:none !important;
+    background:var(--accent-subtle) !important;
+    box-shadow:0 0 0 3px var(--accent) !important;
+  }
+  .goose-home .card.is-ai-save-target::after,
+  .goose-home .gcard.is-ai-save-target::after { display:none; }
 }
 
 /* ---- 返回按钮（顶栏共用，AI/非 AI 同一套无侧栏布局） ---- */
