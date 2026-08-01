@@ -8,6 +8,7 @@ import {
   createBookmarkSeed,
   createDefaultBookmarkSnapshot,
   createSeedGroups,
+  isDefaultBookmarkSeedState,
   patchBookmarksWithBuiltinSeedIcons
 } from '@/stores/bookmarkSeed'
 import { bulkMatchMissing, ensureIconForBookmark, backfillRemoteIconCache } from '@/services/iconCache'
@@ -16,6 +17,7 @@ import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import {
   BookmarkRevisionConflictError,
   loadBookmarkSnapshot,
+  loadLocalMirrorRecoverySnapshot,
   loadRecoverableBookmarkSnapshot,
   saveBookmarkSnapshot,
   type BookmarkSnapshot,
@@ -27,6 +29,7 @@ import {
   mergeBookmarkSnapshots,
   parseBookmarkSnapshotEnvelope,
 } from '@/lib/bookmarkSnapshotProtocol'
+import { selectLocalMirrorRecoverySnapshot } from '@/lib/localMirrorRecovery'
 import { useSettingsStore } from '@/stores/settings'
 
 export { TRASH_GROUP_ID, parseUrlParams }
@@ -1408,6 +1411,7 @@ let currentBookmarkRevision = 0
 let baseBookmarkSnapshot: BookmarkSnapshot | null = null
 let suppressBookmarkPersistence = false
 let markRecoveryCompletedOnNextSave = false
+let markLocalMirrorRecoveryCompletedOnNextSave = false
 
 const applyBookmarkSnapshotToStore = (snapshot: BookmarkSnapshot): void => {
   const preferredGroupId = useBookmarkStore.getState().activeGroupId
@@ -1456,8 +1460,10 @@ const drainBookmarkPersistQueue = (): Promise<void> => {
       try {
         const written = await saveBookmarkSnapshot(job.snapshot, currentBookmarkRevision, {
           markRecoveryCompleted: markRecoveryCompletedOnNextSave,
+          markLocalMirrorRecoveryCompleted: markLocalMirrorRecoveryCompletedOnNextSave,
         })
         if (markRecoveryCompletedOnNextSave) markRecoveryCompletedOnNextSave = false
+        if (markLocalMirrorRecoveryCompletedOnNextSave) markLocalMirrorRecoveryCompletedOnNextSave = false
         // 本次提交完成回调之前，可能已经收到更高 revision 的广播；绝不允许状态倒退。
         if (written.snapshot.revision <= currentBookmarkRevision) {
           const current = pickBookmarkSnapshot(useBookmarkStore.getState())
@@ -1580,9 +1586,11 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
 
   let persisted: BookmarkSnapshot | null
   let recoverable: BookmarkSnapshot | null
+  let localMirrorRecoverable: Awaited<ReturnType<typeof loadLocalMirrorRecoverySnapshot>>
   try {
     persisted = await loadBookmarkSnapshot()
-    recoverable = await loadRecoverableBookmarkSnapshot()
+    localMirrorRecoverable = await loadLocalMirrorRecoverySnapshot()
+    recoverable = localMirrorRecoverable?.snapshot || await loadRecoverableBookmarkSnapshot()
   } catch (error) {
     console.error('[bookmark] 读取持久化快照失败，已禁止本窗口写入:', error)
     return
@@ -1592,9 +1600,15 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
     baseBookmarkSnapshot = persisted
   }
 
-  const startupSnapshot = recoverable && persisted
-    ? combineRecoveredBookmarkSnapshot(recoverable, persisted)
-    : recoverable || persisted
+  const startupSnapshot = localMirrorRecoverable
+    ? selectLocalMirrorRecoverySnapshot(
+        localMirrorRecoverable.snapshot,
+        persisted,
+        !!persisted && isDefaultBookmarkSeedState(persisted.groups, persisted.bookmarks),
+      )
+    : recoverable && persisted
+      ? combineRecoveredBookmarkSnapshot(recoverable, persisted)
+      : recoverable || persisted
   if (startupSnapshot) {
     const patched = patchBookmarksWithBuiltinSeedIcons(startupSnapshot.bookmarks).bookmarks
     useBookmarkStore.setState({
@@ -1605,6 +1619,8 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
     })
   }
   markRecoveryCompletedOnNextSave = !!recoverable
+  markLocalMirrorRecoveryCompletedOnNextSave = !!localMirrorRecoverable
+  if (localMirrorRecoverable) markRecoveryCompletedOnNextSave = false
 
   useBookmarkStore.getState().patchBookmarksWithBuiltinSeedIcons()
   useBookmarkStore.getState().ensureValidSelection()

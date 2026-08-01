@@ -7,6 +7,34 @@ if (typeof window !== 'undefined') {
   if (typeof utools !== 'undefined') {
     window.utools = utools
 
+    const LOCAL_MIRROR_MAX_BYTES = 20 * 1024 * 1024
+    const getLocalMirrorSnapshotPath = () => {
+      try {
+        const userDataPath = typeof utools.getPath === 'function' ? utools.getPath('userData') : ''
+        return typeof userDataPath === 'string' && userDataPath
+          ? path.join(userDataPath, 'goose-marks-sync', 'snapshot.json')
+          : null
+      } catch {
+        return null
+      }
+    }
+    // 固定路径、只读、限大小；不接受渲染层传入任意文件路径。
+    window.gooseBookmarkRecovery = {
+      readLocalMirrorSnapshot() {
+        try {
+          const localMirrorSnapshotPath = getLocalMirrorSnapshotPath()
+          if (!localMirrorSnapshotPath) return { ok: false, reason: 'missing' }
+          if (!fs.existsSync(localMirrorSnapshotPath)) return { ok: false, reason: 'missing' }
+          const stat = fs.statSync(localMirrorSnapshotPath)
+          if (!stat.isFile()) return { ok: false, reason: 'missing' }
+          if (stat.size > LOCAL_MIRROR_MAX_BYTES) return { ok: false, reason: 'too_large' }
+          return { ok: true, raw: fs.readFileSync(localMirrorSnapshotPath, 'utf8') }
+        } catch {
+          return { ok: false, reason: 'read_failed' }
+        }
+      }
+    }
+
     const SETTINGS_DOC_ID = 'gm:settings'
     const WINDOW_HEIGHT_STORAGE_KEY = 'settings'
     const LEGACY_SETTINGS_DOC_ID = 'goose-marks:storage:settings'
