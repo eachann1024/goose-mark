@@ -200,6 +200,21 @@ test('数据库只提交 revision 连续的完整快照，迟到写入不能覆�
     expect(loaded?.revision).toBe(2)
     expect(loaded?.groups.map((item) => item.id)).toEqual(['g-a', 'g-new'])
     expect(loaded?.bookmarks.map((item) => item.id)).toEqual(['b1'])
+
+    // 撤回独立 meta 方案后，将其遗留的有效指针一次性回迁到当前读取路径。
+    const currentMeta = docs.get('gm:meta:bookmark')
+    put({ _id: 'gm:meta:bookmark:v2', data: currentMeta?.data })
+    put({
+      _id: 'gm:meta:bookmark',
+      _rev: currentMeta?._rev,
+      data: { schemaVersion: 1, activeGroupId: 'g-ai', activeSubGroupId: 'sg-ai-chat', updatedAt: 999 },
+    })
+
+    const migrated = await loadBookmarkSnapshot()
+    expect(migrated?.revision).toBe(2)
+    expect(migrated?.groups.map((item) => item.id)).toEqual(['g-a', 'g-new'])
+    expect(migrated?.bookmarks.map((item) => item.id)).toEqual(['b1'])
+    expect((docs.get('gm:meta:bookmark')?.data as any)?.schemaVersion).toBe(2)
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
     else Reflect.deleteProperty(globalThis, 'window')

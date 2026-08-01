@@ -33,6 +33,7 @@ const RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:completed:v2'
 const LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:local-mirror-v1'
 const ICON_ATTACHMENT_PREFIX = 'gm:icon/'
 const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark'
+const ROLLBACK_RECOVERY_META_DOC_ID = 'gm:meta:bookmark:v2'
 const SETTINGS_DOC_ID = 'gm:settings'
 const STORAGE_DOC_PREFIX = 'gm:storage:'
 const LEGACY_FALLBACK_DOC_PREFIX = 'goose-marks:storage:'
@@ -335,19 +336,30 @@ const loadPersistedBookmarks = (snapshotId: string): Promise<Bookmark[]> =>
 const loadPersistedGroups = (snapshotId: string): Promise<Group[]> =>
   loadPersistedGroupsByPrefix(snapshotGroupPrefix(snapshotId))
 
+const isCurrentBookmarkMeta = (meta: Partial<BookmarkMetaDoc> | null | undefined): meta is BookmarkMetaDoc =>
+  meta?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION &&
+  Number.isSafeInteger(meta.revision) &&
+  Number(meta.revision) >= 1 &&
+  typeof meta.snapshotId === 'string' &&
+  meta.snapshotId.length > 0 &&
+  Number.isSafeInteger(meta.groupCount) &&
+  Number.isSafeInteger(meta.bookmarkCount)
+
 export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
 
-  const metaDoc = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
-  const meta = metaDoc?.data
-  if (
-    !meta ||
-    meta.schemaVersion !== BOOKMARK_SNAPSHOT_SCHEMA_VERSION ||
-    !Number.isSafeInteger(meta.revision) ||
-    meta.revision < 1 ||
-    typeof meta.snapshotId !== 'string' ||
-    !meta.snapshotId
-  ) return null
+  const currentMetaDoc = await getDocAsyncStrict<Partial<BookmarkMetaDoc>>(BOOKMARK_META_DOC_ID)
+  const currentMeta = currentMetaDoc?.data
+  let meta: BookmarkMetaDoc
+  let needsRollbackMigration = false
+  if (isCurrentBookmarkMeta(currentMeta)) {
+    meta = currentMeta
+  } else {
+    const rollbackMetaDoc = await getDocAsyncStrict<Partial<BookmarkMetaDoc>>(ROLLBACK_RECOVERY_META_DOC_ID)
+    if (!isCurrentBookmarkMeta(rollbackMetaDoc?.data)) return null
+    meta = rollbackMetaDoc.data
+    needsRollbackMigration = true
+  }
 
   const [groups, bookmarks] = await Promise.all([
     loadPersistedGroups(meta.snapshotId),
@@ -367,6 +379,21 @@ export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> =
   }
   const validated = parseBookmarkSnapshotEnvelope(JSON.stringify(loaded))
   if (!validated) throw new Error(`书签快照格式损坏: revision=${meta.revision}`)
+
+  if (needsRollbackMigration) {
+    const migratedMeta: BookmarkMetaDoc = {
+      ...meta,
+      activeGroupId: validated.activeGroupId,
+      activeSubGroupId: validated.activeSubGroupId,
+      updatedAt: Date.now(),
+      groupCount: validated.groups.length,
+      bookmarkCount: validated.bookmarks.length,
+    }
+    const result = putDoc(BOOKMARK_META_DOC_ID, migratedMeta, currentMetaDoc?._rev)
+    if (result.ok === false || result.error === true) {
+      throw new Error('完整书签快照已找到，但撤回遗留指针回迁失败；已禁止 seed 写入')
+    }
+  }
   return validated
 }
 
