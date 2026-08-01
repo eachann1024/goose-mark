@@ -32,7 +32,8 @@ const RECOVERY_META_DOC_ID = 'gm:bookmark:meta'
 const RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:completed:v2'
 const LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:local-mirror-v1'
 const ICON_ATTACHMENT_PREFIX = 'gm:icon/'
-const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark'
+// v2 必须使用独立指针；旧窗口会持续覆盖 gm:meta:bookmark 为 schema v1。
+const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark:v2'
 const SETTINGS_DOC_ID = 'gm:settings'
 const STORAGE_DOC_PREFIX = 'gm:storage:'
 const LEGACY_FALLBACK_DOC_PREFIX = 'goose-marks:storage:'
@@ -335,20 +336,18 @@ const loadPersistedBookmarks = (snapshotId: string): Promise<Bookmark[]> =>
 const loadPersistedGroups = (snapshotId: string): Promise<Group[]> =>
   loadPersistedGroupsByPrefix(snapshotGroupPrefix(snapshotId))
 
-export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
-  if (!isUToolsDbAvailable()) return null
+const parseSnapshotIdFromDocId = (docId: string): string | null => {
+  if (!docId.startsWith(BOOKMARK_SNAPSHOT_DOC_PREFIX)) return null
+  const suffix = docId.slice(BOOKMARK_SNAPSHOT_DOC_PREFIX.length)
+  const groupBoundary = suffix.indexOf(':group:')
+  const bookmarkBoundary = suffix.indexOf(':bookmark:')
+  const boundary = groupBoundary === -1 ? bookmarkBoundary : bookmarkBoundary === -1
+    ? groupBoundary
+    : Math.min(groupBoundary, bookmarkBoundary)
+  return boundary > 0 ? suffix.slice(0, boundary) : null
+}
 
-  const metaDoc = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
-  const meta = metaDoc?.data
-  if (
-    !meta ||
-    meta.schemaVersion !== BOOKMARK_SNAPSHOT_SCHEMA_VERSION ||
-    !Number.isSafeInteger(meta.revision) ||
-    meta.revision < 1 ||
-    typeof meta.snapshotId !== 'string' ||
-    !meta.snapshotId
-  ) return null
-
+const loadSnapshotFromMeta = async (meta: BookmarkMetaDoc): Promise<BookmarkSnapshot> => {
   const [groups, bookmarks] = await Promise.all([
     loadPersistedGroups(meta.snapshotId),
     loadPersistedBookmarks(meta.snapshotId),
@@ -368,6 +367,77 @@ export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> =
   const validated = parseBookmarkSnapshotEnvelope(JSON.stringify(loaded))
   if (!validated) throw new Error(`书签快照格式损坏: revision=${meta.revision}`)
   return validated
+}
+
+/** 指针被旧 writer 降级或丢失时，从现存不可变 v2 快照中选取内容最完整的一代。 */
+const recoverLatestOrphanBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
+  const docs = await allDocsAsyncStrict(BOOKMARK_SNAPSHOT_DOC_PREFIX)
+  const snapshotIds = Array.from(new Set(docs
+    .map((doc) => parseSnapshotIdFromDocId(doc._id))
+    .filter((id): id is string => !!id)))
+
+  const candidates: BookmarkSnapshot[] = []
+  for (const snapshotId of snapshotIds) {
+    const [groups, bookmarks] = await Promise.all([
+      loadPersistedGroups(snapshotId),
+      loadPersistedBookmarks(snapshotId),
+    ])
+    if (groups.length === 0) continue
+    const firstGroup = groups[0]
+    const candidate = parseBookmarkSnapshotEnvelope(JSON.stringify({
+      schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+      revision: 1,
+      snapshotId,
+      groups,
+      bookmarks,
+      activeGroupId: firstGroup.id,
+      activeSubGroupId: firstGroup.children[0]?.id || '',
+    }))
+    if (candidate) candidates.push(candidate)
+  }
+  candidates.sort((left, right) =>
+    right.bookmarks.length - left.bookmarks.length ||
+    right.groups.length - left.groups.length ||
+    right.snapshotId.localeCompare(left.snapshotId))
+  return candidates[0] || null
+}
+
+const repairBookmarkMeta = (snapshot: BookmarkSnapshot): void => {
+  const result = putDoc(BOOKMARK_META_DOC_ID, {
+    activeGroupId: snapshot.activeGroupId,
+    activeSubGroupId: snapshot.activeSubGroupId,
+    updatedAt: Date.now(),
+    schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+    revision: snapshot.revision,
+    snapshotId: snapshot.snapshotId,
+    groupCount: snapshot.groups.length,
+    bookmarkCount: snapshot.bookmarks.length,
+  } satisfies BookmarkMetaDoc)
+  if (result.ok === false || result.error === true) {
+    throw new Error('已找到完整书签快照，但重建 v2 指针失败')
+  }
+}
+
+export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
+  if (!isUToolsDbAvailable()) return null
+
+  const metaDoc = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+  const meta = metaDoc?.data
+  if (
+    !meta ||
+    meta.schemaVersion !== BOOKMARK_SNAPSHOT_SCHEMA_VERSION ||
+    !Number.isSafeInteger(meta.revision) ||
+    meta.revision < 1 ||
+    typeof meta.snapshotId !== 'string' ||
+    !meta.snapshotId
+  ) {
+    const recovered = await recoverLatestOrphanBookmarkSnapshot()
+    if (!recovered) return null
+    repairBookmarkMeta(recovered)
+    return recovered
+  }
+
+  return loadSnapshotFromMeta(meta)
 }
 
 /**

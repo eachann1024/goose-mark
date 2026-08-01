@@ -200,6 +200,24 @@ test('数据库只提交 revision 连续的完整快照，迟到写入不能覆�
     expect(loaded?.revision).toBe(2)
     expect(loaded?.groups.map((item) => item.id)).toEqual(['g-a', 'g-new'])
     expect(loaded?.bookmarks.map((item) => item.id)).toEqual(['b1'])
+
+    // 旧窗口仍会写共用 schema v1 meta；新快照指针必须与它物理隔离。
+    const sharedMeta = docs.get('gm:meta:bookmark')
+    put({
+      _id: 'gm:meta:bookmark',
+      _rev: sharedMeta?._rev,
+      data: { schemaVersion: 1, activeGroupId: 'g-seed', activeSubGroupId: 's-seed', updatedAt: 999 },
+    })
+    const afterLegacyWriter = await loadBookmarkSnapshot()
+    expect(afterLegacyWriter?.revision).toBe(2)
+    expect(afterLegacyWriter?.bookmarks.map((item) => item.id)).toEqual(['b1'])
+
+    // 即使独立 meta 丢失，也要从已提交的不可变 v2 快照自愈，不能回落 seed。
+    docs.delete('gm:meta:bookmark:v2')
+    const repaired = await loadBookmarkSnapshot()
+    expect(repaired?.groups.map((item) => item.id)).toEqual(['g-a', 'g-new'])
+    expect(repaired?.bookmarks.map((item) => item.id)).toEqual(['b1'])
+    expect((docs.get('gm:meta:bookmark:v2')?.data as any)?.schemaVersion).toBe(2)
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
     else Reflect.deleteProperty(globalThis, 'window')
