@@ -1,31 +1,34 @@
 import type { Bookmark, Group, IconSource } from '@/types/bookmark'
 import type { SettingsState } from '@/stores/settings'
 import {
-  allDocsAsync,
+  allDocsAsyncStrict,
   bulkWriteDocs,
   getAttachment,
   getAttachmentType,
   getDbStorage,
   getDoc,
-  getDocAsync,
+  getDocAsyncStrict,
   isUToolsDbAvailable,
   postAttachment,
+  putDoc,
   putDocWithRetry,
   removeDoc,
   type HostWriteDoc
 } from '@/lib/utoolsDb'
+import {
+  BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+  parseBookmarkSnapshotEnvelope,
+  type BookmarkSnapshotEnvelope,
+} from '@/lib/bookmarkSnapshotProtocol'
 
-const BOOKMARK_DOC_PREFIX = 'gm:bookmark:'
-const GROUP_DOC_PREFIX = 'gm:group:'
+const BOOKMARK_SNAPSHOT_DOC_PREFIX = 'gm:bookmark-snapshot:'
 const ICON_ATTACHMENT_PREFIX = 'gm:icon/'
-const LEGACY_BOOKMARK_META_DOC_ID = 'gm:bookmark:meta'
 const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark'
 const SETTINGS_DOC_ID = 'gm:settings'
 const STORAGE_DOC_PREFIX = 'gm:storage:'
 const LEGACY_FALLBACK_DOC_PREFIX = 'goose-marks:storage:'
 
 const LEGACY_KEYS = {
-  bookmark: 'bookmark',
   settings: 'settings'
 } as const
 
@@ -49,15 +52,15 @@ interface BookmarkMetaDoc {
   activeGroupId: string
   activeSubGroupId: string
   updatedAt: number
-  schemaVersion: number
+  schemaVersion: typeof BOOKMARK_SNAPSHOT_SCHEMA_VERSION
+  revision: number
+  snapshotId: string
+  groupCount: number
+  bookmarkCount: number
+  previousSnapshotId?: string
 }
 
-export interface BookmarkSnapshot {
-  groups: Group[]
-  bookmarks: Bookmark[]
-  activeGroupId: string
-  activeSubGroupId: string
-}
+export type BookmarkSnapshot = BookmarkSnapshotEnvelope
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -202,25 +205,6 @@ const persistDataUrlAsAttachment = async (dataUrl: string): Promise<string | nul
   return ref
 }
 
-const extractAttachmentId = (ref: string | undefined): string | null => {
-  if (!ref?.startsWith(ATTACHMENT_REF_PREFIX)) return null
-  return ref.slice(ATTACHMENT_REF_PREFIX.length)
-}
-
-const collectAttachmentIdsFromPersistedIcon = (icon?: PersistedIconSource): string[] => {
-  if (!icon) return []
-  const refs: string[] = []
-  if (icon.type === 'remote') {
-    const id = extractAttachmentId(icon.cacheRef)
-    if (id) refs.push(id)
-  }
-  if (icon.type === 'custom') {
-    const id = extractAttachmentId(icon.dataRef)
-    if (id) refs.push(id)
-  }
-  return refs
-}
-
 const toPersistedIcon = async (icon?: IconSource): Promise<PersistedIconSource | undefined> => {
   if (!icon) return undefined
   if (icon.type === 'remote') {
@@ -284,13 +268,24 @@ const hydrateIcon = async (icon?: PersistedIconSource): Promise<IconSource | und
 }
 
 const isPersistedBookmarkDoc = (doc: { _id: string; data: PersistedBookmark }): boolean =>
-  doc._id !== LEGACY_BOOKMARK_META_DOC_ID &&
   typeof doc.data?.id === 'string' &&
   typeof doc.data?.url === 'string' &&
   typeof doc.data?.title === 'string'
 
-const loadPersistedBookmarks = async (): Promise<Bookmark[]> => {
-  const docs = (await allDocsAsync<PersistedBookmark>(BOOKMARK_DOC_PREFIX)).filter(isPersistedBookmarkDoc)
+const snapshotDocPrefix = (snapshotId: string): string => `${BOOKMARK_SNAPSHOT_DOC_PREFIX}${snapshotId}:`
+const snapshotGroupPrefix = (snapshotId: string): string => `${snapshotDocPrefix(snapshotId)}group:`
+const snapshotBookmarkPrefix = (snapshotId: string): string => `${snapshotDocPrefix(snapshotId)}bookmark:`
+
+const removeSnapshotDocs = async (snapshotId: string): Promise<void> => {
+  if (!snapshotId) return
+  const docs = await allDocsAsyncStrict(snapshotDocPrefix(snapshotId))
+  if (docs.length === 0) return
+  await bulkWriteDocs(docs.map((doc) => ({ _id: doc._id, _rev: doc._rev, _deleted: true })))
+}
+
+const loadPersistedBookmarks = async (snapshotId: string): Promise<Bookmark[]> => {
+  const docs = (await allDocsAsyncStrict<PersistedBookmark>(snapshotBookmarkPrefix(snapshotId)))
+    .filter(isPersistedBookmarkDoc)
   const hydrated = new Array<Bookmark>(docs.length)
   let index = 0
   const worker = async () => {
@@ -307,8 +302,8 @@ const loadPersistedBookmarks = async (): Promise<Bookmark[]> => {
   return hydrated
 }
 
-const loadPersistedGroups = async (): Promise<Group[]> =>
-  (await allDocsAsync<PersistedGroup>(GROUP_DOC_PREFIX))
+const loadPersistedGroups = async (snapshotId: string): Promise<Group[]> =>
+  (await allDocsAsyncStrict<PersistedGroup>(snapshotGroupPrefix(snapshotId)))
     .map((doc, fallbackIndex) => ({ ...clone(doc.data), fallbackIndex }))
     .sort((a, b) => {
       const aOrder = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY
@@ -322,138 +317,144 @@ const loadPersistedGroups = async (): Promise<Group[]> =>
 export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
 
-  const [primaryMeta, legacyMeta, groups, bookmarks] = await Promise.all([
-    getDocAsync<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID),
-    getDocAsync<BookmarkMetaDoc>(LEGACY_BOOKMARK_META_DOC_ID),
-    loadPersistedGroups(),
-    loadPersistedBookmarks()
+  const metaDoc = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+  const meta = metaDoc?.data
+  if (
+    !meta ||
+    meta.schemaVersion !== BOOKMARK_SNAPSHOT_SCHEMA_VERSION ||
+    !Number.isSafeInteger(meta.revision) ||
+    meta.revision < 1 ||
+    typeof meta.snapshotId !== 'string' ||
+    !meta.snapshotId
+  ) return null
+
+  const [groups, bookmarks] = await Promise.all([
+    loadPersistedGroups(meta.snapshotId),
+    loadPersistedBookmarks(meta.snapshotId),
   ])
-  const meta = primaryMeta?.data ?? legacyMeta?.data
-
-  if (groups.length || bookmarks.length) {
-    return {
-      groups,
-      bookmarks,
-      activeGroupId: meta?.activeGroupId || '',
-      activeSubGroupId: meta?.activeSubGroupId || ''
-    }
+  if (groups.length !== meta.groupCount || bookmarks.length !== meta.bookmarkCount) {
+    throw new Error(`书签快照不完整: revision=${meta.revision}`)
   }
-
-  const legacy = readLegacyJson<BookmarkSnapshot>(LEGACY_KEYS.bookmark)
-  if (!legacy || !Array.isArray(legacy.groups) || !Array.isArray(legacy.bookmarks)) return null
-
-  const snapshot: BookmarkSnapshot = {
-    groups: clone(legacy.groups),
-    bookmarks: clone(legacy.bookmarks),
-    activeGroupId: typeof legacy.activeGroupId === 'string' ? legacy.activeGroupId : '',
-    activeSubGroupId: typeof legacy.activeSubGroupId === 'string' ? legacy.activeSubGroupId : ''
+  const loaded: BookmarkSnapshot = {
+    schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+    revision: meta.revision,
+    snapshotId: meta.snapshotId,
+    groups,
+    bookmarks,
+    activeGroupId: meta.activeGroupId,
+    activeSubGroupId: meta.activeSubGroupId,
   }
-
-  await saveBookmarkSnapshot(snapshot)
-  cleanupLegacyKeySet(LEGACY_KEYS.bookmark)
-  return snapshot
+  const validated = parseBookmarkSnapshotEnvelope(JSON.stringify(loaded))
+  if (!validated) throw new Error(`书签快照格式损坏: revision=${meta.revision}`)
+  return validated
 }
 
 export interface SaveBookmarkSnapshotResult {
   serialized: string
   dataChanged: boolean
+  snapshot: BookmarkSnapshot
 }
 
-const isSamePersistedData = (left: unknown, right: unknown): boolean =>
-  JSON.stringify(left) === JSON.stringify(right)
+export class BookmarkRevisionConflictError extends Error {
+  constructor(public readonly expectedRevision: number, public readonly actualRevision: number) {
+    super(`书签 revision 冲突: expected=${expectedRevision}, actual=${actualRevision}`)
+    this.name = 'BookmarkRevisionConflictError'
+  }
+}
 
-export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<SaveBookmarkSnapshotResult> => {
+const createSnapshotId = (): string => {
+  const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2)
+  return `${Date.now().toString(36)}-${random}`
+}
+
+export const saveBookmarkSnapshot = async (
+  snapshot: BookmarkSnapshot,
+  expectedRevision: number,
+): Promise<SaveBookmarkSnapshotResult> => {
   if (!isUToolsDbAvailable()) {
     throw new Error('uTools db 不可用，无法保存书签')
   }
+  if (!Array.isArray(snapshot.groups) || snapshot.groups.length === 0) {
+    throw new Error('拒绝保存空分组快照，防止覆盖已有书签数据')
+  }
+  const inputValidated = parseBookmarkSnapshotEnvelope(JSON.stringify({
+    ...snapshot,
+    revision: Math.max(1, snapshot.revision),
+    snapshotId: snapshot.snapshotId || 'local-uncommitted',
+  }))
+  if (!inputValidated) throw new Error('拒绝保存格式不完整的书签快照')
 
-  const [previousBookmarks, previousGroups, previousMeta] = await Promise.all([
-    allDocsAsync<PersistedBookmark>(BOOKMARK_DOC_PREFIX),
-    allDocsAsync<PersistedGroup>(GROUP_DOC_PREFIX),
-    getDocAsync<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
-  ])
-  const previousBookmarkMap = new Map(previousBookmarks.map((doc) => [doc._id, doc]))
-  const previousGroupMap = new Map(previousGroups.map((doc) => [doc._id, doc]))
-  const previousAttachmentIds = new Set<string>()
-  previousBookmarks.forEach((doc) => {
-    collectAttachmentIdsFromPersistedIcon(doc.data.icon).forEach((id) => previousAttachmentIds.add(id))
-  })
+  const previousMeta = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+  const actualRevision = previousMeta?.data?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION
+    ? previousMeta.data.revision
+    : 0
+  if (actualRevision !== expectedRevision) {
+    throw new BookmarkRevisionConflictError(expectedRevision, actualRevision)
+  }
 
-  const nextAttachmentIds = new Set<string>()
+  const snapshotId = createSnapshotId()
+  const nextRevision = actualRevision + 1
   const mutations: HostWriteDoc[] = []
-  let dataChanged = false
 
   for (const [orderIndex, group] of snapshot.groups.entries()) {
-    const id = `${GROUP_DOC_PREFIX}${group.id}`
-    const data = { ...clone(group), orderIndex } satisfies PersistedGroup
-    const previous = previousGroupMap.get(id)
-    if (!previous || !isSamePersistedData(previous.data, data)) {
-      mutations.push({ _id: id, _rev: previous?._rev, data })
-      dataChanged = true
-    }
+    mutations.push({
+      _id: `${snapshotGroupPrefix(snapshotId)}${group.id}`,
+      data: { ...clone(group), orderIndex } satisfies PersistedGroup,
+    })
   }
 
   for (const bookmark of snapshot.bookmarks) {
     const persistedIcon = await toPersistedIcon(bookmark.icon)
-    collectAttachmentIdsFromPersistedIcon(persistedIcon).forEach((id) => nextAttachmentIds.add(id))
     const persistedBookmark: PersistedBookmark = {
       ...clone(bookmark),
       ...(persistedIcon ? { icon: persistedIcon } : {})
     }
-    const id = `${BOOKMARK_DOC_PREFIX}${bookmark.id}`
-    const previous = previousBookmarkMap.get(id)
-    if (!previous || !isSamePersistedData(previous.data, persistedBookmark)) {
-      mutations.push({ _id: id, _rev: previous?._rev, data: persistedBookmark })
-      dataChanged = true
-    }
+    mutations.push({ _id: `${snapshotBookmarkPrefix(snapshotId)}${bookmark.id}`, data: persistedBookmark })
   }
-
-  const previousMetaData = previousMeta?.data
-  const metaChanged =
-    !previousMetaData ||
-    previousMetaData.activeGroupId !== snapshot.activeGroupId ||
-    previousMetaData.activeSubGroupId !== snapshot.activeSubGroupId ||
-    previousMetaData.schemaVersion !== 1
-  if (metaChanged) {
-    mutations.push({
-      _id: BOOKMARK_META_DOC_ID,
-      _rev: previousMeta?._rev,
-      data: {
-        activeGroupId: snapshot.activeGroupId,
-        activeSubGroupId: snapshot.activeSubGroupId,
-        updatedAt: Date.now(),
-        schemaVersion: 1
-      } satisfies BookmarkMetaDoc
-    })
-  }
-
-  const nextGroupIds = new Set(snapshot.groups.map((group) => `${GROUP_DOC_PREFIX}${group.id}`))
-  previousGroups.forEach((doc) => {
-    if (!nextGroupIds.has(doc._id)) {
-      mutations.push({ _id: doc._id, _rev: doc._rev, _deleted: true })
-      dataChanged = true
-    }
-  })
-
-  const nextBookmarkIds = new Set(snapshot.bookmarks.map((bookmark) => `${BOOKMARK_DOC_PREFIX}${bookmark.id}`))
-  previousBookmarks.forEach((doc) => {
-    if (!nextBookmarkIds.has(doc._id)) {
-      mutations.push({ _id: doc._id, _rev: doc._rev, _deleted: true })
-      dataChanged = true
-    }
-  })
 
   const writeResult = await bulkWriteDocs(mutations)
   if (!writeResult.ok) {
     throw new Error(`保存书签数据失败: ${writeResult.failedIds.join(', ')}`)
   }
-  previousAttachmentIds.forEach((id) => {
-    if (!nextAttachmentIds.has(id)) {
-      removeDoc(id)
-    }
-  })
 
-  return { serialized: JSON.stringify(snapshot), dataChanged }
+  const committed: BookmarkSnapshot = {
+    schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+    revision: nextRevision,
+    snapshotId,
+    groups: clone(snapshot.groups),
+    bookmarks: clone(snapshot.bookmarks),
+    activeGroupId: snapshot.activeGroupId,
+    activeSubGroupId: snapshot.activeSubGroupId,
+  }
+  const metaWrite = putDoc(BOOKMARK_META_DOC_ID, {
+    activeGroupId: committed.activeGroupId,
+    activeSubGroupId: committed.activeSubGroupId,
+    updatedAt: Date.now(),
+    schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+    revision: nextRevision,
+    snapshotId,
+    groupCount: committed.groups.length,
+    bookmarkCount: committed.bookmarks.length,
+    previousSnapshotId: previousMeta?.data?.snapshotId,
+  } satisfies BookmarkMetaDoc, previousMeta?._rev)
+  if (metaWrite.ok === false || metaWrite.error === true) {
+    const latest = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+    const latestRevision = latest?.data?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION
+      ? latest.data.revision
+      : 0
+    void removeSnapshotDocs(snapshotId).catch(() => {})
+    if (latestRevision === expectedRevision) {
+      throw new Error('提交书签 meta 失败，快照未生效')
+    }
+    throw new BookmarkRevisionConflictError(expectedRevision, latestRevision)
+  }
+
+  const obsoleteSnapshotId = previousMeta?.data?.previousSnapshotId
+  if (obsoleteSnapshotId) void removeSnapshotDocs(obsoleteSnapshotId).catch(() => {})
+
+  return { serialized: JSON.stringify(committed), dataChanged: true, snapshot: committed }
 }
 
 export const loadSettingsSnapshot = (): Partial<SettingsState> | null => {

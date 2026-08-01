@@ -13,7 +13,18 @@ import {
 import { bulkMatchMissing, ensureIconForBookmark, backfillRemoteIconCache } from '@/services/iconCache'
 import { useSync } from '@/hooks/useSync'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
-import { loadBookmarkSnapshot, saveBookmarkSnapshot, type BookmarkSnapshot } from '@/lib/stateRepository'
+import {
+  BookmarkRevisionConflictError,
+  loadBookmarkSnapshot,
+  saveBookmarkSnapshot,
+  type BookmarkSnapshot,
+} from '@/lib/stateRepository'
+import {
+  BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+  bookmarkSnapshotDataFingerprint,
+  mergeBookmarkSnapshots,
+  parseBookmarkSnapshotEnvelope,
+} from '@/lib/bookmarkSnapshotProtocol'
 import { useSettingsStore } from '@/stores/settings'
 
 export { TRASH_GROUP_ID, parseUrlParams }
@@ -64,7 +75,6 @@ export interface BookmarkActions {
   recordBookmarkUse: (id: string) => void
   ensureValidSelection: (preferredGroupId?: string, preferredSubGroupId?: string) => void
   autoCleanTrash: () => void
-  migrateFromLegacy: () => void
   patchBookmarksWithBuiltinSeedIcons: () => void
 
   // 查询（旧版 getter，作为方法暴露便于 .getState() 调用）
@@ -295,82 +305,6 @@ export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
         patchBookmarksWithBuiltinSeedIcons: () => {
           const { bookmarks, changed } = patchBookmarksWithBuiltinSeedIcons(get().bookmarks)
           if (changed) set({ bookmarks })
-        },
-
-        migrateFromLegacy: () => {
-          const state = get()
-          const legacyGroups = state.groups as unknown as Array<Record<string, any>>
-          const firstSub = legacyGroups[0]?.children?.[0]
-          const now = Date.now()
-
-          if (!firstSub || !('bookmarks' in firstSub)) {
-            const groups = state.groups.map((g) => ({
-              ...g,
-              createdAt: g.createdAt || now,
-              updatedAt: g.updatedAt || now,
-              children: g.children.map((sub) => ({
-                ...sub,
-                createdAt: sub.createdAt || now,
-                updatedAt: sub.updatedAt || now
-              }))
-            }))
-            const bookmarks = state.bookmarks.map((b) => ({
-              ...b,
-              createdAt: b.createdAt || now,
-              updatedAt: b.updatedAt || now,
-              // 旧数据无 visits 时兜底为 0；lastUsed 保持 undefined（从未使用过）
-              visits: b.visits ?? 0
-            }))
-            set({ groups, bookmarks })
-            get().ensureValidSelection()
-            return
-          }
-
-          const migratedBookmarks: Bookmark[] = []
-          const migratedGroups: Group[] = []
-
-          legacyGroups.forEach((g) => {
-            const newChildren: SubGroup[] = (g.children as Array<Record<string, any>>).map((sub) => {
-              const bookmarkIds: string[] = (sub.bookmarks as Bookmark[]).map((b) => {
-                if (!migratedBookmarks.find((mb) => mb.id === b.id)) {
-                  migratedBookmarks.push({
-                    ...b,
-                    createdAt: b.createdAt || now,
-                    updatedAt: b.updatedAt || now,
-                    visits: b.visits ?? 0
-                  })
-                }
-                return b.id
-              })
-              return {
-                id: sub.id,
-                name: sub.name,
-                bookmarkIds,
-                createdAt: sub.createdAt || now,
-                updatedAt: sub.updatedAt || now
-              }
-            })
-            migratedGroups.push({
-              id: g.id,
-              name: g.name,
-              children: newChildren,
-              createdAt: g.createdAt || now,
-              updatedAt: g.updatedAt || now
-            })
-          })
-
-          if (!migratedGroups.find((g) => g.id === TRASH_GROUP_ID)) {
-            migratedGroups.push({
-              id: TRASH_GROUP_ID,
-              name: '回收站',
-              createdAt: now,
-              updatedAt: now,
-              children: [{ id: 'sg-trash', name: '已删除', bookmarkIds: [], createdAt: now, updatedAt: now }]
-            })
-          }
-
-          set({ groups: migratedGroups, bookmarks: migratedBookmarks })
-          get().autoCleanTrash()
         },
 
         getBookmarkLocations: (id) => {
@@ -1300,13 +1234,14 @@ export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
           const idx = bookmarks.findIndex((b) => b.id === id)
           if (idx === -1) return
           const prev = bookmarks[idx]
+          // 图标匹配是本地缓存优化，不抬高业务时间戳，
+          // 避免跨窗口 storage-sync 把较旧整包数据误判为更新覆盖。
           bookmarks.splice(idx, 1, {
             ...prev,
             icon,
             iconMatchedAt: Date.now(),
             iconMatchFailedAt: undefined,
-            iconMatchFailedReason: undefined,
-            updatedAt: Date.now()
+            iconMatchFailedReason: undefined
           })
           set({ bookmarks })
         },
@@ -1346,7 +1281,7 @@ export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
                 live.iconMatchedAt = now
                 live.iconMatchFailedAt = undefined
                 live.iconMatchFailedReason = undefined
-                live.updatedAt = now
+                // 与 assignIcon / backfillIconCache 一致：图标回填不改 updatedAt。
               }
             } else {
               failList.push({ id: bookmark.id, title: bookmark.title || bookmark.url })
@@ -1446,11 +1381,16 @@ interface BookmarkPersistJob {
 }
 
 const pickBookmarkSnapshot = (state: BookmarkStore): BookmarkSnapshot => ({
+  schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+  revision: currentBookmarkRevision,
+  snapshotId: baseBookmarkSnapshot?.snapshotId || 'local-uncommitted',
   groups: clone(state.groups),
   bookmarks: clone(state.bookmarks),
   activeGroupId: state.activeGroupId,
   activeSubGroupId: state.activeSubGroupId
 })
+
+const serializeBookmarkData = (snapshot: BookmarkSnapshot): string => bookmarkSnapshotDataFingerprint(snapshot)
 
 let bookmarkPersistenceStarted = false
 let bookmarkPersistPromise: Promise<void> | null = null
@@ -1462,6 +1402,21 @@ let lastQueuedGroups: Group[] | null = null
 let lastQueuedBookmarks: Bookmark[] | null = null
 let lastQueuedActiveGroupId = ''
 let lastQueuedActiveSubGroupId = ''
+let currentBookmarkRevision = 0
+let baseBookmarkSnapshot: BookmarkSnapshot | null = null
+let suppressBookmarkPersistence = false
+
+const applyBookmarkSnapshotToStore = (snapshot: BookmarkSnapshot): void => {
+  const preferredGroupId = useBookmarkStore.getState().activeGroupId
+  const preferredSubGroupId = useBookmarkStore.getState().activeSubGroupId
+  suppressBookmarkPersistence = true
+  try {
+    useBookmarkStore.getState().setData({ groups: snapshot.groups, bookmarks: snapshot.bookmarks })
+    useBookmarkStore.getState().ensureValidSelection(preferredGroupId, preferredSubGroupId)
+  } finally {
+    suppressBookmarkPersistence = false
+  }
+}
 
 const queueBookmarkPersistJob = (state: BookmarkStore, force = false): boolean => {
   if (!isUToolsDbAvailable()) return false
@@ -1479,7 +1434,7 @@ const queueBookmarkPersistJob = (state: BookmarkStore, force = false): boolean =
   lastQueuedActiveGroupId = state.activeGroupId
   lastQueuedActiveSubGroupId = state.activeSubGroupId
   const snapshot = pickBookmarkSnapshot(state)
-  const serialized = JSON.stringify(snapshot)
+  const serialized = serializeBookmarkData(snapshot)
   if (serialized === lastPersistedBookmarkState && !pendingBookmarkPersistJob) return false
   pendingBookmarkPersistJob = { snapshot, serialized }
   return true
@@ -1488,23 +1443,69 @@ const queueBookmarkPersistJob = (state: BookmarkStore, force = false): boolean =
 const drainBookmarkPersistQueue = (): Promise<void> => {
   if (bookmarkPersistPromise) return bookmarkPersistPromise
 
+  let failedJobSerialized: string | null = null
   bookmarkPersistPromise = (async () => {
     while (pendingBookmarkPersistJob) {
       const job = pendingBookmarkPersistJob
       pendingBookmarkPersistJob = null
       if (job.serialized === lastPersistedBookmarkState) continue
 
-      const written = await saveBookmarkSnapshot(job.snapshot)
-      lastPersistedBookmarkState = job.serialized
-      if (written.dataChanged) emitStorageSync('bookmark', written.serialized)
+      try {
+        const written = await saveBookmarkSnapshot(job.snapshot, currentBookmarkRevision)
+        // 本次提交完成回调之前，可能已经收到更高 revision 的广播；绝不允许状态倒退。
+        if (written.snapshot.revision <= currentBookmarkRevision) {
+          const current = pickBookmarkSnapshot(useBookmarkStore.getState())
+          if (
+            baseBookmarkSnapshot &&
+            serializeBookmarkData(current) !== serializeBookmarkData(baseBookmarkSnapshot)
+          ) {
+            pendingBookmarkPersistJob = {
+              snapshot: current,
+              serialized: serializeBookmarkData(current),
+            }
+          }
+          continue
+        }
+        currentBookmarkRevision = written.snapshot.revision
+        baseBookmarkSnapshot = written.snapshot
+        lastPersistedBookmarkState = serializeBookmarkData(written.snapshot)
+        failedJobSerialized = null
+        if (written.dataChanged) emitStorageSync('bookmark', written.serialized)
+      } catch (error) {
+        if (error instanceof BookmarkRevisionConflictError) {
+          const remote = await loadBookmarkSnapshot()
+          if (!remote) throw new Error('revision 冲突后未能读取最新书签快照')
+          const base = baseBookmarkSnapshot || remote
+          const merged = mergeBookmarkSnapshots(base, job.snapshot, remote)
+          currentBookmarkRevision = remote.revision
+          baseBookmarkSnapshot = remote
+          lastPersistedBookmarkState = serializeBookmarkData(remote)
+          applyBookmarkSnapshotToStore(merged)
+          pendingBookmarkPersistJob = {
+            snapshot: { ...merged, revision: remote.revision, snapshotId: remote.snapshotId },
+            serialized: serializeBookmarkData(merged),
+          }
+          continue
+        }
+        // 写失败时不把该快照标成已落盘；若期间没有更新的 job，保留当前 job 待下次变更/flush 再试。
+        failedJobSerialized = job.serialized
+        if (!pendingBookmarkPersistJob) pendingBookmarkPersistJob = job
+        throw error
+      }
     }
   })()
     .catch((error) => {
       console.error('[bookmark] 保存失败:', error)
     })
     .finally(() => {
+      const pending = pendingBookmarkPersistJob
       bookmarkPersistPromise = null
-      if (pendingBookmarkPersistJob && pendingBookmarkPersistJob.serialized !== lastPersistedBookmarkState) {
+      // 只有队列里已是更新快照时才立刻续写；同一失败快照不自动死循环。
+      if (
+        pending &&
+        pending.serialized !== lastPersistedBookmarkState &&
+        pending.serialized !== failedJobSerialized
+      ) {
         void drainBookmarkPersistQueue()
       }
     })
@@ -1513,12 +1514,32 @@ const drainBookmarkPersistQueue = (): Promise<void> => {
 }
 
 const enqueueBookmarkPersist = (state: BookmarkStore): void => {
+  if (suppressBookmarkPersistence) return
   if (!queueBookmarkPersistJob(state)) return
   if (bookmarkPersistTimer) clearTimeout(bookmarkPersistTimer)
   bookmarkPersistTimer = setTimeout(() => {
     bookmarkPersistTimer = null
     void drainBookmarkPersistQueue()
   }, BOOKMARK_PERSIST_DEBOUNCE_MS)
+}
+
+/** 跨窗口入口：严格按 revision 接收；有本地未提交内容时先三方合并再落库。 */
+export const applyIncomingBookmarkSnapshot = (raw: string): boolean => {
+  const incoming = parseBookmarkSnapshotEnvelope(raw)
+  if (!incoming || incoming.revision <= currentBookmarkRevision) return false
+
+  const local = pickBookmarkSnapshot(useBookmarkStore.getState())
+  const localDirty = !baseBookmarkSnapshot || serializeBookmarkData(local) !== serializeBookmarkData(baseBookmarkSnapshot)
+  const next = localDirty && baseBookmarkSnapshot
+    ? mergeBookmarkSnapshots(baseBookmarkSnapshot, local, incoming)
+    : incoming
+
+  currentBookmarkRevision = incoming.revision
+  baseBookmarkSnapshot = incoming
+  lastPersistedBookmarkState = serializeBookmarkData(incoming)
+  applyBookmarkSnapshotToStore(next)
+  if (localDirty) enqueueBookmarkPersist(useBookmarkStore.getState())
+  return true
 }
 
 export const flushBookmarkStorePersistence = async (): Promise<void> => {
@@ -1551,7 +1572,13 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
   if (bookmarkPersistenceStarted) return
   bookmarkPersistenceStarted = true
 
-  const persisted = await loadBookmarkSnapshot()
+  let persisted: BookmarkSnapshot | null
+  try {
+    persisted = await loadBookmarkSnapshot()
+  } catch (error) {
+    console.error('[bookmark] 读取持久化快照失败，已禁止本窗口写入:', error)
+    return
+  }
   if (persisted) {
     const patched = patchBookmarksWithBuiltinSeedIcons(persisted.bookmarks).bookmarks
     useBookmarkStore.setState({
@@ -1560,9 +1587,10 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
       activeGroupId: persisted.activeGroupId,
       activeSubGroupId: persisted.activeSubGroupId
     })
+    currentBookmarkRevision = persisted.revision
+    baseBookmarkSnapshot = persisted
   }
 
-  useBookmarkStore.getState().migrateFromLegacy()
   useBookmarkStore.getState().patchBookmarksWithBuiltinSeedIcons()
   useBookmarkStore.getState().ensureValidSelection()
 
@@ -1572,7 +1600,8 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
     enqueueBookmarkPersist(state)
   })
   bindBookmarkPersistenceFlushEvents()
-  lastPersistedBookmarkState = ''
+
+  lastPersistedBookmarkState = persisted ? serializeBookmarkData(persisted) : ''
   enqueueBookmarkPersist(useBookmarkStore.getState())
 
   void useBookmarkStore.getState().backfillIconCache()
