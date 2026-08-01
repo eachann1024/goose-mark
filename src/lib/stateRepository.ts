@@ -20,12 +20,17 @@ import {
   parseBookmarkSnapshotEnvelope,
   type BookmarkSnapshotEnvelope,
 } from '@/lib/bookmarkSnapshotProtocol'
+import {
+  parseLocalMirrorRecoverySnapshot,
+  type LocalMirrorRecoverySnapshot,
+} from '@/lib/localMirrorRecovery'
 
 const BOOKMARK_SNAPSHOT_DOC_PREFIX = 'gm:bookmark-snapshot:'
 const RECOVERY_BOOKMARK_DOC_PREFIX = 'gm:bookmark:'
 const RECOVERY_GROUP_DOC_PREFIX = 'gm:group:'
 const RECOVERY_META_DOC_ID = 'gm:bookmark:meta'
 const RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:completed:v2'
+const LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:local-mirror-v1'
 const ICON_ATTACHMENT_PREFIX = 'gm:icon/'
 const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark'
 const SETTINGS_DOC_ID = 'gm:settings'
@@ -402,6 +407,19 @@ export const loadRecoverableBookmarkSnapshot = async (): Promise<BookmarkSnapsho
   return validated
 }
 
+/** 固定路径本地镜像恢复；校验失败会抛错并阻止启动写入。 */
+export const loadLocalMirrorRecoverySnapshot = async (): Promise<LocalMirrorRecoverySnapshot | null> => {
+  if (!isUToolsDbAvailable()) return null
+  const completed = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID)
+  if (completed) return null
+
+  const result = window.gooseBookmarkRecovery?.readLocalMirrorSnapshot()
+  if (!result || result.ok === false) return null
+  const recovered = await parseLocalMirrorRecoverySnapshot(result.raw)
+  if (!recovered) throw new Error('找到本地书签镜像，但完整性校验失败；已停止恢复和写入')
+  return recovered
+}
+
 export interface SaveBookmarkSnapshotResult {
   serialized: string
   dataChanged: boolean
@@ -425,7 +443,10 @@ const createSnapshotId = (): string => {
 export const saveBookmarkSnapshot = async (
   snapshot: BookmarkSnapshot,
   expectedRevision: number,
-  options?: { markRecoveryCompleted?: boolean },
+  options?: {
+    markRecoveryCompleted?: boolean
+    markLocalMirrorRecoveryCompleted?: boolean
+  },
 ): Promise<SaveBookmarkSnapshotResult> => {
   if (!isUToolsDbAvailable()) {
     throw new Error('uTools db 不可用，无法保存书签')
@@ -515,6 +536,19 @@ export const saveBookmarkSnapshot = async (
       } satisfies BookmarkRecoveryCompletedDoc)
       if (markerWrite.ok === false || markerWrite.error === true) {
         throw new Error('真实书签已恢复，但恢复标记写入失败；将安全重试')
+      }
+    }
+  }
+  if (options?.markLocalMirrorRecoveryCompleted === true) {
+    const existingMarker = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID)
+    if (!existingMarker) {
+      const markerWrite = putDoc(LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID, {
+        completedAt: Date.now(),
+        revision: committed.revision,
+        snapshotId: committed.snapshotId,
+      } satisfies BookmarkRecoveryCompletedDoc)
+      if (markerWrite.ok === false || markerWrite.error === true) {
+        throw new Error('本地镜像已恢复，但恢复标记写入失败；将安全重试')
       }
     }
   }
