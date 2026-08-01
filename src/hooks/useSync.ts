@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { syncBookmarkLocations } from '@/hooks/useImportExport'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { utoolsStorage } from '@/lib/utoolsStorage'
+import { filterRemoteChangesForShare, type RemoteSyncItem } from '@/lib/bookmarkSyncSafety'
 import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 
 /**
@@ -19,14 +20,7 @@ import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
 const API_BASE_URL = import.meta.env.VITE_SHARE_API_URL || 'http://43.142.149.157:3001/api/sync'
 const SYNC_STATE_STORAGE_KEY = 'goose-marks.sync-state'
 
-interface SyncItem {
-  itemId: string
-  itemType: 'bookmark' | 'group' | 'subGroup'
-  content: any
-  isDeleted: boolean
-  updatedAt: number
-  clientId?: string
-}
+type SyncItem = RemoteSyncItem
 
 interface SchedulePushOptions {
   targetShareIds?: string[]
@@ -68,6 +62,21 @@ const isFiniteNumber = (value: unknown): value is number => typeof value === 'nu
 const collectShareIds = (group?: ShareAwareGroup, sub?: ShareAwareSubGroup): string[] => {
   return normalizeShareIds([group?.shareId, group?.sourceShareId, sub?.shareId, sub?.sourceShareId])
 }
+
+const isLocationInShare = (
+  groups: Group[],
+  location: { groupId: string; subGroupId: string },
+  shareId: string,
+): boolean => {
+  const group = groups.find((candidate) => candidate.id === location.groupId) as ShareAwareGroup | undefined
+  const sub = group?.children.find((candidate) => candidate.id === location.subGroupId) as ShareAwareSubGroup | undefined
+  return collectShareIds(group, sub).includes(shareId)
+}
+
+const indexedBookmarkLocations = (groups: Group[], bookmarkId: string) =>
+  groups.flatMap((group) => group.children
+    .filter((sub) => sub.bookmarkIds.includes(bookmarkId))
+    .map((sub) => ({ groupId: group.id, subGroupId: sub.id })))
 
 const findSubOwner = (
   draft: Pick<SyncStoreDraft, 'groups'>,
@@ -145,7 +154,6 @@ interface SyncState {
 interface PersistedSyncState {
   schemaVersion: number
   lastSyncTimes: Array<[string, number]>
-  pendingQueues: Array<{ shareId: string; items: SyncItem[] }>
 }
 
 const syncItemKey = (item: SyncItem): string => `${item.itemType}:${item.itemId}`
@@ -160,31 +168,12 @@ const loadPersistedSyncState = (): Pick<SyncState, 'lastSyncTimes' | 'pendingQue
     const lastSyncTimes = new Map<string, number>()
     const pendingQueues = new Map<string, Map<string, SyncItem>>()
 
+    if (parsed.schemaVersion !== 2) return empty
+
     if (Array.isArray(parsed.lastSyncTimes)) {
       parsed.lastSyncTimes.forEach(([shareId, timestamp]) => {
         const id = String(shareId || '').trim()
         if (id && isFiniteNumber(timestamp)) lastSyncTimes.set(id, timestamp)
-      })
-    }
-
-    if (Array.isArray(parsed.pendingQueues)) {
-      parsed.pendingQueues.forEach((entry) => {
-        const shareId = String(entry?.shareId || '').trim()
-        if (!shareId || !Array.isArray(entry.items)) return
-
-        const queue = new Map<string, SyncItem>()
-        entry.items.forEach((item) => {
-          if (!item || typeof item !== 'object' || !item.itemId || !item.itemType) return
-          const normalized: SyncItem = {
-            ...item,
-            itemId: String(item.itemId),
-            itemType: item.itemType,
-            isDeleted: !!item.isDeleted,
-            updatedAt: isFiniteNumber(item.updatedAt) ? item.updatedAt : Date.now()
-          }
-          queue.set(syncItemKey(normalized), normalized)
-        })
-        if (queue.size > 0) pendingQueues.set(shareId, queue)
       })
     }
 
@@ -196,14 +185,8 @@ const loadPersistedSyncState = (): Pick<SyncState, 'lastSyncTimes' | 'pendingQue
 
 const persistSyncState = (state: SyncState): void => {
   const payload: PersistedSyncState = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     lastSyncTimes: Array.from(state.lastSyncTimes.entries()).filter(([, timestamp]) => isFiniteNumber(timestamp)),
-    pendingQueues: Array.from(state.pendingQueues.entries())
-      .map(([shareId, queue]) => ({
-        shareId,
-        items: Array.from(queue.values())
-      }))
-      .filter((entry) => entry.items.length > 0)
   }
 
   utoolsStorage.setItem(SYNC_STATE_STORAGE_KEY, JSON.stringify(payload))
@@ -224,14 +207,6 @@ export const useSync = create<SyncState>((set, get) => {
     if (!get().syncingShares.has(shareId)) {
       setTimeout(() => get().triggerSync(shareId), 1000)
     }
-  }
-
-  if (persisted.pendingQueues.size > 0 && typeof window !== 'undefined') {
-    window.setTimeout(() => {
-      persisted.pendingQueues.forEach((_queue, shareId) => {
-        void useSync.getState().triggerSync(shareId)
-      })
-    }, 1000)
   }
 
   return {
@@ -273,7 +248,7 @@ export const useSync = create<SyncState>((set, get) => {
 
         if (Array.isArray(items) && items.length > 0) {
           console.log('[Sync] Pulled', items.length, 'items from', shareId)
-          applyRemoteChanges(items as SyncItem[])
+          applyRemoteChanges(shareId, items as SyncItem[])
           // 同步后刷新缺失图标（业务阶段方法）
           void useBookmarkStore.getState().refreshMissingIcons?.()
         }
@@ -369,9 +344,14 @@ const applyGroupOrderIndexes = (draft: SyncStoreDraft) => {
 }
 
 // 应用远端变更：在 bookmark store 的可变快照上原地合并，最后一次性提交
-const applyRemoteChanges = (items: SyncItem[]) => {
+const applyRemoteChanges = (shareId: string, items: SyncItem[]) => {
   const draft = takeSyncDraft()
-  const orderedItems = [...items].sort((left, right) => left.updatedAt - right.updatedAt)
+  const acceptedItems = filterRemoteChangesForShare(draft.groups, items, shareId, draft.bookmarks)
+  if (acceptedItems.length !== items.length) {
+    console.warn(`[Sync] 已隔离 ${items.length - acceptedItems.length} 条越界远端变更:`, shareId)
+  }
+  if (acceptedItems.length === 0) return
+  const orderedItems = [...acceptedItems].sort((left, right) => left.updatedAt - right.updatedAt)
 
   orderedItems
     .filter((item) => item.itemType === 'group')
@@ -414,6 +394,9 @@ const applyRemoteChanges = (items: SyncItem[]) => {
       }
 
       if (groupIndex !== -1) {
+        // group 同步只更新分组自身字段；子分组由 subGroup item 独立合并，
+        // 禁止远端整包 children 覆盖本地刚新增的内容。
+        incomingGroup.children = draft.groups[groupIndex].children
         draft.groups.splice(groupIndex, 1, incomingGroup)
       } else {
         const trashIndex = draft.groups.findIndex((group: Group) => group.id === TRASH_GROUP_ID)
@@ -499,23 +482,53 @@ const applyRemoteChanges = (items: SyncItem[]) => {
       const existingIndex = draft.bookmarks.findIndex((bookmark: Bookmark) => bookmark.id === item.itemId)
 
       if (item.isDeleted) {
-        if (existingIndex !== -1) draft.bookmarks.splice(existingIndex, 1)
+        const existing = existingIndex === -1 ? null : draft.bookmarks[existingIndex]
+        const localLocations = Array.isArray(existing?.locations) && existing.locations.length > 0
+          ? existing.locations
+          : indexedBookmarkLocations(draft.groups, item.itemId)
+        const remainingLocations = localLocations.filter((location) =>
+          !isLocationInShare(draft.groups, location, shareId))
+
         draft.groups.forEach((group: Group) => {
           group.children.forEach((sub: SubGroup) => {
+            if (!collectShareIds(group as ShareAwareGroup, sub as ShareAwareSubGroup).includes(shareId)) return
             sub.bookmarkIds = sub.bookmarkIds.filter((id) => id !== item.itemId)
           })
         })
+        if (existingIndex !== -1) {
+          if (remainingLocations.length > 0) {
+            draft.bookmarks.splice(existingIndex, 1, {
+              ...existing!,
+              locations: remainingLocations,
+              updatedAt: Math.max(getEntityTs(existing), item.updatedAt),
+              serverUpdatedAt: item.updatedAt,
+            })
+          } else {
+            draft.bookmarks.splice(existingIndex, 1)
+          }
+        }
         return
       }
 
       if (!item.content || typeof item.content !== 'object') return
 
       const incomingBookmark = clonePlain(item.content) as Bookmark
+      const existingBookmark = existingIndex === -1 ? null : draft.bookmarks[existingIndex]
+      const localLocations = Array.isArray(existingBookmark?.locations) && existingBookmark.locations.length > 0
+        ? existingBookmark.locations
+        : indexedBookmarkLocations(draft.groups, item.itemId)
+      const preservedLocations = localLocations.filter((location) =>
+        !isLocationInShare(draft.groups, location, shareId))
+      const incomingLocations = (Array.isArray(incomingBookmark.locations) ? incomingBookmark.locations : [])
+        .filter((location) => isLocationInShare(draft.groups, location, shareId))
       incomingBookmark.id = item.itemId
       incomingBookmark.createdAt = getEntityTs(incomingBookmark) || item.updatedAt
       incomingBookmark.updatedAt = Math.max(getEntityTs(incomingBookmark), item.updatedAt)
       incomingBookmark.serverUpdatedAt = item.updatedAt
-      incomingBookmark.locations = Array.isArray(incomingBookmark.locations) ? incomingBookmark.locations : []
+      incomingBookmark.locations = Array.from(
+        new Map([...preservedLocations, ...incomingLocations]
+          .map((location) => [`${location.groupId}:${location.subGroupId}`, location])).values(),
+      )
 
       if (existingIndex !== -1) {
         draft.bookmarks.splice(existingIndex, 1, incomingBookmark)
@@ -526,6 +539,7 @@ const applyRemoteChanges = (items: SyncItem[]) => {
       // 使用书签 locations 反向修正子分组索引，避免“只更新书签不更新分组”时丢失可见性。
       draft.groups.forEach((group: Group) => {
         group.children.forEach((sub: SubGroup) => {
+          if (!collectShareIds(group as ShareAwareGroup, sub as ShareAwareSubGroup).includes(shareId)) return
           sub.bookmarkIds = sub.bookmarkIds.filter((id) => id !== incomingBookmark.id)
         })
       })

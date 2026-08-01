@@ -1589,7 +1589,10 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
   let localMirrorRecoverable: Awaited<ReturnType<typeof loadLocalMirrorRecoverySnapshot>>
   try {
     persisted = await loadBookmarkSnapshot()
-    localMirrorRecoverable = await loadLocalMirrorRecoverySnapshot()
+    const retryLocalMirrorRecovery = !persisted || isDefaultBookmarkSeedState(persisted.groups, persisted.bookmarks)
+    localMirrorRecoverable = await loadLocalMirrorRecoverySnapshot({
+      retryCompletedRecovery: retryLocalMirrorRecovery,
+    })
     recoverable = localMirrorRecoverable?.snapshot || await loadRecoverableBookmarkSnapshot()
   } catch (error) {
     console.error('[bookmark] 读取持久化快照失败，已禁止本窗口写入:', error)
