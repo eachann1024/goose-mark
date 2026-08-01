@@ -89,23 +89,6 @@ const SEED_BOOKMARK_DEFS: SeedDef[] = [
   { iconKey: 'chatglm', title: '智谱清言', url: 'https://chatglm.cn', groupId: 'g-ai', subGroupId: 'sg-ai-chat', tags: ['AI'] }
 ]
 
-export const isDefaultBookmarkSeedState = (groups: Group[], bookmarks: Bookmark[]): boolean => {
-  const expectedGroupIds = ['g-nav', 'g-ai', TRASH_GROUP_ID]
-  if (
-    groups.length !== expectedGroupIds.length ||
-    expectedGroupIds.some((id) => !groups.some((group) => group.id === id)) ||
-    bookmarks.length !== SEED_BOOKMARK_DEFS.length
-  ) return false
-
-  return SEED_BOOKMARK_DEFS.every((definition) => bookmarks.some((bookmark) =>
-    bookmark.title === definition.title &&
-    bookmark.url === definition.url &&
-    groups.some((group) => group.id === definition.groupId && group.children.some((sub) =>
-      sub.id === definition.subGroupId && sub.bookmarkIds.includes(bookmark.id),
-    )),
-  ))
-}
-
 /** 老用户书签 URL 变体（http/www/m/旧域名/多入口）→ 同一内置图标 */
 export const SEED_URL_ALIASES_BY_ICON_KEY: Record<string, string[]> = {
   baidu: [

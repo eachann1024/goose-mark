@@ -138,11 +138,6 @@ declare global {
         message?: string
       }
     }
-    gooseBookmarkRecovery?: {
-      readLocalMirrorSnapshot: () =>
-        | { ok: true; raw: string }
-        | { ok: false; reason: 'missing' | 'too_large' | 'read_failed' }
-    }
     __gooseMarksWindowControl?: GooseMarksWindowControl
     require?: NodeRequire
     __gooseMarksPluginEnterSerial?: number

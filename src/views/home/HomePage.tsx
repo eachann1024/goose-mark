@@ -94,7 +94,6 @@ interface SortableTabProps {
   onTabClick: () => void
   onTabContextMenu: (e: React.MouseEvent) => void
 }
-
 function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }: SortableTabProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const style: React.CSSProperties = {

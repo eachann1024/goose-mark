@@ -20,20 +20,12 @@ import {
   parseBookmarkSnapshotEnvelope,
   type BookmarkSnapshotEnvelope,
 } from '@/lib/bookmarkSnapshotProtocol'
-import {
-  parseLocalMirrorRecoverySnapshot,
-  type LocalMirrorRecoverySnapshot,
-} from '@/lib/localMirrorRecovery'
 
 const BOOKMARK_SNAPSHOT_DOC_PREFIX = 'gm:bookmark-snapshot:'
-const RECOVERY_BOOKMARK_DOC_PREFIX = 'gm:bookmark:'
-const RECOVERY_GROUP_DOC_PREFIX = 'gm:group:'
-const RECOVERY_META_DOC_ID = 'gm:bookmark:meta'
-const RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:completed:v2'
-const LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:local-mirror-v1'
+const PREVIOUS_BOOKMARK_DOC_PREFIX = 'gm:bookmark:'
+const PREVIOUS_GROUP_DOC_PREFIX = 'gm:group:'
 const ICON_ATTACHMENT_PREFIX = 'gm:icon/'
 const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark'
-const ROLLBACK_RECOVERY_META_DOC_ID = 'gm:meta:bookmark:v2'
 const SETTINGS_DOC_ID = 'gm:settings'
 const STORAGE_DOC_PREFIX = 'gm:storage:'
 const LEGACY_FALLBACK_DOC_PREFIX = 'goose-marks:storage:'
@@ -70,13 +62,14 @@ interface BookmarkMetaDoc {
   previousSnapshotId?: string
 }
 
-interface BookmarkRecoveryCompletedDoc {
-  completedAt: number
-  revision: number
-  snapshotId: string
-}
-
 export type BookmarkSnapshot = BookmarkSnapshotEnvelope
+
+export class BookmarkStorageUnsafeError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'BookmarkStorageUnsafeError'
+  }
+}
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 
@@ -299,8 +292,8 @@ const removeSnapshotDocs = async (snapshotId: string): Promise<void> => {
   await bulkWriteDocs(docs.map((doc) => ({ _id: doc._id, _rev: doc._rev, _deleted: true })))
 }
 
-const loadPersistedBookmarksByPrefix = async (prefix: string): Promise<Bookmark[]> => {
-  const docs = (await allDocsAsyncStrict<PersistedBookmark>(prefix))
+const loadPersistedBookmarks = async (snapshotId: string): Promise<Bookmark[]> => {
+  const docs = (await allDocsAsyncStrict<PersistedBookmark>(snapshotBookmarkPrefix(snapshotId)))
     .filter(isPersistedBookmarkDoc)
   const hydrated = new Array<Bookmark>(docs.length)
   let index = 0
@@ -318,8 +311,8 @@ const loadPersistedBookmarksByPrefix = async (prefix: string): Promise<Bookmark[
   return hydrated
 }
 
-const loadPersistedGroupsByPrefix = async (prefix: string): Promise<Group[]> =>
-  (await allDocsAsyncStrict<PersistedGroup>(prefix))
+const loadPersistedGroups = async (snapshotId: string): Promise<Group[]> =>
+  (await allDocsAsyncStrict<PersistedGroup>(snapshotGroupPrefix(snapshotId)))
     .map((doc, fallbackIndex) => ({ ...clone(doc.data), fallbackIndex }))
     .sort((a, b) => {
       const aOrder = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY
@@ -330,35 +323,40 @@ const loadPersistedGroupsByPrefix = async (prefix: string): Promise<Group[]> =>
     })
     .map(({ fallbackIndex: _fallbackIndex, ...group }) => group)
 
-const loadPersistedBookmarks = (snapshotId: string): Promise<Bookmark[]> =>
-  loadPersistedBookmarksByPrefix(snapshotBookmarkPrefix(snapshotId))
+const hasBookmarkDataWithoutCurrentMeta = async (): Promise<boolean> => {
+  const [snapshotDocs, previousBookmarkDocs, previousGroupDocs] = await Promise.all([
+    allDocsAsyncStrict(BOOKMARK_SNAPSHOT_DOC_PREFIX),
+    allDocsAsyncStrict(PREVIOUS_BOOKMARK_DOC_PREFIX),
+    allDocsAsyncStrict(PREVIOUS_GROUP_DOC_PREFIX),
+  ])
+  return snapshotDocs.length > 0 || previousBookmarkDocs.length > 0 || previousGroupDocs.length > 0
+}
 
-const loadPersistedGroups = (snapshotId: string): Promise<Group[]> =>
-  loadPersistedGroupsByPrefix(snapshotGroupPrefix(snapshotId))
-
-const isCurrentBookmarkMeta = (meta: Partial<BookmarkMetaDoc> | null | undefined): meta is BookmarkMetaDoc =>
-  meta?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION &&
+const isCurrentBookmarkMeta = (meta: BookmarkMetaDoc | undefined): meta is BookmarkMetaDoc =>
+  !!meta &&
+  meta.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION &&
   Number.isSafeInteger(meta.revision) &&
-  Number(meta.revision) >= 1 &&
+  meta.revision >= 1 &&
   typeof meta.snapshotId === 'string' &&
   meta.snapshotId.length > 0 &&
   Number.isSafeInteger(meta.groupCount) &&
-  Number.isSafeInteger(meta.bookmarkCount)
+  meta.groupCount > 0 &&
+  Number.isSafeInteger(meta.bookmarkCount) &&
+  meta.bookmarkCount >= 0
 
 export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
 
-  const currentMetaDoc = await getDocAsyncStrict<Partial<BookmarkMetaDoc>>(BOOKMARK_META_DOC_ID)
-  const currentMeta = currentMetaDoc?.data
-  let meta: BookmarkMetaDoc
-  let needsRollbackMigration = false
-  if (isCurrentBookmarkMeta(currentMeta)) {
-    meta = currentMeta
-  } else {
-    const rollbackMetaDoc = await getDocAsyncStrict<Partial<BookmarkMetaDoc>>(ROLLBACK_RECOVERY_META_DOC_ID)
-    if (!isCurrentBookmarkMeta(rollbackMetaDoc?.data)) return null
-    meta = rollbackMetaDoc.data
-    needsRollbackMigration = true
+  const metaDoc = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+  const meta = metaDoc?.data
+  if (!metaDoc) {
+    if (await hasBookmarkDataWithoutCurrentMeta()) {
+      throw new BookmarkStorageUnsafeError('检测到没有当前 meta 的书签数据，已禁止初始数据覆盖')
+    }
+    return null
+  }
+  if (!isCurrentBookmarkMeta(meta)) {
+    throw new BookmarkStorageUnsafeError('书签 meta 不是当前格式，已禁止初始数据覆盖')
   }
 
   const [groups, bookmarks] = await Promise.all([
@@ -379,74 +377,7 @@ export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> =
   }
   const validated = parseBookmarkSnapshotEnvelope(JSON.stringify(loaded))
   if (!validated) throw new Error(`书签快照格式损坏: revision=${meta.revision}`)
-
-  if (needsRollbackMigration) {
-    const migratedMeta: BookmarkMetaDoc = {
-      ...meta,
-      activeGroupId: validated.activeGroupId,
-      activeSubGroupId: validated.activeSubGroupId,
-      updatedAt: Date.now(),
-      groupCount: validated.groups.length,
-      bookmarkCount: validated.bookmarks.length,
-    }
-    const result = putDoc(BOOKMARK_META_DOC_ID, migratedMeta, currentMetaDoc?._rev)
-    if (result.ok === false || result.error === true) {
-      throw new Error('完整书签快照已找到，但撤回遗留指针回迁失败；已禁止 seed 写入')
-    }
-  }
   return validated
-}
-
-/**
- * 一次性事故恢复入口：读取被 schema v2 忽略、但从未删除的原分组/书签文档。
- * recoveryCompleted 写入后永久关闭，避免以后用历史副本反向覆盖。
- */
-export const loadRecoverableBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
-  if (!isUToolsDbAvailable()) return null
-
-  const completed = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(RECOVERY_COMPLETED_DOC_ID)
-  if (completed) return null
-
-  const currentMetaDoc = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
-  const currentMeta = currentMetaDoc?.data
-
-  const [groups, bookmarks, recoveryMetaDoc] = await Promise.all([
-    loadPersistedGroupsByPrefix(RECOVERY_GROUP_DOC_PREFIX),
-    loadPersistedBookmarksByPrefix(RECOVERY_BOOKMARK_DOC_PREFIX),
-    getDocAsyncStrict<Partial<BookmarkMetaDoc>>(RECOVERY_META_DOC_ID),
-  ])
-  if (groups.length === 0) return null
-
-  const recoveryMeta = recoveryMetaDoc?.data
-  const candidate: BookmarkSnapshot = {
-    schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
-    revision: Math.max(1, currentMeta?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION ? currentMeta.revision : 0),
-    snapshotId: currentMeta?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION
-      ? currentMeta.snapshotId
-      : 'recovery-source',
-    groups,
-    bookmarks,
-    activeGroupId: typeof recoveryMeta?.activeGroupId === 'string' ? recoveryMeta.activeGroupId : '',
-    activeSubGroupId: typeof recoveryMeta?.activeSubGroupId === 'string' ? recoveryMeta.activeSubGroupId : '',
-  }
-  const validated = parseBookmarkSnapshotEnvelope(JSON.stringify(candidate))
-  if (!validated) throw new Error('原书签文档仍存在，但格式校验失败；已停止自动恢复和写入')
-  return validated
-}
-
-/** 固定路径本地镜像恢复；校验失败会抛错并阻止启动写入。 */
-export const loadLocalMirrorRecoverySnapshot = async (
-  options: { retryCompletedRecovery?: boolean } = {},
-): Promise<LocalMirrorRecoverySnapshot | null> => {
-  if (!isUToolsDbAvailable()) return null
-  const completed = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID)
-  if (completed && options.retryCompletedRecovery !== true) return null
-
-  const result = window.gooseBookmarkRecovery?.readLocalMirrorSnapshot()
-  if (!result || result.ok === false) return null
-  const recovered = await parseLocalMirrorRecoverySnapshot(result.raw)
-  if (!recovered) throw new Error('找到本地书签镜像，但完整性校验失败；已停止恢复和写入')
-  return recovered
 }
 
 export interface SaveBookmarkSnapshotResult {
@@ -472,10 +403,6 @@ const createSnapshotId = (): string => {
 export const saveBookmarkSnapshot = async (
   snapshot: BookmarkSnapshot,
   expectedRevision: number,
-  options?: {
-    markRecoveryCompleted?: boolean
-    markLocalMirrorRecoveryCompleted?: boolean
-  },
 ): Promise<SaveBookmarkSnapshotResult> => {
   if (!isUToolsDbAvailable()) {
     throw new Error('uTools db 不可用，无法保存书签')
@@ -491,9 +418,13 @@ export const saveBookmarkSnapshot = async (
   if (!inputValidated) throw new Error('拒绝保存格式不完整的书签快照')
 
   const previousMeta = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
-  const actualRevision = previousMeta?.data?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION
-    ? previousMeta.data.revision
-    : 0
+  if (previousMeta && !isCurrentBookmarkMeta(previousMeta.data)) {
+    throw new BookmarkStorageUnsafeError('拒绝覆盖非当前格式的书签 meta')
+  }
+  if (!previousMeta && await hasBookmarkDataWithoutCurrentMeta()) {
+    throw new BookmarkStorageUnsafeError('拒绝在已有书签数据上创建初始快照')
+  }
+  const actualRevision = previousMeta?.data.revision ?? 0
   if (actualRevision !== expectedRevision) {
     throw new BookmarkRevisionConflictError(expectedRevision, actualRevision)
   }
@@ -553,33 +484,6 @@ export const saveBookmarkSnapshot = async (
       throw new Error('提交书签 meta 失败，快照未生效')
     }
     throw new BookmarkRevisionConflictError(expectedRevision, latestRevision)
-  }
-
-  if (options?.markRecoveryCompleted === true) {
-    const existingMarker = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(RECOVERY_COMPLETED_DOC_ID)
-    if (!existingMarker) {
-      const markerWrite = putDoc(RECOVERY_COMPLETED_DOC_ID, {
-        completedAt: Date.now(),
-        revision: committed.revision,
-        snapshotId: committed.snapshotId,
-      } satisfies BookmarkRecoveryCompletedDoc)
-      if (markerWrite.ok === false || markerWrite.error === true) {
-        throw new Error('真实书签已恢复，但恢复标记写入失败；将安全重试')
-      }
-    }
-  }
-  if (options?.markLocalMirrorRecoveryCompleted === true) {
-    const existingMarker = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID)
-    if (!existingMarker) {
-      const markerWrite = putDoc(LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID, {
-        completedAt: Date.now(),
-        revision: committed.revision,
-        snapshotId: committed.snapshotId,
-      } satisfies BookmarkRecoveryCompletedDoc)
-      if (markerWrite.ok === false || markerWrite.error === true) {
-        throw new Error('本地镜像已恢复，但恢复标记写入失败；将安全重试')
-      }
-    }
   }
 
   const obsoleteSnapshotId = previousMeta?.data?.previousSnapshotId

@@ -2,7 +2,6 @@ import { expect, test } from '@playwright/test'
 import {
   BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
   bookmarkSnapshotDataFingerprint,
-  combineRecoveredBookmarkSnapshot,
   mergeBookmarkSnapshots,
   parseBookmarkSnapshotEnvelope,
   type BookmarkSnapshotEnvelope,
@@ -10,8 +9,8 @@ import {
 import type { Bookmark, Group } from '../../src/types/bookmark'
 import {
   BookmarkRevisionConflictError,
+  BookmarkStorageUnsafeError,
   loadBookmarkSnapshot,
-  loadRecoverableBookmarkSnapshot,
   saveBookmarkSnapshot,
 } from '../../src/lib/stateRepository'
 
@@ -200,39 +199,22 @@ test('数据库只提交 revision 连续的完整快照，迟到写入不能覆�
     expect(loaded?.revision).toBe(2)
     expect(loaded?.groups.map((item) => item.id)).toEqual(['g-a', 'g-new'])
     expect(loaded?.bookmarks.map((item) => item.id)).toEqual(['b1'])
-
-    // 撤回独立 meta 方案后，将其遗留的有效指针一次性回迁到当前读取路径。
-    const currentMeta = docs.get('gm:meta:bookmark')
-    put({ _id: 'gm:meta:bookmark:v2', data: currentMeta?.data })
-    put({
-      _id: 'gm:meta:bookmark',
-      _rev: currentMeta?._rev,
-      data: { schemaVersion: 1, activeGroupId: 'g-ai', activeSubGroupId: 'sg-ai-chat', updatedAt: 999 },
-    })
-
-    const migrated = await loadBookmarkSnapshot()
-    expect(migrated?.revision).toBe(2)
-    expect(migrated?.groups.map((item) => item.id)).toEqual(['g-a', 'g-new'])
-    expect(migrated?.bookmarks.map((item) => item.id)).toEqual(['b1'])
-    expect((docs.get('gm:meta:bookmark')?.data as any)?.schemaVersion).toBe(2)
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
     else Reflect.deleteProperty(globalThis, 'window')
   }
 })
 
-test('新版误写初始书签后可从原文档恢复真实数据且只恢复一次', async () => {
+test('旧格式 meta 存在时禁止读取为新安装，也禁止任何覆盖写入', async () => {
   type Doc = { _id: string; _rev?: string; data?: unknown; _deleted?: boolean }
-  const docs = new Map<string, Doc>()
-  let revision = 0
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
-  const put = (doc: Doc) => {
-    const current = docs.get(doc._id)
-    if ((current?._rev || undefined) !== (doc._rev || undefined)) return { ok: false, id: doc._id, error: true }
-    const stored = { ...doc, _rev: String(++revision) }
-    docs.set(doc._id, stored)
-    return { ok: true, id: doc._id, rev: stored._rev }
+  const oldMeta: Doc = {
+    _id: 'gm:meta:bookmark',
+    _rev: 'old-meta-rev',
+    data: { schemaVersion: 1, activeGroupId: 'g-real', activeSubGroupId: 's-real' },
   }
+  const docs = new Map<string, Doc>([[oldMeta._id, oldMeta]])
+  let writeCount = 0
   const allDocs = (prefix = '') => Array.from(docs.values()).filter((doc) => doc._id.startsWith(prefix))
 
   Object.defineProperty(globalThis, 'window', {
@@ -241,17 +223,23 @@ test('新版误写初始书签后可从原文档恢复真实数据且只恢复�
       utools: {
         db: {
           get: (id: string) => docs.get(id) ?? null,
-          put,
-          remove: (id: string) => {
-            docs.delete(id)
-            return { ok: true, id }
+          put: () => {
+            writeCount += 1
+            return { ok: true }
           },
+          remove: () => ({ ok: true }),
           allDocs,
-          bulkDocs: (items: Doc[]) => items.map(put),
+          bulkDocs: () => {
+            writeCount += 1
+            return []
+          },
           promises: {
             get: async (id: string) => docs.get(id) ?? null,
             allDocs: async (prefix = '') => allDocs(prefix),
-            bulkDocs: async (items: Doc[]) => items.map(put),
+            bulkDocs: async () => {
+              writeCount += 1
+              return []
+            },
           },
         },
       },
@@ -259,49 +247,68 @@ test('新版误写初始书签后可从原文档恢复真实数据且只恢复�
   })
 
   try {
-    put({ _id: 'gm:group:g-real', data: { ...group('g-real', ['b-real']), orderIndex: 0 } })
-    put({ _id: 'gm:bookmark:b-real', data: bookmark('b-real', '不能丢的真实书签', 500) })
-
-    const seedCommit = await saveBookmarkSnapshot(
-      snapshot(0, [group('g-seed', ['b-seed'])], [bookmark('b-seed', '初始书签')]),
-      0,
-    )
-    expect((await loadBookmarkSnapshot())?.bookmarks[0].title).toBe('初始书签')
-
-    const recoverable = await loadRecoverableBookmarkSnapshot()
-    expect(recoverable?.groups.map((item) => item.id)).toEqual(['g-real'])
-    expect(recoverable?.bookmarks[0].title).toBe('不能丢的真实书签')
-
-    await saveBookmarkSnapshot(
-      { ...recoverable!, revision: seedCommit.snapshot.revision, snapshotId: seedCommit.snapshot.snapshotId },
-      seedCommit.snapshot.revision,
-      { markRecoveryCompleted: true },
-    )
-
-    expect(await loadRecoverableBookmarkSnapshot()).toBeNull()
-    expect((await loadBookmarkSnapshot())?.bookmarks[0].title).toBe('不能丢的真实书签')
+    await expect(loadBookmarkSnapshot()).rejects.toBeInstanceOf(BookmarkStorageUnsafeError)
+    await expect(
+      saveBookmarkSnapshot(snapshot(0, [group('g-seed', [])], []), 0),
+    ).rejects.toBeInstanceOf(BookmarkStorageUnsafeError)
+    expect(writeCount).toBe(0)
+    expect(docs.get('gm:meta:bookmark')).toEqual(oldMeta)
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
     else Reflect.deleteProperty(globalThis, 'window')
   }
 })
 
-test('恢复原文档时同时保留事故后在 v2 新增的内容', () => {
-  const current = snapshot(
-    2,
-    [group('g-a', ['b1', 'b-after']), group('g-seed-only', [])],
-    [bookmark('b1', '初始标题', 900), bookmark('b-after', '事故后新增', 950)],
-  )
-  const recovered = snapshot(
-    2,
-    [group('g-a', ['b1']), group('g-real', ['b-real'])],
-    [bookmark('b1', '原来填写的标题', 500), bookmark('b-real', '原来的真实书签', 500)],
-  )
+test('meta 丢失但仍有书签文档时禁止把默认数据当成首次安装写入', async () => {
+  type Doc = { _id: string; _rev?: string; data?: unknown; _deleted?: boolean }
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window')
+  const realBookmark: Doc = {
+    _id: 'gm:bookmark:b-real',
+    _rev: 'real-rev',
+    data: bookmark('b-real', '不能丢的正式书签'),
+  }
+  const docs = new Map<string, Doc>([[realBookmark._id, realBookmark]])
+  let writeCount = 0
+  const allDocs = (prefix = '') => Array.from(docs.values()).filter((doc) => doc._id.startsWith(prefix))
 
-  const merged = combineRecoveredBookmarkSnapshot(recovered, current)
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      utools: {
+        db: {
+          get: (id: string) => docs.get(id) ?? null,
+          put: () => {
+            writeCount += 1
+            return { ok: true }
+          },
+          remove: () => ({ ok: true }),
+          allDocs,
+          bulkDocs: () => {
+            writeCount += 1
+            return []
+          },
+          promises: {
+            get: async (id: string) => docs.get(id) ?? null,
+            allDocs: async (prefix = '') => allDocs(prefix),
+            bulkDocs: async () => {
+              writeCount += 1
+              return []
+            },
+          },
+        },
+      },
+    },
+  })
 
-  expect(merged.groups.map((item) => item.id)).toEqual(['g-a', 'g-real', 'g-seed-only'])
-  expect(merged.groups[0].children[0].bookmarkIds).toEqual(['b1', 'b-after'])
-  expect(merged.bookmarks.map((item) => item.id)).toEqual(['b1', 'b-real', 'b-after'])
-  expect(merged.bookmarks.find((item) => item.id === 'b1')?.title).toBe('原来填写的标题')
+  try {
+    await expect(loadBookmarkSnapshot()).rejects.toBeInstanceOf(BookmarkStorageUnsafeError)
+    await expect(
+      saveBookmarkSnapshot(snapshot(0, [group('g-seed', [])], []), 0),
+    ).rejects.toBeInstanceOf(BookmarkStorageUnsafeError)
+    expect(writeCount).toBe(0)
+    expect(docs.get(realBookmark._id)).toEqual(realBookmark)
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
+    else Reflect.deleteProperty(globalThis, 'window')
+  }
 })
