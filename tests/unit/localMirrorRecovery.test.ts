@@ -99,7 +99,7 @@ test('当前数据是内置 seed 时直接采用真实镜像，不混入初始�
   expect(selected.snapshotId).toBe('current-seed')
 })
 
-test('本地镜像恢复成功后写入独立标记且不再重复恢复', async () => {
+test('本地镜像恢复成功后写入独立标记，但当前库再次回落 seed 时允许自救', async () => {
   type Doc = { _id: string; _rev?: string; data?: unknown; _deleted?: boolean }
   const docs = new Map<string, Doc>()
   let revision = 0
@@ -144,6 +144,8 @@ test('本地镜像恢复成功后写入独立标记且不再重复恢复', async
     await saveBookmarkSnapshot(recovered!.snapshot, 0, { markLocalMirrorRecoveryCompleted: true })
 
     expect(await loadLocalMirrorRecoverySnapshot()).toBeNull()
+    expect((await loadLocalMirrorRecoverySnapshot({ retryCompletedRecovery: true }))?.snapshot.bookmarks[0].title)
+      .toBe('MCHOSE HUB')
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
     else Reflect.deleteProperty(globalThis, 'window')

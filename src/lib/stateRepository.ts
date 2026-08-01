@@ -408,10 +408,12 @@ export const loadRecoverableBookmarkSnapshot = async (): Promise<BookmarkSnapsho
 }
 
 /** 固定路径本地镜像恢复；校验失败会抛错并阻止启动写入。 */
-export const loadLocalMirrorRecoverySnapshot = async (): Promise<LocalMirrorRecoverySnapshot | null> => {
+export const loadLocalMirrorRecoverySnapshot = async (
+  options: { retryCompletedRecovery?: boolean } = {},
+): Promise<LocalMirrorRecoverySnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
   const completed = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(LOCAL_MIRROR_RECOVERY_COMPLETED_DOC_ID)
-  if (completed) return null
+  if (completed && options.retryCompletedRecovery !== true) return null
 
   const result = window.gooseBookmarkRecovery?.readLocalMirrorSnapshot()
   if (!result || result.ok === false) return null
