@@ -22,6 +22,10 @@ import {
 } from '@/lib/bookmarkSnapshotProtocol'
 
 const BOOKMARK_SNAPSHOT_DOC_PREFIX = 'gm:bookmark-snapshot:'
+const RECOVERY_BOOKMARK_DOC_PREFIX = 'gm:bookmark:'
+const RECOVERY_GROUP_DOC_PREFIX = 'gm:group:'
+const RECOVERY_META_DOC_ID = 'gm:bookmark:meta'
+const RECOVERY_COMPLETED_DOC_ID = 'gm:bookmark-recovery:completed:v2'
 const ICON_ATTACHMENT_PREFIX = 'gm:icon/'
 const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark'
 const SETTINGS_DOC_ID = 'gm:settings'
@@ -58,6 +62,12 @@ interface BookmarkMetaDoc {
   groupCount: number
   bookmarkCount: number
   previousSnapshotId?: string
+}
+
+interface BookmarkRecoveryCompletedDoc {
+  completedAt: number
+  revision: number
+  snapshotId: string
 }
 
 export type BookmarkSnapshot = BookmarkSnapshotEnvelope
@@ -283,8 +293,8 @@ const removeSnapshotDocs = async (snapshotId: string): Promise<void> => {
   await bulkWriteDocs(docs.map((doc) => ({ _id: doc._id, _rev: doc._rev, _deleted: true })))
 }
 
-const loadPersistedBookmarks = async (snapshotId: string): Promise<Bookmark[]> => {
-  const docs = (await allDocsAsyncStrict<PersistedBookmark>(snapshotBookmarkPrefix(snapshotId)))
+const loadPersistedBookmarksByPrefix = async (prefix: string): Promise<Bookmark[]> => {
+  const docs = (await allDocsAsyncStrict<PersistedBookmark>(prefix))
     .filter(isPersistedBookmarkDoc)
   const hydrated = new Array<Bookmark>(docs.length)
   let index = 0
@@ -302,8 +312,8 @@ const loadPersistedBookmarks = async (snapshotId: string): Promise<Bookmark[]> =
   return hydrated
 }
 
-const loadPersistedGroups = async (snapshotId: string): Promise<Group[]> =>
-  (await allDocsAsyncStrict<PersistedGroup>(snapshotGroupPrefix(snapshotId)))
+const loadPersistedGroupsByPrefix = async (prefix: string): Promise<Group[]> =>
+  (await allDocsAsyncStrict<PersistedGroup>(prefix))
     .map((doc, fallbackIndex) => ({ ...clone(doc.data), fallbackIndex }))
     .sort((a, b) => {
       const aOrder = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY
@@ -313,6 +323,12 @@ const loadPersistedGroups = async (snapshotId: string): Promise<Group[]> =>
       return a.fallbackIndex - b.fallbackIndex
     })
     .map(({ fallbackIndex: _fallbackIndex, ...group }) => group)
+
+const loadPersistedBookmarks = (snapshotId: string): Promise<Bookmark[]> =>
+  loadPersistedBookmarksByPrefix(snapshotBookmarkPrefix(snapshotId))
+
+const loadPersistedGroups = (snapshotId: string): Promise<Group[]> =>
+  loadPersistedGroupsByPrefix(snapshotGroupPrefix(snapshotId))
 
 export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
@@ -349,6 +365,43 @@ export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> =
   return validated
 }
 
+/**
+ * 一次性事故恢复入口：读取被 schema v2 忽略、但从未删除的原分组/书签文档。
+ * recoveryCompleted 写入后永久关闭，避免以后用历史副本反向覆盖。
+ */
+export const loadRecoverableBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
+  if (!isUToolsDbAvailable()) return null
+
+  const completed = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(RECOVERY_COMPLETED_DOC_ID)
+  if (completed) return null
+
+  const currentMetaDoc = await getDocAsyncStrict<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+  const currentMeta = currentMetaDoc?.data
+
+  const [groups, bookmarks, recoveryMetaDoc] = await Promise.all([
+    loadPersistedGroupsByPrefix(RECOVERY_GROUP_DOC_PREFIX),
+    loadPersistedBookmarksByPrefix(RECOVERY_BOOKMARK_DOC_PREFIX),
+    getDocAsyncStrict<Partial<BookmarkMetaDoc>>(RECOVERY_META_DOC_ID),
+  ])
+  if (groups.length === 0) return null
+
+  const recoveryMeta = recoveryMetaDoc?.data
+  const candidate: BookmarkSnapshot = {
+    schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
+    revision: Math.max(1, currentMeta?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION ? currentMeta.revision : 0),
+    snapshotId: currentMeta?.schemaVersion === BOOKMARK_SNAPSHOT_SCHEMA_VERSION
+      ? currentMeta.snapshotId
+      : 'recovery-source',
+    groups,
+    bookmarks,
+    activeGroupId: typeof recoveryMeta?.activeGroupId === 'string' ? recoveryMeta.activeGroupId : '',
+    activeSubGroupId: typeof recoveryMeta?.activeSubGroupId === 'string' ? recoveryMeta.activeSubGroupId : '',
+  }
+  const validated = parseBookmarkSnapshotEnvelope(JSON.stringify(candidate))
+  if (!validated) throw new Error('原书签文档仍存在，但格式校验失败；已停止自动恢复和写入')
+  return validated
+}
+
 export interface SaveBookmarkSnapshotResult {
   serialized: string
   dataChanged: boolean
@@ -372,6 +425,7 @@ const createSnapshotId = (): string => {
 export const saveBookmarkSnapshot = async (
   snapshot: BookmarkSnapshot,
   expectedRevision: number,
+  options?: { markRecoveryCompleted?: boolean },
 ): Promise<SaveBookmarkSnapshotResult> => {
   if (!isUToolsDbAvailable()) {
     throw new Error('uTools db 不可用，无法保存书签')
@@ -449,6 +503,20 @@ export const saveBookmarkSnapshot = async (
       throw new Error('提交书签 meta 失败，快照未生效')
     }
     throw new BookmarkRevisionConflictError(expectedRevision, latestRevision)
+  }
+
+  if (options?.markRecoveryCompleted === true) {
+    const existingMarker = await getDocAsyncStrict<BookmarkRecoveryCompletedDoc>(RECOVERY_COMPLETED_DOC_ID)
+    if (!existingMarker) {
+      const markerWrite = putDoc(RECOVERY_COMPLETED_DOC_ID, {
+        completedAt: Date.now(),
+        revision: committed.revision,
+        snapshotId: committed.snapshotId,
+      } satisfies BookmarkRecoveryCompletedDoc)
+      if (markerWrite.ok === false || markerWrite.error === true) {
+        throw new Error('真实书签已恢复，但恢复标记写入失败；将安全重试')
+      }
+    }
   }
 
   const obsoleteSnapshotId = previousMeta?.data?.previousSnapshotId

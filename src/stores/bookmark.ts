@@ -16,12 +16,14 @@ import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import {
   BookmarkRevisionConflictError,
   loadBookmarkSnapshot,
+  loadRecoverableBookmarkSnapshot,
   saveBookmarkSnapshot,
   type BookmarkSnapshot,
 } from '@/lib/stateRepository'
 import {
   BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
   bookmarkSnapshotDataFingerprint,
+  combineRecoveredBookmarkSnapshot,
   mergeBookmarkSnapshots,
   parseBookmarkSnapshotEnvelope,
 } from '@/lib/bookmarkSnapshotProtocol'
@@ -1405,6 +1407,7 @@ let lastQueuedActiveSubGroupId = ''
 let currentBookmarkRevision = 0
 let baseBookmarkSnapshot: BookmarkSnapshot | null = null
 let suppressBookmarkPersistence = false
+let markRecoveryCompletedOnNextSave = false
 
 const applyBookmarkSnapshotToStore = (snapshot: BookmarkSnapshot): void => {
   const preferredGroupId = useBookmarkStore.getState().activeGroupId
@@ -1451,7 +1454,10 @@ const drainBookmarkPersistQueue = (): Promise<void> => {
       if (job.serialized === lastPersistedBookmarkState) continue
 
       try {
-        const written = await saveBookmarkSnapshot(job.snapshot, currentBookmarkRevision)
+        const written = await saveBookmarkSnapshot(job.snapshot, currentBookmarkRevision, {
+          markRecoveryCompleted: markRecoveryCompletedOnNextSave,
+        })
+        if (markRecoveryCompletedOnNextSave) markRecoveryCompletedOnNextSave = false
         // 本次提交完成回调之前，可能已经收到更高 revision 的广播；绝不允许状态倒退。
         if (written.snapshot.revision <= currentBookmarkRevision) {
           const current = pickBookmarkSnapshot(useBookmarkStore.getState())
@@ -1573,23 +1579,32 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
   bookmarkPersistenceStarted = true
 
   let persisted: BookmarkSnapshot | null
+  let recoverable: BookmarkSnapshot | null
   try {
     persisted = await loadBookmarkSnapshot()
+    recoverable = await loadRecoverableBookmarkSnapshot()
   } catch (error) {
     console.error('[bookmark] 读取持久化快照失败，已禁止本窗口写入:', error)
     return
   }
   if (persisted) {
-    const patched = patchBookmarksWithBuiltinSeedIcons(persisted.bookmarks).bookmarks
-    useBookmarkStore.setState({
-      groups: persisted.groups,
-      bookmarks: patched,
-      activeGroupId: persisted.activeGroupId,
-      activeSubGroupId: persisted.activeSubGroupId
-    })
     currentBookmarkRevision = persisted.revision
     baseBookmarkSnapshot = persisted
   }
+
+  const startupSnapshot = recoverable && persisted
+    ? combineRecoveredBookmarkSnapshot(recoverable, persisted)
+    : recoverable || persisted
+  if (startupSnapshot) {
+    const patched = patchBookmarksWithBuiltinSeedIcons(startupSnapshot.bookmarks).bookmarks
+    useBookmarkStore.setState({
+      groups: startupSnapshot.groups,
+      bookmarks: patched,
+      activeGroupId: startupSnapshot.activeGroupId,
+      activeSubGroupId: startupSnapshot.activeSubGroupId
+    })
+  }
+  markRecoveryCompletedOnNextSave = !!recoverable
 
   useBookmarkStore.getState().patchBookmarksWithBuiltinSeedIcons()
   useBookmarkStore.getState().ensureValidSelection()
@@ -1601,7 +1616,7 @@ export const initializeBookmarkStorePersistence = async (): Promise<void> => {
   })
   bindBookmarkPersistenceFlushEvents()
 
-  lastPersistedBookmarkState = persisted ? serializeBookmarkData(persisted) : ''
+  lastPersistedBookmarkState = persisted && !recoverable ? serializeBookmarkData(persisted) : ''
   enqueueBookmarkPersist(useBookmarkStore.getState())
 
   void useBookmarkStore.getState().backfillIconCache()
