@@ -4,7 +4,6 @@ interface UToolsDbDoc<T = unknown> {
   _deleted?: boolean
   data?: T
 }
-
 interface UToolsDbResult {
   ok?: boolean
   id?: string

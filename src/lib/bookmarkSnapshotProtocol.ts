@@ -11,7 +11,6 @@ export interface BookmarkSnapshotEnvelope {
   activeGroupId: string
   activeSubGroupId: string
 }
-
 const clone = <T>(value: T): T => {
   if (value === undefined || value === null) return value
   return JSON.parse(JSON.stringify(value)) as T
@@ -174,54 +173,6 @@ export const mergeBookmarkSnapshots = (
     bookmarks,
     activeGroupId: local.activeGroupId || remote.activeGroupId,
     activeSubGroupId: local.activeSubGroupId || remote.activeSubGroupId,
-  }
-}
-
-const unionIds = (primary: string[], secondary: string[]): string[] =>
-  [...primary, ...secondary].filter((id, index, values) => values.indexOf(id) === index)
-
-/**
- * 事故恢复专用：原文档是同 ID 的权威内容，同时保留 v2 事故发生后新增的实体和归属。
- */
-export const combineRecoveredBookmarkSnapshot = (
-  recovered: BookmarkSnapshotEnvelope,
-  current: BookmarkSnapshotEnvelope,
-): BookmarkSnapshotEnvelope => {
-  const currentGroups = new Map(current.groups.map((item) => [item.id, item]))
-
-  const groups = recovered.groups.map((recoveredGroup) => {
-    const currentGroup = currentGroups.get(recoveredGroup.id)
-    if (!currentGroup) return clone(recoveredGroup)
-    const currentChildren = new Map(currentGroup.children.map((item) => [item.id, item]))
-    const children = recoveredGroup.children.map((recoveredSub) => {
-      const currentSub = currentChildren.get(recoveredSub.id)
-      return currentSub
-        ? { ...clone(recoveredSub), bookmarkIds: unionIds(recoveredSub.bookmarkIds, currentSub.bookmarkIds) }
-        : clone(recoveredSub)
-    })
-    currentGroup.children.forEach((currentSub) => {
-      if (!children.some((item) => item.id === currentSub.id)) children.push(clone(currentSub))
-    })
-    return { ...clone(recoveredGroup), children }
-  })
-  current.groups.forEach((currentGroup) => {
-    if (!groups.some((item) => item.id === currentGroup.id)) groups.push(clone(currentGroup))
-  })
-
-  const bookmarks = recovered.bookmarks.map((item) => clone(item))
-  current.bookmarks.forEach((currentBookmark) => {
-    if (bookmarks.some((item) => item.id === currentBookmark.id)) return
-    bookmarks.push(clone(currentBookmark))
-  })
-
-  return {
-    schemaVersion: BOOKMARK_SNAPSHOT_SCHEMA_VERSION,
-    revision: current.revision,
-    snapshotId: current.snapshotId,
-    groups,
-    bookmarks,
-    activeGroupId: recovered.activeGroupId || current.activeGroupId,
-    activeSubGroupId: recovered.activeSubGroupId || current.activeSubGroupId,
   }
 }
 
