@@ -17,7 +17,7 @@ import type { HomeItem } from './viewModel'
  * 新建/编辑书签表单
  * --------------------------------------------------------------------------
  * 新建不再经过独立「捕获链接 / 智能识别」页面，直接进入可编辑确认页。
- * URL 抓取、AI 生成和分类推荐都作为表单内的轻量辅助能力存在，避免流程臃肿。
+ * URL 抓取作为表单内的轻量辅助能力存在，避免流程臃肿。
  */
 
 export default function AddBookmarkWizard({
@@ -42,18 +42,13 @@ export default function AddBookmarkWizard({
     originalUrl,
     lastFetchedUrl,
     categorySuggestion,
-    isSuggestingCategory,
-    canUseAi,
-    aiError,
     set,
     patchDraft,
     openAdd,
     openEdit,
     handleSave,
     runUrlFetch,
-    askAI,
     requestDelete,
-    askCategorySuggestion,
     applyCategorySuggestion,
     dismissCategorySuggestion,
     onTitleInput,
@@ -158,10 +153,7 @@ export default function AddBookmarkWizard({
             titleFetching={titleFetching}
             descFetching={descFetching}
             isGenerating={isGenerating}
-            canUseAi={canUseAi}
-            aiError={aiError}
             categorySuggestion={categorySuggestion}
-            isSuggestingCategory={isSuggestingCategory}
             patchDraft={patchDraft}
             onTitleInput={onTitleInput}
             onDescInput={onDescInput}
@@ -170,8 +162,6 @@ export default function AddBookmarkWizard({
             takeOverTitle={takeOverTitle}
             takeOverDesc={takeOverDesc}
             setLocations={(v: BookmarkLocation[]) => set({ draftLocations: v })}
-            askAI={askAI}
-            askCategorySuggestion={askCategorySuggestion}
             applyCategorySuggestion={applyCategorySuggestion}
             dismissCategorySuggestion={dismissCategorySuggestion}
             setUrl={setUrl}
@@ -233,10 +223,7 @@ function ConfirmStep({
   titleFetching,
   descFetching,
   isGenerating,
-  canUseAi,
-  aiError,
   categorySuggestion,
-  isSuggestingCategory,
   patchDraft,
   onTitleInput,
   onDescInput,
@@ -245,8 +232,6 @@ function ConfirmStep({
   takeOverTitle,
   takeOverDesc,
   setLocations,
-  askAI,
-  askCategorySuggestion,
   applyCategorySuggestion,
   dismissCategorySuggestion,
   setUrl,
@@ -266,15 +251,12 @@ function ConfirmStep({
   titleFetching: boolean
   descFetching: boolean
   isGenerating: boolean
-  canUseAi: boolean
-  aiError: string
   categorySuggestion: {
     groupName: string
     subGroupName: string
     reason: string
     confidence: number
   } | null
-  isSuggestingCategory: boolean
   patchDraft: (p: Partial<{ title: string; desc: string; url: string; allowUniversal: boolean }>) => void
   onTitleInput: () => void
   onDescInput: (v: string) => void
@@ -283,8 +265,6 @@ function ConfirmStep({
   takeOverTitle: () => void
   takeOverDesc: () => void
   setLocations: (v: BookmarkLocation[]) => void
-  askAI: (showNotify?: boolean) => void
-  askCategorySuggestion: () => void
   applyCategorySuggestion: () => void
   dismissCategorySuggestion: () => void
   setUrl: (v: string) => void
@@ -340,10 +320,6 @@ function ConfirmStep({
   const handleUrlScroll = useCallback((e: UIEvent<HTMLInputElement>) => {
     if (mirrorRef.current) mirrorRef.current.scrollLeft = e.currentTarget.scrollLeft
   }, [])
-
-  const handleAskAI = useCallback(() => {
-    askAI(true)
-  }, [askAI])
 
   return (
     <div className="gm-confirm">
@@ -421,28 +397,6 @@ function ConfirmStep({
           </div>
         )}
       </section>
-
-      {canUseAi && (
-        <div className={`gm-assist-row${aiError ? ' has-error' : ''}`}>
-          <span className="gm-assist-ico">
-            <Ico name={isGenerating || isSuggestingCategory ? 'loader' : 'sparkles'} className={isGenerating || isSuggestingCategory ? 'spin' : ''} />
-          </span>
-          <div className="gm-assist-copy">
-            <div>AI 辅助</div>
-            <span>{aiError || '需要时再生成标题简介，或按现有分组推荐一个位置'}</span>
-          </div>
-          <div className="gm-assist-actions" aria-label="AI 辅助操作">
-            <button type="button" className="btn btn-ai sm gm-assist-action" onClick={handleAskAI} disabled={isGenerating || !draft.url.trim()}>
-              <Ico name={isGenerating ? 'loader' : 'wand-sparkles'} className={isGenerating ? 'spin' : ''} />
-              {isGenerating ? '生成中' : '生成文案'}
-            </button>
-            <button type="button" className="btn btn-ghost sm gm-assist-action" onClick={askCategorySuggestion} disabled={isSuggestingCategory || !draft.url.trim()}>
-              <Ico name={isSuggestingCategory ? 'loader' : 'folder'} className={isSuggestingCategory ? 'spin' : ''} />
-              {isSuggestingCategory ? '推荐中' : '推荐位置'}
-            </button>
-          </div>
-        </div>
-      )}
 
       <div className="gm-id-card">
         <div className="gm-id-top">

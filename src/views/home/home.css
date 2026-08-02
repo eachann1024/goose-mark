@@ -1543,7 +1543,7 @@
 
 /* ============================================================
    新增/编辑书签表单（AddBookmarkWizard）
-   单页编辑流：链接、元信息、AI 辅助、归类都在同一张表单里完成。
+   单页编辑流：链接、元信息、归类都在同一张表单里完成。
    ============================================================ */
 .goose-home .gm-wiz {
   @apply absolute inset-0 z-50 flex;
@@ -2133,40 +2133,7 @@
 .goose-home .gm-cat-title { @apply text-sm font-semibold text-g-fg; }
 .goose-home .gm-cat-sub { @apply text-[11.5px] text-g-fg-muted; }
 
-/* AI 辅助：一行完成文案生成与位置推荐，避免独立大卡片 */
-.goose-home .gm-assist-row {
-  @apply flex items-center gap-[10px] min-h-[46px] rounded-[12px] border px-3 py-2;
-  background:var(--ai-panel);
-  border-color:var(--ai-border);
-}
-.goose-home .gm-assist-row.has-error {
-  background:var(--danger-panel);
-  border-color:var(--danger-border);
-}
-.goose-home .gm-assist-ico {
-  @apply size-7 shrink-0 rounded-[9px] flex items-center justify-center text-[14px];
-  color:var(--ai); background:var(--ai-subtle);
-}
-.goose-home .gm-assist-copy { @apply flex-1 min-w-0; }
-.goose-home .gm-assist-copy > div { @apply text-[12.5px] font-semibold text-g-fg leading-[1.2]; }
-.goose-home .gm-assist-copy > span { @apply block text-[11.5px] text-g-fg-muted leading-[1.35] truncate mt-0.5; }
 .goose-home .btn.sm { @apply h-[30px] px-3 text-xs; }
-.goose-home .gm-assist-actions { @apply flex items-center gap-2 shrink-0; }
-.goose-home .gm-assist-action {
-  @apply shrink-0 whitespace-nowrap;
-  min-width:86px;
-  transition-property:color,background-color,border-color;
-}
-.goose-home .gm-assist-action .lucide { @apply shrink-0; }
-
-@media (max-width: 760px) {
-  .goose-home .gm-assist-row { @apply items-start; }
-  .goose-home .gm-assist-actions {
-    @apply w-full flex-wrap;
-    margin-left:38px;
-  }
-  .goose-home .gm-assist-action { @apply flex-1; }
-}
 
 /* AI 推荐分类条 */
 .goose-home .gm-ai-suggest {
