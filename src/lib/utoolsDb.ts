@@ -4,6 +4,7 @@ interface UToolsDbDoc<T = unknown> {
   _deleted?: boolean
   data?: T
 }
+
 interface UToolsDbResult {
   ok?: boolean
   id?: string
@@ -93,16 +94,6 @@ export const getDocAsync = async <T>(id: string): Promise<HostDoc<T> | null> => 
   }
 }
 
-/** 持久化关键路径专用：读取异常必须上抛，不能把“读失败”伪装成“没有数据”。 */
-export const getDocAsyncStrict = async <T>(id: string): Promise<HostDoc<T> | null> => {
-  const db = getUtoolsApi()?.db
-  if (!db) throw new Error('uTools db unavailable')
-  if (db.promises?.get) {
-    return (await db.promises.get<T>(id)) as HostDoc<T> | null
-  }
-  return (db.get<T>(id) as HostDoc<T> | null | undefined) ?? null
-}
-
 export const allDocs = <T>(prefix = ''): Array<HostDoc<T>> => {
   try {
     return (getUtoolsApi()?.db?.allDocs<T>(prefix) as Array<HostDoc<T>> | undefined) ?? []
@@ -122,16 +113,6 @@ export const allDocsAsync = async <T>(prefix = ''): Promise<Array<HostDoc<T>>> =
   } catch {
     return []
   }
-}
-
-/** 持久化关键路径专用：禁止用空数组吞掉数据库异常。 */
-export const allDocsAsyncStrict = async <T>(prefix = ''): Promise<Array<HostDoc<T>>> => {
-  const db = getUtoolsApi()?.db
-  if (!db) throw new Error('uTools db unavailable')
-  if (db.promises?.allDocs) {
-    return (await db.promises.allDocs<T>(prefix)) as Array<HostDoc<T>>
-  }
-  return (db.allDocs<T>(prefix) as Array<HostDoc<T>> | undefined) ?? []
 }
 
 export const putDoc = <T>(id: string, data: T, rev?: string): UToolsDbResult => {
