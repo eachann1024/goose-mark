@@ -25,12 +25,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
-import {
-  applyIncomingBookmarkSnapshot,
-  flushBookmarkStorePersistence,
-  useBookmarkStore,
-  TRASH_GROUP_ID,
-} from '@/stores/bookmark'
+import { flushBookmarkStorePersistence, useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import {
   useSettingsStore,
   selectAiSettings,
@@ -94,6 +89,7 @@ interface SortableTabProps {
   onTabClick: () => void
   onTabContextMenu: (e: React.MouseEvent) => void
 }
+
 function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }: SortableTabProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const style: React.CSSProperties = {
@@ -328,6 +324,21 @@ const moveDetachedWindowTo = (position: DetachedWindowPosition | null | undefine
   try {
     window.moveTo?.(x, y)
   } catch { /* ignore */ }
+}
+
+// 跨窗口同步：取数据集中最大 updatedAt（对齐 App.tsx getLatestUpdatedAt）
+const getLatestUpdatedAt = (data: { groups?: Group[]; bookmarks?: Bookmark[] }) => {
+  let max = 0
+  ;(data.groups || []).forEach((group) => {
+    max = Math.max(max, group.updatedAt || group.createdAt || 0)
+    group.children?.forEach((sub) => {
+      max = Math.max(max, sub.updatedAt || sub.createdAt || 0)
+    })
+  })
+  ;(data.bookmarks || []).forEach((bookmark) => {
+    max = Math.max(max, bookmark.updatedAt || bookmark.createdAt || 0)
+  })
+  return max
 }
 
 interface UToolsPluginEnterPayload {
@@ -2362,7 +2373,23 @@ export default function HomePage() {
           settingsStore.setLocalMirrorDirectory(localMirrorDirectory)
         }
         if (key === 'bookmark') {
-          applyIncomingBookmarkSnapshot(value)
+          const store = useBookmarkStore.getState()
+          const incomingStamp = getLatestUpdatedAt(data)
+          const localStamp = getLatestUpdatedAt({ groups: store.groups, bookmarks: store.bookmarks })
+          // 严格大于才应用：persist 序列化含本窗口 active 选择，两窗口选择不同时
+          // `>=` 会让等时间戳数据互相写回、BroadcastChannel 无限回弹
+          if (incomingStamp > localStamp) {
+            const preferredGroupId = store.activeGroupId
+            const preferredSubGroupId = store.activeSubGroupId
+            const nextGroups = Array.isArray((data as { groups?: unknown }).groups)
+              ? (data as { groups: Group[] }).groups
+              : store.groups
+            const nextBookmarks = Array.isArray((data as { bookmarks?: unknown }).bookmarks)
+              ? (data as { bookmarks: Bookmark[] }).bookmarks
+              : store.bookmarks
+            store.setData({ groups: nextGroups, bookmarks: nextBookmarks })
+            store.ensureValidSelection(preferredGroupId, preferredSubGroupId)
+          }
         }
       } catch {
         // ignore
