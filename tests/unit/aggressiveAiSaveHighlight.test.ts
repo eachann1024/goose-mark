@@ -16,6 +16,8 @@ describe('AI 保存完成定位', () => {
 
   test('提交后回首页后台运行，结果卡悬停时暂停关闭', () => {
     expect(homeSource).toContain('粘贴或提交后立即回首页')
+    expect(homeSource).not.toContain('await wait(650)')
+    expect(homeSource).not.toContain('完成态稍作停留')
     expect(homeSource).toContain('onPointerEnter={() => clearAggressiveSaveSuccessTimer(notice.id)}')
     expect(homeSource).toContain('onPointerLeave={() => scheduleAggressiveSaveSuccessDismiss(notice.id, 2200)}')
   })
