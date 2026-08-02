@@ -1516,8 +1516,6 @@ export default function HomePage() {
     if (aggressiveSaveRunnerRef.current) return
     aggressiveSaveRunnerRef.current = true
 
-    const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
-
     while (aggressiveSaveQueueRef.current.length > 0) {
       const job = aggressiveSaveQueueRef.current.shift()
       if (!job) break
@@ -1537,9 +1535,8 @@ export default function HomePage() {
           }
         })
         if (!aggressiveSaveMountedRef.current) break
-        // 完成态稍作停留，让用户看清真实流程的结束，而不是一闪而过。
-        await wait(650)
-        if (!aggressiveSaveMountedRef.current) break
+        // Promise 返回即进入成功终态；不要再依赖中间定时器，否则 uTools
+        // 窗口被挂起或旧内核节流时会永远停在 completed 进度态。
         setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
         setAggressiveSaveFailure((failure) => (failure?.id === job.id ? null : failure))
         setAggressiveSaveUrl('')
