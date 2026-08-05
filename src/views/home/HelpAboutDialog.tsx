@@ -74,7 +74,7 @@ export default function HelpAboutDialog({ open, onClose, onToast }: HelpAboutDia
               <div className="set-row-sep" />
               <div className="help-tip">粘贴链接快速收集书签</div>
               <div className="set-row-sep" />
-              <div className="help-tip">AI 助手自动整理与补全元信息</div>
+              <div className="help-tip">AI 可自动补全书签标题与简介</div>
               <div className="set-row-sep" />
               <div className="help-tip">浏览器扩展一键收藏当前页面</div>
               <div className="set-row-sep" />
