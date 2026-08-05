@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
@@ -78,8 +78,6 @@ import {
 } from '@/lib/aiProvider'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import './home.css'
-
-const BookmarkAiPanel = lazy(() => import('./BookmarkAiPanel'))
 
 // ── SortableTab：顶栏一级分组 Tab 可拖拽单项（模块顶层，避免 TDZ）──────────
 interface SortableTabProps {
@@ -411,6 +409,8 @@ interface CtxState {
 }
 
 const HOME_CONTINUITY_KEY = 'goose-marks.home-continuity'
+/** 主列表滚动：默认始终记住（不依赖「面板连贯模式」） */
+const HOME_SCROLL_KEY = 'goose-marks.home-scroll-top'
 
 interface HomeContinuityState {
   activeGroupId: string
@@ -435,6 +435,22 @@ const readHomeContinuityState = (): HomeContinuityState | null => {
   } catch {
     return null
   }
+}
+
+const readHomeScrollTop = (): number => {
+  const raw = getPersistentItem(HOME_SCROLL_KEY)
+  if (raw == null || raw === '') {
+    // 兼容旧连贯数据里的 scrollTop
+    const legacy = readHomeContinuityState()?.scrollTop
+    return typeof legacy === 'number' && legacy > 0 ? legacy : 0
+  }
+  const n = Number(raw)
+  return Number.isFinite(n) && n > 0 ? Math.max(0, n) : 0
+}
+
+const writeHomeScrollTop = (top: number) => {
+  const v = Math.max(0, Math.round(Number(top) || 0))
+  utoolsStorage.setItem(HOME_SCROLL_KEY, String(v))
 }
 
 const SET_NAV: Array<[string, string, string]> = [
@@ -612,8 +628,13 @@ export default function HomePage() {
   const [aggressiveSaveJobs, setAggressiveSaveJobs] = useState<AggressiveSaveJob[]>([])
   const [aggressiveSaveSuccesses, setAggressiveSaveSuccesses] = useState<AggressiveSaveSuccess[]>([])
   const [aggressiveSaveFailure, setAggressiveSaveFailure] = useState<AggressiveSaveFailure | null>(null)
-  const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [searchVal, setSearchVal] = useState('')
+  // 必须在任何依赖它的 useEffect 之前声明，否则 const TDZ 会在首屏渲染炸掉
+  const isSearching = searchVal.trim().length > 0
+  const isSearchingRef = useRef(isSearching)
+  isSearchingRef.current = isSearching
+  const searchValRef = useRef(searchVal)
+  searchValRef.current = searchVal
   // ---- 个人菜单 + 帮助弹窗 ----
   const [paOpen, setPaOpen] = useState(false)
   const avatarRef = useRef<HTMLButtonElement>(null)
@@ -670,7 +691,10 @@ export default function HomePage() {
   const isAnchorScrollingRef = useRef(false)
   const anchorScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const anchorRaf = useRef(0)
-  const homeScrollTopRef = useRef(initialContinuityRef.current?.scrollTop ?? 0)
+  // 滚动默认持久化：优先独立 scroll key，其次连贯快照
+  const homeScrollTopRef = useRef(
+    readHomeScrollTop() || initialContinuityRef.current?.scrollTop || 0
+  )
   const homeContinuityLatestRef = useRef({
     activeSubId,
     selectedId,
@@ -720,6 +744,7 @@ export default function HomePage() {
   }, [activeHomeGroup, activeSubId, defaultActiveSub, selectedId])
 
   const continuityRestoredRef = useRef(false)
+  const homeScrollRestoredOnMountRef = useRef(false)
   useEffect(() => {
     if (continuityRestoredRef.current || !panelContinuous || homeGroups.length === 0) return
     continuityRestoredRef.current = true
@@ -738,13 +763,20 @@ export default function HomePage() {
       setSelectedId(saved.selectedId)
     }
 
-    requestAnimationFrame(() => {
-      if (contentRef.current && Number.isFinite(saved.scrollTop)) {
-        homeScrollTopRef.current = saved.scrollTop
-        contentRef.current.scrollTop = saved.scrollTop
-      }
-    })
+    if (Number.isFinite(saved.scrollTop) && saved.scrollTop > 0) {
+      homeScrollTopRef.current = saved.scrollTop
+    }
   }, [homeGroups, panelContinuous])
+
+  // 首屏主列表就绪后还原滚动（与连贯模式无关）
+  useEffect(() => {
+    if (homeScrollRestoredOnMountRef.current) return
+    if (homeGroups.length === 0) return
+    if (screen !== 'list' && screen !== 'grid') return
+    if (isSearching) return
+    homeScrollRestoredOnMountRef.current = true
+    restoreHomeScrollRef.current('keep')
+  }, [homeGroups.length, screen, isSearching])
 
   /** 聚焦当前搜索入口并全选已有文本（方便直接覆盖输入） */
   const focusSearchInput = useCallback(() => {
@@ -796,7 +828,6 @@ export default function HomePage() {
       }))
       .filter((g) => g.subs.length > 0)
   }, [homeGroups, searchVal, activeGroupId])
-  const isSearching = searchVal.trim().length > 0
 
   // 搜索态：全局匹配的扁平结果（按 id 去重），列表/格子共用，不再按分组分段展示。
   const searchResultItems = useMemo<HomeItem[]>(() => {
@@ -869,6 +900,8 @@ export default function HomePage() {
   // 搜索词变化（含清空）：默认选中过滤结果第一项，Enter 即可直接打开
   const navigableItemsRef = useRef(navigableItems)
   navigableItemsRef.current = navigableItems
+  // 清搜索 / 恢复滚动时禁止「选中项滚入视口」把列表拽回顶部
+  const suppressScrollIntoViewRef = useRef(false)
   useEffect(() => {
     setSelectedId(navigableItemsRef.current[0]?.id ?? null)
   }, [searchVal])
@@ -943,9 +976,45 @@ export default function HomePage() {
 
   // ---- 工具：清空面板内联搜索 ----
   const clearSearch = useCallback(() => {
+    // 退出搜索前钉住主列表滚动，避免结果面板卸掉后内容区从 0 起、再被选中项滚入顶掉
+    if (searchVal.trim()) {
+      suppressScrollIntoViewRef.current = true
+    }
     applySearchVal('')
-  }, [applySearchVal])
+  }, [applySearchVal, searchVal])
   clearSearchFnRef.current = clearSearch
+
+  /**
+   * 把主列表滚回记录位置（或顶部）。
+   * 多次重试：uTools 再次唤出时会 setExpendHeight，布局晚一拍，单次 rAF 写 scrollTop 常被冲掉。
+   */
+  const restoreHomeScroll = useCallback((mode: 'keep' | 'top') => {
+    if (mode === 'top') {
+      homeScrollTopRef.current = 0
+      writeHomeScrollTop(0)
+    } else if (homeScrollTopRef.current <= 0) {
+      // 内存没值时从存储再读一次（页面被重挂载时）
+      homeScrollTopRef.current = readHomeScrollTop()
+    }
+    const target = mode === 'top' ? 0 : homeScrollTopRef.current
+    const apply = () => {
+      const root = contentRef.current
+      if (!root) return false
+      root.scrollTop = target
+      return Math.abs(root.scrollTop - target) < 2 || root.scrollHeight <= root.clientHeight + 1
+    }
+    requestAnimationFrame(() => {
+      if (apply()) return
+      requestAnimationFrame(() => {
+        if (apply()) return
+        window.setTimeout(apply, 40)
+        window.setTimeout(apply, 120)
+        window.setTimeout(apply, 280)
+      })
+    })
+  }, [])
+  const restoreHomeScrollRef = useRef(restoreHomeScroll)
+  restoreHomeScrollRef.current = restoreHomeScroll
 
   useEffect(() => {
     if (!panelContinuous) utoolsStorage.removeItem(HOME_CONTINUITY_KEY)
@@ -958,45 +1027,57 @@ export default function HomePage() {
   }, [activeGroupId, activeSubId, panelContinuous, saveHomeContinuity, selectedId])
 
   useEffect(() => {
-    const save = () => saveHomeContinuity()
+    const captureScroll = () => {
+      // 退出前尽量读一次当前主列表滚动（搜索面板时 contentRef 不是主列表，沿用 ref 旧值）
+      if (!isSearchingRef.current) {
+        const root = contentRef.current
+        if (root) homeScrollTopRef.current = root.scrollTop
+      }
+      writeHomeScrollTop(homeScrollTopRef.current)
+      saveHomeContinuity()
+    }
     const saveWhenHidden = () => {
-      if (document.visibilityState === 'hidden') save()
+      if (document.visibilityState === 'hidden') captureScroll()
     }
-    // 退出插件时清空搜索态：subInput 已被 preload 拆掉，再次唤出时框是空的，面板不能还停在搜索结果
-    const onPluginOut = () => {
-      save()
-      clearSearchFnRef.current()
-    }
-
-    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, onPluginOut)
-    window.addEventListener('pagehide', save)
-    window.addEventListener('beforeunload', save)
+    // 退出时只持久化滚动/位置，不清搜索（清搜索会换 content 节点把滚动顶掉）
+    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, captureScroll)
+    window.addEventListener('pagehide', captureScroll)
+    window.addEventListener('beforeunload', captureScroll)
     document.addEventListener('visibilitychange', saveWhenHidden)
     return () => {
-      save()
-      window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, onPluginOut)
-      window.removeEventListener('pagehide', save)
-      window.removeEventListener('beforeunload', save)
+      captureScroll()
+      window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, captureScroll)
+      window.removeEventListener('pagehide', captureScroll)
+      window.removeEventListener('beforeunload', captureScroll)
       document.removeEventListener('visibilitychange', saveWhenHidden)
     }
   }, [saveHomeContinuity])
 
+  // 主列表滚动：始终写入 ref + 落盘（不依赖连贯模式）
   useEffect(() => {
-    if (!panelContinuous || (screen !== 'list' && screen !== 'grid')) return
+    if (screen !== 'list' && screen !== 'grid') return
+    if (isSearching) return
     const root = contentRef.current
     if (!root) return
+    // 挂上主列表时先还原（搜索退回 / 再次唤出后 content 重建）
+    if (homeScrollTopRef.current > 0 && Math.abs(root.scrollTop - homeScrollTopRef.current) > 1) {
+      root.scrollTop = homeScrollTopRef.current
+    }
     let timer: number | undefined
-    const saveSoon = () => {
+    const onScroll = () => {
       homeScrollTopRef.current = root.scrollTop
       if (timer) window.clearTimeout(timer)
-      timer = window.setTimeout(saveHomeContinuity, 300)
+      timer = window.setTimeout(() => {
+        writeHomeScrollTop(homeScrollTopRef.current)
+        if (useSettingsStore.getState().panelContinuous) saveHomeContinuity()
+      }, 200)
     }
-    root.addEventListener('scroll', saveSoon, { passive: true })
+    root.addEventListener('scroll', onScroll, { passive: true })
     return () => {
       if (timer) window.clearTimeout(timer)
-      root.removeEventListener('scroll', saveSoon)
+      root.removeEventListener('scroll', onScroll)
     }
-  }, [panelContinuous, saveHomeContinuity, screen])
+  }, [saveHomeContinuity, screen, isSearching])
 
   // ---- 一级分组 Tab：切换当前分组（同步 store，首个子分组自动选中）----
   const changeActiveGroup = useCallback((groupId: string) => {
@@ -1294,6 +1375,10 @@ export default function HomePage() {
   useEffect(() => {
     if (screen !== 'list' && screen !== 'grid') return
     if (!selectedId) return
+    if (suppressScrollIntoViewRef.current) {
+      suppressScrollIntoViewRef.current = false
+      return
+    }
     const root = contentRef.current
     if (!root) return
     const sel = root.querySelector<HTMLElement>(`[data-item-id="${selectedId}"]`)
@@ -1496,6 +1581,19 @@ export default function HomePage() {
     [applySearchVal, view]
   )
 
+  /** 从主面板进入新建：先把 UI 当前选中（含 scroll-spy 的 activeSubId）写入 store，再开表单 */
+  const openNewBookmarkForm = useCallback(() => {
+    const store = useBookmarkStore.getState()
+    const groupId = activeGroupId || store.activeGroupId
+    const subGroupId = activeSubId || store.activeSubGroupId || undefined
+    if (groupId) {
+      store.selectGroup(groupId, subGroupId)
+    }
+    setFormEditItem(null)
+    setFormKey((k) => k + 1)
+    setScreen('add')
+  }, [activeGroupId, activeSubId])
+
   const takeOverAggressiveSave = useCallback(
     (notice: AggressiveSaveSuccess) => {
       const bookmark = useBookmarkStore
@@ -1563,7 +1661,7 @@ export default function HomePage() {
         setAggressiveSaveJobs((items) => items.filter((item) => item.id !== job.id))
         const normalized = error instanceof AggressiveAiSaveError
           ? error
-          : new AggressiveAiSaveError('ai_failed', 'AI 保存失败', {
+          : new AggressiveAiSaveError('ai_failed', 'AI 快速保存失败', {
               detail: error instanceof Error ? error.message : String(error || '未知错误'),
               recovery: '请检查 AI 设置后重试。'
             })
@@ -2134,9 +2232,7 @@ export default function HomePage() {
             console.warn('[quick_save] 获取浏览器 URL 失败:', err)
           }
           // 兜底：打开新增表单手动填写
-          setFormEditItem(null)
-          setFormKey((k) => k + 1)
-          setScreen('add')
+          openNewBookmarkForm()
           fireToastRef.current('未检测到有效链接，请手动填写')
         })()
         return
@@ -2173,9 +2269,7 @@ export default function HomePage() {
         fireToastRef.current(`已保存：${bookmark.title || urlToSave}`)
         void flushBookmarkStorePersistence().finally(() => window.utools?.outPlugin())
       } else {
-        setFormEditItem(null)
-        setFormKey((k) => k + 1)
-        setScreen('add')
+        openNewBookmarkForm()
         fireToastRef.current('未检测到有效链接，请手动填写')
       }
       return
@@ -2267,17 +2361,23 @@ export default function HomePage() {
       // bookmarks 主入口：universal 书签未命中后根据连贯模式决定是否重置视图。
       // 不能因为 payloadText 非空就进搜索——uTools 用命令词（"书签"/"bookmark"）触发主入口时，
       // 会把命令词本身当 payload 传进来。真正的关键词检索在面板内搜索框完成。
-      // 搜索态不跨次唤出：uTools 退出后 subInput 已空，必须退出搜索面板（默认行为，无选项）。
+      // 搜索态不跨次唤出：uTools 退出后 subInput 已空，退搜索；滚动位置单独处理，避免被顶到顶部。
       useBookmarkFormStore.getState().set({ showAdd: false })
-      applySearchValRef.current('')
+      const wasSearching = searchValRef.current.trim().length > 0
+      if (wasSearching) {
+        suppressScrollIntoViewRef.current = true
+        applySearchValRef.current('')
+      }
       if (useSettingsStore.getState().panelContinuous) {
-        // 连贯开：保留浏览位置，仅聚焦搜索框
+        // 连贯开：保留分组/选中，并聚焦搜索
         focusSearchInput()
       } else {
-        // 连贯关（默认）：回主视图，再聚焦
+        // 连贯关：若在设置/回收站等则回主视图；滚动默认始终保留
         setScreenRef.current(view)
         focusSearchInput()
       }
+      // 滚动默认始终还原（与连贯开关无关）；设高度后还会再补一次
+      restoreHomeScrollRef.current('keep')
       return
     }
   }
@@ -2293,6 +2393,10 @@ export default function HomePage() {
         } catch { /* ignore */ }
       }
       pluginEnterHandlerRef.current(e)
+      // setExpendHeight 后布局会变、scrollTop 常被冲掉，enter 处理后再补还原
+      if (!activeTemplateBookmarkRef.current) {
+        restoreHomeScrollRef.current('keep')
+      }
     }
     window.addEventListener(UTOOLS_PLUGIN_ENTER_EVENT, wrapper)
 
@@ -2481,7 +2585,6 @@ export default function HomePage() {
   const rootCls = [
     'goose-home',
     toastOpen ? 'toast-open' : '',
-    aiPanelOpen && (screen === 'list' || screen === 'grid') ? 'ai-panel-open' : '',
     // 彩蛋激活时加 egg-on，让 CSS 透出底层 canvas
     theme === 'dark' && easterEggEnabled ? 'egg-on' : '',
     isSearching ? 'is-searching' : '',
@@ -2582,26 +2685,26 @@ export default function HomePage() {
               )}
             </div>
           )}
-          {/* 方案 A：AI 保存开启时主操作独占胶囊；收集/设置仅图标；AI 助手入口在菜单
+          {/* 方案 A：AI 保存开启时主操作独占胶囊；收集/设置仅图标
               InstantTooltip：0 延迟 + portal，顶栏优先向下，不够再自动翻面 */}
           <div className="header-actions">
             {aiAggressiveSaveEnabled && aiEnabled ? (
               <>
-                <InstantTooltip label="AI 保存：粘贴网址自动归类">
+                <InstantTooltip label="AI 快速保存：粘贴网址自动归类">
                   <button
                     type="button"
                     className="collect-btn ag-collect-btn"
                     onClick={() => openAggressiveSavePanel()}
                   >
                     <Ico name="sparkles" />
-                    AI 保存
+                    AI 快速保存
                   </button>
                 </InstantTooltip>
                 <InstantTooltip label="手动收集">
                   <button
                     type="button"
                     className="header-icon-btn"
-                    onClick={() => { setFormEditItem(null); setFormKey((k) => k + 1); setScreen('add') }}
+                    onClick={openNewBookmarkForm}
                   >
                     <Ico name="plus" />
                   </button>
@@ -2612,7 +2715,7 @@ export default function HomePage() {
                 <button
                   type="button"
                   className="collect-btn"
-                  onClick={() => { setFormEditItem(null); setFormKey((k) => k + 1); setScreen('add') }}
+                  onClick={openNewBookmarkForm}
                 >
                   <Ico name="plus" />
                   收集
@@ -2661,22 +2764,10 @@ export default function HomePage() {
           view={view}
           uiScale={uiScale}
           trashN={trashN}
-          aiEnabled={aiEnabled}
-          aiPanelOpen={aiPanelOpen}
           onClose={() => setPaOpen(false)}
           onThemePrefChange={applyThemePref}
           onViewChange={changeView}
           onUiScaleChange={setUiScale}
-          onOpenAiPanel={() => {
-            setPaOpen(false)
-            if (!aiEnabled) {
-              setScreen('settings')
-              fireToast('请先启用并配置 AI 助手')
-              return
-            }
-            setScreen(view)
-            setAiPanelOpen((open) => !open)
-          }}
           onOpenSettings={() => { setPaOpen(false); setScreen('settings') }}
           onOpenTrash={() => { setPaOpen(false); setScreen('trash') }}
           onOpenHelp={() => { setPaOpen(false); setHelpOpen(true) }}
@@ -2890,15 +2981,9 @@ export default function HomePage() {
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}
 
-        {aiPanelOpen && (screen === 'list' || screen === 'grid') && (
-          <Suspense fallback={<div className="bookmark-ai-panel bookmark-ai-loading"><Ico name="loader" className="spin" />正在加载 AI…</div>}>
-            <BookmarkAiPanel onClose={() => setAiPanelOpen(false)} />
-          </Suspense>
-        )}
-
         {/* ---------- AI 保存：右上角后台进度 + S1 成功卡 ---------- */}
         {(activeAggressiveSaveJob || aggressiveSaveSuccesses.length > 0 || (aggressiveSaveFailure && screen !== 'ai-aggressive-save')) && (
-          <aside className="ag-save-stack" aria-label="AI 保存状态" aria-live="polite">
+          <aside className="ag-save-stack" aria-label="AI 快速保存状态" aria-live="polite">
             {activeAggressiveSaveJob && (
               <div className="ag-save-progress-wrap">
                 <div className="ag-save-progress-pill">
@@ -4435,7 +4520,7 @@ function SettingsContent({
                 />
               </div>
               <div className="set-row">
-                <div><div className="rt">面板连贯模式</div><div className="rd">再次唤起时保留浏览位置，关闭则每次回到主页；搜索态不跨次保留</div></div>
+                <div><div className="rt">面板连贯模式</div><div className="rd">再次唤起时保留所在分组与选中项；关闭则回到默认主页。列表滚动默认始终记住</div></div>
                 <div
                   className={`g-switch${panelContinuous ? ' on' : ''}`}
                   onClick={() => setPanelContinuous(!panelContinuous)}

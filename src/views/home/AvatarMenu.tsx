@@ -20,13 +20,10 @@ export interface AvatarMenuProps {
   view: ViewMode
   uiScale: UIScale
   trashN: number
-  aiEnabled?: boolean
-  aiPanelOpen?: boolean
   onClose: () => void
   onThemePrefChange: (pref: ThemePref) => void
   onViewChange: (v: ViewMode) => void
   onUiScaleChange: (s: UIScale) => void
-  onOpenAiPanel?: () => void
   onOpenSettings: () => void
   onOpenTrash: () => void
   onOpenHelp: () => void
@@ -55,13 +52,10 @@ export default function AvatarMenu({
   view,
   uiScale,
   trashN,
-  aiEnabled = false,
-  aiPanelOpen = false,
   onClose,
   onThemePrefChange,
   onViewChange,
   onUiScaleChange,
-  onOpenAiPanel,
   onOpenSettings,
   onOpenTrash,
   onOpenHelp,
@@ -160,18 +154,6 @@ export default function AvatarMenu({
 
       <div className="pa-sep" />
 
-      {/* 菜单项：AI 助手从顶栏迁入，避免与 AI 保存双 sparkles */}
-      {onOpenAiPanel && (
-        <button
-          type="button"
-          className={`pa-row${aiPanelOpen ? ' on' : ''}`}
-          onClick={onOpenAiPanel}
-        >
-          <Ico name="sparkles" />
-          <span>{aiPanelOpen ? '关闭 AI 助手' : 'AI 助手'}</span>
-          {!aiEnabled && <span className="pa-hint">未启用</span>}
-        </button>
-      )}
       <button type="button" className="pa-row" onClick={onOpenSettings}>
         <Ico name="settings" />
         <span>设置</span>
