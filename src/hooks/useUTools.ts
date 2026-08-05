@@ -174,18 +174,19 @@ type SyncFeatureOptions = {
 
 const getAiSaveFeature = (): UToolsFeature => ({
   code: AI_AGGRESSIVE_SAVE_FEATURE_CODE,
-  explain: 'AI 保存：仅网址，自动归类入库',
+  explain: 'AI 快速保存：粘贴网址，自动归类入库',
   cmds: [
+    'AI 快速保存',
     'AI 保存',
     'ai save',
-    // 与 quick_save 的「保存到书签」并列：主搜索框粘贴 http(s) 网址时可选 AI 保存
+    // 与 quick_save 的「保存到书签」并列：主搜索框粘贴 http(s) 网址时可选 AI 快速保存
     {
       type: 'regex',
-      label: 'AI 保存',
+      label: 'AI 快速保存',
       match: '/^https?:\\/\\/.*$/i'
     },
-    // 无协议域名 / 任意粘贴文本（如 example.com）仍可走 AI 保存
-    { type: 'over', label: 'AI 保存', minLength: 4 }
+    // 无协议域名 / 任意粘贴文本（如 example.com）仍可走 AI 快速保存
+    { type: 'over', label: 'AI 快速保存', minLength: 4 }
   ],
   mainHide: false
 })

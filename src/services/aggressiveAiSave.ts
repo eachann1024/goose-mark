@@ -14,7 +14,7 @@ import {
   type AISettingsLike
 } from '@/lib/aiProvider'
 import { fetchAndCacheIcon } from '@/services/iconCache'
-import { fetchMetadataFromNetwork } from '@/services/metadataFallback'
+import { fetchMetadataFromNetwork, isLoginOrAccessWallText } from '@/services/metadataFallback'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
 import {
@@ -213,7 +213,7 @@ export async function runAggressiveAiSave(
 
   if (existingGroups.length === 0) {
     throw new AggressiveAiSaveError('no_groups', '没有可用的书签分组', {
-      detail: 'AI 保存需要至少一个包含子分组的书签分组。',
+      detail: 'AI 快速保存需要至少一个包含子分组的书签分组。',
       recovery: '请先创建分组，再重新保存。'
     })
   }
@@ -227,6 +227,10 @@ export async function runAggressiveAiSave(
     const fetched = await fetchAndCacheIcon(finalUrl, true)
     pageTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : ''
     pageDesc = typeof fetched?.description === 'string' ? fetched.description.trim() : ''
+    if (pageTitle && (isHostLikeTitle(pageTitle, finalUrl) || isLoginOrAccessWallText(pageTitle))) {
+      pageTitle = ''
+    }
+    if (pageDesc && isLoginOrAccessWallText(pageDesc)) pageDesc = ''
     if (fetched) {
       const next: Record<string, unknown> = { type: fetched.type }
       if ('src' in fetched && fetched.src) next.src = fetched.src
@@ -237,11 +241,21 @@ export async function runAggressiveAiSave(
       if ('fetchedAt' in fetched && fetched.fetchedAt) next.fetchedAt = fetched.fetchedAt
       icon = next as IconSource
     }
-    if (!pageTitle || isHostLikeTitle(pageTitle, finalUrl)) {
+    // 缺标题/简介或登录墙：Jina + 域名公开服务摘要兜底
+    if (!pageTitle || !pageDesc) {
       const fallback = await fetchMetadataFromNetwork(finalUrl)
       if (fallback) {
-        pageTitle = pageTitle && !isHostLikeTitle(pageTitle, finalUrl) ? pageTitle : fallback.title || ''
-        pageDesc = pageDesc || fallback.description || ''
+        if (
+          !pageTitle &&
+          fallback.title &&
+          !isHostLikeTitle(fallback.title, finalUrl) &&
+          !isLoginOrAccessWallText(fallback.title)
+        ) {
+          pageTitle = fallback.title
+        }
+        if (!pageDesc && fallback.description && !isLoginOrAccessWallText(fallback.description)) {
+          pageDesc = fallback.description
+        }
       }
     }
   } catch (err) {

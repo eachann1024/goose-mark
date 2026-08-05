@@ -123,7 +123,7 @@ export default function AggressiveAiSavePanel({
             <div className="ag-save-head">
               <div className="ag-save-badge">
                 <Ico name="sparkles" />
-                <span className="ai-save-mode-title-gradient">AI 保存</span>
+                <span className="ai-save-mode-title-gradient">AI 快速保存</span>
               </div>
               <h2>粘贴网址，自动整理并入库</h2>
               <p>AI 会生成标题与简介，并归入一个或多个合适分组，无需再点保存。</p>
@@ -230,7 +230,7 @@ export default function AggressiveAiSavePanel({
           </button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={!url.trim() || busy}>
             <Ico name={busy ? 'loader' : 'sparkles'} className={busy ? 'spin' : ''} />
-            {busy ? '正在保存…' : failure ? '重新尝试' : 'AI 保存'}
+            {busy ? '正在保存…' : failure ? '重新尝试' : 'AI 快速保存'}
           </button>
         </footer>
       </div>

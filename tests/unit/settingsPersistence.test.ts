@@ -11,31 +11,36 @@ test('AI 助手能力对新用户默认全部开启', () => {
   expect(getDefaultAISettings().enabled).toBe(true)
   expect(createDefaultSettingsState()).toMatchObject({
     aiEnabled: true,
-    readLocalSkills: true,
     aiAggressiveSaveEnabled: true,
+    aiFormAutoPolish: true,
   })
 })
 
-test('缺失的 AI 能力字段补为开启，同时保留旧用户明确保存的值和生成参数', () => {
+test('缺失的 AI 能力字段补为开启，同时保留旧用户明确保存的值，并丢弃已移除的对话面板字段', () => {
   expect(normalizePersistedSettings({})).toMatchObject({
     aiEnabled: true,
-    readLocalSkills: true,
     aiAggressiveSaveEnabled: true,
+    aiFormAutoPolish: true,
   })
 
-  expect(normalizePersistedSettings({
+  const normalized = normalizePersistedSettings({
     aiEnabled: false,
-    readLocalSkills: false,
     aiAggressiveSaveEnabled: false,
+    aiFormAutoPolish: false,
+    readLocalSkills: false,
+    userGlobalPrompt: '旧全局提示词',
     aiDefaultReasoningEffort: 'high',
     aiDefaultTemperature: 0.7,
-  })).toMatchObject({
+  } as Partial<ReturnType<typeof createDefaultSettingsState>>)
+  expect(normalized).toMatchObject({
     aiEnabled: false,
-    readLocalSkills: false,
     aiAggressiveSaveEnabled: false,
-    aiDefaultReasoningEffort: 'high',
-    aiDefaultTemperature: 0.7,
+    aiFormAutoPolish: false,
   })
+  expect(normalized).not.toHaveProperty('readLocalSkills')
+  expect(normalized).not.toHaveProperty('userGlobalPrompt')
+  expect(normalized).not.toHaveProperty('aiDefaultReasoningEffort')
+  expect(normalized).not.toHaveProperty('aiDefaultTemperature')
 })
 
 test('AI 连接草稿在收起边界同步写入 uTools 云同步数据库', () => {

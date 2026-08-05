@@ -145,7 +145,7 @@ export function describeAggressiveAiSaveProviderError(
     })
   }
 
-  return new AggressiveAiSaveError('ai_failed', 'AI 保存失败', {
+  return new AggressiveAiSaveError('ai_failed', 'AI 快速保存失败', {
     detail: diagnostic,
     recovery: '请检查 AI 设置后重试；如果持续失败，可根据上面的原因检查供应商日志。'
   })
