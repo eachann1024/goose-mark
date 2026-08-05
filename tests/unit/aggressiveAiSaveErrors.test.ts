@@ -20,7 +20,7 @@ describe('AI 保存错误说明', () => {
 
   test('未知错误保留安全诊断并给出恢复动作', () => {
     const error = describeAggressiveAiSaveProviderError(new Error('upstream gateway closed unexpectedly'))
-    expect(error.message).toBe('AI 保存失败')
+    expect(error.message).toBe('AI 快速保存失败')
     expect(error.detail).toBe('upstream gateway closed unexpectedly')
     expect(error.recovery).toContain('检查 AI 设置')
   })

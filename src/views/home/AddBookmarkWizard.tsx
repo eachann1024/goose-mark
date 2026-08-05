@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, type UIEvent } from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
+import { useSettingsStore } from '@/stores/settings'
 import {
   useBookmarkForm,
   useBookmarkFormStore,
@@ -60,8 +61,14 @@ export default function AddBookmarkWizard({
     applyTitleSuggestion,
     takeOverTitle,
     takeOverDesc,
+    canUseAi,
   } = useBookmarkForm()
 
+  const aiFormAutoPolish = useSettingsStore((s) => s.aiFormAutoPolish)
+  const setAiFormAutoPolish = useSettingsStore((s) => s.setAiFormAutoPolish)
+
+  // 以入口 editItem 为准（比 store.editingId 更稳：openEdit 异步生效前首帧不会误判新建）
+  const isNewEntry = !editItem
   const isEdit = !!editingId
   const titleFetching = iconLoading && !isTitleDirty
   const descFetching = iconLoading && !isDescDirty
@@ -171,6 +178,10 @@ export default function AddBookmarkWizard({
             originalUrl={originalUrl}
             lastFetchedUrl={lastFetchedUrl}
             runUrlFetch={runUrlFetch}
+            isNewEntry={isNewEntry}
+            canUseAi={canUseAi}
+            aiFormAutoPolish={aiFormAutoPolish}
+            onAiFormAutoPolishChange={setAiFormAutoPolish}
           />
 
           {formError && (
@@ -241,6 +252,10 @@ function ConfirmStep({
   originalUrl,
   lastFetchedUrl,
   runUrlFetch,
+  isNewEntry,
+  canUseAi,
+  aiFormAutoPolish,
+  onAiFormAutoPolishChange,
 }: {
   draft: { title: string; desc: string; url: string }
   draftLocations: BookmarkLocation[]
@@ -274,10 +289,15 @@ function ConfirmStep({
   originalUrl: string
   lastFetchedUrl: string
   runUrlFetch: (debounceMs?: number) => void
+  isNewEntry: boolean
+  canUseAi: boolean
+  aiFormAutoPolish: boolean
+  onAiFormAutoPolishChange: (value: boolean) => void
 }) {
   // 读取触发策略：打字不触发；粘贴后短防抖自动读；失焦时若链接有效且有未读取变更则自动读。
   const pasteArmedRef = useRef(false)
   const mirrorRef = useRef<HTMLDivElement>(null)
+  const urlInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
     if (!pasteArmedRef.current) return
     pasteArmedRef.current = false
@@ -289,9 +309,23 @@ function ConfirmStep({
   }, [draft.url, editingId, originalUrl, runUrlFetch])
 
   const isEdit = !!editingId
+
+  // 仅新建：挂载后把焦点放到网址输入框（编辑不抢焦点；用入口 isNewEntry 避免首帧误判）
+  useEffect(() => {
+    if (!isNewEntry) return
+    const focusUrl = () => urlInputRef.current?.focus()
+    const raf = requestAnimationFrame(() => {
+      focusUrl()
+      // 再兜一次，避免首帧被其它布局/副作用抢焦
+      window.setTimeout(focusUrl, 0)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [isNewEntry])
+
   const previewText = ((draft.title || draft.url) || 'ICON').trim().slice(0, 2).toUpperCase()
   const hasUrl = !!draft.url.trim()
   const hasTemplateToken = /\{[^}]+\}/.test(draft.url)
+  const showAiPolish = canUseAi && isNewEntry
 
   // 链接有效、与上次读取时不一致、且不是编辑模式下未改动的原始链接 → 有「待读取」变更
   const urlOutdated =
@@ -347,6 +381,7 @@ function ConfirmStep({
               />
             )}
             <input
+              ref={urlInputRef}
               className={`gm-url-field${hasUrl ? ' is-overlay' : ''}`}
               value={draft.url}
               onChange={(e) => setUrl(e.target.value)}
@@ -357,6 +392,7 @@ function ConfirmStep({
               onScroll={handleUrlScroll}
               placeholder=""
               spellCheck={false}
+              autoFocus={isNewEntry}
               aria-label="链接或含 {q} 的搜索模板"
             />
           </div>
@@ -370,6 +406,29 @@ function ConfirmStep({
             {metadataStatus}
           </span>
         </div>
+        {showAiPolish && (
+          <div className={`gm-tpl-tip${aiFormAutoPolish ? ' on' : ''}`}>
+            <div className="gm-tpl-tip-body">
+              <div className="gm-tpl-tip-title">
+                <Ico name="sparkles" />
+                AI 清洗润色
+              </div>
+              <div className="gm-tpl-tip-desc">
+                读取网页信息后，自动清洗标题/简介并中文润色；必要时联网补全
+              </div>
+            </div>
+            <div className="gm-tpl-tip-switch">
+              <span className="gm-tpl-tip-switch-lbl">自动</span>
+              <div
+                className={`g-switch${aiFormAutoPolish ? ' on' : ''}`}
+                role="switch"
+                aria-checked={aiFormAutoPolish}
+                aria-label="AI 清洗润色"
+                onClick={() => onAiFormAutoPolishChange(!aiFormAutoPolish)}
+              />
+            </div>
+          </div>
+        )}
         {isDraftTemplate && (
           <div className={`gm-tpl-tip${allowUniversal ? ' on' : ''}`}>
             <div className="gm-tpl-tip-body">

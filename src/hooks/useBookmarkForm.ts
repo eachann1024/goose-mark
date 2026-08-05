@@ -7,7 +7,7 @@ import { getTemplateLabel } from '@/lib/utils'
 import { normalizeAIConfidence, parseAIJsonObject, truncateAIText } from '@/lib/aiOutput'
 import { notify } from '@/lib/notify'
 import { addBehaviorLog } from '@/lib/debugReport'
-import { fetchMetadataFromNetwork } from '@/services/metadataFallback'
+import { fetchMetadataFromNetwork, isLoginOrAccessWallText } from '@/services/metadataFallback'
 import {
   getAIAvailability,
   runAIText,
@@ -30,18 +30,8 @@ import { useUIManager } from './useUIManager'
 import type { MetadataSource } from './useAI'
 
 /**
- * 新建 / 编辑书签表单（React / Zustand 版）
- * --------------------------------------------------------------------------
- * 旧版用 Vue createSharedComposable 保证全局单例（所有组件共享一份表单状态、
- * watcher 只注册一次）。React 等价：把表单状态放进模块级 Zustand store
- * （useBookmarkFormStore），useBookmarkForm() 订阅并补一层 React 副作用
- * （URL 防抖取图标、关闭时重置）。副作用挂载者应在应用顶层只渲染一次以等价
- * “watcher 只注册一次”。
- *
- * AI 调用走 lib/aiProvider 纯函数，
- * 配置实时读自 settings store。store 的 addBookmark/updateBookmark/
- * updateBookmarkLocations/removeBookmark/getBookmarkLocations/selectGroup/
- * refreshSingleIcon 为业务阶段方法。
+ * 新建/编辑书签表单：模块级 Zustand 单例 + URL 防抖取图标等副作用。
+ * AI 走 lib/aiProvider，配置读自 settings store。
  */
 
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
@@ -271,18 +261,26 @@ export const enqueueMetadataHydration = (
       let rawTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : ''
       let rawDesc = typeof fetched?.description === 'string' ? fetched.description.trim() : ''
       const hydratedIcon = toIconSource(fetched)
+      if (rawTitle && (isHostLikeTitle(rawTitle, options.url) || isLoginOrAccessWallText(rawTitle))) {
+        rawTitle = ''
+      }
+      if (rawDesc && isLoginOrAccessWallText(rawDesc)) rawDesc = ''
 
-      if (!rawTitle || isHostLikeTitle(rawTitle, options.url)) {
+      if (!rawTitle || !rawDesc) {
         const fallback = await fetchMetadataFromNetwork(options.url)
         if (fallback) {
-          rawTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) ? rawTitle : fallback.title || ''
-          rawDesc = rawDesc || fallback.description || ''
+          if (!rawTitle && fallback.title && !isHostLikeTitle(fallback.title, options.url) && !isLoginOrAccessWallText(fallback.title)) {
+            rawTitle = fallback.title
+          }
+          if (!rawDesc && fallback.description && !isLoginOrAccessWallText(fallback.description)) {
+            rawDesc = fallback.description
+          }
           usedNetworkFallback = true
         }
       }
 
-      let nextTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) ? rawTitle : ''
-      let nextDesc = rawDesc
+      let nextTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) && !isLoginOrAccessWallText(rawTitle) ? rawTitle : ''
+      let nextDesc = rawDesc && !isLoginOrAccessWallText(rawDesc) ? rawDesc : ''
 
       const aiReady = checkAiAvailable().available
       if (options.forceAi && aiReady) {
@@ -332,8 +330,8 @@ const ICON_LOADING_WATCHDOG_MS = 6000
 // 粘贴链接后自动读取的防抖（粘贴是「一次成型」的输入，短防抖即可；打字不触发自动读取）
 export const URL_FETCH_PASTE_DEBOUNCE_MS = 500
 export const URL_FETCH_IMMEDIATE_MS = 400
-// 表单内 Jina 兜底读取的预算（两个域名平分，避免拖长加载态）
-const JINA_FALLBACK_TIMEOUT_MS = 5000
+// 表单内联网兜底总预算：Jina 读页 + 登录墙时域名服务摘要（DDG/Wikipedia）
+const JINA_FALLBACK_TIMEOUT_MS = 12000
 // 单调递增请求序号，用于丢弃乱序响应（慢请求覆盖后输入 URL 的竞态保护）
 let urlFetchRequestId = 0
 // askAI 请求代际计数器：区分同 URL 的并发请求与跨表单会话的在途请求
@@ -445,25 +443,53 @@ export function useBookmarkForm() {
     set({ iconLoading: false, iconFetchFailed: false, iconFetchPhase: 'idle', isGenerating: false })
   }, [set])
 
-  const openAdd = useCallback(() => {
-    resetPendingIconFetch()
-    const store = useBookmarkStore.getState()
-    set({
-      editingId: '',
-      modalTitle: '新建书签',
-      draft: initialDraft(),
-      draftTags: [],
-      draftLocations: [{ groupId: store.activeGroupId, subGroupId: store.activeSubGroupId }],
-      previewIcon: null,
-      formError: '',
-      isTitleDirty: false,
-      isDescDirty: false,
-      titleSuggestion: null,
-      originalUrl: '',
-      lastFetchedUrl: '',
-      showAdd: true
-    })
-  }, [resetPendingIconFetch, set])
+  /** 解析新建默认「放到哪里」：优先 preferred，否则 store.active*；过滤回收站；无效则回退首个有效组+首子组 */
+  const resolveDefaultDraftLocations = useCallback(
+    (preferred?: { groupId?: string | null; subGroupId?: string | null }): BookmarkLocation[] => {
+      const store = useBookmarkStore.getState()
+      const validGroups = store.groups.filter((g) => g.id !== TRASH_GROUP_ID && g.children.length > 0)
+      if (validGroups.length === 0) return []
+
+      const preferGroupId = (preferred?.groupId || store.activeGroupId || '').trim()
+      const preferSubId = (preferred?.subGroupId || store.activeSubGroupId || '').trim()
+
+      let group =
+        preferGroupId && preferGroupId !== TRASH_GROUP_ID
+          ? validGroups.find((g) => g.id === preferGroupId)
+          : undefined
+      if (!group) group = validGroups[0]
+
+      let sub = preferSubId ? group.children.find((c) => c.id === preferSubId) : undefined
+      if (!sub) sub = group.children[0]
+      if (!sub) return []
+
+      return [{ groupId: group.id, subGroupId: sub.id }]
+    },
+    []
+  )
+
+  const openAdd = useCallback(
+    (preferred?: { groupId?: string | null; subGroupId?: string | null }) => {
+      resetPendingIconFetch()
+      const draftLocations = resolveDefaultDraftLocations(preferred)
+      set({
+        editingId: '',
+        modalTitle: '新建书签',
+        draft: initialDraft(),
+        draftTags: [],
+        draftLocations,
+        previewIcon: null,
+        formError: '',
+        isTitleDirty: false,
+        isDescDirty: false,
+        titleSuggestion: null,
+        originalUrl: '',
+        lastFetchedUrl: '',
+        showAdd: true
+      })
+    },
+    [resetPendingIconFetch, resolveDefaultDraftLocations, set]
+  )
 
   const openEdit = useCallback(
     (bookmark: Bookmark) => {
@@ -532,6 +558,66 @@ export function useBookmarkForm() {
         set({ formError: message })
       } finally {
         // 只有仍是最新请求时才清 isGenerating，避免旧请求先结束误关新请求的加载态
+        if (thisAskAiId === askAiRequestId) set({ isGenerating: false })
+      }
+    },
+    [set, patchDraft]
+  )
+
+  /**
+   * URL 元信息抓取结束后的自动 AI 清洗润色（仅新建 + 设置开启 + AI 可用）。
+   * 不覆盖用户已 dirty 的标题/简介；代际与 URL 一致性与 askAI 一致。
+   */
+  const runAutoPolishAfterFetch = useCallback(
+    async (input: {
+      url: string
+      forceNetworkFallback: boolean
+      /** 绑定本次 url 抓取代际：抓取已被新请求取代则跳过 */
+      fetchRequestId: number
+    }) => {
+      if (!input.url) return
+      if (input.fetchRequestId !== urlFetchRequestId) return
+
+      const settings = useSettingsStore.getState()
+      if (!settings.aiFormAutoPolish) return
+      if (!checkAiAvailable().available) return
+
+      const form = useBookmarkFormStore.getState()
+      if (form.editingId) return
+      if (form.draft.url !== input.url) return
+      // 标题与简介都已被用户接管时无需自动跑
+      if (form.isTitleDirty && form.isDescDirty) return
+
+      if (!form.originalBeforeAI) {
+        set({ originalBeforeAI: { title: form.draft.title, desc: form.draft.desc } })
+      }
+
+      addBehaviorLog('auto-polish', input.url)
+      set({ isGenerating: true, aiError: '' })
+      const thisAskAiId = ++askAiRequestId
+      try {
+        const latest = useBookmarkFormStore.getState()
+        const res = await generateMetadataDirect({
+          url: input.url,
+          title: latest.draft.title,
+          desc: latest.draft.desc,
+          forceNetworkFallback: input.forceNetworkFallback
+        })
+        if (thisAskAiId !== askAiRequestId) return
+        if (input.fetchRequestId !== urlFetchRequestId) return
+        const after = useBookmarkFormStore.getState()
+        if (after.draft.url !== input.url) return
+        if (!res) return
+
+        const patch: Partial<DraftState> = {}
+        if (res.title && !after.isTitleDirty) patch.title = res.title
+        if (res.desc && !after.isDescDirty) patch.desc = res.desc
+        if (Object.keys(patch).length) patchDraft(patch)
+      } catch (error) {
+        if (thisAskAiId !== askAiRequestId) return
+        const message = resolveErrorMessage(error, '生成')
+        set({ aiError: message })
+      } finally {
         if (thisAskAiId === askAiRequestId) set({ isGenerating: false })
       }
     },
@@ -795,6 +881,9 @@ export function useBookmarkForm() {
     }, ICON_LOADING_WATCHDOG_MS)
     urlFetchTimer = setTimeout(async () => {
       urlFetchTimer = null
+      let usedNetworkFallback = false
+      let titleUsable = false
+      let fetchSettled = false
       try {
         const fetched = await Promise.race([
           fetchAndCacheIcon(val, true),
@@ -807,19 +896,29 @@ export function useBookmarkForm() {
 
         let metaTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : ''
         let metaDesc = typeof fetched?.description === 'string' ? fetched.description.trim() : ''
-        let titleUsable = !!metaTitle && !isHostLikeTitle(metaTitle, val)
+        if (metaTitle && isLoginOrAccessWallText(metaTitle)) metaTitle = ''
+        if (metaDesc && isLoginOrAccessWallText(metaDesc)) metaDesc = ''
+        titleUsable = !!metaTitle && !isHostLikeTitle(metaTitle, val) && !isLoginOrAccessWallText(metaTitle)
 
-        // Jina 兜底：uTools 内置浏览器为主，标题缺失/仅主机名或缺描述时用 Reader 补齐
+        // 联网兜底：Jina 读页；登录墙/缺字段时再查域名公开服务摘要
         if ((!titleUsable && !latest.isTitleDirty) || (!metaDesc && !latest.isDescDirty)) {
           const fallback = await fetchMetadataFromNetwork(val, JINA_FALLBACK_TIMEOUT_MS)
           latest = useBookmarkFormStore.getState()
           if (thisRequestId !== urlFetchRequestId || latest.draft.url !== val) return
           if (fallback) {
-            if (!titleUsable && fallback.title && !isHostLikeTitle(fallback.title, val)) {
+            usedNetworkFallback = true
+            if (
+              !titleUsable &&
+              fallback.title &&
+              !isHostLikeTitle(fallback.title, val) &&
+              !isLoginOrAccessWallText(fallback.title)
+            ) {
               metaTitle = fallback.title
               titleUsable = true
             }
-            if (!metaDesc && fallback.description) metaDesc = fallback.description
+            if (!metaDesc && fallback.description && !isLoginOrAccessWallText(fallback.description)) {
+              metaDesc = fallback.description
+            }
           }
         }
 
@@ -856,12 +955,14 @@ export function useBookmarkForm() {
             showToast({ title: '未能获取标题和描述：站点无响应或返回为空，请手动填写', variant: 'info' })
           }
         }
+        fetchSettled = true
       } catch {
         // 代际校验：旧会话的失败响应不覆盖新表单
         const latestOnCatch = useBookmarkFormStore.getState()
         if (thisRequestId !== urlFetchRequestId || latestOnCatch.draft.url !== val) return
         set({ previewIcon: buildTextIconFromValue(val), iconFetchFailed: true, iconFetchPhase: 'failed' })
         showToast({ title: '获取网页信息失败：网络异常或站点拒绝访问，请手动填写标题和描述', variant: 'warning' })
+        fetchSettled = true
       } finally {
         // iconLoading 只在请求仍有效时才关闭（已被新请求接管则不干扰）
         if (thisRequestId === urlFetchRequestId) {
@@ -871,10 +972,18 @@ export function useBookmarkForm() {
             clearTimeout(iconLoadingWatchdog)
             iconLoadingWatchdog = null
           }
+          // 抓取结束后（成功/失败）尝试 AI 清洗润色；有 URL 即可
+          if (fetchSettled) {
+            void runAutoPolishAfterFetch({
+              url: val,
+              forceNetworkFallback: usedNetworkFallback || !titleUsable,
+              fetchRequestId: thisRequestId
+            })
+          }
         }
       }
     }, debounceMs)
-  }, [])
+  }, [runAutoPolishAfterFetch, set, patchDraft, showToast])
 
   // ---- 副作用：URL 变更仅清空遗留标题/预览（自动重抓仅在确认页 ConfirmStep）----
   const draftUrl = form.draft.url
