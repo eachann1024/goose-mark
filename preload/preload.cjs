@@ -1,8 +1,5 @@
 // preload 运行在 CJS，避免与主项目 ESM 冲突
-const { fetchPublicText } = require('./web-fetch.cjs')
-const fs = require('node:fs')
-const os = require('node:os')
-const path = require('node:path')
+const { fetchPublicText, fetchPublicBinary, getResolvedProxy } = require('./web-fetch.cjs')
 if (typeof window !== 'undefined') {
   if (typeof utools !== 'undefined') {
     window.utools = utools
@@ -173,85 +170,21 @@ if (typeof window !== 'undefined') {
     }
 
     // AI 网页研究桥：Node 端读取并执行 DNS/内网地址校验，避免渲染层直连任意地址。
+    // 自动走系统/环境代理；Buffer 不能直接传 renderer，二进制以 base64 返回。
     window.gooseWeb = {
-      fetchText: (url) => fetchPublicText(url)
-    }
-
-    const MAX_AI_CONTEXT_FILE_BYTES = 256 * 1024
-    const MAX_LOCAL_SKILLS = 100
-    const MAX_LOCAL_SKILL_DEPTH = 8
-    const localSkillRoot = path.join(os.homedir(), '.agents', 'skills')
-
-    const localSkillScanFailure = (error) => {
-      if (error?.code === 'ENOENT') {
-        return { status: 'missing', skills: [], message: '未找到 ~/.agents/skills 目录' }
-      }
-      if (error?.code === 'EACCES' || error?.code === 'EPERM') {
-        return { status: 'denied', skills: [], message: '没有权限读取 ~/.agents/skills' }
-      }
-      return { status: 'error', skills: [], message: '读取本地 Skill 失败' }
-    }
-
-    const isInsideRealRoot = (root, candidate) => {
-      const relative = path.relative(root, candidate)
-      return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
-    }
-
-    const readLocalSkillFiles = () => {
-      let realRoot
-      try {
-        realRoot = fs.realpathSync(localSkillRoot)
-        if (!fs.statSync(realRoot).isDirectory()) {
-          return { status: 'missing', skills: [], message: '~/.agents/skills 不是目录' }
+      fetchText: (url, options) => fetchPublicText(url, options),
+      fetchBinary: async (url, options) => {
+        const result = await fetchPublicBinary(url, options)
+        return {
+          ok: result.ok,
+          url: result.url,
+          status: result.status,
+          contentType: result.contentType,
+          base64: result.buffer ? result.buffer.toString('base64') : ''
         }
-      } catch (error) {
-        return localSkillScanFailure(error)
-      }
-
-      const skills = []
-      let denied = false
-      const visit = (directory, depth) => {
-        if (depth > MAX_LOCAL_SKILL_DEPTH || skills.length >= MAX_LOCAL_SKILLS) return
-        let realDirectory
-        let entries
-        try {
-          realDirectory = fs.realpathSync(directory)
-          if (!isInsideRealRoot(realRoot, realDirectory)) return
-          entries = fs.readdirSync(realDirectory, { withFileTypes: true })
-        } catch (error) {
-          if (error?.code === 'EACCES' || error?.code === 'EPERM') denied = true
-          return
-        }
-        for (const entry of entries) {
-          if (skills.length >= MAX_LOCAL_SKILLS) return
-          const entryPath = path.join(realDirectory, entry.name)
-          if (entry.isSymbolicLink()) continue
-          if (entry.isDirectory()) {
-            visit(entryPath, depth + 1)
-            continue
-          }
-          if (!entry.isFile() || entry.name !== 'SKILL.md') continue
-          try {
-            const realFile = fs.realpathSync(entryPath)
-            if (!isInsideRealRoot(realRoot, realFile)) continue
-            const stat = fs.statSync(realFile)
-            if (!stat.isFile() || stat.size > MAX_AI_CONTEXT_FILE_BYTES) continue
-            skills.push({ path: realFile, content: fs.readFileSync(realFile, 'utf8') })
-          } catch (error) {
-            if (error?.code === 'EACCES' || error?.code === 'EPERM') denied = true
-          }
-        }
-      }
-      visit(realRoot, 0)
-      return {
-        status: denied && skills.length === 0 ? 'denied' : 'ready',
-        skills,
-        ...(denied ? { message: '部分 Skill 因权限不足未读取' } : {})
-      }
+      },
+      getProxy: () => getResolvedProxy()
     }
-
-    // 固定根目录的只读桥，不接受渲染层传入路径。
-    window.gooseAiContext = { listLocalSkills: readLocalSkillFiles }
 
     const UTOOLS_INPUT_EVENT = 'goose-marks:utools-search'
     const UTOOLS_SYNC_EVENT = 'goose-marks:utools-search-sync'

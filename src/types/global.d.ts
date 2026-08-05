@@ -123,20 +123,27 @@ declare global {
   interface Window {
     utools?: UToolsApi
     gooseWeb?: {
-      fetchText: (url: string) => Promise<{
+      fetchText: (
+        url: string,
+        options?: { timeoutMs?: number; maxBytes?: number; maxDecodedBytes?: number }
+      ) => Promise<{
         ok: true
         url: string
         status: number
         contentType: string
         text: string
       }>
-    }
-    gooseAiContext?: {
-      listLocalSkills: () => {
-        status: 'ready' | 'missing' | 'denied' | 'unavailable' | 'error'
-        skills: Array<{ path: string; content: string }>
-        message?: string
-      }
+      fetchBinary: (
+        url: string,
+        options?: { timeoutMs?: number; maxBytes?: number; maxDecodedBytes?: number }
+      ) => Promise<{
+        ok: true
+        url: string
+        status: number
+        contentType: string
+        base64: string
+      }>
+      getProxy: () => string | null
     }
     __gooseMarksWindowControl?: GooseMarksWindowControl
     require?: NodeRequire

@@ -35,6 +35,37 @@ const normalizeHttpUrl = (raw: string): { url: string; reason?: ProbeResult['rea
   }
 }
 
+/** 从 gooseWeb 抛错信息里尽量取出 HTTP 状态码（非 2xx 会 reject）。 */
+const statusFromGooseWebError = (error: unknown): number | null => {
+  const message = error instanceof Error ? error.message : String(error || '')
+  const match = /HTTP\s+(\d{3})/i.exec(message)
+  if (!match) return null
+  const status = Number(match[1])
+  return Number.isFinite(status) ? status : null
+}
+
+/** 优先 gooseWeb GET（代理感知，无 HEAD）；失败再 require/fetch。 */
+const probeViaGooseWeb = async (
+  url: string,
+  timeoutMs: number
+): Promise<{ ok: boolean; status?: number } | null> => {
+  if (typeof window === 'undefined' || !window.gooseWeb?.fetchText) return null
+  try {
+    const result = await window.gooseWeb.fetchText(url, {
+      timeoutMs,
+      maxBytes: 64 * 1024
+    })
+    const status = result.status
+    return { ok: result.ok && status >= 200 && status < 400, status }
+  } catch (error) {
+    const status = statusFromGooseWebError(error)
+    if (status != null) {
+      return { ok: status >= 200 && status < 400, status }
+    }
+    return null
+  }
+}
+
 const nodeRequest = (url: string, method: 'HEAD' | 'GET', timeoutMs: number): Promise<any> => {
   return new Promise((resolve) => {
      const https = getNodeModule('https')
@@ -89,6 +120,19 @@ export const probeUrl = async (url: string, timeoutMs = 3000): Promise<ProbeResu
   const target = normalized.url
 
   const started = performance.now()
+
+  // gooseWeb 仅 GET：一次探测即可，不必再 HEAD
+  const viaGoose = await probeViaGooseWeb(target, timeoutMs)
+  if (viaGoose) {
+    return {
+      url,
+      ok: viaGoose.ok,
+      status: viaGoose.status,
+      method: 'GET',
+      elapsed: performance.now() - started
+    }
+  }
+
   const head = await nodeRequest(target, 'HEAD', timeoutMs)
   if (head?.ok) {
     return { url, ok: true, status: head.status, method: 'HEAD', elapsed: performance.now() - started }

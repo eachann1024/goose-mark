@@ -1,26 +1,27 @@
 import type { IconSource, Bookmark } from '@/types/bookmark'
 
-const getIconApiBase = () => {
-  if (import.meta.env.VITE_SHARE_API_URL) {
-    return import.meta.env.VITE_SHARE_API_URL.replace('/api/share', '')
-  }
-  if (import.meta.env.DEV) {
-    return ''
-  }
-  return ''
-}
-
-const ICON_API_URL = getIconApiBase() ? `${getIconApiBase()}/api/icon` : ''
 const isDataUrl = (value: string) => value.startsWith('data:image/')
 const FAVICON_COOLDOWN_MS = 10 * 60 * 1000
 const ICON_FETCH_TIMEOUT_MS = 4000
 const MAX_ICON_BYTES = 2 * 1024 * 1024
 const faviconOriginCooldowns = new Map<string, number>()
 
+/** 浏览器 / uTools 有 window；Node/bun 自测无 window，禁止裸访问。 */
+const getRuntimeWindow = (): (Window & typeof globalThis) | null =>
+  typeof window !== 'undefined' ? window : null
+
+const getNodeRequire = (): ((id: string) => any) | null => {
+  const w = getRuntimeWindow() as (Window & { require?: (id: string) => any }) | null
+  if (w && typeof w.require === 'function') return w.require.bind(w)
+  return null
+}
+
 const isWindowsUToolsRuntime = () => {
   try {
-    if (typeof window.utools?.isWindows === 'function') return window.utools.isWindows()
-    return /Windows/i.test(navigator.userAgent)
+    const w = getRuntimeWindow()
+    if (typeof w?.utools?.isWindows === 'function') return w.utools.isWindows()
+    if (typeof navigator !== 'undefined') return /Windows/i.test(navigator.userAgent)
+    return false
   } catch {
     return false
   }
@@ -83,14 +84,9 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs = ICON_FETCH_TIMEOU
   }
 }
 
-/**
- * uTools 端用 Node https/http 下载图片转 base64。
- * 普通网站 favicon 通常不返回 CORS 头，renderer 的 fetch 跨域会被拦（Failed to fetch），
- * 导致缓存补不上、图标只能用远程 URL，切换分组时 <img> 重新挂载就会闪。
- * preload.cjs 暴露了 window.require，Node 环境无 CORS 限制，可直接下载任意站点图标。
- */
-const fetchImageViaNode = (url: string, redirectDepth = 0): Promise<string | null> => {
-  const req = (window as unknown as { require?: (m: string) => any }).require
+/** uTools 下优先 gooseWeb（代理感知）下图转 base64；失败再 require 直连。 */
+const fetchImageViaRequire = (url: string, redirectDepth = 0): Promise<string | null> => {
+  const req = getNodeRequire()
   if (typeof req !== 'function' || redirectDepth > 3) return Promise.resolve(null)
   return new Promise((resolve) => {
     let settled = false
@@ -119,7 +115,7 @@ const fetchImageViaNode = (url: string, redirectDepth = 0): Promise<string | nul
           if (settled) return
           settled = true
           clearTimeout(deadline)
-          resolve(fetchImageViaNode(next, redirectDepth + 1))
+          resolve(fetchImageViaRequire(next, redirectDepth + 1))
           return
         }
         if (status !== 200) { res.resume(); finish(null); return }
@@ -152,6 +148,54 @@ const fetchImageViaNode = (url: string, redirectDepth = 0): Promise<string | nul
       finish(null)
     }
   })
+}
+
+/** favicon 等常返回空 content-type 或 application/octet-stream */
+const isLikelyImagePath = (url: string) => {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    return /favicon/.test(path) || /\.(ico|png|svg|webp|gif|jpe?g)$/.test(path)
+  } catch {
+    return false
+  }
+}
+
+const guessImageMimeFromUrl = (url: string) => {
+  try {
+    const path = new URL(url).pathname.toLowerCase()
+    if (path.endsWith('.png')) return 'image/png'
+    if (path.endsWith('.svg')) return 'image/svg+xml'
+    if (path.endsWith('.webp')) return 'image/webp'
+    if (path.endsWith('.gif')) return 'image/gif'
+    if (path.endsWith('.jpg') || path.endsWith('.jpeg')) return 'image/jpeg'
+    if (path.endsWith('.ico') || /favicon/.test(path)) return 'image/x-icon'
+  } catch {}
+  return 'image/x-icon'
+}
+
+const fetchImageViaNode = async (url: string): Promise<string | null> => {
+  const w = getRuntimeWindow()
+  if (w?.gooseWeb?.fetchBinary) {
+    try {
+      const result = await w.gooseWeb.fetchBinary(url, {
+        timeoutMs: ICON_FETCH_TIMEOUT_MS,
+        maxBytes: MAX_ICON_BYTES
+      })
+      if (result.ok && result.base64) {
+        const rawType = String(result.contentType || '').split(';')[0].trim()
+        if (rawType.startsWith('image/')) {
+          return `data:${rawType};base64,${result.base64}`
+        }
+        // 空 type / octet-stream：按 URL 路径放行 favicon 与常见图片后缀
+        if ((!rawType || rawType === 'application/octet-stream') && isLikelyImagePath(url)) {
+          return `data:${guessImageMimeFromUrl(url)};base64,${result.base64}`
+        }
+      }
+    } catch {
+      // 失败回退 require
+    }
+  }
+  return fetchImageViaRequire(url)
 }
 
 const MAX_HTML_BYTES = 512 * 1024
@@ -191,17 +235,41 @@ const extractMetaFromHtml = (html: string) => {
   return { title: title || null, description: description || null }
 }
 
-/**
- * uTools 端用 Node https/http 直抓网页 HTML，正则提取 <title> 与 meta description。
- * uTools 文档说明 preload 放开了渲染线程沙箱，可直接用 Node.js API 访问跨域网络资源
- * （preload.cjs 已暴露 window.require），因此这条链路无 CORS 限制。
- * 作为 ubrowser 抓取失败 / Windows 禁用 ubrowser 时的标题与描述兜底。
- */
-const fetchPageMetaViaNode = (
+/** 从 HTML 文本提取 meta。 */
+const metaFromHtmlText = (html: string): { title: string | null; description: string | null } | null => {
+  const meta = extractMetaFromHtml(html)
+  return meta.title || meta.description ? meta : null
+}
+
+/** base64 → Uint8Array；优先 require('buffer')，否则 atob。 */
+const base64ToUint8Array = (base64: string): Uint8Array => {
+  const req = getNodeRequire()
+  if (typeof req === 'function') {
+    try {
+      const { Buffer } = req('buffer')
+      return new Uint8Array(Buffer.from(base64, 'base64'))
+    } catch {
+      // fall through
+    }
+  }
+  const bin = atob(base64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+/** 按 content-type / meta charset 解码 HTML 字节（支持 GBK 等）。 */
+const decodeHtmlBytes = (bytes: Uint8Array, contentType: string): string => {
+  const sample = new TextDecoder('latin1').decode(bytes.slice(0, 4096))
+  return new TextDecoder(pickHtmlCharset(contentType, sample)).decode(bytes)
+}
+
+/** Node 抓 HTML 提取 title/description：优先 gooseWeb（代理感知）。 */
+const fetchPageMetaViaRequire = (
   url: string,
   redirectDepth = 0
 ): Promise<{ title: string | null; description: string | null } | null> => {
-  const req = (window as unknown as { require?: (m: string) => any }).require
+  const req = getNodeRequire()
   if (typeof req !== 'function' || redirectDepth > 3) return Promise.resolve(null)
   return new Promise((resolve) => {
     let settled = false
@@ -239,7 +307,7 @@ const fetchPageMetaViaNode = (
             if (settled) return
             settled = true
             clearTimeout(deadline)
-            resolve(fetchPageMetaViaNode(next, redirectDepth + 1))
+            resolve(fetchPageMetaViaRequire(next, redirectDepth + 1))
             return
           }
           if (status !== 200) { res.resume(); finish(null); return }
@@ -253,8 +321,7 @@ const fetchPageMetaViaNode = (
               const buf = Buffer.concat(chunks)
               const sample = new TextDecoder('latin1').decode(buf.slice(0, 4096))
               const html = new TextDecoder(pickHtmlCharset(contentType, sample)).decode(buf)
-              const meta = extractMetaFromHtml(html)
-              finish(meta.title || meta.description ? meta : null)
+              finish(metaFromHtmlText(html))
             } catch {
               finish(null)
             }
@@ -279,12 +346,47 @@ const fetchPageMetaViaNode = (
   })
 }
 
+const fetchPageMetaViaNode = async (
+  url: string
+): Promise<{ title: string | null; description: string | null } | null> => {
+  const w = getRuntimeWindow()
+  // 优先二进制：web-fetch 固定 utf-8 的 fetchText 会把 GBK 标题解成乱码
+  if (w?.gooseWeb?.fetchBinary) {
+    try {
+      const result = await w.gooseWeb.fetchBinary(url, {
+        timeoutMs: ICON_FETCH_TIMEOUT_MS,
+        maxBytes: MAX_HTML_BYTES
+      })
+      if (result.ok && result.base64) {
+        const bytes = base64ToUint8Array(result.base64)
+        const html = decodeHtmlBytes(bytes, String(result.contentType || ''))
+        return metaFromHtmlText(html)
+      }
+    } catch {
+      // 失败再试 fetchText / require
+    }
+  }
+  if (w?.gooseWeb?.fetchText) {
+    try {
+      const result = await w.gooseWeb.fetchText(url, {
+        timeoutMs: ICON_FETCH_TIMEOUT_MS,
+        maxBytes: MAX_HTML_BYTES
+      })
+      if (result.ok && result.text) return metaFromHtmlText(result.text)
+    } catch {
+      // 失败回退 require
+    }
+  }
+  return fetchPageMetaViaRequire(url)
+}
+
 export const fetchAsDataUrl = async (url: string): Promise<string | null> => {
   if (!url) return null
   if (isOriginInCooldown(url)) return null
 
-  // uTools 端走 Node 下载，绕过 renderer 跨域 CORS 限制（renderer fetch 对无 CORS 头的 favicon 必失败，无需回退）
-  if (typeof (window as unknown as { require?: unknown }).require === 'function') {
+  const w = getRuntimeWindow() as (Window & { require?: unknown }) | null
+  // 优先 gooseWeb / require 下载（无 CORS、代理感知）
+  if (w?.gooseWeb?.fetchBinary || typeof w?.require === 'function') {
     const viaNode = await fetchImageViaNode(url)
     if (viaNode) clearOriginCooldown(url)
     return viaNode
@@ -351,32 +453,6 @@ export const iconToDisplayUrl = (icon?: IconSource) => {
   return null
 }
 
-const fetchIconFromProxy = async (url: string): Promise<{ icon: string | null; title?: string | null; description?: string | null } | null> => {
-  if (!ICON_API_URL) return null
-
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), ICON_FETCH_TIMEOUT_MS)
-
-  try {
-    const response = await fetch(`${ICON_API_URL}?url=${encodeURIComponent(url)}`, {
-      signal: controller.signal,
-      headers: { 'Accept': 'application/json' }
-    })
-    clearTimeout(timer)
-
-    if (!response.ok) return null
-
-    const data = await response.json()
-    return {
-      icon: data.icon || null,
-      title: data.title || null,
-      description: data.description || null
-    }
-  } catch {
-    return null
-  }
-}
-
 type UToolsBrowserFetchResult = {
   icon: string | null
   cache: string | null
@@ -394,7 +470,7 @@ const fetchIconFromUToolsBrowser = async (url: string): Promise<UToolsBrowserFet
   // ubrowser.run 没有可用的取消句柄，Promise.race 超时后底层任务仍会存活。
   // Windows 上连续残留隐藏 Chromium 任务会占满 GPU/句柄，因此禁用该不可取消路径。
   if (isWindowsUToolsRuntime()) return null
-  const utoolsApi = window.utools as unknown as { ubrowser?: any; createBrowserWindow?: any } | undefined
+  const utoolsApi = getRuntimeWindow()?.utools as unknown as { ubrowser?: any; createBrowserWindow?: any } | undefined
   const ubrowser = utoolsApi?.ubrowser
 
   if (ubrowser?.goto) {
@@ -571,10 +647,10 @@ export const fetchPageMeta = async (url: string): Promise<{ title: string | null
     }
   }
 
-  const result = await fetchIconFromProxy(targetUrl)
+  const nodeMeta = await fetchPageMetaViaNode(targetUrl)
   return {
-    title: result?.title || null,
-    description: result?.description || null
+    title: nodeMeta?.title || null,
+    description: nodeMeta?.description || null
   }
 }
 
@@ -663,6 +739,15 @@ export const fetchAndCacheIcon = async (
   // ubrowser 没拿到标题/描述时，用 Node 直抓 HTML 兜底一次
   await fillMetaViaNode()
 
+  // 各路径都失败时再试 origin/favicon.ico（uTools 无 ubrowser 结果、Web 预览、Node 自测通用）
+  try {
+    const faviconUrl = new URL('/favicon.ico', targetUrl).href
+    const cache = await fetchAsDataUrl(faviconUrl)
+    if (cache) {
+      return { type: 'remote', src: faviconUrl, cache, fetchedAt: Date.now(), ...fetchedMeta }
+    }
+  } catch {}
+
   if (fetchedMeta.title || fetchedMeta.description) {
     const fallbackText = fetchedMeta.title || (() => {
       try {
@@ -678,7 +763,13 @@ export const fetchAndCacheIcon = async (
     }
   }
 
-  return null
+  // 元信息也没有：至少用主机名文字占位，避免上层拿 null
+  try {
+    const host = new URL(targetUrl).hostname.replace(/^www\./i, '')
+    return { type: 'text', value: buildTextIconValue(host) }
+  } catch {
+    return null
+  }
 }
 
 export const ensureIconForBookmark = async (bookmark: Bookmark, force = false): Promise<IconSource | undefined> => {
