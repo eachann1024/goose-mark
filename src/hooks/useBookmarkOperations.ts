@@ -20,7 +20,8 @@ type UToolsExtendedApi = {
   ubrowser?: {
     goto(url: string): { run(options?: { width?: number; height?: number }): Promise<unknown[]> }
   }
-  outPlugin?: () => void
+  outPlugin?: (isKill?: boolean) => boolean
+  hideMainWindow?: () => void
   getWindowType?: () => string
 }
 
@@ -29,19 +30,6 @@ type OpenBookmarkOptions = {
   useUiQuery?: boolean
   /** 调用来源，如 'template' 表示由模板书签触发 */
   source?: string
-}
-
-const getWindowType = () => {
-  try {
-    return window.utools?.getWindowType?.()
-  } catch {
-    return undefined
-  }
-}
-
-const isDetachedWindowNow = () => {
-  const type = getWindowType()
-  return type === 'detach' || type === 'browser'
 }
 
 const openExternalUrl = (url: string) => {
@@ -153,13 +141,6 @@ export function useBookmarkOperations() {
           }
         }
         if (!opened) utoolsApi?.shellOpenExternal?.(url)
-        if (settingsStore.autoCloseWindow) {
-          try {
-            if (isDetachedWindowNow()) window.utools.outPlugin()
-          } catch (e) {
-            console.warn('Failed to auto close window', e)
-          }
-        }
         return
       }
       openExternalUrl(url)
@@ -198,7 +179,6 @@ export function useBookmarkOperations() {
   )
 
   const openUrlInUtoolsBrowser = useCallback((url: string) => {
-    const settingsStore = useSettingsStore.getState()
     if (window.utools) {
       const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
       if (utoolsApi?.ubrowser) {
@@ -211,13 +191,6 @@ export function useBookmarkOperations() {
       } else {
         utoolsApi?.shellOpenExternal?.(url)
       }
-      if (settingsStore.autoCloseWindow) {
-        try {
-          if (isDetachedWindowNow()) window.utools.outPlugin()
-        } catch (e) {
-          console.warn('Failed to auto close window', e)
-        }
-      }
       return
     }
     openExternalUrl(url)
@@ -225,17 +198,9 @@ export function useBookmarkOperations() {
 
   // 强制走系统默认浏览器（右键反转入口用：默认=内置时提供「用默认浏览器打开」）
   const openUrlInDefaultBrowser = useCallback((url: string) => {
-    const settingsStore = useSettingsStore.getState()
     if (window.utools) {
       const utoolsApi = window.utools as unknown as UToolsExtendedApi | undefined
       utoolsApi?.shellOpenExternal?.(url)
-      if (settingsStore.autoCloseWindow) {
-        try {
-          if (isDetachedWindowNow()) window.utools.outPlugin()
-        } catch (e) {
-          console.warn('Failed to auto close window', e)
-        }
-      }
       return
     }
     openExternalUrl(url)

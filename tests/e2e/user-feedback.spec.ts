@@ -111,7 +111,6 @@ async function seed(page: Page, state: BookmarkState = seedState()) {
     localStorage.setItem('bookmark', JSON.stringify(value))
     localStorage.setItem('settings', JSON.stringify({
       gridColumns: 3,
-      autoCloseWindow: false,
       autoMatchSearchIcons: false,
       searchAutoExitSeconds: 15,
       groupTabsLayout: 'wrap',
