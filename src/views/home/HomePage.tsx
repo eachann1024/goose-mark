@@ -413,7 +413,6 @@ interface CtxState {
 const HOME_CONTINUITY_KEY = 'goose-marks.home-continuity'
 
 interface HomeContinuityState {
-  searchVal: string
   activeGroupId: string
   activeSubId: string | null
   selectedId: string | null
@@ -427,7 +426,6 @@ const readHomeContinuityState = (): HomeContinuityState | null => {
   try {
     const parsed = JSON.parse(raw) as Partial<HomeContinuityState>
     return {
-      searchVal: typeof parsed.searchVal === 'string' ? parsed.searchVal : '',
       activeGroupId: typeof parsed.activeGroupId === 'string' ? parsed.activeGroupId : '',
       activeSubId: typeof parsed.activeSubId === 'string' ? parsed.activeSubId : null,
       selectedId: typeof parsed.selectedId === 'string' ? parsed.selectedId : null,
@@ -485,8 +483,9 @@ export default function HomePage() {
   } = useBookmarkOperations()
 
   // uTools 下点击模板书签（URL 含 {query}）进入模板输入态而非直开根地址（对齐 App.tsx:442-446）。
-  // enterTemplateMode 声明在后方，用 ref 间接引用避免 TDZ；所有调用点统一走本包装。
+  // enterTemplateMode / clearSearch 声明在后方，用 ref 间接引用避免 TDZ。
   const enterTemplateModeFnRef = useRef<(b: Bookmark) => void>(() => {})
+  const clearSearchFnRef = useRef<() => void>(() => {})
   const openBookmarkLink = useCallback(
     (bookmark: Bookmark, options?: Parameters<typeof openBookmarkLinkBase>[1]) => {
       if (window.utools && /{[^}]+}/.test(bookmark.url) && !options?.source?.startsWith('template')) {
@@ -494,6 +493,8 @@ export default function HomePage() {
         return
       }
       openBookmarkLinkBase(bookmark, options)
+      // 直开链接后默认退出搜索态（与「搜索框为空即非搜索面板」一致，无单独选项）
+      clearSearchFnRef.current()
     },
     [openBookmarkLinkBase]
   )
@@ -546,6 +547,7 @@ export default function HomePage() {
   )
   const [screen, setScreen] = useState<Screen>('list')
   const [selectedId, setSelectedId] = useState<string | null>(() => initialContinuityRef.current?.selectedId ?? null)
+  // 搜索词仅跟当前会话的搜索框同步；退出插件后 subInput 会被清空，再次唤出不得残留搜索态
   // 书签拖拽中的项（用于 DragOverlay 跟手预览）
   const [activeDragItem, setActiveDragItem] = useState<HomeItem | null>(null)
   // 标记本次 selectedId 变更来自键盘方向键（决定滚入时居中 vs 就近，避免鼠标点击触发跳动）
@@ -611,7 +613,7 @@ export default function HomePage() {
   const [aggressiveSaveSuccesses, setAggressiveSaveSuccesses] = useState<AggressiveSaveSuccess[]>([])
   const [aggressiveSaveFailure, setAggressiveSaveFailure] = useState<AggressiveSaveFailure | null>(null)
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
-  const [searchVal, setSearchVal] = useState(() => initialContinuityRef.current?.searchVal ?? '')
+  const [searchVal, setSearchVal] = useState('')
   // ---- 个人菜单 + 帮助弹窗 ----
   const [paOpen, setPaOpen] = useState(false)
   const avatarRef = useRef<HTMLButtonElement>(null)
@@ -670,12 +672,11 @@ export default function HomePage() {
   const anchorRaf = useRef(0)
   const homeScrollTopRef = useRef(initialContinuityRef.current?.scrollTop ?? 0)
   const homeContinuityLatestRef = useRef({
-    searchVal,
     activeSubId,
     selectedId,
     activeGroupId
   })
-  homeContinuityLatestRef.current = { searchVal, activeSubId, selectedId, activeGroupId }
+  homeContinuityLatestRef.current = { activeSubId, selectedId, activeGroupId }
 
   const saveHomeContinuity = useCallback(() => {
     if (!useSettingsStore.getState().panelContinuous) {
@@ -686,7 +687,6 @@ export default function HomePage() {
     const latest = homeContinuityLatestRef.current
     const store = useBookmarkStore.getState()
     const payload: HomeContinuityState = {
-      searchVal: latest.searchVal,
       activeGroupId: latest.activeGroupId || store.activeGroupId,
       activeSubId: latest.activeSubId || store.activeSubGroupId || null,
       selectedId: latest.selectedId,
@@ -848,8 +848,11 @@ export default function HomePage() {
           useUiQuery: false,
           source: 'template-universal-fallback'
         })
+        // 点开后默认退出搜索态（搜索框与结果面板一并清空）
+        clearSearchFnRef.current()
         return
       }
+      // 模板入口由 enterTemplateMode 清搜索；直开由 openBookmarkLink 清搜索
       openBookmarkLink(realBookmark)
     },
     [bookmarks, isUniversalFallback, searchVal, openBookmarkLinkBase, openBookmarkLink]
@@ -942,13 +945,7 @@ export default function HomePage() {
   const clearSearch = useCallback(() => {
     applySearchVal('')
   }, [applySearchVal])
-
-  const initialSearchSyncedRef = useRef(false)
-  useEffect(() => {
-    if (initialSearchSyncedRef.current) return
-    initialSearchSyncedRef.current = true
-    if (panelContinuous && searchVal) applySearchVal(searchVal)
-  }, [applySearchVal, panelContinuous, searchVal])
+  clearSearchFnRef.current = clearSearch
 
   useEffect(() => {
     if (!panelContinuous) utoolsStorage.removeItem(HOME_CONTINUITY_KEY)
@@ -958,21 +955,26 @@ export default function HomePage() {
     if (!panelContinuous) return
     const timer = window.setTimeout(saveHomeContinuity, 250)
     return () => window.clearTimeout(timer)
-  }, [activeGroupId, activeSubId, panelContinuous, saveHomeContinuity, searchVal, selectedId])
+  }, [activeGroupId, activeSubId, panelContinuous, saveHomeContinuity, selectedId])
 
   useEffect(() => {
     const save = () => saveHomeContinuity()
     const saveWhenHidden = () => {
       if (document.visibilityState === 'hidden') save()
     }
+    // 退出插件时清空搜索态：subInput 已被 preload 拆掉，再次唤出时框是空的，面板不能还停在搜索结果
+    const onPluginOut = () => {
+      save()
+      clearSearchFnRef.current()
+    }
 
-    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, save)
+    window.addEventListener(UTOOLS_PLUGIN_OUT_EVENT, onPluginOut)
     window.addEventListener('pagehide', save)
     window.addEventListener('beforeunload', save)
     document.addEventListener('visibilitychange', saveWhenHidden)
     return () => {
       save()
-      window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, save)
+      window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, onPluginOut)
       window.removeEventListener('pagehide', save)
       window.removeEventListener('beforeunload', save)
       document.removeEventListener('visibilitychange', saveWhenHidden)
@@ -1911,7 +1913,7 @@ export default function HomePage() {
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url
     fireToastRef.current('正在打开…')
     openUrl(url)
-    // openUrl 内部已处理 autoCloseWindow / outPlugin；非自动关闭时收起主窗口并退出模板态
+    // 打开后收起主窗口并退出模板态（不退出插件进程）
     if (!isDetachedUToolsWindow()) { try { window.utools?.hideMainWindow?.() } catch { /* ignore */ } }
     exitTemplateModeRef.current()
   }, [openUrl])
@@ -2262,16 +2264,17 @@ export default function HomePage() {
         return
       }
       if (activeTemplateBookmarkRef.current) exitTemplateModeRef.current()
-      // bookmarks 主入口：universal 书签未命中后根据连贯模式决定是否重置视图和搜索。
+      // bookmarks 主入口：universal 书签未命中后根据连贯模式决定是否重置视图。
       // 不能因为 payloadText 非空就进搜索——uTools 用命令词（"书签"/"bookmark"）触发主入口时，
       // 会把命令词本身当 payload 传进来。真正的关键词检索在面板内搜索框完成。
+      // 搜索态不跨次唤出：uTools 退出后 subInput 已空，必须退出搜索面板（默认行为，无选项）。
       useBookmarkFormStore.getState().set({ showAdd: false })
+      applySearchValRef.current('')
       if (useSettingsStore.getState().panelContinuous) {
-        // 连贯开：保留上次搜索内容和浏览位置，仅聚焦搜索框（全选方便直接覆盖）
+        // 连贯开：保留浏览位置，仅聚焦搜索框
         focusSearchInput()
       } else {
-        // 连贯关（默认）：清搜索、回主视图，再聚焦
-        applySearchValRef.current('')
+        // 连贯关（默认）：回主视图，再聚焦
         setScreenRef.current(view)
         focusSearchInput()
       }
@@ -4205,8 +4208,6 @@ function SettingsContent({
   const setHomeViewMode = useSettingsStore((s) => s.setHomeViewMode)
   const density = useSettingsStore((s) => s.density)
   const setDensity = useSettingsStore((s) => s.setDensity)
-  const autoCloseWindow = useSettingsStore((s) => s.autoCloseWindow)
-  const setAutoCloseWindow = useSettingsStore((s) => s.setAutoCloseWindow)
   const panelContinuous = useSettingsStore((s) => s.panelContinuous)
   const setPanelContinuous = useSettingsStore((s) => s.setPanelContinuous)
   const useUtoolsBrowser = useSettingsStore((s) => s.useUtoolsBrowser)
@@ -4427,13 +4428,6 @@ function SettingsContent({
           {window.utools && (
             <>
               <div className="set-row">
-                <div><div className="rt">打开后自动关闭窗口</div><div className="rd">点击书签跳转后收起插件</div></div>
-                <div
-                  className={`g-switch${autoCloseWindow ? ' on' : ''}`}
-                  onClick={() => setAutoCloseWindow(!autoCloseWindow)}
-                />
-              </div>
-              <div className="set-row">
                 <div><div className="rt">使用 uTools 内置浏览器</div><div className="rd">默认用系统默认浏览器打开书签，开启后改用 uTools 内置浏览器</div></div>
                 <div
                   className={`g-switch${useUtoolsBrowser ? ' on' : ''}`}
@@ -4441,7 +4435,7 @@ function SettingsContent({
                 />
               </div>
               <div className="set-row">
-                <div><div className="rt">面板连贯模式</div><div className="rd">再次唤起插件时保留上次搜索和浏览位置，关闭则每次回到主页</div></div>
+                <div><div className="rt">面板连贯模式</div><div className="rd">再次唤起时保留浏览位置，关闭则每次回到主页；搜索态不跨次保留</div></div>
                 <div
                   className={`g-switch${panelContinuous ? ' on' : ''}`}
                   onClick={() => setPanelContinuous(!panelContinuous)}

@@ -90,7 +90,6 @@ function applyProtocolConfig(protocol: AIProtocol, config: AIProtocolConfig) {
 
 export interface SettingsState {
   gridColumns: number
-  autoCloseWindow: boolean
   preferLocalSnapshotOnStartup: boolean
   localMirrorDirectory: string
   aiEnabled: boolean
@@ -158,7 +157,6 @@ const clampWindowHeight = (h: number) =>
 
 export interface SettingsActions {
   setGridColumns: (value: number) => void
-  setAutoCloseWindow: (value: boolean) => void
   setPreferLocalSnapshotOnStartup: (value: boolean) => void
   setLocalMirrorDirectory: (value: string) => void
   setAiEnabled: (value: boolean) => void
@@ -240,7 +238,6 @@ export const createDefaultSettingsState = (): SettingsState => {
   })
   return {
     gridColumns: 3,
-    autoCloseWindow: true,
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     aiEnabled: defaults.enabled,
@@ -283,7 +280,6 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
   ...createDefaultSettingsState(),
 
       setGridColumns: (value) => set({ gridColumns: Math.min(5, Math.max(2, Math.round(value))) }),
-      setAutoCloseWindow: (value) => set({ autoCloseWindow: !!value }),
       setPreferLocalSnapshotOnStartup: (value) => set({ preferLocalSnapshotOnStartup: !!value }),
       setLocalMirrorDirectory: (value) => set({ localMirrorDirectory: String(value || '').trim() }),
       setAiEnabled: (value) => set({ aiEnabled: !!value }),
@@ -403,7 +399,6 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
 
 const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => ({
   gridColumns: state.gridColumns,
-  autoCloseWindow: state.autoCloseWindow,
   preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
   localMirrorDirectory: state.localMirrorDirectory,
   aiEnabled: state.aiEnabled,
@@ -511,8 +506,9 @@ export const normalizePersistedSettings = (state: Partial<SettingsState> | null 
   if (typeof patch.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
   if (!['starry', 'blackhole'].includes(String(patch.easterEggVariant))) patch.easterEggVariant = 'starry'
   if (typeof patch.aiAggressiveSaveEnabled !== 'boolean') patch.aiAggressiveSaveEnabled = true
-  // 丢弃已移除的「AI 快捷保存」字段
+  // 丢弃已移除的「AI 快捷保存」「打开后自动关闭窗口」字段
   delete (patch as { aiQuickSaveEnabled?: unknown }).aiQuickSaveEnabled
+  delete (patch as { autoCloseWindow?: unknown }).autoCloseWindow
   if (
     patch.detachedWindowPosition == null ||
     typeof patch.detachedWindowPosition !== 'object' ||
