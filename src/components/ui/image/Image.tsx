@@ -76,6 +76,13 @@ export function Image({
           // 消除切换分组时 <img> 重新挂载后「先空白再出现」的闪烁。
           decoding="sync"
           loading="eager"
+          // 缓存命中时 complete 可能已是 true：直接补一帧可见，避免空白
+          ref={(node) => {
+            if (!node) return
+            if (node.complete && node.naturalWidth > 0) {
+              node.style.visibility = 'visible'
+            }
+          }}
           onError={handleError}
           onLoad={handleLoad}
           onContextMenu={onContextMenu}
