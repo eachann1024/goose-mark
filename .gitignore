@@ -24,3 +24,6 @@ qa-screenshots/
 .verify-screens/
 pnpm-lock.yaml
 pnpm-workspace.yaml
+
+app/
+未命名/

@@ -5,11 +5,13 @@
   "author": "eachann",
   "homepage": "",
   "preload": "preload/preload.cjs",
-  "main": "dist/index.html",
+  "name": "goose-marks",
+  "title": "鹅的书签",
+  "main": "app/index.html",
   "pluginSetting": {
     "height": 800
   },
-  "logo": "logo.png",
+  "logo": "public/logo.png",
   "tools": {
     "get_mcp_capabilities": {
       "description": "获取鹅的书签 MCP 能力、版本与写入确认约束，用于客户端发现可用工具。",
