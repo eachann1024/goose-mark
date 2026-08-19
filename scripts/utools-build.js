@@ -67,6 +67,7 @@ try {
       // 修改为生产环境路径
       pluginConfig.main = 'index.html';
       pluginConfig.preload = 'preload.js';
+      pluginConfig.logo = 'logo.png';
       
       // 写入到 dist
       fs.writeFileSync(path.join(distDir, 'plugin.json'), JSON.stringify(pluginConfig, null, 2));
@@ -89,3 +90,9 @@ try {
   console.error('❌ 处理出错:', e);
   process.exit(1);
 }
+
+// ZTools CLI ignores dist/; keep a copy in app/.
+const appDir = path.resolve('app');
+fs.rmSync(appDir, { recursive: true, force: true });
+fs.cpSync(distDir, appDir, { recursive: true });
+console.log('[utools-build] app/ synced for ZTools');
