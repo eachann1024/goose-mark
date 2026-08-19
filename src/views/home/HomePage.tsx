@@ -411,6 +411,8 @@ interface CtxState {
 const HOME_CONTINUITY_KEY = 'goose-marks.home-continuity'
 /** 主列表滚动：默认始终记住（不依赖「面板连贯模式」） */
 const HOME_SCROLL_KEY = 'goose-marks.home-scroll-top'
+/** 一级分组各自的滚动/选中态（切 Tab 不共用、不丢） */
+const HOME_GROUP_PANEL_KEY = 'goose-marks.home-group-panel'
 
 interface HomeContinuityState {
   activeGroupId: string
@@ -419,6 +421,14 @@ interface HomeContinuityState {
   scrollTop: number
   updatedAt: number
 }
+
+interface GroupPanelState {
+  scrollTop: number
+  activeSubId: string | null
+  selectedId: string | null
+}
+
+type GroupPanelMap = Record<string, GroupPanelState>
 
 const readHomeContinuityState = (): HomeContinuityState | null => {
   const raw = getPersistentItem(HOME_CONTINUITY_KEY)
@@ -437,19 +447,52 @@ const readHomeContinuityState = (): HomeContinuityState | null => {
   }
 }
 
-const readHomeScrollTop = (): number => {
+const sanitizeScrollTop = (value: unknown): number => {
+  const n = Number(value)
+  return Number.isFinite(n) && n > 0 ? Math.max(0, Math.round(n)) : 0
+}
+
+const readGroupPanelMap = (): GroupPanelMap => {
+  const raw = getPersistentItem(HOME_GROUP_PANEL_KEY)
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw) as Record<string, Partial<GroupPanelState>>
+    if (!parsed || typeof parsed !== 'object') return {}
+    const out: GroupPanelMap = {}
+    for (const [groupId, state] of Object.entries(parsed)) {
+      if (!groupId || !state || typeof state !== 'object') continue
+      out[groupId] = {
+        scrollTop: sanitizeScrollTop(state.scrollTop),
+        activeSubId: typeof state.activeSubId === 'string' ? state.activeSubId : null,
+        selectedId: typeof state.selectedId === 'string' ? state.selectedId : null,
+      }
+    }
+    return out
+  } catch {
+    return {}
+  }
+}
+
+const writeGroupPanelMap = (map: GroupPanelMap) => {
+  utoolsStorage.setItem(HOME_GROUP_PANEL_KEY, JSON.stringify(map))
+}
+
+const readHomeScrollTop = (groupId?: string | null): number => {
+  if (groupId) {
+    const mapped = readGroupPanelMap()[groupId]?.scrollTop
+    if (typeof mapped === 'number') return mapped
+  }
   const raw = getPersistentItem(HOME_SCROLL_KEY)
   if (raw == null || raw === '') {
     // 兼容旧连贯数据里的 scrollTop
     const legacy = readHomeContinuityState()?.scrollTop
     return typeof legacy === 'number' && legacy > 0 ? legacy : 0
   }
-  const n = Number(raw)
-  return Number.isFinite(n) && n > 0 ? Math.max(0, n) : 0
+  return sanitizeScrollTop(raw)
 }
 
 const writeHomeScrollTop = (top: number) => {
-  const v = Math.max(0, Math.round(Number(top) || 0))
+  const v = sanitizeScrollTop(top)
   utoolsStorage.setItem(HOME_SCROLL_KEY, String(v))
 }
 
@@ -691,9 +734,12 @@ export default function HomePage() {
   const isAnchorScrollingRef = useRef(false)
   const anchorScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const anchorRaf = useRef(0)
-  // 滚动默认持久化：优先独立 scroll key，其次连贯快照
+  // 滚动默认持久化：按一级分组分别记住；兼容旧的全局 scroll key / 连贯快照
+  const groupPanelMapRef = useRef<GroupPanelMap>(readGroupPanelMap())
   const homeScrollTopRef = useRef(
-    readHomeScrollTop() || initialContinuityRef.current?.scrollTop || 0
+    readHomeScrollTop(initialContinuityRef.current?.activeGroupId || useBookmarkStore.getState().activeGroupId)
+    || initialContinuityRef.current?.scrollTop
+    || 0
   )
   const homeContinuityLatestRef = useRef({
     activeSubId,
@@ -702,7 +748,90 @@ export default function HomePage() {
   })
   homeContinuityLatestRef.current = { activeSubId, selectedId, activeGroupId }
 
+  // 分组面板状态：内存优先，落盘防抖。切组时绝不同步连写 uTools db（会卡死）。
+  const groupPanelFlushTimerRef = useRef<number | undefined>(undefined)
+  const groupPanelDirtyRef = useRef(false)
+  const restoreScrollTokenRef = useRef(0)
+
+  const flushGroupPanelMap = useCallback((alsoScrollKey = true) => {
+    if (groupPanelFlushTimerRef.current != null) {
+      window.clearTimeout(groupPanelFlushTimerRef.current)
+      groupPanelFlushTimerRef.current = undefined
+    }
+    const dirty = groupPanelDirtyRef.current
+    if (!dirty && !alsoScrollKey) return
+    groupPanelDirtyRef.current = false
+    try {
+      if (dirty) writeGroupPanelMap(groupPanelMapRef.current)
+      if (alsoScrollKey) {
+        const gid = homeContinuityLatestRef.current.activeGroupId || useBookmarkStore.getState().activeGroupId
+        const top = gid
+          ? (groupPanelMapRef.current[gid]?.scrollTop ?? homeScrollTopRef.current)
+          : homeScrollTopRef.current
+        writeHomeScrollTop(top)
+      }
+    } catch {
+      // 持久化失败不阻塞 UI
+    }
+  }, [])
+
+  const scheduleFlushGroupPanelMap = useCallback(() => {
+    groupPanelDirtyRef.current = true
+    if (groupPanelFlushTimerRef.current != null) return
+    groupPanelFlushTimerRef.current = window.setTimeout(() => {
+      groupPanelFlushTimerRef.current = undefined
+      flushGroupPanelMap(true)
+    }, 400)
+  }, [flushGroupPanelMap])
+
+  const updateGroupPanelMemory = useCallback((
+    groupId: string | null | undefined,
+    patch: Partial<GroupPanelState>
+  ) => {
+    if (!groupId) return
+    const prev = groupPanelMapRef.current[groupId] || {
+      scrollTop: 0,
+      activeSubId: null,
+      selectedId: null,
+    }
+    const next: GroupPanelState = {
+      scrollTop: patch.scrollTop !== undefined ? sanitizeScrollTop(patch.scrollTop) : prev.scrollTop,
+      activeSubId: patch.activeSubId !== undefined ? patch.activeSubId : prev.activeSubId,
+      selectedId: patch.selectedId !== undefined ? patch.selectedId : prev.selectedId,
+    }
+    if (
+      next.scrollTop === prev.scrollTop &&
+      next.activeSubId === prev.activeSubId &&
+      next.selectedId === prev.selectedId &&
+      groupPanelMapRef.current[groupId]
+    ) {
+      return
+    }
+    groupPanelMapRef.current = { ...groupPanelMapRef.current, [groupId]: next }
+    if (patch.scrollTop !== undefined) homeScrollTopRef.current = next.scrollTop
+    scheduleFlushGroupPanelMap()
+  }, [scheduleFlushGroupPanelMap])
+
+  const captureCurrentGroupPanel = useCallback((forceGroupId?: string | null) => {
+    const groupId = forceGroupId || homeContinuityLatestRef.current.activeGroupId || useBookmarkStore.getState().activeGroupId
+    if (!groupId) return
+    // 只有内容面板仍挂着该分组时，才信任 DOM scrollTop
+    if (!isSearchingRef.current) {
+      const root = contentRef.current
+      const panelGroupId = root?.dataset.groupId || ''
+      if (root && (!panelGroupId || panelGroupId === groupId)) {
+        homeScrollTopRef.current = root.scrollTop
+      }
+    }
+    updateGroupPanelMemory(groupId, {
+      scrollTop: homeScrollTopRef.current,
+      activeSubId: homeContinuityLatestRef.current.activeSubId,
+      selectedId: homeContinuityLatestRef.current.selectedId,
+    })
+  }, [updateGroupPanelMemory])
+
   const saveHomeContinuity = useCallback(() => {
+    flushGroupPanelMap(true)
     if (!useSettingsStore.getState().panelContinuous) {
       utoolsStorage.removeItem(HOME_CONTINUITY_KEY)
       return
@@ -710,15 +839,23 @@ export default function HomePage() {
 
     const latest = homeContinuityLatestRef.current
     const store = useBookmarkStore.getState()
+    const gid = latest.activeGroupId || store.activeGroupId
+    const scrollTop = gid
+      ? (groupPanelMapRef.current[gid]?.scrollTop ?? homeScrollTopRef.current)
+      : homeScrollTopRef.current
     const payload: HomeContinuityState = {
-      activeGroupId: latest.activeGroupId || store.activeGroupId,
+      activeGroupId: gid,
       activeSubId: latest.activeSubId || store.activeSubGroupId || null,
       selectedId: latest.selectedId,
-      scrollTop: homeScrollTopRef.current,
+      scrollTop,
       updatedAt: Date.now()
     }
-    utoolsStorage.setItem(HOME_CONTINUITY_KEY, JSON.stringify(payload))
-  }, [])
+    try {
+      utoolsStorage.setItem(HOME_CONTINUITY_KEY, JSON.stringify(payload))
+    } catch {
+      // ignore
+    }
+  }, [flushGroupPanelMap])
 
   /** 网格列数：接 settings.gridColumns，键盘跳格与 CSS 列数始终一致 */
   const GRID_COLS = gridColumns
@@ -765,8 +902,15 @@ export default function HomePage() {
 
     if (Number.isFinite(saved.scrollTop) && saved.scrollTop > 0) {
       homeScrollTopRef.current = saved.scrollTop
+      if (saved.activeGroupId) {
+        updateGroupPanelMemory(saved.activeGroupId, {
+          scrollTop: saved.scrollTop,
+          activeSubId: saved.activeSubId,
+          selectedId: saved.selectedId,
+        })
+      }
     }
-  }, [homeGroups, panelContinuous])
+  }, [homeGroups, panelContinuous, updateGroupPanelMemory])
 
   // 首屏主列表就绪后还原滚动（与连贯模式无关）
   useEffect(() => {
@@ -802,6 +946,24 @@ export default function HomePage() {
     return () => clearTimeout(timer)
   }, [focusSearchInput, searchSurface])
 
+  // 已访问过的一级分组：保活内容面板，避免切 Tab 卸载卡片导致图标重新解码闪白
+  const [visitedGroupIds, setVisitedGroupIds] = useState<string[]>(() => {
+    const gid = useBookmarkStore.getState().activeGroupId
+    return gid ? [gid] : []
+  })
+  useEffect(() => {
+    if (!activeGroupId) return
+    setVisitedGroupIds((prev) => (prev.includes(activeGroupId) ? prev : [...prev, activeGroupId]))
+  }, [activeGroupId])
+  // 分组被删除时清掉已失效的 keep-alive 面板
+  useEffect(() => {
+    const valid = new Set(homeGroups.map((g) => g.id))
+    setVisitedGroupIds((prev) => {
+      const next = prev.filter((id) => valid.has(id))
+      return next.length === prev.length ? prev : next
+    })
+  }, [homeGroups])
+
   // 面板内联搜索：searchVal 非空时跨全部分组过滤，
   // 支持标题/链接/描述/标签 + 拼音匹配；UI 以扁平结果面展示。
   const filteredGroups = useMemo<HomeGroup[]>(() => {
@@ -828,6 +990,16 @@ export default function HomePage() {
       }))
       .filter((g) => g.subs.length > 0)
   }, [homeGroups, searchVal, activeGroupId])
+
+  // keep-alive：已访问分组各自挂一份内容（隐藏非当前），图标/滚动都保留在 DOM 里
+  const keptGroups = useMemo(() => {
+    if (isSearching) return [] as HomeGroup[]
+    const byId = new Map(homeGroups.map((g) => [g.id, g]))
+    const ids = visitedGroupIds.length
+      ? visitedGroupIds
+      : (activeGroupId ? [activeGroupId] : homeGroups[0] ? [homeGroups[0].id] : [])
+    return ids.map((id) => byId.get(id)).filter(Boolean) as HomeGroup[]
+  }, [homeGroups, visitedGroupIds, activeGroupId, isSearching])
 
   // 搜索态：全局匹配的扁平结果（按 id 去重），列表/格子共用，不再按分组分段展示。
   const searchResultItems = useMemo<HomeItem[]>(() => {
@@ -988,31 +1160,45 @@ export default function HomePage() {
    * 把主列表滚回记录位置（或顶部）。
    * 多次重试：uTools 再次唤出时会 setExpendHeight，布局晚一拍，单次 rAF 写 scrollTop 常被冲掉。
    */
-  const restoreHomeScroll = useCallback((mode: 'keep' | 'top') => {
+  const restoreHomeScroll = useCallback((mode: 'keep' | 'top', groupId?: string | null) => {
+    const gid = groupId ?? (homeContinuityLatestRef.current.activeGroupId || useBookmarkStore.getState().activeGroupId)
     if (mode === 'top') {
       homeScrollTopRef.current = 0
-      writeHomeScrollTop(0)
+      if (gid) {
+        const prev = groupPanelMapRef.current[gid] || { scrollTop: 0, activeSubId: null, selectedId: null }
+        if (prev.scrollTop !== 0 || !groupPanelMapRef.current[gid]) {
+          groupPanelMapRef.current = { ...groupPanelMapRef.current, [gid]: { ...prev, scrollTop: 0 } }
+          groupPanelDirtyRef.current = true
+          scheduleFlushGroupPanelMap()
+        }
+      }
+    } else if (gid) {
+      const mapped = groupPanelMapRef.current[gid]?.scrollTop
+      homeScrollTopRef.current = typeof mapped === 'number' ? mapped : readHomeScrollTop(gid)
     } else if (homeScrollTopRef.current <= 0) {
-      // 内存没值时从存储再读一次（页面被重挂载时）
       homeScrollTopRef.current = readHomeScrollTop()
     }
+
     const target = mode === 'top' ? 0 : homeScrollTopRef.current
+    const token = ++restoreScrollTokenRef.current
     const apply = () => {
+      if (token !== restoreScrollTokenRef.current) return true
       const root = contentRef.current
       if (!root) return false
-      root.scrollTop = target
+      // 面板已切到别的分组时不要误写
+      if (gid && root.dataset.groupId && root.dataset.groupId !== gid) return false
+      if (Math.abs(root.scrollTop - target) > 1) root.scrollTop = target
       return Math.abs(root.scrollTop - target) < 2 || root.scrollHeight <= root.clientHeight + 1
     }
+    // 轻量重试：布局晚一拍时再钉，避免连写 storage
     requestAnimationFrame(() => {
       if (apply()) return
       requestAnimationFrame(() => {
         if (apply()) return
-        window.setTimeout(apply, 40)
-        window.setTimeout(apply, 120)
-        window.setTimeout(apply, 280)
+        window.setTimeout(apply, 50)
       })
     })
-  }, [])
+  }, [scheduleFlushGroupPanelMap])
   const restoreHomeScrollRef = useRef(restoreHomeScroll)
   restoreHomeScrollRef.current = restoreHomeScroll
 
@@ -1029,11 +1215,7 @@ export default function HomePage() {
   useEffect(() => {
     const captureScroll = () => {
       // 退出前尽量读一次当前主列表滚动（搜索面板时 contentRef 不是主列表，沿用 ref 旧值）
-      if (!isSearchingRef.current) {
-        const root = contentRef.current
-        if (root) homeScrollTopRef.current = root.scrollTop
-      }
-      writeHomeScrollTop(homeScrollTopRef.current)
+      captureCurrentGroupPanel()
       saveHomeContinuity()
     }
     const saveWhenHidden = () => {
@@ -1046,46 +1228,120 @@ export default function HomePage() {
     document.addEventListener('visibilitychange', saveWhenHidden)
     return () => {
       captureScroll()
+      if (groupPanelFlushTimerRef.current != null) {
+        window.clearTimeout(groupPanelFlushTimerRef.current)
+        groupPanelFlushTimerRef.current = undefined
+      }
       window.removeEventListener(UTOOLS_PLUGIN_OUT_EVENT, captureScroll)
       window.removeEventListener('pagehide', captureScroll)
       window.removeEventListener('beforeunload', captureScroll)
       document.removeEventListener('visibilitychange', saveWhenHidden)
     }
-  }, [saveHomeContinuity])
+  }, [saveHomeContinuity, captureCurrentGroupPanel])
 
-  // 主列表滚动：始终写入 ref + 落盘（不依赖连贯模式）
+  // 主列表滚动：按当前分组即时记入内存 map；落盘防抖。
+  // cleanup 绝不能再读 root.scrollTop——切组后 DOM 内容已换，scrollTop 常被浏览器清 0。
   useEffect(() => {
     if (screen !== 'list' && screen !== 'grid') return
     if (isSearching) return
     const root = contentRef.current
     if (!root) return
-    // 挂上主列表时先还原（搜索退回 / 再次唤出后 content 重建）
-    if (homeScrollTopRef.current > 0 && Math.abs(root.scrollTop - homeScrollTopRef.current) > 1) {
+    const groupIdForEffect = activeGroupId || useBookmarkStore.getState().activeGroupId
+    if (!groupIdForEffect) return
+
+    const mapped = groupPanelMapRef.current[groupIdForEffect]?.scrollTop
+    if (typeof mapped === 'number') homeScrollTopRef.current = mapped
+    if (Math.abs(root.scrollTop - homeScrollTopRef.current) > 1) {
       root.scrollTop = homeScrollTopRef.current
     }
-    let timer: number | undefined
+
     const onScroll = () => {
-      homeScrollTopRef.current = root.scrollTop
-      if (timer) window.clearTimeout(timer)
-      timer = window.setTimeout(() => {
-        writeHomeScrollTop(homeScrollTopRef.current)
-        if (useSettingsStore.getState().panelContinuous) saveHomeContinuity()
-      }, 200)
+      if ((root.dataset.groupId || '') && root.dataset.groupId !== groupIdForEffect) return
+      if (isAnchorScrollingRef.current) return
+      const top = root.scrollTop
+      homeScrollTopRef.current = top
+      updateGroupPanelMemory(groupIdForEffect, {
+        scrollTop: top,
+        activeSubId: homeContinuityLatestRef.current.activeSubId,
+        selectedId: homeContinuityLatestRef.current.selectedId,
+      })
     }
     root.addEventListener('scroll', onScroll, { passive: true })
     return () => {
-      if (timer) window.clearTimeout(timer)
       root.removeEventListener('scroll', onScroll)
     }
-  }, [saveHomeContinuity, screen, isSearching])
+  }, [updateGroupPanelMemory, screen, isSearching, activeGroupId])
 
-  // ---- 一级分组 Tab：切换当前分组（同步 store，首个子分组自动选中）----
+  // 切组后布局完成再钉一次目标分组滚动（轻量重试）
+  useEffect(() => {
+    if (screen !== 'list' && screen !== 'grid') return
+    if (isSearching) return
+    if (!activeGroupId) return
+    restoreHomeScrollRef.current('keep', activeGroupId)
+  }, [activeGroupId, screen, isSearching, view])
+
+  // ---- 一级分组 Tab：切换当前分组（同步 store；按分组恢复滚动/选中，不共用一个位置）----
   const changeActiveGroup = useCallback((groupId: string) => {
     setCtx((c) => (c.open ? { ...c, open: false } : c))
     setCtxMode('menu')
     if (screen === 'trash' || screen === 'settings') setScreen(view)
+
+    const prevGroupId = activeGroupId || useBookmarkStore.getState().activeGroupId
+
+    if (prevGroupId === groupId) {
+      // 点当前 Tab：回到该组顶部（明确意图）
+      if (smoothRafRef.current != null) {
+        cancelAnimationFrame(smoothRafRef.current)
+        smoothRafRef.current = null
+      }
+      suppressScrollIntoViewRef.current = true
+      isAnchorScrollingRef.current = true
+      captureCurrentGroupPanel(prevGroupId)
+      restoreHomeScrollRef.current('top', groupId)
+      window.setTimeout(() => { isAnchorScrollingRef.current = false }, 80)
+      return
+    }
+
+    // 先把当前分组位置写入内存 map（此时 DOM 仍是旧分组内容）
+    if (prevGroupId) captureCurrentGroupPanel(prevGroupId)
+
+    if (smoothRafRef.current != null) {
+      cancelAnimationFrame(smoothRafRef.current)
+      smoothRafRef.current = null
+    }
+    suppressScrollIntoViewRef.current = true
+    isAnchorScrollingRef.current = true
+    if (anchorScrollTimer.current) clearTimeout(anchorScrollTimer.current)
+    cancelAnimationFrame(anchorRaf.current)
+
+    const nextGroup = homeGroups.find((g) => g.id === groupId)
+    const saved = groupPanelMapRef.current[groupId]
+    const nextSub =
+      (saved?.activeSubId && nextGroup?.subs.find((s) => s.id === saved.activeSubId)) ||
+      nextGroup?.subs[0]
+    const nextSelected =
+      (saved?.selectedId &&
+        nextGroup?.subs.some((s) => s.items.some((item) => item.id === saved.selectedId)) &&
+        saved.selectedId) ||
+      nextSub?.items[0]?.id ||
+      null
+
+    if (nextSub) setActiveSubId(nextSub.id)
+    if (nextSelected) setSelectedId(nextSelected)
+
+    homeScrollTopRef.current = sanitizeScrollTop(saved?.scrollTop)
+    // 只写内存，不在切组路径同步落盘
+    updateGroupPanelMemory(groupId, {
+      scrollTop: homeScrollTopRef.current,
+      activeSubId: nextSub?.id ?? null,
+      selectedId: nextSelected,
+    })
     setActiveGroup(groupId)
-  }, [screen, view, setActiveGroup])
+    // activeGroupId effect 会 restore；这里不重复狂刷
+    window.setTimeout(() => {
+      isAnchorScrollingRef.current = false
+    }, 120)
+  }, [screen, view, setActiveGroup, homeGroups, activeGroupId, captureCurrentGroupPanel, updateGroupPanelMemory])
 
   // ---- 顶栏 Tab 拖拽排序（distance:5 保证点击/右键不被误判为拖拽）----
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -2884,30 +3140,42 @@ export default function HomePage() {
                 />
               </div>
             ) : (
-              <div
-                ref={contentRef}
-                className="content"
-                data-view={view}
-                tabIndex={-1}
-                onContextMenu={openCtx}
-              >
-                {view === 'grid' ? (
-                  <GridContent
-                    groups={filteredGroups}
-                    columns={gridColumns}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    onOpen={openHomeItem}
-                  />
-                ) : (
-                  <ListContent
-                    groups={filteredGroups}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    onOpen={openHomeItem}
-                  />
-                )}
-              </div>
+              <>
+                {keptGroups.map((group) => {
+                  const isActivePanel = group.id === (activeGroupId || keptGroups[0]?.id)
+                  return (
+                    <div
+                      key={group.id}
+                      ref={isActivePanel ? contentRef : undefined}
+                      className="content"
+                      data-view={view}
+                      data-group-id={group.id}
+                      // 非当前分组隐藏但保持挂载：图标不重载、滚动位置自然保留
+                      hidden={!isActivePanel}
+                      style={isActivePanel ? undefined : { display: 'none' }}
+                      tabIndex={isActivePanel ? -1 : undefined}
+                      onContextMenu={isActivePanel ? openCtx : undefined}
+                    >
+                      {view === 'grid' ? (
+                        <GridContent
+                          groups={[group]}
+                          columns={gridColumns}
+                          selectedId={selectedId}
+                          onSelect={setSelectedId}
+                          onOpen={openHomeItem}
+                        />
+                      ) : (
+                        <ListContent
+                          groups={[group]}
+                          selectedId={selectedId}
+                          onSelect={setSelectedId}
+                          onOpen={openHomeItem}
+                        />
+                      )}
+                    </div>
+                  )
+                })}
+              </>
             )}
           </div>
           <DragOverlay dropAnimation={null}>
@@ -3185,7 +3453,11 @@ export default function HomePage() {
 function Fav({ item, cls = 'fav' }: { item: HomeItem; cls?: string }) {
   // 真实图标加载失败（如 favicon 服务 404）时优雅回退到文字首字母
   const [imgError, setImgError] = useState(false)
-  const showImg = item.iconUrl && !imgError
+  // iconUrl 变化时才重置错误态；切分组 keep-alive 时同一 Fav 实例保留已加载状态
+  useEffect(() => {
+    setImgError(false)
+  }, [item.iconUrl])
+  const showImg = !!item.iconUrl && !imgError
   // 无图标 / 图标加载失败 → 文字占位：底色 + 文字色全部由 item.favColor/favFg 实色 hex 内联，
   // 不走 CSS 变量派生（Chromium 108 下 color-mix/oklch/hsl 变量语法会失效成透明）。
   // 用户自设 icon.bgColor 时 favColor 即该色；否则为按一级域名哈希分配的算法色，
