@@ -3,7 +3,7 @@
   "description": "参考 noice.so 风格的 uTools 书签插件，支持二级分类、搜索、图标缓存与无效检测",
   "version": "0.1.0",
   "author": "eachann",
-  "homepage": "",
+  "homepage": "https://github.com/eachann1024/goose-mark",
   "preload": "preload/preload.cjs",
   "name": "goose-marks",
   "title": "鹅的书签",
@@ -112,7 +112,9 @@
             "description": "返回条数上限，默认 50。"
           }
         },
-        "required": ["query"]
+        "required": [
+          "query"
+        ]
       }
     },
     "get_bookmark": {
@@ -126,7 +128,9 @@
             "description": "书签 ID。"
           }
         },
-        "required": ["bookmarkId"]
+        "required": [
+          "bookmarkId"
+        ]
       }
     },
     "open_bookmark": {
@@ -144,7 +148,9 @@
             "description": "模板书签替换占位符使用的查询词。"
           }
         },
-        "required": ["bookmarkId"]
+        "required": [
+          "bookmarkId"
+        ]
       }
     },
     "create_group": {
@@ -162,7 +168,9 @@
             "description": "首个二级分组名称，可选。"
           }
         },
-        "required": ["name"]
+        "required": [
+          "name"
+        ]
       }
     },
     "update_group": {
@@ -180,7 +188,10 @@
             "description": "新名称。"
           }
         },
-        "required": ["groupId", "name"]
+        "required": [
+          "groupId",
+          "name"
+        ]
       }
     },
     "remove_group": {
@@ -194,7 +205,9 @@
             "description": "一级分组 ID。"
           }
         },
-        "required": ["groupId"]
+        "required": [
+          "groupId"
+        ]
       }
     },
     "create_sub_group": {
@@ -212,7 +225,10 @@
             "description": "二级分组名称。"
           }
         },
-        "required": ["groupId", "name"]
+        "required": [
+          "groupId",
+          "name"
+        ]
       }
     },
     "update_sub_group": {
@@ -234,7 +250,11 @@
             "description": "新名称。"
           }
         },
-        "required": ["groupId", "subGroupId", "name"]
+        "required": [
+          "groupId",
+          "subGroupId",
+          "name"
+        ]
       }
     },
     "remove_sub_group": {
@@ -252,7 +272,10 @@
             "description": "二级分组 ID。"
           }
         },
-        "required": ["groupId", "subGroupId"]
+        "required": [
+          "groupId",
+          "subGroupId"
+        ]
       }
     },
     "create_bookmark": {
@@ -302,11 +325,16 @@
                   "type": "string"
                 }
               },
-              "required": ["groupId", "subGroupId"]
+              "required": [
+                "groupId",
+                "subGroupId"
+              ]
             }
           }
         },
-        "required": ["url"]
+        "required": [
+          "url"
+        ]
       }
     },
     "update_bookmark": {
@@ -341,7 +369,9 @@
             "type": "boolean"
           }
         },
-        "required": ["bookmarkId"]
+        "required": [
+          "bookmarkId"
+        ]
       }
     },
     "set_bookmark_locations": {
@@ -367,13 +397,19 @@
                   "type": "string"
                 }
               },
-              "required": ["groupId", "subGroupId"]
+              "required": [
+                "groupId",
+                "subGroupId"
+              ]
             },
             "minItems": 1,
             "description": "新的位置列表。"
           }
         },
-        "required": ["bookmarkId", "locations"]
+        "required": [
+          "bookmarkId",
+          "locations"
+        ]
       }
     },
     "remove_bookmark": {
@@ -387,7 +423,9 @@
             "description": "书签 ID。"
           }
         },
-        "required": ["bookmarkId"]
+        "required": [
+          "bookmarkId"
+        ]
       }
     },
     "restore_bookmark": {
@@ -401,7 +439,9 @@
             "description": "书签 ID。"
           }
         },
-        "required": ["bookmarkId"]
+        "required": [
+          "bookmarkId"
+        ]
       }
     }
   },
@@ -410,7 +450,11 @@
       "code": "bookmarks",
       "explain": "打开鹅的书签",
       "mainHide": false,
-      "cmds": ["书签", "bookmark", "bookmarks"]
+      "cmds": [
+        "书签",
+        "bookmark",
+        "bookmarks"
+      ]
     },
     {
       "code": "quick_save",
@@ -427,7 +471,11 @@
           "match": "/^https?:\\/\\/.*$/i"
         }
       ],
-      "platform": ["win32", "darwin", "linux"]
+      "platform": [
+        "win32",
+        "darwin",
+        "linux"
+      ]
     }
   ]
 }
