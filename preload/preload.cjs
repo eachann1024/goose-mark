@@ -1,3 +1,7 @@
+if (window.ztools) {
+  window.utools = window.ztools
+}
+
 // preload 运行在 CJS，避免与主项目 ESM 冲突
 const { fetchPublicText, fetchPublicBinary, getResolvedProxy } = require('./web-fetch.cjs')
 if (typeof window !== 'undefined') {
