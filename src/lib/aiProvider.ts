@@ -1109,7 +1109,7 @@ export async function runAIText(
 export function getDefaultAISettings() {
   const protocol: AIProtocol = 'openai-responses'
   return {
-    enabled: true,
+    enabled: false,
     allowLegacyUTools: false,
     selectedModelId: getDefaultModelId(protocol),
     useCustomProvider: true,

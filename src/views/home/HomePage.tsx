@@ -1112,7 +1112,6 @@ export default function HomePage() {
     }
   }, [theme, easterEggEnabled])
 
-
   /**
    * 统一搜索值更新入口：setSearchVal 并在 uTools 环境下把值同步到 subInput。
    * fromSubInput=true 时跳过 subInput 同步（避免回环）。
@@ -1714,6 +1713,12 @@ export default function HomePage() {
     url?: string,
     options: { autoStart?: boolean; clearFailure?: boolean } = {}
   ) => {
+    if (!useSettingsStore.getState().aiEnabled) {
+      setFormEditItem(null)
+      setFormKey((k) => k + 1)
+      setScreen('add')
+      return
+    }
     if (url !== undefined) setAggressiveSaveUrl(url)
     setAggressiveSaveAutoStart(Boolean(options.autoStart))
     if (options.clearFailure) setAggressiveSaveFailure(null)
@@ -2284,7 +2289,6 @@ export default function HomePage() {
     return () => cancelAnimationFrame(raf)
   }, [activeTemplateBookmark])
 
-
   // universal 书签匹配：payload 文本「标题 + 分隔符 + 关键词」→ 命中 allowUniversal 书签
   const findUniversalBookmarkMatch = useCallback((payloadText: string): { bookmark: Bookmark; query: string; exact: boolean } | null => {
     const store = useBookmarkStore.getState()
@@ -2385,6 +2389,10 @@ export default function HomePage() {
 
     // ---- ai_aggressive_save：AI 保存（仅网址 → 自动归类入库）----
     if (code === AI_AGGRESSIVE_SAVE_FEATURE_CODE) {
+      if (!useSettingsStore.getState().aiEnabled) {
+        openNewBookmarkForm()
+        return
+      }
       let urlToSave = ''
       const payload = params?.payload
       if (typeof payload === 'string') urlToSave = payload.trim()
@@ -2737,6 +2745,14 @@ export default function HomePage() {
   useEffect(() => {
     syncUToolsFeatures()
   }, [aiSettingsKey, syncUToolsFeatures])
+
+  useEffect(() => {
+    if (screen === 'ai-aggressive-save' && !aiEnabled) {
+      setFormEditItem(null)
+      setFormKey((k) => k + 1)
+      setScreen('add')
+    }
+  }, [screen, aiEnabled])
 
   // 设置页：IntersectionObserver 同步左侧高亮
   useEffect(() => {
@@ -3187,7 +3203,7 @@ export default function HomePage() {
         {screen === 'add' && <AddBookmarkWizard key={`wiz-${formKey}`} editItem={formEditItem} onBack={backToList} />}
 
         {/* ---------- AI 保存（仅网址） ---------- */}
-        {screen === 'ai-aggressive-save' && (
+        {screen === 'ai-aggressive-save' && aiEnabled && (
           <AggressiveAiSavePanel
             key={`ag-save-${aggressiveSaveUrl || 'empty'}`}
             initialUrl={aggressiveSaveUrl}
@@ -3365,6 +3381,11 @@ export default function HomePage() {
           tabIndex={toastJump || toastAction ? 0 : undefined}
           onClick={() => {
             if (toastAction === 'open-ai-save') {
+              if (!useSettingsStore.getState().aiEnabled) {
+                openNewBookmarkForm()
+                setToastOpen(false)
+                return
+              }
               setAggressiveSaveAutoStart(false)
               setScreen('ai-aggressive-save')
               setToastOpen(false)
@@ -4538,6 +4559,8 @@ function SettingsContent({
   const setEasterEggEnabled = useSettingsStore((s) => s.setEasterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   const setEasterEggVariant = useSettingsStore((s) => s.setEasterEggVariant)
+  const aiEnabled = useSettingsStore((s) => s.aiEnabled)
+  const setAiEnabled = useSettingsStore((s) => s.setAiEnabled)
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
   const aiProtocol = useSettingsStore((s) => s.aiProtocol)
@@ -4846,7 +4869,18 @@ function SettingsContent({
         <h2><Ico name="sparkles" />AI 助手</h2>
         <div className="set-card set-card--ai">
           <div className="set-ai-body">
+            <div className="set-row">
+              <div><div className="rt">AI 功能</div><div className="rd">{aiEnabled ? '收集时可自动整理标题、简介和分组' : '已关闭，收集走普通入口'}</div></div>
+              <div
+                className={`g-switch${aiEnabled ? ' on' : ''}`}
+                role="switch"
+                aria-checked={aiEnabled}
+                aria-label="AI 功能"
+                onClick={() => setAiEnabled(!aiEnabled)}
+              />
+            </div>
 
+            {aiEnabled ? (
             <>
                 <div className="ai-prov-label">选择协议</div>
                 <div className="ai-prov-grid">
@@ -4930,7 +4964,9 @@ function SettingsContent({
                   </div>
                 </div>
             </>
+            ) : null}
 
+            {aiEnabled ? (
             <div className="set-row">
               <div><div className="rt">模型</div><div className="rd">用于生成元数据的对话模型</div></div>
               <SettingsSelect
@@ -4941,6 +4977,7 @@ function SettingsContent({
                 onChange={setAiSelectedModelId}
               />
             </div>
+            ) : null}
 
           </div>
         </div>
