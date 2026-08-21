@@ -129,7 +129,7 @@ export default function AggressiveAiSavePanel({
               <p>AI 会生成标题与简介，并归入一个或多个合适分组，无需再点保存。</p>
             </div>
 
-            <div className={`gm-url-big ag-save-url${busy ? ' is-busy' : ''}`}>
+            <div className={`gm-url-big ag-save-url${busy ? ' is-busy is-orbiting is-orbiting-ai' : ''}`}>
               <Ico name="link" className="gm-url-icon" />
               <div className="gm-url-field-wrap">
                 <input
