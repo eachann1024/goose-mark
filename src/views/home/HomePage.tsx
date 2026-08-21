@@ -1112,27 +1112,6 @@ export default function HomePage() {
     }
   }, [theme, easterEggEnabled])
 
-  // uTools 默认窗口偏矮（plugin.json 560）；收集向导内容高，临时拉高避免底部裁切（离开 add 恢复用户设置）
-  const utoolsWizardHeightRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (RUNTIME_PLATFORM !== 'utools' || typeof window.utools?.setExpendHeight !== 'function') return
-    if (screen === 'add') {
-      const stored = useSettingsStore.getState().windowHeight
-      const target = Math.max(stored, 680)
-      if (utoolsWizardHeightRef.current === null) utoolsWizardHeightRef.current = stored
-      try {
-        window.utools.setExpendHeight(target)
-      } catch { /* ignore */ }
-      return
-    }
-    if (utoolsWizardHeightRef.current !== null) {
-      const restore = utoolsWizardHeightRef.current
-      utoolsWizardHeightRef.current = null
-      try {
-        window.utools.setExpendHeight(restore)
-      } catch { /* ignore */ }
-    }
-  }, [screen])
 
   /**
    * 统一搜索值更新入口：setSearchVal 并在 uTools 环境下把值同步到 subInput。
@@ -2305,28 +2284,6 @@ export default function HomePage() {
     return () => cancelAnimationFrame(raf)
   }, [activeTemplateBookmark])
 
-  // 模板输入页：主面板拉高到更开阔的搜索态，退出恢复用户设置高度
-  const utoolsTplHeightRef = useRef<number | null>(null)
-  useEffect(() => {
-    if (RUNTIME_PLATFORM !== 'utools' || typeof window.utools?.setExpendHeight !== 'function') return
-    if (isDetachedUToolsWindow()) return
-    if (activeTemplateBookmark) {
-      if (utoolsTplHeightRef.current === null) utoolsTplHeightRef.current = useSettingsStore.getState().windowHeight
-      try {
-        // 给 logo + 宽输入 + 提示留足纵向呼吸感（不低于用户当前高度）
-        const userH = utoolsTplHeightRef.current ?? 480
-        window.utools.setExpendHeight(Math.max(userH, 420))
-      } catch { /* ignore */ }
-      return
-    }
-    if (utoolsTplHeightRef.current !== null) {
-      const restore = utoolsTplHeightRef.current
-      utoolsTplHeightRef.current = null
-      try {
-        window.utools.setExpendHeight(restore)
-      } catch { /* ignore */ }
-    }
-  }, [activeTemplateBookmark])
 
   // universal 书签匹配：payload 文本「标题 + 分隔符 + 关键词」→ 命中 allowUniversal 书签
   const findUniversalBookmarkMatch = useCallback((payloadText: string): { bookmark: Bookmark; query: string; exact: boolean } | null => {
@@ -2642,8 +2599,7 @@ export default function HomePage() {
     // 绑定稳定的 wrapper，内部走 ref 取最新 handler
     const wrapper = (e: Event) => {
       // preload 在 onPluginEnter 也会设高度，但可能读到旧存储；页面已挂载时在此用 store 纠正。
-      // 模板输入态下跳过：避免 uTools 补发的 enter 把模板页高度重置回主面板高度。
-      if (!activeTemplateBookmarkRef.current && typeof window.utools?.setExpendHeight === 'function') {
+      if (typeof window.utools?.setExpendHeight === 'function') {
         try {
           window.utools.setExpendHeight(useSettingsStore.getState().windowHeight)
         } catch { /* ignore */ }
@@ -2675,8 +2631,7 @@ export default function HomePage() {
       }
       ;(window as unknown as { __gooseMarksPendingPluginEnterEvents?: unknown[] }).__gooseMarksPendingPluginEnterEvents = []
     }
-    // 模板页首屏直挂时跳过：高度已由模板页自己的 effect 收紧，不能重置回主面板高度
-    if (!activeTemplateBookmarkRef.current && typeof window.utools?.setExpendHeight === 'function') {
+    if (typeof window.utools?.setExpendHeight === 'function') {
       try {
         window.utools.setExpendHeight(useSettingsStore.getState().windowHeight)
       } catch { /* ignore */ }
