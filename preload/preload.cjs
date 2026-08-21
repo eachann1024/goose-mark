@@ -1,5 +1,7 @@
-if (window.ztools) {
-  window.utools = window.ztools
+window.ztools = window.ztools || window.utools
+window.utools = window.utools || window.ztools
+if (typeof utools === 'undefined' && window.utools) {
+  globalThis.utools = window.utools
 }
 
 // preload 运行在 CJS，避免与主项目 ESM 冲突
