@@ -6,9 +6,11 @@ import './assets/index.css'
 import 'virtual:uno.css'
 import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
+import { initErrorReporting } from '@/lib/errorReporting'
 import { initializeBookmarkStorePersistence } from '@/stores/bookmark'
 import { initializeSettingsStorePersistence } from '@/stores/settings'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
+initErrorReporting()
 const platform = getRuntimePlatform()
 if (import.meta.env.DEV) {
   console.log(`[Main] 运行模式: ${platform}`)

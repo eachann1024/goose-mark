@@ -45,6 +45,12 @@ try {
       console.log('✅ web-fetch.cjs 已复制');
   }
 
+  const errorReportingSrc = path.join(rootDir, 'preload/error-reporting.cjs');
+  if (fs.existsSync(errorReportingSrc)) {
+      fs.copyFileSync(errorReportingSrc, path.join(distDir, 'error-reporting.cjs'));
+      console.log('✅ error-reporting.cjs 已复制');
+  }
+
   // 1.1 创建 dist/package.json 设置 type: commonjs
   const distPackageJson = { type: 'commonjs' };
   fs.writeFileSync(path.join(distDir, 'package.json'), JSON.stringify(distPackageJson, null, 2));
