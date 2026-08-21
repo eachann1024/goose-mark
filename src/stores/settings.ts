@@ -391,7 +391,7 @@ const normalizeProtocolConfigs = (
 export const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
   if (!state) return {}
   const patch: Partial<SettingsState> = { ...state }
-  if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = true
+  if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
   // 丢弃已移除的 AI 对话面板专用字段，避免再次被持久化
   delete (patch as { readLocalSkills?: unknown }).readLocalSkills
   delete (patch as { userGlobalPrompt?: unknown }).userGlobalPrompt
