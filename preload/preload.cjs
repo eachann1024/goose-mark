@@ -6,7 +6,9 @@ if (typeof utools === 'undefined' && window.utools) {
 
 // preload 运行在 CJS，避免与主项目 ESM 冲突
 const { fetchPublicText, fetchPublicBinary, getResolvedProxy } = require('./web-fetch.cjs')
+const { installGooseErrorReport } = require('./error-reporting.cjs')
 if (typeof window !== 'undefined') {
+  installGooseErrorReport(window)
   if (typeof utools !== 'undefined') {
     window.utools = utools
 
