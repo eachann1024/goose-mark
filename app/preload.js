@@ -6,7 +6,9 @@ if (typeof utools === 'undefined' && window.utools) {
 
 // preload 运行在 CJS，避免与主项目 ESM 冲突
 const { fetchPublicText, fetchPublicBinary, getResolvedProxy } = require('./web-fetch.cjs')
+const { installGooseErrorReport } = require('./error-reporting.cjs')
 if (typeof window !== 'undefined') {
+  installGooseErrorReport(window)
   if (typeof utools !== 'undefined') {
     window.utools = utools
 
@@ -383,17 +385,14 @@ if (typeof window !== 'undefined') {
         ].slice(-8)
         // 模板书签入口（前缀与 src/hooks/useUTools.ts 的 FEATURE_PREFIX 保持一致）：
         // 渲染层首屏直接挂载模板输入页（仅 logo + 输入框），这里不挂 subInput
-        // （避免抢占页内输入框焦点），并先把窗口收紧到紧凑高度，避免先按主面板高度展示再压缩。
+        // （避免抢占页内输入框焦点）。窗口高度始终用用户设置，不按页面临时改。
         if (entry.params && typeof entry.params.code === 'string' && entry.params.code.startsWith('bm_tpl:')) {
           removeDefaultSearchInput()
           clearDefaultSearchCache()
-          if (typeof utools.setExpendHeight === 'function') {
-            try { utools.setExpendHeight(220) } catch (e) {}
-          }
         } else {
           mountDefaultSearchInput(true)
-          applyStoredWindowHeight()
         }
+        applyStoredWindowHeight()
         window.dispatchEvent(new CustomEvent(UTOOLS_PLUGIN_ENTER_EVENT, {
           detail: entry.params,
         }))
