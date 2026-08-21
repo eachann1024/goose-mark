@@ -25,5 +25,5 @@ qa-screenshots/
 pnpm-lock.yaml
 pnpm-workspace.yaml
 
-app/
+# app/ 是 ZTools 入口（plugin.json main=app/index.html），发布必须带上
 未命名/
