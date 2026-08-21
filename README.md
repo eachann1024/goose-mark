@@ -12,9 +12,15 @@
 - **图标落盘与死链**：图标写进本机文件，失败用首字母色块；无效地址本机探测。
 - **Ctrl+数字**：按住 Ctrl，当前前 10 个书签出数字，1–9 / 0 直接打开。
 
+<img width="1926" height="1558" alt="Resources 2026-08-21 at 15 49 06" src="https://github.com/user-attachments/assets/8a413537-88ef-4f8b-9319-703e050516c8" />
+
+
+
 ## 系列
 
+
 ![鹅系列 · 大功能](series-features.png)
+
 
 ## 同系列
 
