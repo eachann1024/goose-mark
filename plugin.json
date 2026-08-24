@@ -1,7 +1,7 @@
 {
   "pluginName": "鹅的书签",
   "description": "参考 noice.so 风格的 uTools 书签插件，支持二级分类、搜索、图标缓存与无效检测",
-  "version": "0.1.0",
+  "version": "6.7.0",
   "author": "eachann",
   "homepage": "https://github.com/eachann1024/goose-mark",
   "preload": "preload/preload.cjs",
