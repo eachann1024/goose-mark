@@ -119,9 +119,28 @@ interface UToolsApi {
   readFileSync?(path: string, encoding: 'utf-8'): string | undefined
 }
 
+
+interface GooseErrorReportHttpRequest {
+  url: string
+  method?: string
+  headers?: Record<string, string>
+  body: string | Uint8Array
+}
+
+interface GooseErrorReportHttpResponse {
+  statusCode: number
+  headers?: Record<string, string | undefined>
+}
+
+interface GooseErrorReportBridge {
+  getConfig: () => { enabled: boolean; dsn?: string }
+  send: (request: GooseErrorReportHttpRequest) => Promise<GooseErrorReportHttpResponse>
+}
+
 declare global {
   interface Window {
     utools?: UToolsApi
+    gooseErrorReport?: GooseErrorReportBridge
     gooseWeb?: {
       fetchText: (
         url: string,
