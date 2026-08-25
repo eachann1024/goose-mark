@@ -362,7 +362,7 @@ function ConfirmStep({
       </div>
 
       <section className="gm-confirm-url">
-        <div className="gm-url-big">
+        <div className={`gm-url-big${iconLoading || isGenerating ? ' is-orbiting' : ''}${isGenerating ? ' is-orbiting-ai' : ''}`}>
           <Ico name="link" className="gm-url-icon" />
           <div className={`gm-url-field-wrap${hasUrl ? ' has-value' : ''}${hasTemplateToken ? ' has-token' : ''}`}>
             {/* 空值：伪占位，{q} 标蓝 */}
@@ -478,22 +478,24 @@ function ConfirmStep({
           </div>
           <div className="gm-id-fields">
             <div className="gm-id-label">标题</div>
-            <input
-              className={`gm-id-input${titleFetching ? ' input-shimmer' : ''}`}
-              value={draft.title}
-              placeholder={titleFetching ? '正在获取标题…' : '网站标题'}
-              readOnly={titleFetching}
-              onPointerDown={() => {
-                if (titleFetching) takeOverTitle()
-              }}
-              onKeyDown={(e) => {
-                if (titleFetching && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) takeOverTitle()
-              }}
-              onChange={(e) => {
-                patchDraft({ title: e.target.value })
-                onTitleInput()
-              }}
-            />
+            <div className={`gm-id-orbit${titleFetching ? ' is-orbiting' : ''}`}>
+              <input
+                className="gm-id-input"
+                value={draft.title}
+                placeholder={titleFetching ? '正在获取标题…' : '网站标题'}
+                readOnly={titleFetching}
+                onPointerDown={() => {
+                  if (titleFetching) takeOverTitle()
+                }}
+                onKeyDown={(e) => {
+                  if (titleFetching && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) takeOverTitle()
+                }}
+                onChange={(e) => {
+                  patchDraft({ title: e.target.value })
+                  onTitleInput()
+                }}
+              />
+            </div>
             {titleSuggestion && titleSuggestion !== draft.title.trim() && (
               <button
                 type="button"
@@ -510,19 +512,21 @@ function ConfirmStep({
         </div>
         <div className="gm-id-desc-block">
           <div className="gm-id-label">简介 / 笔记</div>
-          <textarea
-            className={`gm-id-textarea${descFetching ? ' input-shimmer' : ''}`}
-            value={draft.desc}
-            placeholder={descFetching ? '正在获取描述…' : '一句话描述这个网站，或写点笔记…'}
-            readOnly={descFetching}
-            onPointerDown={() => {
-              if (descFetching) takeOverDesc()
-            }}
-            onKeyDown={(e) => {
-              if (descFetching && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) takeOverDesc()
-            }}
-            onChange={(e) => onDescInput(e.target.value)}
-          />
+          <div className={`gm-id-orbit${descFetching ? ' is-orbiting' : ''}`}>
+            <textarea
+              className="gm-id-textarea"
+              value={draft.desc}
+              placeholder={descFetching ? '正在获取描述…' : '一句话描述这个网站，或写点笔记…'}
+              readOnly={descFetching}
+              onPointerDown={() => {
+                if (descFetching) takeOverDesc()
+              }}
+              onKeyDown={(e) => {
+                if (descFetching && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) takeOverDesc()
+              }}
+              onChange={(e) => onDescInput(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 

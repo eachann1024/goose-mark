@@ -5,20 +5,37 @@ import {
   normalizePersistedSettings,
   useSettingsStore,
 } from '../../src/stores/settings'
-import { getDefaultAISettings } from '../../src/lib/aiProvider'
+import { getAIAvailability, getDefaultAISettings } from '../../src/lib/aiProvider'
 
-test('AI 助手能力对新用户默认全部开启', () => {
-  expect(getDefaultAISettings().enabled).toBe(true)
+test('AI 功能对新用户默认关闭，子能力仍保持现有默认', () => {
+  expect(getDefaultAISettings().enabled).toBe(false)
   expect(createDefaultSettingsState()).toMatchObject({
-    aiEnabled: true,
+    aiEnabled: false,
     aiAggressiveSaveEnabled: true,
     aiFormAutoPolish: true,
   })
 })
 
-test('缺失的 AI 能力字段补为开启，同时保留旧用户明确保存的值，并丢弃已移除的对话面板字段', () => {
+test('AI 总开关关闭时即使填了 Key 也不视为可用', () => {
+  const defaults = getDefaultAISettings()
+  expect(getAIAvailability({
+    ...defaults,
+    customApiKey: 'sk-test',
+    selectedModelId: 'gpt-test',
+    customModelOptions: [{ id: 'gpt-test', label: 'gpt-test' }],
+  }).ok).toBe(false)
+  expect(getAIAvailability({
+    ...defaults,
+    enabled: true,
+    customApiKey: 'sk-test',
+    selectedModelId: 'gpt-test',
+    customModelOptions: [{ id: 'gpt-test', label: 'gpt-test' }],
+  }).ok).toBe(true)
+})
+
+test('缺失的 AI 总开关补为关闭，子能力缺失仍补为开启；保留旧用户明确保存的值，并丢弃已移除的对话面板字段', () => {
   expect(normalizePersistedSettings({})).toMatchObject({
-    aiEnabled: true,
+    aiEnabled: false,
     aiAggressiveSaveEnabled: true,
     aiFormAutoPolish: true,
   })
@@ -101,6 +118,11 @@ test('AI 连接草稿在收起边界同步写入 uTools 云同步数据库', () 
         selectedModelId: 'long-model-id',
       },
     })
+
+    useSettingsStore.getState().setAiEnabled(false)
+    flushSettingsStorePersistence()
+    const afterOff = docs.get('gm:settings')?.data as Record<string, unknown>
+    expect(afterOff.aiEnabled).toBe(false)
   } finally {
     if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow)
     else Reflect.deleteProperty(globalThis, 'window')
