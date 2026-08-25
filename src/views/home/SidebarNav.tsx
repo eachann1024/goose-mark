@@ -720,9 +720,9 @@ export default function SidebarNav({
                   })}
                 </SortableContext>
 
-              {/* 新建子分组 inline input */}
+              {/* 新建子分组：复用选中 nav-item 行样式，输入沉入行内 */}
               {editing?.kind === 'newSub' && editing.groupId === g.id && (
-                <div className="nav-item nav-item-editing">
+                <div className="nav-item on nav-item-editing">
                   <input
                     ref={inputRef}
                     className="sidebar-inline-input"

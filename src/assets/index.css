@@ -2,6 +2,7 @@
 @layer theme, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
+@import "./focus-reset.css";
 /* HeroUI 组件按需引入；当前首页不加载 @heroui/styles，避免 uTools 旧 Chromium 吃到现代颜色主题变量。 */
 /* 衬线标题字体（Newsreader 已本地化，见 fonts.css；CJK 标题回退系统 Songti SC / serif，
    不再远程拉取 Noto Serif SC，避免 uTools/离线环境对 Google Fonts 的网络依赖与隐私外泄）。 */
