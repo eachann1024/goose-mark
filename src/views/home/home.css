@@ -1095,16 +1095,24 @@
 }
 .goose-home .nav-icon-btn:hover { @apply text-g-fg bg-g-surface-hover; }
 
-/* 内联编辑 input：保持行字号，沉浸式边框 */
+/* 内联编辑：输入沉入 nav-item 行，不再单独成框 */
 .goose-home .sidebar-inline-input {
-  @apply flex-1 min-w-0 rounded-g-sm outline-none text-g-fg px-[5px] py-px leading-[inherit];
-  background:var(--surface);
-  font-size:inherit; font-family:inherit;
-  border:1px solid var(--accent-border);
+  flex:1 1 0%;
+  min-width:0;
+  padding:0;
+  outline:none;
+  color:var(--fg);
+  line-height:inherit;
+  background:transparent;
+  border:none;
+  box-shadow:none;
+  font-size:inherit;
+  font-family:inherit;
+  font-weight:inherit;
 }
 .goose-home .grp-label-editing { @apply gap-1; }
 .goose-home .nav-item-editing { cursor:default; }
-.goose-home .nav-item-editing .sidebar-inline-input { @apply text-[12.5px] py-0.5 px-[5px]; }
+.goose-home .nav-item-editing .sidebar-inline-input { font-size:12.5px; }
 
 /* 顶栏「新建主分组」+：虚线胶囊，hover 染上 accent；默认隐藏，group-tabs hover 时浮现 */
 .goose-home .tab-add {
