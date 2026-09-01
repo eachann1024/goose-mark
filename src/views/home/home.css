@@ -2038,17 +2038,17 @@
   -webkit-text-fill-color:transparent;
   caret-color:var(--fg);
 }
-/* 选区在 input 上层：透明字会被不透明 selection 底色盖住镜像层。
-   选中时强制恢复文字色，保证深/浅色下都能读到选中内容。 */
+/* 选区在 input 上层。字必须保持透明，才能露出镜像层高亮；
+   底色用已有的 rgba 令牌（勿用实色 / hsl(var()/alpha)），旧内核才能透出下层文字。 */
 .goose-home .gm-url-big input.is-overlay::selection {
-  background:var(--accent-subtle);
-  color:var(--fg);
-  -webkit-text-fill-color:var(--fg);
+  background:var(--accent-ring-strong);
+  color:transparent;
+  -webkit-text-fill-color:transparent;
 }
 .goose-home .gm-url-big input.is-overlay::-moz-selection {
-  background:var(--accent-subtle);
-  color:var(--fg);
-  -webkit-text-fill-color:var(--fg);
+  background:var(--accent-ring-strong);
+  color:transparent;
+  -webkit-text-fill-color:transparent;
 }
 /* 模板识别提示卡：说明全局搜索，并带开关 */
 .goose-home .gm-tpl-tip {
@@ -2498,16 +2498,16 @@
   -webkit-text-fill-color: transparent !important;
   caret-color: var(--fg) !important;
 }
-/* 与通用层同理；!important 对齐上方透明字强制规则，旧内核选区才能显字 */
+/* 对齐上方透明字强制规则：半透明选区 + 字仍透明，镜像层可透出 */
 .goose-home[data-platform="utools"] .gm-url-big input.is-overlay::selection {
-  background: var(--accent-subtle) !important;
-  color: var(--fg) !important;
-  -webkit-text-fill-color: var(--fg) !important;
+  background: var(--accent-ring-strong) !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
 }
 .goose-home[data-platform="utools"] .gm-url-big input.is-overlay::-moz-selection {
-  background: var(--accent-subtle) !important;
-  color: var(--fg) !important;
-  -webkit-text-fill-color: var(--fg) !important;
+  background: var(--accent-ring-strong) !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
 }
 .goose-home[data-platform="utools"] .gm-id-input::placeholder,
 .goose-home[data-platform="utools"] .gm-id-textarea::placeholder,
