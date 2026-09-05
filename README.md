@@ -1,3 +1,5 @@
+> **已迁入 [Goose Hub](https://github.com/eachann1024/goose-hub)。** 本仓库不再提供云同步。本地数据在 `~/.config/marks`。云端代码（`server/`、`worker/`）已备份到本机 `~/Work/archive/goose-marks-cloud/`。需要 uTools 时代快照时，用 tag `utools-last` 回滚。
+
 # 鹅的书签
 
 ![封面](cover.png)
