@@ -6,7 +6,7 @@
 
 ## 视频介绍
 
-https://github.com/user-attachments/assets/7051157c-b20c-47ab-b92a-0525bf2af85d
+https://github.com/user-attachments/assets/2ea2aaa0-e03a-4cd8-aa94-794e1d603c0e
 
 ## 大功能
 
