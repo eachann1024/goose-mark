@@ -2,7 +2,7 @@
   "name": "utools-bookmarks",
   "version": "6.7.0",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite --port 7001",
