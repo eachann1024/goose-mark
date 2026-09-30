@@ -6,6 +6,14 @@
 
 在主框贴网址就能入库。带 `{占位符}` 的书签能当搜索引擎，不是再做一棵浏览器书签树。
 
+## 视频介绍
+
+[![中文产品介绍视频](docs/media/product-intro-cover.png)](https://github.com/eachann1024/goose-mark/raw/refs/heads/main/docs/media/product-intro-zh.mp4)
+
+[观看／下载 MP4](https://github.com/eachann1024/goose-mark/raw/refs/heads/main/docs/media/product-intro-zh.mp4) · 中文旁白 · 1080p · 42 秒
+
+**6.7.0源码界面演示·虚构数据**。展示两级分组、多位置归属、中文与拼音搜索、布局切换、虚构书签删除还原及实际 JSON 导出。基于 `6e987f8529f6c1f13e72808fd120d14a31a3e034`；本片未验证 uTools 持久化、AI 或云同步。
+
 ## 大功能
 
 - **模板书签**：URL 里写 `{query}` / `{关键词}`，在 uTools 按 Tab 填参打开。
