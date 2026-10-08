@@ -26,8 +26,6 @@ build()
 // 监视 src 目录
 watch('src', { recursive: true }, (_eventType, filename) => {
   if (!filename) return
-  // 忽略测试文件和类型声明的临时变动
-  if (filename.endsWith('.test.ts') || filename.endsWith('.spec.ts')) return
   if (timer) clearTimeout(timer)
   timer = setTimeout(build, 400)
 })

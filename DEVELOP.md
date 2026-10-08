@@ -90,7 +90,7 @@
 - 参数在 preload 侧会再次限制为 JSON 兼容的有限深度/大小，并过滤原型污染字段；具体字段仍以 `plugin.json` 的 `inputSchema` 为准。
 - MCP 写入工具会修改本机书签数据。调用方应先取得用户确认。
 
-开发验收：`bun run test:mcp` 校验声明、注册表及一次 preload → 渲染层请求/响应往返；`bun run build` 校验插件构建。
+开发验收：`bun run build` 校验插件构建。
 
 
 
