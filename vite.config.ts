@@ -64,9 +64,41 @@ export default defineConfig({
               minSize: 0
             },
             {
-              // AI SDK（懒加载，仅在自定义 AI 调用时拉取）独立成块，不进启动包。
+              // 公共依赖优先归组，避免某个供应商递归捕获它们并让其他协议一起加载。
+              name: 'vendor-ai-validation',
+              test: /[\\/]node_modules[\\/](zod[\\/]|@standard-schema[\\/])/,
+              priority: 39,
+              minSize: 0
+            },
+            {
+              name: 'vendor-ai-shared',
+              test: /[\\/]node_modules[\\/]@ai-sdk[\\/](provider|provider-utils)[\\/]/,
+              priority: 38,
+              minSize: 0
+            },
+            {
+              // 运行时仍由 import('ai') 按需加载；内置 gateway 与遥测属于其依赖。
               name: 'vendor-ai-sdk',
-              test: /[\\/]node_modules[\\/](@ai-sdk[\\/]|ai[\\/]|@opentelemetry[\\/]|zod[\\/]|@standard-schema[\\/])/,
+              test: /[\\/]node_modules[\\/](ai[\\/]|@ai-sdk[\\/]gateway[\\/]|@opentelemetry[\\/])/,
+              priority: 37,
+              minSize: 0
+            },
+            {
+              // 保留 execution.ts 的协议动态边界，只有选中的供应商会被拉取。
+              name: 'vendor-ai-openai',
+              test: /[\\/]node_modules[\\/]@ai-sdk[\\/]openai[\\/]/,
+              priority: 35,
+              minSize: 0
+            },
+            {
+              name: 'vendor-ai-openai-compatible',
+              test: /[\\/]node_modules[\\/]@ai-sdk[\\/]openai-compatible[\\/]/,
+              priority: 35,
+              minSize: 0
+            },
+            {
+              name: 'vendor-ai-anthropic',
+              test: /[\\/]node_modules[\\/]@ai-sdk[\\/]anthropic[\\/]/,
               priority: 35,
               minSize: 0
             },
