@@ -12,124 +12,14 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   SortableContext,
   verticalListSortingStrategy,
-  useSortable,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import type { Group, SubGroup } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import type { HomeGroup } from './viewModel'
 import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEditKeys'
 import { Ico } from './icon'
-
-// ── SortableNavItem：侧栏子分组可拖拽单项（模块顶层，避免 TDZ）────────────
-interface SortableNavItemProps {
-  id: string
-  name: string
-  count: number
-  isActive: boolean
-  isEditing: boolean
-  groupId: string
-  inputVal: string
-  inputRef: React.RefObject<HTMLInputElement | null>
-  onSubClick: () => void
-  onContextMenu: (e: React.MouseEvent) => void
-  onMoreClick: (e: React.MouseEvent) => void
-  onInputChange: (val: string) => void
-  onInputKeyDown: (e: React.KeyboardEvent) => void
-  onInputBlur: () => void
-}
-
-function SortableNavItem({
-  id,
-  name,
-  count,
-  isActive,
-  isEditing,
-  groupId,
-  inputVal,
-  inputRef,
-  onSubClick,
-  onContextMenu,
-  onMoreClick,
-  onInputChange,
-  onInputKeyDown,
-  onInputBlur,
-}: SortableNavItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } = useSortable({
-    id,
-    disabled: isEditing,
-    data: { type: 'sub', groupId },
-  })
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : undefined,
-  }
-
-  if (isEditing) {
-    return (
-      <div
-        ref={setNodeRef}
-        style={style}
-        className={`nav-item${isActive ? ' on' : ''} nav-item-editing`}
-      >
-        <input
-          ref={inputRef}
-          className="sidebar-inline-input"
-          value={inputVal}
-          onChange={(e) => onInputChange(e.target.value)}
-          onKeyDown={onInputKeyDown}
-          onBlur={onInputBlur}
-        />
-      </div>
-    )
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`nav-item nav-item-hoverable${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}${isOver ? ' drop-over' : ''}`}
-      data-nav-type="sub"
-      data-group-id={groupId}
-      data-sub-id={id}
-      {...attributes}
-      {...listeners}
-      role="button"
-      tabIndex={0}
-      onClick={onSubClick}
-      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSubClick() } }}
-      onContextMenu={onContextMenu}
-    >
-      <span>{name}</span>
-      <span className="nav-item-trailing">
-        <span className="count nav-item-count">{count}</span>
-        <button
-          className="nav-icon-btn nav-item-more"
-          title="更多操作"
-          onClick={onMoreClick}
-        >
-          <Ico name="more-horizontal" />
-        </button>
-      </span>
-    </div>
-  )
-}
-
-// ── 菜单状态机 ──────────────────────────────────────────────────────────────
-type MenuTarget =
-  | { type: 'group'; groupId: string }
-  | { type: 'sub'; groupId: string; subId: string }
-
-type MenuMode = 'menu' | 'move' | 'confirmDelete'
-
-interface NavMenuState {
-  open: boolean
-  x: number
-  y: number
-  target: MenuTarget | null
-  mode: MenuMode
-}
+import { SortableNavItem } from './sidebar-nav/SortableNavItem'
+import { renderSidebarMenu } from './sidebar-nav/renderSidebarMenu'
+import type { MenuTarget, NavMenuState } from './sidebar-nav/types'
 
 // ── 编辑态 ───────────────────────────────────────────────────────────────────
 type EditingState =
@@ -151,18 +41,11 @@ export interface SidebarNavProps {
   centerSignal?: number
 }
 
-// ── 工具函数 ─────────────────────────────────────────────────────────────────
-/** 找到分组在 raw groups 中的索引（排除回收站）*/
-function getNonTrashGroups(groups: Group[]): Group[] {
-  return groups.filter((g) => g.id !== TRASH_GROUP_ID && !g.isDeleted)
-}
-
 // ── 主组件 ───────────────────────────────────────────────────────────────────
 export default function SidebarNav({
   homeGroups,
   activeGroupId,
   activeSubId,
-  screen,
   onSubClick,
   fireToast,
   onActiveSubIdFix,
@@ -501,154 +384,26 @@ export default function SidebarNav({
   }, [menu.target, homeGroups])
 
   // ── 菜单内容渲染 ─────────────────────────────────────────────────────────
-  const renderMenu = useCallback(() => {
-    if (!menu.open || !menu.target) return null
-    const target = menu.target
-
-    if (menu.mode === 'confirmDelete') {
-      const name = menuTargetName()
-      return (
-        <div
-          ref={menuRef}
-          className="ctx-menu sidebar-ctx-menu"
-          style={{ display: 'flex', position: 'fixed', left: menu.x, top: menu.y, zIndex: 200 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="sidebar-ctx-confirm-msg">
-            <span>删除「{name}」？</span>
-            <span className="sidebar-ctx-confirm-sub">书签将移入回收站</span>
-          </div>
-          <div className="ctx-sep" />
-          <button className="danger" onClick={doDelete}>
-            <Ico name="trash-2" />
-            确认删除
-          </button>
-          <button onClick={closeMenu}>
-            <Ico name="x" />
-            取消
-          </button>
-        </div>
-      )
-    }
-
-    if (menu.mode === 'move' && target.type === 'sub') {
-      const t = target as { type: 'sub'; groupId: string; subId: string }
-      const otherGroups = homeGroups.filter((g) => g.id !== t.groupId)
-      return (
-        <div
-          ref={menuRef}
-          className="ctx-menu sidebar-ctx-menu"
-          style={{ display: 'flex', position: 'fixed', left: menu.x, top: menu.y, zIndex: 200 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="sidebar-ctx-move-title">移动到…</div>
-          {otherGroups.map((g) => (
-            <button key={g.id} onClick={() => doMoveSubToGroup(t.groupId, t.subId, g.id)}>
-              <Ico name="folder" />
-              {g.name}
-            </button>
-          ))}
-          <div className="ctx-sep" />
-          <button onClick={backToMenu}>
-            <Ico name="arrow-left" />
-            返回
-          </button>
-        </div>
-      )
-    }
-
-    // mode === 'menu'
-    if (target.type === 'group') {
-      const gId = target.groupId
-      const gIdx = homeGroups.findIndex((g) => g.id === gId)
-      const isFirst = gIdx === 0
-      const isLast = gIdx === homeGroups.length - 1
-      return (
-        <div
-          ref={menuRef}
-          className="ctx-menu sidebar-ctx-menu"
-          style={{ display: 'flex', position: 'fixed', left: menu.x, top: menu.y, zIndex: 200 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button onClick={() => startRenameGroup(gId)}>
-            <Ico name="pencil" />
-            重命名
-          </button>
-          <button onClick={() => startNewSub(gId)}>
-            <Ico name="plus" />
-            新建子分组
-          </button>
-          {!isFirst && (
-            <button onClick={() => moveGroupUp(gId)}>
-              <Ico name="chevron-up" />
-              上移
-            </button>
-          )}
-          {!isLast && (
-            <button onClick={() => moveGroupDown(gId)}>
-              <Ico name="chevron-down" />
-              下移
-            </button>
-          )}
-          <div className="ctx-sep" />
-          <button className="danger" onClick={confirmDelete}>
-            <Ico name="trash-2" />
-            删除分组
-          </button>
-        </div>
-      )
-    }
-
-    // target.type === 'sub'
-    const t = target as { type: 'sub'; groupId: string; subId: string }
-    const grp = homeGroups.find((g) => g.id === t.groupId)
-    const subs = grp?.subs ?? []
-    const sIdx = subs.findIndex((s) => s.id === t.subId)
-    const isFirst = sIdx === 0
-    const isLast = sIdx === subs.length - 1
-    const canMove = homeGroups.length > 1
-
-    return (
-      <div
-        ref={menuRef}
-        className="ctx-menu sidebar-ctx-menu"
-        style={{ display: 'flex', position: 'fixed', left: menu.x, top: menu.y, zIndex: 200 }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button onClick={() => startRenameSub(t.groupId, t.subId)}>
-          <Ico name="pencil" />
-          重命名
-        </button>
-        {!isFirst && (
-          <button onClick={() => moveSubUp(t.groupId, t.subId)}>
-            <Ico name="chevron-up" />
-            上移
-          </button>
-        )}
-        {!isLast && (
-          <button onClick={() => moveSubDown(t.groupId, t.subId)}>
-            <Ico name="chevron-down" />
-            下移
-          </button>
-        )}
-        {canMove && (
-          <button onClick={switchToMoveMode}>
-            <Ico name="arrow-right" />
-            移动到其他分组
-          </button>
-        )}
-        <button onClick={() => doPromote(t.groupId, t.subId)}>
-          <Ico name="arrow-up-to-line" />
-          提升为一级分组
-        </button>
-        <div className="ctx-sep" />
-        <button className="danger" onClick={confirmDelete}>
-          <Ico name="trash-2" />
-          删除
-        </button>
-      </div>
-    )
-  }, [
+  const renderMenu = useCallback(() => renderSidebarMenu({
+    menu,
+    homeGroups,
+    menuRef,
+    menuTargetName,
+    startRenameGroup,
+    startNewSub,
+    startRenameSub,
+    moveGroupUp,
+    moveGroupDown,
+    moveSubUp,
+    moveSubDown,
+    switchToMoveMode,
+    doPromote,
+    doMoveSubToGroup,
+    confirmDelete,
+    doDelete,
+    closeMenu,
+    backToMenu,
+  }), [
     menu,
     homeGroups,
     menuTargetName,
