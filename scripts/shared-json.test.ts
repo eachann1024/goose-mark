@@ -64,6 +64,14 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
     assert.equal(initial.settings.density, 'compact')
     assert.equal(initial.bookmarks[0].visits, 7)
     assert.deepEqual(initial.bookmarks[0].prevLocations, bookmark.prevLocations)
+    // 缓存不可读也不能阻断已有文件；但不能用默认示例重建缺失的文件。
+    docs.delete('gm:storage:shared-json-source-path')
+    await rm(file)
+    assert.equal(await initializeSharedJsonSync({ allowDefaultCreation: false }), false)
+    await assert.rejects(readFile(file), { code: 'ENOENT' })
+    await writeFile(file, JSON.stringify(initial))
+    assert.equal(await initializeSharedJsonSync({ allowDefaultCreation: false }), true)
+    await flushSharedJsonSync()
 
     useSettingsStore.getState().setDensity('comfy')
     useSettingsStore.getState().setThemePreference('dark')
