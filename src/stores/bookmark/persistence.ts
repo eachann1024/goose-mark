@@ -126,9 +126,6 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     bindBookmarkPersistenceFlushEvents()
     runtime.lastPersistedBookmarkState = ''
     enqueueBookmarkPersist(store.getState())
-
-    void store.getState().backfillIconCache()
-    void store.getState().refreshMissingIcons()
   }
 
   return { initializeBookmarkStorePersistence, flushBookmarkStorePersistence }

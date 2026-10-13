@@ -4,6 +4,7 @@ import type { Bookmark, Group } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
 import { useUTools } from '@/hooks/useUTools'
+import { sharedJsonConnected } from '@/lib/sharedJson'
 import { getAIAvailability } from '@/lib/aiProvider'
 import { UTOOLS_PLUGIN_ENTER_EVENT, UTOOLS_PLUGIN_OUT_EVENT, isDetachedUToolsWindow, readCurrentWindowPosition, moveDetachedWindowTo, getLatestUpdatedAt } from './homeRuntime'
 
@@ -112,6 +113,7 @@ export function useHomeStorageSync() {
       const detail = (e as CustomEvent<{ key: string; value: string }>).detail
       const { key, value } = detail || {}
       if (!value) return
+      if (sharedJsonConnected() && (key === 'settings' || key === 'bookmark')) return
       try {
         const data = JSON.parse(value)
         if (key === 'settings' && data && typeof data === 'object') {

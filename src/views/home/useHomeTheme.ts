@@ -1,7 +1,6 @@
 import type * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { useSettingsStore } from '@/stores/settings'
-import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
+import { useSettingsStore, isSettingsFileReadOnly } from '@/stores/settings'
 import { type Screen, type ViewMode, type Theme, type ThemePref } from './homeTypes'
 import { RUNTIME_PLATFORM, resolveTheme } from './homeRuntime'
 
@@ -13,21 +12,20 @@ export function useHomeThemeState({
 
   // ---- UI 状态 ----
   // 主题偏好（system/light/dark）和实际渲染主题分开存储
-  const [themePref, setThemePref] = useState<ThemePref>(() => {
-    const saved = getPersistentItem('goose-marks.theme-mode', ['vueuse-color-scheme'])
-    if (saved === 'dark' || saved === 'light' || saved === 'system') return saved
-    return 'light'
-  })
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = getPersistentItem('goose-marks.theme-mode', ['vueuse-color-scheme'])
-    const pref: ThemePref = (saved === 'dark' || saved === 'light' || saved === 'system') ? saved : 'light'
-    return resolveTheme(pref)
-  })
+  const storedTheme = useSettingsStore(state => state.themePreference)
+  const [themePref, setThemePref] = useState<ThemePref>(storedTheme)
+  const [theme, setTheme] = useState<Theme>(() => resolveTheme(storedTheme))
   // 视图：从 settings store 读取初始值
   const [view, setView] = useState<ViewMode>(() =>
     homeViewMode === 'grid' ? 'grid' : 'list'
   )
   const [screen, setScreen] = useState<Screen>('list')
+
+  useEffect(() => {
+    setThemePref(storedTheme)
+    setTheme(resolveTheme(storedTheme))
+  }, [storedTheme])
+  useEffect(() => { setView(homeViewMode === 'grid' ? 'grid' : 'list') }, [homeViewMode])
 
   return { themePref, setThemePref, theme, setTheme, view, setView, screen, setScreen }
 }
@@ -96,16 +94,18 @@ export function useHomeViewPreferences({
 }) {
 
 
-  // ---- 交互：统一主题偏好入口（持久化到 utools storage） ----
+  // ---- 交互：主题偏好进入设置 store，由文件模式写回 JSON。 ----
   const applyThemePref = useCallback((pref: ThemePref) => {
+    if (isSettingsFileReadOnly()) return
+    useSettingsStore.getState().setThemePreference(pref)
     setThemePref(pref)
     setTheme(resolveTheme(pref))
-    utoolsStorage.setItem('goose-marks.theme-mode', pref)
   }, [])
 
   // ---- 交互：列表/网格切换（设计稿 setView，同步持久化到 settings store） ----
   const changeView = useCallback(
     (v: ViewMode) => {
+      if (isSettingsFileReadOnly()) return
       setView(v)
       setHomeViewMode(v)
       // 书签视图内切换布局；回收站下点视图切换视为「回到书签视图」。
