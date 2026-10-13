@@ -11,6 +11,11 @@ import {
 } from '@/lib/aiProvider'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepository'
+import { getPersistentItem } from '@/lib/utoolsStorage'
+
+let settingsFileReadOnly = false
+export const setSettingsFileReadOnly = (value: boolean) => { settingsFileReadOnly = value }
+export const isSettingsFileReadOnly = () => settingsFileReadOnly
 
 /** 设置 store：setter 只做业务赋值，持久化由 utools.db 仓储处理。 */
 
@@ -79,6 +84,7 @@ function applyProtocolConfig(protocol: AIProtocol, config: AIProtocolConfig) {
 }
 
 export interface SettingsState {
+  themePreference: 'system' | 'light' | 'dark'
   gridColumns: number
   preferLocalSnapshotOnStartup: boolean
   localMirrorDirectory: string
@@ -139,6 +145,7 @@ const clampWindowHeight = (h: number) =>
   Math.min(WINDOW_HEIGHT_MAX, Math.max(WINDOW_HEIGHT_MIN, Math.round(h)))
 
 export interface SettingsActions {
+  setThemePreference: (value: SettingsState['themePreference']) => void
   setGridColumns: (value: number) => void
   setPreferLocalSnapshotOnStartup: (value: boolean) => void
   setLocalMirrorDirectory: (value: string) => void
@@ -185,6 +192,7 @@ export const createDefaultSettingsState = (): SettingsState => {
     selectedModelId: defaults.selectedModelId ?? DEFAULT_AI_MODEL
   })
   return {
+    themePreference: 'light',
     gridColumns: 3,
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
@@ -219,8 +227,12 @@ export const createDefaultSettingsState = (): SettingsState => {
   }
 }
 
-export const useSettingsStore = create<SettingsStore>()((set, get) => ({
+export const useSettingsStore = create<SettingsStore>()((rawSet, get) => {
+  const set = (patch: Partial<SettingsStore>) => { if (!settingsFileReadOnly) rawSet(patch) }
+  return {
   ...createDefaultSettingsState(),
+
+      setThemePreference: (value) => set({ themePreference: value }),
 
       setGridColumns: (value) => set({ gridColumns: Math.min(5, Math.max(2, Math.round(value))) }),
       setPreferLocalSnapshotOnStartup: (value) => set({ preferLocalSnapshotOnStartup: !!value }),
@@ -309,6 +321,7 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
       setAiAggressiveSaveEnabled: (value) => set({ aiAggressiveSaveEnabled: !!value }),
       setAiFormAutoPolish: (value) => set({ aiFormAutoPolish: !!value }),
       setWindowHeight: (value) => {
+        if (settingsFileReadOnly) return
         const next = clampWindowHeight(value)
         set({ windowHeight: next })
         // 即时应用到 uTools 主窗口（preload 仅负责启动恢复，运行时调整由这里驱动）
@@ -327,9 +340,11 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => ({
         set({ detachedWindowPosition: { x, y } })
       },
       setUseUtoolsBrowser: (value) => set({ useUtoolsBrowser: !!value })
-}))
+  }
+})
 
 const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => ({
+  themePreference: state.themePreference,
   gridColumns: state.gridColumns,
   preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
   localMirrorDirectory: state.localMirrorDirectory,
@@ -391,6 +406,7 @@ const normalizeProtocolConfigs = (
 export const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
   if (!state) return {}
   const patch: Partial<SettingsState> = { ...state }
+  if (!['system', 'light', 'dark'].includes(String(patch.themePreference))) patch.themePreference = 'light'
   if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
   // 丢弃已移除的 AI 对话面板专用字段，避免再次被持久化
   delete (patch as { readLocalSkills?: unknown }).readLocalSkills
@@ -540,7 +556,12 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
   if (settingsPersistenceStarted) return
   settingsPersistenceStarted = true
 
-  const persisted = normalizePersistedSettings(loadSettingsSnapshot())
+  const saved = loadSettingsSnapshot()
+  const persisted = normalizePersistedSettings(saved)
+  if (!saved?.themePreference) {
+    const legacyTheme = getPersistentItem('goose-marks.theme-mode', ['vueuse-color-scheme'])
+    if (legacyTheme === 'dark' || legacyTheme === 'light' || legacyTheme === 'system') persisted.themePreference = legacyTheme
+  }
   if (Object.keys(persisted).length > 0) {
     useSettingsStore.setState(persisted as Partial<SettingsStore>)
   }

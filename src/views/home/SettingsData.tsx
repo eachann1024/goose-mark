@@ -5,6 +5,7 @@ import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { Ico } from './icon'
 import { chooseSharedJsonSource, createSharedJsonSource, sharedJsonSourcePath } from '@/lib/sharedJson'
+import { currentFileSettings } from '@/lib/shared-json/settings'
 
 export function SettingsData({ onToast }: { onToast?: (title?: string) => void }) {
 
@@ -15,7 +16,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
     try {
       if (await chooseSharedJsonSource()) {
         setSharedJsonPath(sharedJsonSourcePath())
-        onToast?.('已连接共享 JSON 文件')
+        onToast?.('已切换 JSON 文件')
       }
     } catch (error) {
       onToast?.(`连接失败：${error instanceof Error ? error.message : '文件不可用'}`)
@@ -25,7 +26,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
     try {
       if (await createSharedJsonSource()) {
         setSharedJsonPath(sharedJsonSourcePath())
-        onToast?.('已创建共享 JSON 文件')
+        onToast?.('已创建 JSON 文件')
       }
     } catch (error) {
       onToast?.(`创建失败：${error instanceof Error ? error.message : '文件不可用'}`)
@@ -87,7 +88,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
   // 导出 JSON
   const handleExport = useCallback(() => {
     const { groups, bookmarks } = useBookmarkStore.getState()
-    const data = JSON.stringify({ groups, bookmarks }, null, 2)
+    const data = JSON.stringify({ groups, bookmarks, settings: currentFileSettings() }, null, 2)
     const blob = new Blob([data], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -106,13 +107,13 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
         <h2><Ico name="database" />导入与备份</h2>
         <div className="set-card">
           <div className="set-row">
-            <div><div className="rt">共享 JSON 数据源</div><div className="rd">uTools 与 Raycast 共用同一文件；外部变化自动刷新，冲突或损坏时暂停写入。{sharedJsonPath ? ` 当前：${sharedJsonPath}` : ' 尚未连接。'}</div></div>
+            <div><div className="rt">文件同步 · JSON</div><div className="rd">{sharedJsonPath || '用户文档 / goose-marks.json'}</div><div className="rd">每次打开读取文件；书签和设置修改自动写回。</div></div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-outline" style={{ height: 34, fontSize: 12.5 }} onClick={() => void handleChooseSharedJson()}>
-                选择已有 JSON
+                更换文件
               </button>
               <button className="btn btn-primary" style={{ height: 34, fontSize: 12.5 }} onClick={() => void handleCreateSharedJson()}>
-                新建共享 JSON
+                新建文件
               </button>
             </div>
           </div>

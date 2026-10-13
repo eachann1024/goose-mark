@@ -5,6 +5,7 @@ import { SettingsGeneral } from './SettingsGeneral'
 import { SettingsDisplay } from './SettingsDisplay'
 import { SettingsAI } from './SettingsAI'
 import { SettingsData } from './SettingsData'
+import { useBookmarkStore } from '@/stores/bookmark'
 import { type HomeToastHandler, type HomeNavigationBindings } from './homeInteractionTypes'
 
 export const SET_NAV: Array<[string, string, string]> = [
@@ -101,11 +102,14 @@ export function SettingsContent({
   onToast?: (title?: string) => void
   onGoToGroups?: () => void
 }) {
+  const readOnly = useBookmarkStore(state => state.isReadOnly)
   return (
     <>
-      <SettingsGeneral themePref={themePref} onThemeChange={onThemeChange} />
-      <SettingsDisplay />
-      <SettingsAI />
+      <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+        <SettingsGeneral themePref={themePref} onThemeChange={onThemeChange} />
+        <SettingsDisplay />
+        <SettingsAI />
+      </fieldset>
       <SettingsData onToast={onToast} />
       <SettingsGroups onGoToGroups={onGoToGroups} />
     </>

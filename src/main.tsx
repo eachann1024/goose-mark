@@ -7,7 +7,7 @@ import 'virtual:uno.css'
 import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
 import { initErrorReporting } from '@/lib/errorReporting'
-import { initializeBookmarkStorePersistence } from '@/stores/bookmark'
+import { initializeBookmarkStorePersistence, useBookmarkStore } from '@/stores/bookmark'
 import { initializeSettingsStorePersistence } from '@/stores/settings'
 import { initializeSharedJsonSync } from '@/lib/sharedJson'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
@@ -33,6 +33,11 @@ const bootstrap = async () => {
   await initializeSettingsStorePersistence()
   await initializeBookmarkStorePersistence()
   await initializeSharedJsonSync()
+  // 权威文件读取完成后才补图标，避免旧缓存的后台任务污染刚读取的数据。
+  if (!useBookmarkStore.getState().isReadOnly) {
+    void useBookmarkStore.getState().backfillIconCache()
+    void useBookmarkStore.getState().refreshMissingIcons()
+  }
 
   root.render(
     <StrictMode>
