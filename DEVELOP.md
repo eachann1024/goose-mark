@@ -4,7 +4,7 @@
 
 ## 概述
 
-- 参考 Notion的极简风格，基于 Vue 3 + Vite + UnoCSS + Pinia + Naive UI（Image 组件）实现。
+- 参考 Notion的极简风格，基于 React + TypeScript + Vite + UnoCSS + Zustand 实现。
 - 支持深浅色、二级分组、搜索、高可用的图标匹配与持久化（依赖本机网络）。
 - 默认字体使用 DM Sans，UnoCSS reset 保证一致的基础样式。
 
@@ -18,7 +18,7 @@
 
 ## 图标持久化策略
 
-- 首选本地文件缓存：图标抓取后写入 `utools.getPath('userData')/bookmarks-icons`，Pinia 仅存文件路径 + hash。
+- 首选本地文件缓存：图标抓取后写入 `utools.getPath('userData')/bookmarks-icons`，Zustand 仅存文件路径 + hash。
 - 域级冷却 24h：同一域名 24h 内不重复抓取，除非图标缺失或用户批量补全缺失图标。
 - 书签编辑：修改 URL 时，如该书签当前无图标则触发重新获取；已有图标则不重拉。
 - 批量补全：设置页提供“匹配缺失图标”操作，使用本机网络批量抓取缺失项。
@@ -66,24 +66,24 @@
 
 ## 运行与开发
 
-- 安装依赖：`pnpm install`
-- 开发：`pnpm dev`（无需额外执行时勿重复）
-- 构建：`pnpm build`
-- UnoCSS 已启用，避免额外手写样式文件；主题通过 CSS 变量驱动。
+- 安装依赖：`bun install`
+- 开发：`bun run dev`（无需额外执行时勿重复）
+- 构建：`bun run build`
+- UnoCSS 与组件样式共同维护界面；主题通过 CSS 变量驱动。
 - uTools 调试：插件中心 -> 开发者工具 -> 选择本目录；控制台在右上角“查看控制台”打开。
 
 
 
 ## 当前实现
 
-- Vite+Vue3+Pinia+UnoCSS+Naive UI 骨架，DM Sans 全局字体。
+- React+TypeScript+Vite+UnoCSS+Zustand 骨架，DM Sans 全局字体。
 - 书签二级分组、搜索、快速添加、卡片展示（图标/标题/描述/域名）。
 - 图标服务：本机网络抓取并写入 `userData/bookmarks-icons`，24h 冷却；缺失图标可在设置页一键补全；编辑 URL 时若无图标会自动尝试获取。
 - 设置页：缺失图标批量匹配、无效地址探测（HEAD 请求，3s 超时）、多来源导入（JSON/HTML/网址精灵 data.json）。
 
 ## MCP（uTools 原生工具）
 
-本插件采用 uTools 当前提供的 MCP 工具契约，而不是另起一个无法被 uTools 调用的 HTTP/stdio 服务：`plugin.json` 负责声明 JSON Schema，preload 使用 `utools.registerTool` 注册，再经受限的事件桥接访问 React/Pinia 中的本地书签数据。
+本插件采用 uTools 当前提供的 MCP 工具契约，而不是另起一个无法被 uTools 调用的 HTTP/stdio 服务：`plugin.json` 负责声明 JSON Schema，preload 使用 `utools.registerTool` 注册，再经受限的事件桥接访问 React/Zustand 中的本地书签数据。
 
 - 新增 `get_mcp_capabilities`：返回协议、传输方式、完整工具清单和写入安全提示，供 MCP 客户端先发现能力。
 - 可读取分组树、分页列出/搜索/读取书签，也可打开书签；支持分组、子分组、书签和归属位置管理。
