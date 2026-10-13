@@ -1,0 +1,36 @@
+{
+  "name": "鹅的书签",
+  "branch": "main",
+  "version_file": "package.json",
+  "inputs": [
+    "src",
+    "public",
+    "preload",
+    "index.html",
+    "browser.html",
+    "plugin.json",
+    "package.json",
+    "tsconfig.json",
+    "tsconfig.node.json",
+    "vite.config.ts",
+    "vite.debug.ts",
+    "uno.config.ts",
+    "postcss.config.js",
+    "tailwind.config.js",
+    "scripts/utools-build.js",
+    ".github/scripts/stable-release.py",
+    ".github/stable-release.json",
+    ".github/workflows/daily-stable.yml"
+  ],
+  "assets": [
+    {
+      "name": "goose-mark-utools-plugin.zip",
+      "parts": [
+        {
+          "path": "dist"
+        }
+      ]
+    }
+  ],
+  "notes": "生产构建目录 ZIP：解压后可作为 uTools／ZTools 开发插件目录导入；这不是 .upx 安装包，也不会自动发布到插件商店。保留各插件已有 manifest 版本。"
+}
