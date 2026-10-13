@@ -17,6 +17,7 @@ let timer: ReturnType<typeof setInterval> | undefined
 let unsubscribe: (() => void) | undefined
 let unsubscribeSettings: (() => void) | undefined
 let lifecycleBound = false
+let defaultCreationAllowed = true
 let syncQueue = Promise.resolve()
 
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -160,8 +161,9 @@ export async function flushSharedJsonSync() {
   await syncQueue
 }
 
-export async function initializeSharedJsonSync() {
+export async function initializeSharedJsonSync(options: { allowDefaultCreation?: boolean } = {}) {
   if (!window.utools || !window.require) return false
+  if (options.allowDefaultCreation === false) defaultCreationAllowed = false
   bindLifecycle()
   // 先完成已排队的编辑；每次进入均重新读取文件，不用缓存基线阻止权威文件加载。
   return enqueue(async () => {
@@ -176,6 +178,7 @@ export async function initializeSharedJsonSync() {
           throw error
         })
         if (!exists) {
+          if (!defaultCreationAllowed) throw new Error('旧缓存读取失败，未创建默认文件。请在设置中选择已有 JSON 文件')
           await modules().fs.mkdir(modules().path.dirname(file), { recursive: true })
           try { await createSharedFile(file, await portableSnapshot(currentSnapshot())) }
           catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
@@ -187,7 +190,9 @@ export async function initializeSharedJsonSync() {
       if (hash(await readFile(file)) !== hash(text)) throw new Error('初始化期间文件发生变化；拒绝覆盖')
       utoolsStorage.setItem(PATH_KEY, file)
       if (utoolsStorage.getItem(PATH_KEY) !== file) throw new Error('JSON 路径保存失败，未连接文件')
-      return await activateSource(source, incoming, hash(text))
+      const activated = await activateSource(source, incoming, hash(text))
+      if (activated) defaultCreationAllowed = true
+      return activated
     } catch (error) {
       if (source) report(source, error instanceof Error ? error.message : '文件读取失败')
       else {
