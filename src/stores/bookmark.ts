@@ -20,7 +20,19 @@ import { createTrashActions } from './bookmark/trash-actions'
 import { createQuickCollectActions } from './bookmark/quick-collect-actions'
 import { createIconActions } from './bookmark/icon-actions'
 
-export const useBookmarkStore = create<BookmarkStore>()((set, get) => {
+export const useBookmarkStore = create<BookmarkStore>()((rawSet, get) => {
+  type SetArguments = typeof rawSet extends {
+    (...args: infer MergeArguments): void
+    (...args: infer ReplaceArguments): void
+  } ? MergeArguments | ReplaceArguments : never
+  // ponytail: 同步冲突时只阻断书签/分组变更；需要离线编辑时再引入显式冲突副本。
+  const set: typeof rawSet = (...args: SetArguments) => {
+    const state = get()
+    const next = typeof args[0] === 'function' ? args[0](state) : args[0]
+    if (state.isReadOnly && next && ('groups' in next || 'bookmarks' in next)) return
+    if (args[1] === true) rawSet(next as BookmarkStore, true)
+    else rawSet(next, args[1])
+  }
   // 在工作副本上原地改写后整体提交，等价旧版 Pinia 的可变 state。
   const commit = (groups: Group[], bookmarks: Bookmark[], extra?: Partial<BookmarkState>) =>
     set({ groups: [...groups], bookmarks: [...bookmarks], ...extra })

@@ -103,6 +103,7 @@ export function createSnapshotActions(set: BookmarkSet, get: BookmarkGet): Pick<
     },
 
     resetToDefaultBookmarks: () => {
+      if (get().isReadOnly) return
       const snap = createDefaultBookmarkSnapshot()
       get().loadFromSnapshot(snap, false)
       set({

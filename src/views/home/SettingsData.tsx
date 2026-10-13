@@ -1,14 +1,36 @@
 import type * as React from 'react'
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from '@/hooks/useImportExport'
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { Ico } from './icon'
+import { chooseSharedJsonSource, createSharedJsonSource, sharedJsonSourcePath } from '@/lib/sharedJson'
 
 export function SettingsData({ onToast }: { onToast?: (title?: string) => void }) {
 
   // 隐藏的 file input ref
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [sharedJsonPath, setSharedJsonPath] = useState(() => sharedJsonSourcePath())
+  const handleChooseSharedJson = useCallback(async () => {
+    try {
+      if (await chooseSharedJsonSource()) {
+        setSharedJsonPath(sharedJsonSourcePath())
+        onToast?.('已连接共享 JSON 文件')
+      }
+    } catch (error) {
+      onToast?.(`连接失败：${error instanceof Error ? error.message : '文件不可用'}`)
+    }
+  }, [onToast])
+  const handleCreateSharedJson = useCallback(async () => {
+    try {
+      if (await createSharedJsonSource()) {
+        setSharedJsonPath(sharedJsonSourcePath())
+        onToast?.('已创建共享 JSON 文件')
+      }
+    } catch (error) {
+      onToast?.(`创建失败：${error instanceof Error ? error.message : '文件不可用'}`)
+    }
+  }, [onToast])
 
   // 导入文件处理
   const handleImportFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -19,6 +41,10 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
     try {
       const text = await file.text()
       const bookmarkStore = useBookmarkStore.getState()
+      if (bookmarkStore.isReadOnly) {
+        onToast?.('当前书签只读，未导入文件')
+        return
+      }
 
       if (file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm')) {
         // HTML 书签导入
@@ -43,6 +69,10 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
   }, [onToast])
 
   const handleResetBookmarks = useCallback(() => {
+    if (useBookmarkStore.getState().isReadOnly) {
+      onToast?.('当前书签只读，未重置书签')
+      return
+    }
     if (
       !window.confirm(
         '确定重置为默认书签？当前全部分组与书签将被替换为内置示例（含站点图标），此操作不可撤销。'
@@ -75,6 +105,17 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
       <div className="set-section" id="set-data">
         <h2><Ico name="database" />导入与备份</h2>
         <div className="set-card">
+          <div className="set-row">
+            <div><div className="rt">共享 JSON 数据源</div><div className="rd">uTools 与 Raycast 共用同一文件；外部变化自动刷新，冲突或损坏时暂停写入。{sharedJsonPath ? ` 当前：${sharedJsonPath}` : ' 尚未连接。'}</div></div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-outline" style={{ height: 34, fontSize: 12.5 }} onClick={() => void handleChooseSharedJson()}>
+                选择已有 JSON
+              </button>
+              <button className="btn btn-primary" style={{ height: 34, fontSize: 12.5 }} onClick={() => void handleCreateSharedJson()}>
+                新建共享 JSON
+              </button>
+            </div>
+          </div>
           <div className="set-row">
             <div><div className="rt">导入浏览器书签</div><div className="rd">支持 Chrome / Edge / Firefox 导出的 HTML</div></div>
             {/* 隐藏的 file input */}
