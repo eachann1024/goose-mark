@@ -9,6 +9,7 @@ import { getRuntimePlatform } from '@/lib/platform'
 import { initErrorReporting } from '@/lib/errorReporting'
 import { initializeBookmarkStorePersistence } from '@/stores/bookmark'
 import { initializeSettingsStorePersistence } from '@/stores/settings'
+import { initializeSharedJsonSync } from '@/lib/sharedJson'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
 initErrorReporting()
 const platform = getRuntimePlatform()
@@ -31,6 +32,7 @@ const root = holder.__gooseRoot ?? (holder.__gooseRoot = createRoot(container))
 const bootstrap = async () => {
   await initializeSettingsStorePersistence()
   await initializeBookmarkStorePersistence()
+  await initializeSharedJsonSync()
 
   root.render(
     <StrictMode>
