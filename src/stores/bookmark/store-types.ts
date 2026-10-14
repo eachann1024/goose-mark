@@ -126,6 +126,7 @@ export interface BookmarkActions {
   // 快照 / 整体替换
   loadFromSnapshot: (data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly?: boolean) => void
   setData: (state: SetDataPayload) => void
+  clearAllBookmarks: () => void
   resetToDefaultBookmarks: () => void
   $patch: (partial: Partial<BookmarkState>) => void
 }

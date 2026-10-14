@@ -2,15 +2,20 @@ import { applyImportDataToStore } from '@/hooks/useImportExport'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { utoolsStorage } from '@/lib/utoolsStorage'
 import { useSettingsStore, setSettingsFileReadOnly } from '@/stores/settings'
-import { currentFileSettings } from './shared-json/settings'
-import { createSharedFile, hash, modules, parse, portableSnapshot, readFile, replaceSharedFile, type Snapshot } from './shared-json/files'
+import { currentFileSettings, currentLocalSettings } from './shared-json/settings'
+import { hash, portableSnapshot, type Snapshot } from './shared-json/files'
 import { createSourceActions, SOURCE_PATH_KEY } from './shared-json/source-actions'
-import { sourceAction, useSharedJsonStatus } from './shared-json/status'
+import { useSharedJsonStatus } from './shared-json/status'
+import { readSource, writeSource, type Source, type SourceRead } from './shared-json/folder'
+import { defaultSourcePath } from './shared-json/startup'
+import { createSourceInitialization } from './shared-json/initialization'
 import { preserveLocalData } from './shared-json/local-cache'
+import { createLegacyMigration } from './shared-json/migration'
+import type { Connection } from './shared-json/runtime-types'
 export { useSharedJsonStatus } from './shared-json/status'
 
 const PATH_KEY = SOURCE_PATH_KEY
-type Connection = { file: string; epoch: number }
+let remoteBaseline: SourceRead | undefined
 let baseline = ''
 let localBaseline = ''
 let applying = false
@@ -21,7 +26,6 @@ let timer: ReturnType<typeof setInterval> | undefined
 let unsubscribe: (() => void) | undefined
 let unsubscribeSettings: (() => void) | undefined
 let lifecycleBound = false
-let defaultCreationAllowed = true
 let syncQueue = Promise.resolve()
 
 function enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -38,10 +42,7 @@ function currentSnapshot(): Snapshot {
 function snapshotStamp() { return JSON.stringify(currentSnapshot()) }
 function isActive(source: Connection) { return connection === source && source.epoch === epoch && !blocked }
 
-function saveCheckpoint(remote: string, local: string) {
-  baseline = remote
-  localBaseline = local
-}
+function saveCheckpoint(remote: string, local: string) { baseline = remote; localBaseline = local }
 
 function apply(snapshot: Snapshot) {
   applying = true
@@ -50,7 +51,7 @@ function apply(snapshot: Snapshot) {
     useBookmarkStore.getState().ensureValidSelection()
     if (snapshot.settings) {
       useSettingsStore.setState(snapshot.settings)
-      window.utools?.setExpendHeight?.(snapshot.settings.windowHeight)
+      if (snapshot.settings.windowHeight !== undefined) window.utools?.setExpendHeight?.(snapshot.settings.windowHeight)
     }
   }
   finally { applying = false }
@@ -67,13 +68,14 @@ function stopSource() {
   ++epoch
 }
 
-function beginSource(file: string): Connection {
+function beginSource(target: Source): Connection {
+  const file = target.path
   stopSource()
   blocked = false
-  connection = { file, epoch: ++epoch }
+  connection = { ...target, file, epoch: ++epoch }
   setSettingsFileReadOnly(true)
   useBookmarkStore.getState().setReadOnly(true)
-  useSharedJsonStatus.setState({ phase: 'connecting', path: file, error: null })
+  useSharedJsonStatus.setState({ phase: 'connecting', sourceMode: target.mode, path: file, error: null })
   return connection
 }
 
@@ -82,9 +84,9 @@ function report(source: Connection, message: string, localPending = false) {
   blocked = true
   setSettingsFileReadOnly(true)
   useBookmarkStore.getState().setReadOnly(true)
-  useSharedJsonStatus.setState({ phase: 'paused', path: source.file, error: message })
+  useSharedJsonStatus.setState({ phase: 'paused', sourceMode: source.mode, path: source.file, error: message })
   const result = localPending
-    ? 'JSON 未更新，本地修改仍保留在当前缓存。请先导出备份并检查文件。'
+    ? '同步未完成，数据源可能部分更新。本地修改仍保留，请先导出备份并检查数据源。'
     : '文件未被覆盖，当前缓存仅供查看。请检查文件并重新打开书签。'
   window.alert(`文件同步已暂停\n\n${message}\n\n${result}`)
 }
@@ -93,42 +95,55 @@ async function synchronizeExternal(source: Connection) {
   return enqueue(async () => {
     if (!isActive(source)) return
     try {
-      const text = await readFile(source.file)
-      const nextHash = hash(text)
+      const remote = await readSource(source)
+      const nextHash = remote.digest
       if (!isActive(source) || nextHash === baseline) return
       const stamp = snapshotStamp()
-      const local = await portableSnapshot(currentSnapshot())
+      const local = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
       if (!isActive(source)) return
       if (snapshotStamp() !== stamp || hash(local) !== localBaseline) {
         return report(source, '文件与本地都有未同步修改，检测到冲突。', true)
       }
       // 先验证外部图标，再改本地库；等待文件读取期间发生的编辑不能被覆盖。
-      const incoming = JSON.parse(await portableSnapshot(parse(text))) as Snapshot
-      const unchangedFile = hash(await readFile(source.file)) === nextHash
+      const incoming = remote.snapshot
+      const unchangedFile = (await readSource(source)).digest === nextHash
       if (!isActive(source)) return
       if (!unchangedFile || snapshotStamp() !== stamp) {
         return report(source, '刷新期间文件或本地数据发生变化，检测到冲突。', true)
       }
+      const previousSnapshot = currentSnapshot()
       apply(incoming)
-      const appliedLocal = await portableSnapshot(currentSnapshot())
-      if (isActive(source)) saveCheckpoint(nextHash, hash(appliedLocal))
+      useBookmarkStore.getState().setReadOnly(true)
+      setSettingsFileReadOnly(true)
+      try { await preserveLocalData() }
+      catch (error) {
+        apply(previousSnapshot)
+        throw error
+      }
+      const appliedLocal = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
+      if (isActive(source)) {
+        remoteBaseline = remote; saveCheckpoint(nextHash, hash(appliedLocal))
+        if (source.mode === 'folder') {
+          useBookmarkStore.getState().setReadOnly(false); setSettingsFileReadOnly(false)
+        }
+      }
     } catch (error) { report(source, error instanceof Error ? error.message : '文件读取失败') }
   })
 }
 
 async function publishLocal(source: Connection) {
-  if (!isActive(source) || applying) return
+  if (!isActive(source) || applying || source.mode === 'legacy') return
   return enqueue(async () => {
     if (!isActive(source)) return
     try {
-      const text = await portableSnapshot(currentSnapshot())
+      const text = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
       const localHash = hash(text)
       if (!isActive(source) || localHash === localBaseline) return
-      const existing = await readFile(source.file)
-      if (!isActive(source)) return
-      if (hash(existing) !== baseline) return report(source, '文件已被外部修改；拒绝覆盖。', true)
-      if (await replaceSharedFile(source.file, text, baseline, () => isActive(source)) && isActive(source)) {
-        saveCheckpoint(hash(text), localHash)
+      if (!remoteBaseline) throw new Error('数据源基线缺失，请重新连接')
+      const receipt = await writeSource(source, JSON.parse(text) as Snapshot, remoteBaseline, () => isActive(source))
+      if (receipt && isActive(source)) {
+        remoteBaseline = receipt
+        saveCheckpoint(receipt.digest, localHash)
       }
     } catch (error) { report(source, error instanceof Error ? error.message : '文件写入失败', true) }
   })
@@ -142,93 +157,69 @@ function watchSource(source: Connection) {
   timer = setInterval(() => { void synchronizeExternal(source) }, 1500)
 }
 
-async function activateSource(source: Connection, incoming: Snapshot, remoteHash: string) {
+async function activateSource(source: Connection, remote: SourceRead) {
+  const incoming = remote.snapshot
   if (!isActive(source)) return false
-  setSettingsFileReadOnly(false)
-  useBookmarkStore.getState().setReadOnly(false)
+  const previousSnapshot = currentSnapshot()
   apply(incoming)
-  const appliedLocal = await portableSnapshot(currentSnapshot())
+  useBookmarkStore.getState().setReadOnly(true)
+  setSettingsFileReadOnly(true)
+  try { await preserveLocalData() }
+  catch (error) {
+    apply(previousSnapshot)
+    throw error
+  }
+  const appliedLocal = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
   if (!isActive(source)) return false
-  saveCheckpoint(remoteHash, incoming.settings ? hash(appliedLocal) : '')
+  remoteBaseline = remote
+  saveCheckpoint(remote.digest, hash(appliedLocal))
   watchSource(source)
-  useSharedJsonStatus.setState({ phase: 'connected', path: source.file, error: null })
-  // apply 后读取图标期间也可能编辑；这部分仍应按刚应用的基线发布。
-  void publishLocal(source)
+  if (source.mode === 'folder') {
+    useBookmarkStore.getState().setReadOnly(false)
+    setSettingsFileReadOnly(false)
+  }
+  useSharedJsonStatus.setState({ phase: 'connected', sourceMode: source.mode, path: source.file,
+    error: source.mode === 'legacy' ? '旧 JSON（只读），请迁移到新数据文件夹' : null })
+  if (source.mode === 'folder') void publishLocal(source)
   return true
-}
-
-function defaultSourcePath() {
-  const documents = window.utools?.getPath('documents')
-  if (!documents) throw new Error('无法获取用户文档目录')
-  return modules().path.join(documents, 'goose-marks.json')
 }
 
 function bindLifecycle() {
   if (lifecycleBound) return
   lifecycleBound = true
-  window.addEventListener('goose-marks:plugin-enter', () => { void initializeSharedJsonSync() })
+  window.addEventListener('goose-marks:plugin-enter', () => {
+    if (connection && !blocked) void synchronizeExternal(connection)
+    else void initializeSharedJsonSync()
+  })
   window.addEventListener('goose-marks:plugin-out', () => { void flushSharedJsonSync() })
   window.addEventListener('pagehide', () => { void flushSharedJsonSync() })
 }
 
 export function sharedJsonConnected() { return !!connection }
-
 export async function flushSharedJsonSync() {
   if (connection && isActive(connection)) await publishLocal(connection)
   await syncQueue
 }
 
-export async function initializeSharedJsonSync(options: { allowDefaultCreation?: boolean } = {}) {
+function useLocal() {
+  stopSource()
+  blocked = false
+  remoteBaseline = undefined
+  saveCheckpoint('', '')
+  setSettingsFileReadOnly(false)
+  useBookmarkStore.getState().setReadOnly(false)
+  useSharedJsonStatus.setState({ phase: 'local', sourceMode: null, path: null, error: null })
+}
+
+const initializeSource = createSourceInitialization({
+  enqueue, stamp: snapshotStamp, connected: () => !!connection, paused: () => blocked,
+  connect: connectSource, useLocal
+})
+
+export async function initializeSharedJsonSync(_options: { allowDefaultCreation?: boolean } = {}) {
   if (!window.utools || !window.require) return false
-  if (options.allowDefaultCreation === false) defaultCreationAllowed = false
   bindLifecycle()
-  // 先完成已排队的编辑；每次进入均重新读取文件，不用缓存基线阻止权威文件加载。
-  return sourceAction(() => enqueue(async () => {
-    let source: Connection | undefined
-    try {
-      const savedPath = utoolsStorage.getItem(PATH_KEY)
-      // 空路径是用户主动移除连接的持久化标记，不能回落到默认文件。
-      if (savedPath === '') {
-        stopSource()
-        blocked = false
-        setSettingsFileReadOnly(!defaultCreationAllowed)
-        useBookmarkStore.getState().setReadOnly(!defaultCreationAllowed)
-        useSharedJsonStatus.setState({ phase: 'local', path: null, error: null })
-        return false
-      }
-      const file = savedPath || defaultSourcePath()
-      source = beginSource(file)
-      if (!savedPath) {
-        const exists = await modules().fs.lstat(file).then(() => true, error => {
-          if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
-          throw error
-        })
-        if (!exists) {
-          if (!defaultCreationAllowed) throw new Error('旧缓存读取失败，未创建默认文件。请在设置中选择已有 JSON 文件')
-          await modules().fs.mkdir(modules().path.dirname(file), { recursive: true })
-          try { await createSharedFile(file, await portableSnapshot(currentSnapshot())) }
-          catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
-        }
-      }
-      const text = await readFile(file)
-      const incoming = JSON.parse(await portableSnapshot(parse(text))) as Snapshot
-      if (!isActive(source)) return false
-      if (hash(await readFile(file)) !== hash(text)) throw new Error('初始化期间文件发生变化；拒绝覆盖')
-      utoolsStorage.setItem(PATH_KEY, file)
-      if (utoolsStorage.getItem(PATH_KEY) !== file) throw new Error('JSON 路径保存失败，未连接文件')
-      const activated = await activateSource(source, incoming, hash(text))
-      if (activated) defaultCreationAllowed = true
-      return activated
-    } catch (error) {
-      if (source) report(source, error instanceof Error ? error.message : '文件读取失败')
-      else {
-        setSettingsFileReadOnly(true)
-        useBookmarkStore.getState().setReadOnly(true)
-        window.alert(`文件同步不可用：${error instanceof Error ? error.message : '文件读取失败'}`)
-      }
-      return false
-    }
-  }))
+  return initializeSource()
 }
 
 function restorePath(value: string | null) {
@@ -237,18 +228,18 @@ function restorePath(value: string | null) {
   else utoolsStorage.setItem(PATH_KEY, value)
 }
 
-async function connectSource(file: string, incoming: Snapshot, remoteHash: string) {
+async function connectSource(target: Source, remote: SourceRead) {
+  const file = target.path
   const savedPath = utoolsStorage.getItem(PATH_KEY)
-  const previous = { source: connection, baseline, localBaseline, blocked,
-    status: useSharedJsonStatus.getState(), state: useBookmarkStore.getState(), settings: currentFileSettings() }
+  const previous = { source: connection, baseline, localBaseline, remoteBaseline, blocked,
+    status: useSharedJsonStatus.getState(), state: useBookmarkStore.getState(), settings: currentLocalSettings() }
   utoolsStorage.setItem(PATH_KEY, file)
   if (utoolsStorage.getItem(PATH_KEY) !== file) {
     restorePath(savedPath)
     throw new Error('文件路径保存失败，未切换连接')
   }
   try {
-    if (!await activateSource(beginSource(file), incoming, remoteHash)) throw new Error('文件连接已失效')
-    defaultCreationAllowed = true
+    if (!await activateSource(beginSource(target), remote)) throw new Error('文件连接已失效')
     return true
   } catch (error) {
     restorePath(savedPath)
@@ -259,9 +250,10 @@ async function connectSource(file: string, incoming: Snapshot, remoteHash: strin
       isReadOnly: previous.state.isReadOnly })
     useSettingsStore.setState(previous.settings)
     setSettingsFileReadOnly(previous.state.isReadOnly)
+    remoteBaseline = previous.remoteBaseline
     saveCheckpoint(previous.baseline, previous.localBaseline)
     if (previous.source) {
-      connection = { file: previous.source.file, epoch: ++epoch }
+      connection = { ...previous.source, epoch: ++epoch }
       if (!blocked) watchSource(connection)
     }
     useSharedJsonStatus.setState(previous.status)
@@ -278,14 +270,12 @@ async function disconnectSource() {
     restorePath(savedPath)
     throw new Error('移除连接失败，请重试')
   }
-  stopSource()
-  blocked = false
-  saveCheckpoint('', '')
-  setSettingsFileReadOnly(false)
-  useBookmarkStore.getState().setReadOnly(false)
-  useSharedJsonStatus.setState({ phase: 'local', path: null, error: null })
+  useLocal()
   return true
 }
+
+export const migrateLegacySource = createLegacyMigration({ enqueue, active: isActive, stamp: snapshotStamp,
+  snapshot: currentSnapshot, connect: connectSource, source: () => connection, baseline: () => remoteBaseline })
 
 export const { chooseSharedJsonSource, createSharedJsonSource, removeSharedJsonSource } = createSourceActions({
   enqueue, snapshot: currentSnapshot, stamp: snapshotStamp, defaultPath: defaultSourcePath,

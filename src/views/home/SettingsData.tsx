@@ -1,14 +1,35 @@
 import type * as React from 'react'
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from '@/hooks/useImportExport'
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { Ico } from './icon'
 import { SharedJsonControls } from './SharedJsonControls'
-import { currentFileSettings } from '@/lib/shared-json/settings'
+import { DataImportPreview } from './DataImportPreview'
+import { importPreviewCounts, importTargetStamp } from '@/hooks/import-export/preview'
+import type { ImportData, ImportMode } from '@/hooks/import-export/types'
+import { portableSnapshot, parse } from '@/lib/shared-json/files'
+import { previewFolderImport, exportFolderBackup } from '@/lib/shared-json/backup'
+import { sharedJsonSourcePath } from '@/lib/sharedJson'
 import type { HomeToastHandler } from './homeInteractionTypes'
 
 export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
+
+  const [preview, setPreview] = useState<{ data: ImportData; stamp: string } | null>(null)
+  const showPreview = (data: ImportData) => setPreview({ data, stamp: importTargetStamp(useBookmarkStore.getState()) })
+  const confirmImport = (mode: ImportMode) => {
+    if (!preview) return
+    const store = useBookmarkStore.getState()
+    if (store.isReadOnly || importTargetStamp(store) !== preview.stamp) {
+      onToast?.('当前数据已变化，请重新导入预览')
+      setPreview(null)
+      return
+    }
+    const summary = applyImportDataToStore(store, preview.data, mode)
+    store.ensureValidSelection()
+    setPreview(null)
+    onToast?.(`导入完成：当前共 ${summary.after.bookmarks} 条书签`)
+  }
 
   // 隐藏的 file input ref
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -32,8 +53,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
         // HTML 书签导入
         const parsed = parseHtmlBookmarks(text)
         const importData = importHtmlBookmarks(parsed)
-        const summary = applyImportDataToStore(bookmarkStore, importData, 'merge')
-        onToast?.(`导入成功：${summary.added.bookmarks} 条书签`)
+        showPreview(importData)
       } else {
         // JSON 导入
         const result = parseJsonImportText(text)
@@ -41,8 +61,8 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
           onToast?.(`导入失败：${result.message}`)
           return
         }
-        const summary = applyImportDataToStore(bookmarkStore, result.data, 'merge')
-        onToast?.(`导入成功：${summary.added.bookmarks} 条书签`)
+        showPreview(file.name.toLowerCase().endsWith('.json') && result.source === 'goose-marks'
+          ? JSON.parse(await portableSnapshot(parse(text))) as ImportData : result.data)
       }
     } catch (err) {
       console.error('[Import] 导入失败', err)
@@ -50,46 +70,48 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
     }
   }, [onToast])
 
-  const handleResetBookmarks = useCallback(() => {
+  const handleClearBookmarks = useCallback(() => {
     if (useBookmarkStore.getState().isReadOnly) {
-      onToast?.('当前书签只读，未重置书签')
+      onToast?.('当前书签只读，未清空书签')
       return
     }
     if (
       !window.confirm(
-        '确定重置为默认书签？当前全部分组与书签将被替换为内置示例（含站点图标），此操作不可撤销。'
+        '确定清空全部书签（含回收站）？已连接的数据源也会同步清空，保留默认分组结构，不恢复示例。此操作不可撤销。'
       )
     ) {
       return
     }
-    useBookmarkStore.getState().resetToDefaultBookmarks()
-    onToast?.('已恢复默认书签')
+    useBookmarkStore.getState().clearAllBookmarks()
+    onToast?.('已清空全部书签')
   }, [onToast])
 
-  // 导出 JSON
-  const handleExport = useCallback(() => {
-    const { groups, bookmarks } = useBookmarkStore.getState()
-    const data = JSON.stringify({ groups, bookmarks, settings: currentFileSettings() }, null, 2)
-    const blob = new Blob([data], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `goose-marks-backup-${new Date().toISOString().slice(0, 10)}.json`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    onToast?.('备份已下载')
-  }, [onToast])
+  const handleFolderImport = async () => {
+    try {
+      const data = await previewFolderImport()
+      if (data) showPreview(data)
+    } catch (error) { onToast?.(`导入失败：${error instanceof Error ? error.message : '文件夹不可用'}`) }
+  }
+  const handleExport = async () => {
+    try {
+      if (await exportFolderBackup(sharedJsonSourcePath())) onToast?.('完整备份已导出')
+    } catch (error) { onToast?.(`导出失败：${error instanceof Error ? error.message : '无法完整读取图片'}`) }
+  }
 
   return (
     <>
+      {preview && <DataImportPreview counts={importPreviewCounts(preview.data, useBookmarkStore.getState())}
+        onConfirm={confirmImport} onCancel={() => setPreview(null)} />}
       <div className="set-section" id="set-data">
         <h2><Ico name="database" />导入与备份</h2>
         <div className="set-card">
           <SharedJsonControls onToast={onToast} />
           <div className="set-row set-row-action">
-            <div><div className="rt">导入浏览器书签</div><div className="rd">支持 Chrome / Edge / Firefox 导出的 HTML</div></div>
+            <div className="rt">导入数据文件夹</div>
+            <button className="btn btn-outline" disabled={readOnly} onClick={() => void handleFolderImport()}>选择文件夹</button>
+          </div>
+          <div className="set-row set-row-action">
+            <div><div className="rt">导入浏览器书签 / 旧 JSON</div></div>
             {/* 隐藏的 file input */}
             <input
               ref={fileInputRef}
@@ -108,24 +130,24 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
             </button>
           </div>
           <div className="set-row set-row-action">
-            <div><div className="rt">导出备份</div><div className="rd">下载全部分组与书签（JSON）</div></div>
+            <div><div className="rt">导出完整备份</div></div>
             <button
               className="btn btn-primary"
               style={{ height: 34, fontSize: 12.5 }}
-              onClick={handleExport}
+              onClick={() => void handleExport()}
             >
               <Ico name="download" />导出
             </button>
           </div>
           <div className="set-row set-row-action">
-            <div><div className="rt">重置书签</div><div className="rd">恢复为内置默认分组与示例链接（图标已内置）</div></div>
+            <div><div className="rt">清空全部书签</div></div>
             <button
               className="btn btn-ghost danger"
               style={{ height: 34, fontSize: 12.5 }}
               disabled={readOnly}
-              onClick={handleResetBookmarks}
+              onClick={handleClearBookmarks}
             >
-              <Ico name="rotate-ccw" />重置
+              <Ico name="trash-2" />清空全部
             </button>
           </div>
         </div>

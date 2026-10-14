@@ -138,10 +138,12 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
       const groups = clone(get().groups)
       let bookmarks = clone(get().bookmarks)
       const trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
-      const trashSub = trashGroup?.children[0]
-      if (!trashSub || !trashGroup) return
+      if (!trashGroup || get().isReadOnly) return
       const now = Date.now()
-      const idsToRemove = [...trashSub.bookmarkIds]
+      const activeIds = new Set(groups.filter(group => group.id !== TRASH_GROUP_ID)
+        .flatMap(group => group.children.flatMap(sub => sub.bookmarkIds)))
+      const idsToRemove = [...new Set(trashGroup.children.flatMap(sub => sub.bookmarkIds))]
+        .filter(id => !activeIds.has(id))
       const previousShareIdsMap = new Map<string, string[]>()
       idsToRemove.forEach((id) => {
         const bookmark = bookmarks.find((b) => b.id === id)
@@ -149,10 +151,16 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
         previousShareIdsMap.set(id, get().getShareIdsFromLocations(previousLocations))
       })
       idsToRemove.forEach((id) => {
-        trashSub.bookmarkIds = trashSub.bookmarkIds.filter((bid) => bid !== id)
         bookmarks = bookmarks.filter((b) => b.id !== id)
       })
-      trashSub.updatedAt = now
+      trashGroup.children.forEach(sub => { sub.bookmarkIds = []; sub.updatedAt = now })
+      bookmarks.forEach(bookmark => {
+        if (activeIds.has(bookmark.id) && bookmark.locations?.some(location => location.groupId === TRASH_GROUP_ID)) {
+          bookmark.locations = bookmark.locations.filter(location => location.groupId !== TRASH_GROUP_ID)
+          bookmark.isDeleted = false
+          bookmark.updatedAt = now
+        }
+      })
       trashGroup.updatedAt = now
       commit(groups, bookmarks)
       idsToRemove.forEach((id) => {

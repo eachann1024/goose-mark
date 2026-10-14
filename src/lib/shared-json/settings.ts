@@ -1,22 +1,35 @@
-import { createDefaultSettingsState, normalizePersistedSettings, useSettingsStore, type SettingsState } from '@/stores/settings'
+import { createDefaultSettingsState, useSettingsStore, type SettingsState } from '@/stores/settings'
 
-export type FileSettings = Omit<SettingsState, 'localMirrorDirectory'>
+const sharedPreferenceKeys = [
+  'themePreference', 'gridColumns', 'preferLocalSnapshotOnStartup', 'homeViewMode', 'searchViewMode',
+  'density', 'easterEggEnabled', 'easterEggVariant', 'skipFailedIconMatch', 'panelContinuous',
+  'listShowDescription', 'listFullDescription', 'descriptionSelectable', 'listShowTags', 'uiScale',
+  'gridIconSize', 'windowHeight', 'useUtoolsBrowser'
+] as const satisfies readonly (keyof SettingsState)[]
+
+type SharedPreferenceKey = typeof sharedPreferenceKeys[number]
+export type FileSettings = Partial<Pick<SettingsState, SharedPreferenceKey>>
+
+export function currentLocalSettings(): SettingsState {
+  const state = useSettingsStore.getState()
+  const data = createDefaultSettingsState()
+  for (const key of Object.keys(data) as Array<keyof SettingsState>) data[key] = state[key] as never
+  return structuredClone(data)
+}
 
 export function currentFileSettings(): FileSettings {
   const state = useSettingsStore.getState()
-  const result = {} as FileSettings
-  for (const key of Object.keys(createDefaultSettingsState()) as Array<keyof SettingsState>) {
-    if (key !== 'localMirrorDirectory') Object.assign(result, { [key]: state[key] })
-  }
-  return structuredClone(result)
+  const result = {} as Record<string, unknown>
+  for (const key of sharedPreferenceKeys) result[key] = state[key]
+  return structuredClone(result) as FileSettings
 }
 
 export function parseFileSettings(raw: unknown): FileSettings {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('JSON 中的 settings 必须是设置对象')
   const defaults = createDefaultSettingsState()
   const patch: Partial<SettingsState> = {}
-  for (const key of Object.keys(defaults) as Array<keyof SettingsState>) {
-    if (key === 'localMirrorDirectory' || !Object.hasOwn(raw, key)) continue
+  for (const key of sharedPreferenceKeys) {
+    if (!Object.hasOwn(raw, key)) continue
     const value = (raw as Record<string, unknown>)[key]
     const expected = defaults[key]
     if (expected === null) {
@@ -30,13 +43,9 @@ export function parseFileSettings(raw: unknown): FileSettings {
     }
     Object.assign(patch, { [key]: value })
   }
-  const input: Partial<SettingsState> = { ...defaults, ...patch }
-  if (!Object.hasOwn(raw, 'aiProtocolConfigs')) delete input.aiProtocolConfigs
-  const normalized = { ...defaults, ...normalizePersistedSettings(input) }
-  normalized.gridColumns = Math.min(5, Math.max(2, Math.round(normalized.gridColumns)))
-  normalized.windowHeight = Math.min(1000, Math.max(600, Math.round(normalized.windowHeight)))
-  if (!['list', 'grid', 'cards'].includes(normalized.homeViewMode)) throw new Error('设置 homeViewMode 无效')
-  if (!['compact', 'regular', 'comfy'].includes(normalized.density)) throw new Error('设置 density 无效')
-  const { localMirrorDirectory: _localDirectory, ...settings } = normalized
-  return settings
+  if (Object.hasOwn(raw, 'gridColumns')) patch.gridColumns = Math.min(5, Math.max(2, Math.round(patch.gridColumns!)))
+  if (Object.hasOwn(raw, 'windowHeight')) patch.windowHeight = Math.min(1000, Math.max(600, Math.round(patch.windowHeight!)))
+  if (patch.homeViewMode && !['list', 'grid', 'cards'].includes(patch.homeViewMode)) throw new Error('设置 homeViewMode 无效')
+  if (patch.density && !['compact', 'regular', 'comfy'].includes(patch.density)) throw new Error('设置 density 无效')
+  return patch
 }

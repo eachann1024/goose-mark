@@ -234,10 +234,9 @@ const toPersistedIcon = async (icon?: IconSource): Promise<PersistedIconSource |
     }
     if (typeof icon.cache === 'string' && isDataUrl(icon.cache)) {
       const cacheRef = await persistDataUrlAsAttachment(icon.cache)
-      if (cacheRef) {
-        delete next.cache
-        next.cacheRef = cacheRef
-      }
+      if (!cacheRef) throw new Error('保存远程图标缓存失败，未能完整保存本地数据')
+      delete next.cache
+      next.cacheRef = cacheRef
     }
     return next
   }
@@ -252,10 +251,9 @@ const toPersistedIcon = async (icon?: IconSource): Promise<PersistedIconSource |
     }
     if (typeof icon.data === 'string' && isDataUrl(icon.data)) {
       const dataRef = await persistDataUrlAsAttachment(icon.data)
-      if (dataRef) {
-        delete next.data
-        next.dataRef = dataRef
-      }
+      if (!dataRef) throw new Error('保存自定义图标失败，未能完整保存本地数据')
+      delete next.data
+      next.dataRef = dataRef
     }
     return next
   }
