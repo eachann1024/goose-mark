@@ -53,15 +53,20 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     })()
       .catch((error) => {
         console.error('[bookmark] 保存失败:', error)
+        throw error
       })
       .finally(() => {
         runtime.bookmarkPersistPromise = null
         if (runtime.pendingBookmarkPersistJob && runtime.pendingBookmarkPersistJob.serialized !== runtime.lastPersistedBookmarkState) {
-          void drainBookmarkPersistQueue()
+          drainBookmarkPersistQueueInBackground()
         }
       })
 
     return runtime.bookmarkPersistPromise
+  }
+
+  const drainBookmarkPersistQueueInBackground = () => {
+    void drainBookmarkPersistQueue().catch(error => console.error('[bookmark] 后台保存失败:', error))
   }
 
   const enqueueBookmarkPersist = (state: BookmarkStore): void => {
@@ -69,7 +74,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     if (runtime.bookmarkPersistTimer) clearTimeout(runtime.bookmarkPersistTimer)
     runtime.bookmarkPersistTimer = setTimeout(() => {
       runtime.bookmarkPersistTimer = null
-      void drainBookmarkPersistQueue()
+      drainBookmarkPersistQueueInBackground()
     }, BOOKMARK_PERSIST_DEBOUNCE_MS)
   }
 
@@ -87,7 +92,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     runtime.bookmarkPersistenceFlushEventsStarted = true
 
     const flush = () => {
-      void flushBookmarkStorePersistence()
+      void flushBookmarkStorePersistence().catch(error => console.error('[bookmark] 事件保存失败:', error))
     }
     const flushWhenHidden = () => {
       if (document.visibilityState === 'hidden') flush()

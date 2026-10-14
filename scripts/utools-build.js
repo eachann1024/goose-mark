@@ -98,7 +98,9 @@ try {
 }
 
 // ZTools CLI ignores dist/; keep a copy in app/.
-const appDir = path.resolve('app');
-fs.rmSync(appDir, { recursive: true, force: true });
-fs.cpSync(distDir, appDir, { recursive: true });
-console.log('[utools-build] app/ synced for ZTools');
+if (process.env.GOOSE_SKIP_APP_SYNC !== '1') {
+  const appDir = path.resolve('app');
+  fs.rmSync(appDir, { recursive: true, force: true });
+  fs.cpSync(distDir, appDir, { recursive: true });
+  console.log('[utools-build] app/ synced for ZTools');
+}

@@ -38,8 +38,8 @@ export function hash(value: string) {
   return crypto.createHash('sha256').update(value).digest('hex')
 }
 
-export function parse(text: string): Snapshot {
-  if (new TextEncoder().encode(text).byteLength > MAX_BYTES) throw new Error('共享 JSON 超过 10 MiB')
+export function parse(text: string, expanded = false): Snapshot {
+  if (!expanded && new TextEncoder().encode(text).byteLength > MAX_BYTES) throw new Error('共享 JSON 超过 10 MiB')
   const shape = JSON.parse(text) as { groups?: unknown; bookmarks?: unknown; settings?: unknown }
   if (!Array.isArray(shape?.groups) || !Array.isArray(shape?.bookmarks)) throw new Error('共享 JSON 必须是含 groups 与 bookmarks 的书签数据文件')
   const result = parseJsonImportText(text)
@@ -49,13 +49,14 @@ export function parse(text: string): Snapshot {
   const rawBookmarks = shape.bookmarks as Bookmark[]
   const rawGroups = shape.groups as Group[]
   const rawBookmarkById = new Map(rawBookmarks.map(item => [item.id, item]))
+  const bookmarkIds = new Set(rawBookmarks.map(bookmark => bookmark.id))
   const groupIds = new Set<string>()
   const subIds = new Set<string>()
   for (const group of rawGroups) {
     if (!group || typeof group.id !== 'string' || groupIds.has(group.id) || !Array.isArray(group.children)) throw new Error('JSON 分组无效或重复')
     groupIds.add(group.id)
     for (const sub of group.children) {
-      if (!sub || typeof sub.id !== 'string' || subIds.has(sub.id) || !Array.isArray(sub.bookmarkIds) || sub.bookmarkIds.some(id => typeof id !== 'string')) throw new Error('JSON 子分组无效或重复')
+      if (!sub || typeof sub.id !== 'string' || subIds.has(sub.id) || !Array.isArray(sub.bookmarkIds) || sub.bookmarkIds.some(id => typeof id !== 'string' || !bookmarkIds.has(id))) throw new Error('JSON 子分组无效或重复')
       subIds.add(sub.id)
     }
   }
@@ -91,7 +92,7 @@ export async function readFile(file: string) {
   return text
 }
 
-export async function portableSnapshot(snapshot: Snapshot): Promise<string> {
+export async function portableSnapshot(snapshot: Snapshot, expanded = false): Promise<string> {
   const data = structuredClone(snapshot)
   for (const bookmark of data.bookmarks) {
     const icon = bookmark.icon
@@ -106,13 +107,14 @@ export async function portableSnapshot(snapshot: Snapshot): Promise<string> {
       if (!ext || !mime[ext]) throw new Error(`图标格式不支持，未写入：${bookmark.title}`)
       bookmark.icon = { type: 'custom', data: `data:${mime[ext]};base64,${bytes.toString('base64')}`, bgColor: icon.bgColor }
     } else if (icon.type === 'remote' && icon.cache?.startsWith('data:image/')) {
-      bookmark.icon = { type: 'custom', data: validateIconData(icon.cache, bookmark.title), bgColor: icon.bgColor }
+      icon.cache = validateIconData(icon.cache, bookmark.title)
     } else if (icon.type === 'custom') {
       icon.data = validateIconData(icon.data, bookmark.title)
     }
   }
   const text = JSON.stringify(data, null, 2)
-  if (new TextEncoder().encode(text).byteLength > MAX_BYTES) throw new Error('共享 JSON 超过 10 MiB，未写入')
+  const size = new TextEncoder().encode(text).byteLength
+  if (size > (expanded ? 100 * 1024 * 1024 : MAX_BYTES)) throw new Error(expanded ? '展开后的数据超过 100 MiB，未写入' : '共享 JSON 超过 10 MiB，未写入')
   return text
 }
 

@@ -1,8 +1,8 @@
 import type { Bookmark, Group, SubGroup } from '@/types/bookmark'
-import { TRASH_GROUP_ID, createDefaultBookmarkSnapshot, patchBookmarksWithBuiltinSeedIcons } from '@/stores/bookmarkSeed'
+import { TRASH_GROUP_ID, createSeedGroups, createDefaultBookmarkSnapshot, patchBookmarksWithBuiltinSeedIcons } from '@/stores/bookmarkSeed'
 import type { BookmarkActions, BookmarkSet, BookmarkGet } from './store-types'
 
-export function createSnapshotActions(set: BookmarkSet, get: BookmarkGet): Pick<BookmarkActions, 'patchBookmarksWithBuiltinSeedIcons' | 'migrateFromLegacy' | 'loadFromSnapshot' | 'setData' | 'resetToDefaultBookmarks' | '$patch'> {
+export function createSnapshotActions(set: BookmarkSet, get: BookmarkGet): Pick<BookmarkActions, 'patchBookmarksWithBuiltinSeedIcons' | 'migrateFromLegacy' | 'loadFromSnapshot' | 'setData' | 'resetToDefaultBookmarks' | 'clearAllBookmarks' | '$patch'> {
   return {
     patchBookmarksWithBuiltinSeedIcons: () => {
       const { bookmarks, changed } = patchBookmarksWithBuiltinSeedIcons(get().bookmarks)
@@ -100,6 +100,12 @@ export function createSnapshotActions(set: BookmarkSet, get: BookmarkGet): Pick<
         next.bookmarks = patchBookmarksWithBuiltinSeedIcons(state.bookmarks).bookmarks
       }
       set(next)
+    },
+
+    clearAllBookmarks: () => {
+      if (get().isReadOnly) return
+      get().loadFromSnapshot({ groups: createSeedGroups(), bookmarks: [] }, false)
+      set({ search: '', activeView: 'all' })
     },
 
     resetToDefaultBookmarks: () => {

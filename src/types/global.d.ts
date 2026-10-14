@@ -114,7 +114,7 @@ interface UToolsApi {
   showOpenDialog?(options: {
     title?: string
     filters?: Array<{ name: string; extensions: string[] }>
-    properties?: ('openFile' | 'openDirectory' | 'multiSelections')[]
+    properties?: ('openFile' | 'openDirectory' | 'multiSelections' | 'createDirectory')[]
   }): Promise<string[] | undefined>
   showSaveDialog?(options: {
     title?: string

@@ -1,7 +1,6 @@
 import { flushBookmarkStorePersistence, useBookmarkStore } from '@/stores/bookmark'
-import { useSettingsStore } from '@/stores/settings'
 import { saveBookmarkSnapshot, saveSettingsSnapshot } from '@/lib/stateRepository'
-import { currentFileSettings } from './settings'
+import { currentLocalSettings } from './settings'
 
 export async function preserveLocalData() {
   const snapshot = () => {
@@ -9,7 +8,7 @@ export async function preserveLocalData() {
     return structuredClone({ groups: state.groups, bookmarks: state.bookmarks,
       activeGroupId: state.activeGroupId, activeSubGroupId: state.activeSubGroupId })
   }
-  const settings = () => ({ ...currentFileSettings(), localMirrorDirectory: useSettingsStore.getState().localMirrorDirectory })
+  const settings = () => currentLocalSettings()
   const bookmarks = snapshot()
   const preferences = settings()
   const stamp = JSON.stringify({ bookmarks, preferences })

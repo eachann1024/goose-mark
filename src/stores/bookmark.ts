@@ -102,6 +102,7 @@ export const useBookmarkStore = create<BookmarkStore>()((rawSet, get) => {
     syncAllSharedEntities: createShareActionsInstance.syncAllSharedEntities,
     loadFromSnapshot: createSnapshotActionsInstance.loadFromSnapshot,
     setData: createSnapshotActionsInstance.setData,
+    clearAllBookmarks: createSnapshotActionsInstance.clearAllBookmarks,
     resetToDefaultBookmarks: createSnapshotActionsInstance.resetToDefaultBookmarks,
     $patch: createSnapshotActionsInstance.$patch,
   }

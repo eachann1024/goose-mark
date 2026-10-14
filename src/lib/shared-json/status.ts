@@ -2,13 +2,14 @@ import { create } from 'zustand'
 
 type SharedJsonStatus = {
   phase: 'local' | 'connecting' | 'connected' | 'paused'
+  sourceMode: 'folder' | 'legacy' | null
   path: string | null
   error: string | null
   busy: boolean
 }
 
 export const useSharedJsonStatus = create<SharedJsonStatus>(() => ({
-  phase: 'local', path: null, error: null, busy: false
+  phase: 'local', sourceMode: null, path: null, error: null, busy: false
 }))
 
 export async function sourceAction(operation: () => Promise<boolean>) {

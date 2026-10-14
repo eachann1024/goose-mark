@@ -14,6 +14,7 @@ export function TrashContent({
   onToast: (title?: string) => void
 }) {
   const bookmarks = useBookmarkStore((s) => s.bookmarks)
+  const readOnly = useBookmarkStore((s) => s.isReadOnly)
   const restoreBookmarkFromTrash = useBookmarkStore((s) => s.restoreBookmarkFromTrash)
   const emptyTrash = useBookmarkStore((s) => s.emptyTrash)
   const [confirmEmpty, setConfirmEmpty] = useState(false)
@@ -43,6 +44,8 @@ export function TrashContent({
       return
     }
     if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
+    if (readOnly) return
+    if (!window.confirm('确定永久清空回收站？已连接的数据源也会同步清空，其他书签保留。')) return
     emptyTrash()
     setConfirmEmpty(false)
     onToast('回收站已清空')
@@ -60,6 +63,7 @@ export function TrashContent({
           <button
             className={`btn btn-ghost${confirmEmpty ? ' danger' : ''}`}
             style={{ fontSize: 12.5, height: 32, padding: '0 12px' }}
+            disabled={readOnly}
             onClick={handleEmptyTrash}
           >
             <Ico name="trash-2" />
@@ -91,6 +95,7 @@ export function TrashContent({
             <button
               className="trash-restore-btn"
               title="恢复书签"
+              disabled={readOnly}
               onClick={() => handleRestore(b.id)}
             >
               <Ico name="rotate-ccw" />
