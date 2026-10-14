@@ -134,6 +134,31 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
     assert.deepEqual(migrated.bookmarks[0].prevLocations, bookmark.prevLocations)
     assert.deepEqual(parse(await portableSnapshot(parse(JSON.stringify(migrated)))).bookmarks[0].prevLocations, bookmark.prevLocations)
 
+    // 网站抓取与旧缓存都可能保存标准 ICO MIME；重载不能因此暂停整个数据源。
+    const icoSnapshot = structuredClone(migrated)
+    icoSnapshot.bookmarks[0].icon = { type: 'custom', data: 'data:image/vnd.microsoft.icon;base64,aWNvbg==' }
+    const icoText = JSON.stringify(icoSnapshot)
+    await writeFile(file, icoText)
+    const alertsBeforeIco = alerts.length
+    assert.equal(await initializeSharedJsonSync(), true)
+    await flushSharedJsonSync()
+    assert.equal(alerts.length, alertsBeforeIco)
+    assert.equal(useBookmarkStore.getState().isReadOnly, false)
+    assert.equal(isSettingsFileReadOnly(), false)
+    assert.equal(await readFile(file, 'utf8'), icoText)
+    useSettingsStore.getState().setDensity('compact')
+    await flushSharedJsonSync()
+    const savedIco = JSON.parse(await readFile(file, 'utf8'))
+    assert.equal(savedIco.bookmarks[0].icon.data, 'data:image/x-icon;base64,aWNvbg==')
+    assert.equal(savedIco.settings.density, 'compact')
+    windowMock.dispatchEvent(new Event('goose-marks:plugin-enter'))
+    await flushSharedJsonSync()
+    assert.equal(useBookmarkStore.getState().bookmarks[0].icon?.type, 'custom')
+    assert.equal(alerts.length, alertsBeforeIco)
+    await writeFile(file, JSON.stringify(migrated))
+    assert.equal(await initializeSharedJsonSync(), true)
+    await flushSharedJsonSync()
+
     // 宿主不支持 prompt：保存对话框取消不切换数据源，已有文件不能覆盖。
     assert.equal(await createSharedJsonSource(), false)
     assert.equal(saveOptions?.defaultPath, file)
