@@ -78,6 +78,7 @@ export function parse(text: string): Snapshot {
 function validateIconData(value: string, title: string) {
   const match = /^data:(image\/(?:png|jpeg|webp|gif|svg\+xml|x-icon));base64,([A-Za-z0-9+/]*={0,2})$/.exec(value)
   if (!match || !match[2] || match[2].length % 4 !== 0) throw new Error(`图标数据格式无效，未写入：${title}`)
+  const { Buffer } = window.require!('node:buffer') as typeof import('node:buffer')
   const bytes = Buffer.from(match[2], 'base64')
   if (bytes.toString('base64') !== match[2] || bytes.byteLength > MAX_ICON_BYTES) throw new Error(`图标超过 2 MiB 或编码无效，未写入：${title}`)
   return `data:${match[1]};base64,${match[2]}`
