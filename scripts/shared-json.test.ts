@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { verifySharedJsonTransitions } from './shared-json-flow-checks'
 
 test('文件模式：默认迁移、设置写回、重开读取与失败保护', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'goose-marks-sync-'))
@@ -33,7 +34,7 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
         get: (id: string) => docs.get(id) ?? null,
         put: (doc: any) => { docs.set(doc._id, structuredClone(doc)); return { ok: true } },
         remove: (id: string) => { docs.delete(id); return { ok: true } },
-        allDocs: () => [...docs.values()]
+        allDocs: (prefix = '') => [...docs.values()].filter(doc => doc._id.startsWith(prefix))
       }
     }
   })
@@ -153,6 +154,8 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
     utoolsStorage.setItem('shared-json-source-path', file)
     assert.equal(await initializeSharedJsonSync(), true)
     await flushSharedJsonSync()
+
+    await verifySharedJsonTransitions(file)
 
     // 运行期间文件与本地同时变更，不能覆盖外部内容。
     const external = { ...migrated, bookmarks: [{ ...migrated.bookmarks[0], title: '外部修改' }] }

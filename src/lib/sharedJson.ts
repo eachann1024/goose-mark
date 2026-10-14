@@ -4,8 +4,12 @@ import { utoolsStorage } from '@/lib/utoolsStorage'
 import { useSettingsStore, setSettingsFileReadOnly } from '@/stores/settings'
 import { currentFileSettings } from './shared-json/settings'
 import { createSharedFile, hash, modules, parse, portableSnapshot, readFile, replaceSharedFile, type Snapshot } from './shared-json/files'
+import { createSourceActions, SOURCE_PATH_KEY } from './shared-json/source-actions'
+import { sourceAction, useSharedJsonStatus } from './shared-json/status'
+import { preserveLocalData } from './shared-json/local-cache'
+export { useSharedJsonStatus } from './shared-json/status'
 
-const PATH_KEY = 'shared-json-source-path'
+const PATH_KEY = SOURCE_PATH_KEY
 type Connection = { file: string; epoch: number }
 let baseline = ''
 let localBaseline = ''
@@ -52,17 +56,24 @@ function apply(snapshot: Snapshot) {
   finally { applying = false }
 }
 
-function beginSource(file: string): Connection {
+function stopSource() {
   unsubscribe?.()
   unsubscribe = undefined
   unsubscribeSettings?.()
   unsubscribeSettings = undefined
   if (timer) clearInterval(timer)
   timer = undefined
+  connection = undefined
+  ++epoch
+}
+
+function beginSource(file: string): Connection {
+  stopSource()
   blocked = false
   connection = { file, epoch: ++epoch }
   setSettingsFileReadOnly(true)
   useBookmarkStore.getState().setReadOnly(true)
+  useSharedJsonStatus.setState({ phase: 'connecting', path: file, error: null })
   return connection
 }
 
@@ -71,6 +82,7 @@ function report(source: Connection, message: string, localPending = false) {
   blocked = true
   setSettingsFileReadOnly(true)
   useBookmarkStore.getState().setReadOnly(true)
+  useSharedJsonStatus.setState({ phase: 'paused', path: source.file, error: message })
   const result = localPending
     ? 'JSON 未更新，本地修改仍保留在当前缓存。请先导出备份并检查文件。'
     : '文件未被覆盖，当前缓存仅供查看。请检查文件并重新打开书签。'
@@ -122,6 +134,14 @@ async function publishLocal(source: Connection) {
   })
 }
 
+function watchSource(source: Connection) {
+  unsubscribe = useBookmarkStore.subscribe((state, previous) => {
+    if (!applying && (state.groups !== previous.groups || state.bookmarks !== previous.bookmarks)) void publishLocal(source)
+  })
+  unsubscribeSettings = useSettingsStore.subscribe(() => { if (!applying) void publishLocal(source) })
+  timer = setInterval(() => { void synchronizeExternal(source) }, 1500)
+}
+
 async function activateSource(source: Connection, incoming: Snapshot, remoteHash: string) {
   if (!isActive(source)) return false
   setSettingsFileReadOnly(false)
@@ -130,11 +150,8 @@ async function activateSource(source: Connection, incoming: Snapshot, remoteHash
   const appliedLocal = await portableSnapshot(currentSnapshot())
   if (!isActive(source)) return false
   saveCheckpoint(remoteHash, incoming.settings ? hash(appliedLocal) : '')
-  unsubscribe = useBookmarkStore.subscribe((state, previous) => {
-    if (!applying && (state.groups !== previous.groups || state.bookmarks !== previous.bookmarks)) void publishLocal(source)
-  })
-  unsubscribeSettings = useSettingsStore.subscribe(() => { if (!applying) void publishLocal(source) })
-  timer = setInterval(() => { void synchronizeExternal(source) }, 1500)
+  watchSource(source)
+  useSharedJsonStatus.setState({ phase: 'connected', path: source.file, error: null })
   // apply 后读取图标期间也可能编辑；这部分仍应按刚应用的基线发布。
   void publishLocal(source)
   return true
@@ -166,10 +183,19 @@ export async function initializeSharedJsonSync(options: { allowDefaultCreation?:
   if (options.allowDefaultCreation === false) defaultCreationAllowed = false
   bindLifecycle()
   // 先完成已排队的编辑；每次进入均重新读取文件，不用缓存基线阻止权威文件加载。
-  return enqueue(async () => {
+  return sourceAction(() => enqueue(async () => {
     let source: Connection | undefined
     try {
       const savedPath = utoolsStorage.getItem(PATH_KEY)
+      // 空路径是用户主动移除连接的持久化标记，不能回落到默认文件。
+      if (savedPath === '') {
+        stopSource()
+        blocked = false
+        setSettingsFileReadOnly(!defaultCreationAllowed)
+        useBookmarkStore.getState().setReadOnly(!defaultCreationAllowed)
+        useSharedJsonStatus.setState({ phase: 'local', path: null, error: null })
+        return false
+      }
       const file = savedPath || defaultSourcePath()
       source = beginSource(file)
       if (!savedPath) {
@@ -202,75 +228,68 @@ export async function initializeSharedJsonSync(options: { allowDefaultCreation?:
       }
       return false
     }
-  })
+  }))
 }
 
-export async function chooseSharedJsonSource() {
-  const ut = window.utools
-  if (!ut?.showOpenDialog) throw new Error('当前 uTools 版本不支持文件选择')
-  const files = await ut.showOpenDialog({ title: '选择共享书签 JSON', filters: [{ name: 'JSON', extensions: ['json'] }], properties: ['openFile'] })
-  const file = files?.[0]
-  if (!file) return false
-  const text = await readFile(file)
-  const incoming = parse(text)
-  const stamp = snapshotStamp()
-  const same = stamp === JSON.stringify(incoming)
-  if (!same && !window.confirm(`该文件有效，包含 ${incoming.bookmarks.length} 条书签。使用文件后，当前本地书签会被文件内容替换；可先取消并导出本地备份。\n\n${file}\n\n确定使用该文件？`)) return false
-  const source = beginSource(file)
-  return enqueue(async () => {
-    try {
-      const portable = JSON.parse(await portableSnapshot(incoming)) as Snapshot
-      if (!isActive(source)) return false
-      if (snapshotStamp() !== stamp) throw new Error('选择文件期间本地库发生变化；拒绝覆盖，请重新选择文件')
-      if (hash(await readFile(file)) !== hash(text)) throw new Error('选择期间文件发生变化；拒绝覆盖，请重新选择文件')
-      if (!isActive(source)) return false
-      if (snapshotStamp() !== stamp) throw new Error('选择文件期间本地库发生变化；拒绝覆盖，请重新选择文件')
-      utoolsStorage.setItem(PATH_KEY, file)
-      if (utoolsStorage.getItem(PATH_KEY) !== file) throw new Error('共享 JSON 路径保存失败，未连接文件')
-      return await activateSource(source, portable, hash(text))
-    } catch (error) {
-      report(source, error instanceof Error ? error.message : '文件读取失败')
-      throw error
-    }
-  })
+function restorePath(value: string | null) {
+  if (utoolsStorage.getItem(PATH_KEY) === value) return
+  if (value === null) utoolsStorage.removeItem(PATH_KEY)
+  else utoolsStorage.setItem(PATH_KEY, value)
 }
 
-export async function createSharedJsonSource() {
-  const ut = window.utools
-  if (!ut?.showSaveDialog) throw new Error('当前 uTools 版本不支持保存文件对话框')
-  const selectedPath = await ut.showSaveDialog({
-    title: '新建书签 JSON 文件',
-    defaultPath: defaultSourcePath(),
-    filters: [{ name: 'JSON', extensions: ['json'] }],
-  })
-  if (!selectedPath) return false
-  const file = /\.json$/i.test(selectedPath) ? selectedPath : `${selectedPath}.json`
-  try {
-    await modules().fs.lstat(file)
-    throw new Error('文件已存在，请使用“更换文件”或选择新的文件名')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+async function connectSource(file: string, incoming: Snapshot, remoteHash: string) {
+  const savedPath = utoolsStorage.getItem(PATH_KEY)
+  const previous = { source: connection, baseline, localBaseline, blocked,
+    status: useSharedJsonStatus.getState(), state: useBookmarkStore.getState(), settings: currentFileSettings() }
+  utoolsStorage.setItem(PATH_KEY, file)
+  if (utoolsStorage.getItem(PATH_KEY) !== file) {
+    restorePath(savedPath)
+    throw new Error('文件路径保存失败，未切换连接')
   }
-  const stamp = snapshotStamp()
-  const source = beginSource(file)
-  return enqueue(async () => {
-    try {
-      const text = await portableSnapshot(currentSnapshot())
-      const incoming = JSON.parse(await portableSnapshot(parse(text))) as Snapshot
-      if (!isActive(source)) return false
-      if (snapshotStamp() !== stamp) throw new Error('创建期间本地库发生变化；未创建文件，请重试')
-      await createSharedFile(file, text)
-      if (hash(await readFile(file)) !== hash(text)) throw new Error('新文件发生变化；拒绝连接')
-      if (!isActive(source)) return false
-      if (snapshotStamp() !== stamp) throw new Error('创建期间本地库发生变化；文件已创建，但未连接，请重新选择文件')
-      utoolsStorage.setItem(PATH_KEY, file)
-      if (utoolsStorage.getItem(PATH_KEY) !== file) throw new Error('共享 JSON 路径保存失败，文件已创建但未连接')
-      return await activateSource(source, incoming, hash(text))
-    } catch (error) {
-      report(source, error instanceof Error ? error.message : '文件写入失败')
-      throw error
+  try {
+    if (!await activateSource(beginSource(file), incoming, remoteHash)) throw new Error('文件连接已失效')
+    defaultCreationAllowed = true
+    return true
+  } catch (error) {
+    restorePath(savedPath)
+    stopSource()
+    blocked = previous.blocked
+    useBookmarkStore.setState({ groups: previous.state.groups, bookmarks: previous.state.bookmarks,
+      activeGroupId: previous.state.activeGroupId, activeSubGroupId: previous.state.activeSubGroupId,
+      isReadOnly: previous.state.isReadOnly })
+    useSettingsStore.setState(previous.settings)
+    setSettingsFileReadOnly(previous.state.isReadOnly)
+    saveCheckpoint(previous.baseline, previous.localBaseline)
+    if (previous.source) {
+      connection = { file: previous.source.file, epoch: ++epoch }
+      if (!blocked) watchSource(connection)
     }
-  })
+    useSharedJsonStatus.setState(previous.status)
+    try { window.utools?.setExpendHeight?.(previous.settings.windowHeight) } catch {}
+    throw error
+  }
 }
 
-export function sharedJsonSourcePath() { return connection?.file || utoolsStorage.getItem(PATH_KEY) }
+async function disconnectSource() {
+  const savedPath = utoolsStorage.getItem(PATH_KEY)
+  await preserveLocalData()
+  utoolsStorage.setItem(PATH_KEY, '')
+  if (utoolsStorage.getItem(PATH_KEY) !== '') {
+    restorePath(savedPath)
+    throw new Error('移除连接失败，请重试')
+  }
+  stopSource()
+  blocked = false
+  saveCheckpoint('', '')
+  setSettingsFileReadOnly(false)
+  useBookmarkStore.getState().setReadOnly(false)
+  useSharedJsonStatus.setState({ phase: 'local', path: null, error: null })
+  return true
+}
+
+export const { chooseSharedJsonSource, createSharedJsonSource, removeSharedJsonSource } = createSourceActions({
+  enqueue, snapshot: currentSnapshot, stamp: snapshotStamp, defaultPath: defaultSourcePath,
+  connect: connectSource, disconnect: disconnectSource
+})
+
+export function sharedJsonSourcePath() { return connection?.file || utoolsStorage.getItem(PATH_KEY) || null }

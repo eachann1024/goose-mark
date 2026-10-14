@@ -1,10 +1,10 @@
 import type * as React from 'react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useRef } from 'react'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from '@/hooks/useImportExport'
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { Ico } from './icon'
-import { chooseSharedJsonSource, createSharedJsonSource, sharedJsonSourcePath } from '@/lib/sharedJson'
+import { SharedJsonControls } from './SharedJsonControls'
 import { currentFileSettings } from '@/lib/shared-json/settings'
 import type { HomeToastHandler } from './homeInteractionTypes'
 
@@ -12,27 +12,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
 
   // 隐藏的 file input ref
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [sharedJsonPath, setSharedJsonPath] = useState(() => sharedJsonSourcePath())
-  const handleChooseSharedJson = useCallback(async () => {
-    try {
-      if (await chooseSharedJsonSource()) {
-        setSharedJsonPath(sharedJsonSourcePath())
-        onToast?.('已切换 JSON 文件')
-      }
-    } catch (error) {
-      onToast?.(`连接失败：${error instanceof Error ? error.message : '文件不可用'}`, { tone: 'error' })
-    }
-  }, [onToast])
-  const handleCreateSharedJson = useCallback(async () => {
-    try {
-      if (await createSharedJsonSource()) {
-        setSharedJsonPath(sharedJsonSourcePath())
-        onToast?.('已创建 JSON 文件')
-      }
-    } catch (error) {
-      onToast?.(`创建失败：${error instanceof Error ? error.message : '文件不可用'}`, { tone: 'error' })
-    }
-  }, [onToast])
+  const readOnly = useBookmarkStore(state => state.isReadOnly)
 
   // 导入文件处理
   const handleImportFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -107,17 +87,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
       <div className="set-section" id="set-data">
         <h2><Ico name="database" />导入与备份</h2>
         <div className="set-card">
-          <div className="set-row set-row-action">
-            <div><div className="rt">文件同步 · JSON</div><div className="rd">{sharedJsonPath || '用户文档 / goose-marks.json'}</div><div className="rd">每次打开读取文件；书签和设置修改自动写回。</div></div>
-            <div className="set-data-actions">
-              <button className="btn btn-outline" style={{ height: 34, fontSize: 12.5 }} onClick={() => void handleChooseSharedJson()}>
-                更换文件
-              </button>
-              <button className="btn btn-primary" style={{ height: 34, fontSize: 12.5 }} onClick={() => void handleCreateSharedJson()}>
-                新建文件
-              </button>
-            </div>
-          </div>
+          <SharedJsonControls onToast={onToast} />
           <div className="set-row set-row-action">
             <div><div className="rt">导入浏览器书签</div><div className="rd">支持 Chrome / Edge / Firefox 导出的 HTML</div></div>
             {/* 隐藏的 file input */}
@@ -131,6 +101,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
             <button
               className="btn btn-outline"
               style={{ height: 34, fontSize: 12.5 }}
+              disabled={readOnly}
               onClick={() => fileInputRef.current?.click()}
             >
               <Ico name="upload" />选择文件
@@ -151,6 +122,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
             <button
               className="btn btn-ghost danger"
               style={{ height: 34, fontSize: 12.5 }}
+              disabled={readOnly}
               onClick={handleResetBookmarks}
             >
               <Ico name="rotate-ccw" />重置

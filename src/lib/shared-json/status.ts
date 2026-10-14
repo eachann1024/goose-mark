@@ -1,0 +1,19 @@
+import { create } from 'zustand'
+
+type SharedJsonStatus = {
+  phase: 'local' | 'connecting' | 'connected' | 'paused'
+  path: string | null
+  error: string | null
+  busy: boolean
+}
+
+export const useSharedJsonStatus = create<SharedJsonStatus>(() => ({
+  phase: 'local', path: null, error: null, busy: false
+}))
+
+export async function sourceAction(operation: () => Promise<boolean>) {
+  if (useSharedJsonStatus.getState().busy) return false
+  useSharedJsonStatus.setState({ busy: true })
+  try { return await operation() }
+  finally { useSharedJsonStatus.setState({ busy: false }) }
+}
