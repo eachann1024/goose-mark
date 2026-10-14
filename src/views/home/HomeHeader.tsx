@@ -6,6 +6,7 @@ import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEd
 import { Ico } from './icon'
 import { type HomeGroup } from './viewModel'
 import { type SearchSurface } from './homeRuntime'
+import { type Screen } from './homeTypes'
 import { SortableTab } from './BookmarkDragParts'
 import { type HomeAggressivePanelOpener, type HomeSearchBindings } from './homeInteractionTypes'
 import type { SensorDescriptor, SensorOptions } from '@dnd-kit/core'
@@ -21,6 +22,7 @@ export function HomeHeader({
   commitTabRename,
   setTabRenaming,
   isSearching,
+  screen,
   activeGroupId,
   clearSearch,
   changeActiveGroup,
@@ -54,6 +56,7 @@ export function HomeHeader({
   commitTabRename: () => void
   setTabRenaming: React.Dispatch<React.SetStateAction<string | null>>
   activeGroupId: string
+  screen: Screen
   changeActiveGroup: (groupId: string) => void
   openTabCtx: (e: React.MouseEvent, groupId: string) => void
   tabAdding: boolean
@@ -98,7 +101,7 @@ export function HomeHeader({
                       key={g.id}
                       id={g.id}
                       name={g.name}
-                      isActive={!isSearching && activeGroupId === g.id}
+                      isActive={screen !== 'settings' && screen !== 'groups' && !isSearching && activeGroupId === g.id}
                       onTabClick={() => {
                         if (isSearching) clearSearch()
                         changeActiveGroup(g.id)

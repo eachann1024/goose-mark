@@ -662,6 +662,7 @@ export default function HomePage() {
             commitTabRename={commitTabRename}
             setTabRenaming={setTabRenaming}
             isSearching={isSearching}
+            screen={screen}
             activeGroupId={activeGroupId}
             clearSearch={clearSearch}
             changeActiveGroup={changeActiveGroup}
