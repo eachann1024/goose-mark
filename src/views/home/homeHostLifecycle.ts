@@ -2,10 +2,9 @@ import type * as React from 'react'
 import { useCallback, useEffect, useRef } from 'react'
 import type { Bookmark, Group } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
-import { useSettingsStore, selectAiSettings } from '@/stores/settings'
+import { useSettingsStore } from '@/stores/settings'
 import { useUTools } from '@/hooks/useUTools'
 import { sharedJsonConnected } from '@/lib/sharedJson'
-import { getAIAvailability } from '@/lib/aiProvider'
 import { UTOOLS_PLUGIN_ENTER_EVENT, UTOOLS_PLUGIN_OUT_EVENT, isDetachedUToolsWindow, readCurrentWindowPosition, moveDetachedWindowTo, getLatestUpdatedAt } from './homeRuntime'
 
 export function useHomeLifecycle({
@@ -153,33 +152,13 @@ export function useHomeStorageSync() {
 }
 
 export function useHomeFeatures({
-  syncFeatures,
-  bookmarks,
-  aiSettingsKey
+  syncFeatures
 }: {
   syncFeatures: ReturnType<typeof useUTools>['syncFeatures']
-  bookmarks: Bookmark[]
-  aiSettingsKey: string
 }) {
 
-  // ---- syncFeatures：书签数据变化 → 注册/反注册动态 uTools 特性 ----
-  // checkAiAvailable 是纯函数（读 store），直接在 callback 内调用，不需要作为依赖
-  const syncUToolsFeatures = useCallback(() => {
-    if (!window.utools) return
-    const settings = useSettingsStore.getState()
-    const { aiAggressiveSaveEnabled: aggressiveSetting } = settings
-    const aiOk = getAIAvailability(selectAiSettings(settings)).ok
-    const aiAggressiveSaveEnabled = !!(aggressiveSetting && aiOk)
-    syncFeatures(useBookmarkStore.getState().bookmarks, { aiAggressiveSaveEnabled })
+  // 安装/升级后清理旧的动态书签与快捷保存入口。
+  useEffect(() => {
+    void syncFeatures()
   }, [syncFeatures])
-
-  // 书签数据变化 → 同步 uTools 特性（对齐 App.tsx:1294-1297）
-  useEffect(() => {
-    syncUToolsFeatures()
-  }, [bookmarks, syncUToolsFeatures])
-
-  // AI 设置变化 → 同步 uTools 特性（对齐 App.tsx:1300-1304）
-  useEffect(() => {
-    syncUToolsFeatures()
-  }, [aiSettingsKey, syncUToolsFeatures])
 }

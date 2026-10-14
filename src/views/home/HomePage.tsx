@@ -114,11 +114,6 @@ export default function HomePage() {
   const panelContinuous = useSettingsStore((s) => s.panelContinuous)
   const aiEnabled = useSettingsStore((s) => s.aiEnabled)
   const aiAggressiveSaveEnabled = useSettingsStore((s) => s.aiAggressiveSaveEnabled)
-  // AI 设置变化键（与 App.tsx 对齐），用于触发 syncFeatures 重跑
-  const aiSettingsKey = useSettingsStore(
-    (s) =>
-      `${s.aiEnabled}|${s.aiAllowLegacyUTools}|${s.aiUseCustomProvider}|${s.aiProtocol}|${s.aiSelectedModelId}|${s.aiCustomBaseURL}|${s.aiCustomApiKey}|${s.aiAggressiveSaveEnabled}`
-  )
 
   const homeGroups: HomeGroup[] = useMemo(
     () => buildHomeGroups(groups, bookmarks),
@@ -585,9 +580,7 @@ export default function HomePage() {
   useHomeStorageSync()
 
   useHomeFeatures({
-    syncFeatures,
-    bookmarks,
-    aiSettingsKey
+    syncFeatures
   })
 
   useHomeAiAvailability({
