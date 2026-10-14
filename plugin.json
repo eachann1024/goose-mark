@@ -1,7 +1,7 @@
 {
   "pluginName": "鹅的书签",
   "description": "参考 noice.so 风格的 uTools 书签插件，支持二级分类、搜索、图标缓存与无效检测",
-  "version": "6.7.0",
+  "version": "6.7.4",
   "author": "eachann",
   "homepage": "https://github.com/eachann1024/goose-mark",
   "preload": "preload/preload.cjs",
@@ -454,27 +454,6 @@
         "书签",
         "bookmark",
         "bookmarks"
-      ]
-    },
-    {
-      "code": "quick_save",
-      "explain": "保存当前页到书签",
-      "mainHide": false,
-      "cmds": [
-        "快速保存",
-        "快速收藏",
-        "保存弹窗",
-        "quick save",
-        {
-          "type": "regex",
-          "label": "保存到书签",
-          "match": "/^https?:\\/\\/.*$/i"
-        }
-      ],
-      "platform": [
-        "win32",
-        "darwin",
-        "linux"
       ]
     }
   ]
