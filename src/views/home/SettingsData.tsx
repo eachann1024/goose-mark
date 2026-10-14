@@ -6,8 +6,9 @@ import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { Ico } from './icon'
 import { chooseSharedJsonSource, createSharedJsonSource, sharedJsonSourcePath } from '@/lib/sharedJson'
 import { currentFileSettings } from '@/lib/shared-json/settings'
+import type { HomeToastHandler } from './homeInteractionTypes'
 
-export function SettingsData({ onToast }: { onToast?: (title?: string) => void }) {
+export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
 
   // 隐藏的 file input ref
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -19,7 +20,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
         onToast?.('已切换 JSON 文件')
       }
     } catch (error) {
-      onToast?.(`连接失败：${error instanceof Error ? error.message : '文件不可用'}`)
+      onToast?.(`连接失败：${error instanceof Error ? error.message : '文件不可用'}`, { tone: 'error' })
     }
   }, [onToast])
   const handleCreateSharedJson = useCallback(async () => {
@@ -29,7 +30,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
         onToast?.('已创建 JSON 文件')
       }
     } catch (error) {
-      onToast?.(`创建失败：${error instanceof Error ? error.message : '文件不可用'}`)
+      onToast?.(`创建失败：${error instanceof Error ? error.message : '文件不可用'}`, { tone: 'error' })
     }
   }, [onToast])
 
@@ -106,9 +107,9 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
       <div className="set-section" id="set-data">
         <h2><Ico name="database" />导入与备份</h2>
         <div className="set-card">
-          <div className="set-row">
+          <div className="set-row set-row-action">
             <div><div className="rt">文件同步 · JSON</div><div className="rd">{sharedJsonPath || '用户文档 / goose-marks.json'}</div><div className="rd">每次打开读取文件；书签和设置修改自动写回。</div></div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div className="set-data-actions">
               <button className="btn btn-outline" style={{ height: 34, fontSize: 12.5 }} onClick={() => void handleChooseSharedJson()}>
                 更换文件
               </button>
@@ -117,7 +118,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
               </button>
             </div>
           </div>
-          <div className="set-row">
+          <div className="set-row set-row-action">
             <div><div className="rt">导入浏览器书签</div><div className="rd">支持 Chrome / Edge / Firefox 导出的 HTML</div></div>
             {/* 隐藏的 file input */}
             <input
@@ -135,7 +136,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
               <Ico name="upload" />选择文件
             </button>
           </div>
-          <div className="set-row">
+          <div className="set-row set-row-action">
             <div><div className="rt">导出备份</div><div className="rd">下载全部分组与书签（JSON）</div></div>
             <button
               className="btn btn-primary"
@@ -145,7 +146,7 @@ export function SettingsData({ onToast }: { onToast?: (title?: string) => void }
               <Ico name="download" />导出
             </button>
           </div>
-          <div className="set-row">
+          <div className="set-row set-row-action">
             <div><div className="rt">重置书签</div><div className="rd">恢复为内置默认分组与示例链接（图标已内置）</div></div>
             <button
               className="btn btn-ghost danger"
