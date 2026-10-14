@@ -12,6 +12,8 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
   const nativeRequire = createRequire(import.meta.url)
   const nativeFs = nativeRequire('node:fs/promises')
   let pauseRead: (() => Promise<void>) | undefined
+  let savePath: string | undefined
+  let saveOptions: { defaultPath?: string; filters?: unknown } | undefined
   const fileBridge = { ...nativeFs, lstat: async (...args: any[]) => {
     const pause = pauseRead
     pauseRead = undefined
@@ -21,9 +23,11 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
   const windowMock = Object.assign(new EventTarget(), {
     require: (name: string) => name === 'node:fs/promises' ? fileBridge : nativeRequire(name),
     alert: (message: string) => alerts.push(message),
+    prompt: () => { throw new Error('prompt() is and will not be supported.') },
     localStorage: { getItem: () => null, removeItem: () => {} },
     utools: {
       getPath: () => directory,
+      showSaveDialog: (options: typeof saveOptions) => { saveOptions = options; return savePath },
       setExpendHeight: () => {},
       db: {
         get: (id: string) => docs.get(id) ?? null,
@@ -38,9 +42,10 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
   Object.assign(globalThis, { window: windowMock, BroadcastChannel: undefined })
   const { useBookmarkStore } = await import('../src/stores/bookmark')
   const { useSettingsStore, isSettingsFileReadOnly } = await import('../src/stores/settings')
-  const { initializeSharedJsonSync, flushSharedJsonSync, sharedJsonSourcePath } = await import('../src/lib/sharedJson')
+  const { initializeSharedJsonSync, flushSharedJsonSync, sharedJsonSourcePath, createSharedJsonSource } = await import('../src/lib/sharedJson')
   const { parse, portableSnapshot } = await import('../src/lib/shared-json/files')
   const { parseFileSettings } = await import('../src/lib/shared-json/settings')
+  const { utoolsStorage } = await import('../src/lib/utoolsStorage')
   const now = Date.now()
   const bookmark = {
     id: 'test-bookmark', title: '本地旧数据', url: 'https://example.com', tags: [],
@@ -127,6 +132,27 @@ test('文件模式：默认迁移、设置写回、重开读取与失败保护',
     assert.equal(migrated.bookmarks[0].visits, 8)
     assert.deepEqual(migrated.bookmarks[0].prevLocations, bookmark.prevLocations)
     assert.deepEqual(parse(await portableSnapshot(parse(JSON.stringify(migrated)))).bookmarks[0].prevLocations, bookmark.prevLocations)
+
+    // 宿主不支持 prompt：保存对话框取消不切换数据源，已有文件不能覆盖。
+    assert.equal(await createSharedJsonSource(), false)
+    assert.equal(saveOptions?.defaultPath, file)
+    assert.deepEqual(saveOptions?.filters, [{ name: 'JSON', extensions: ['json'] }])
+    assert.equal(sharedJsonSourcePath(), file)
+    savePath = file
+    const originalText = await readFile(file, 'utf8')
+    await assert.rejects(createSharedJsonSource(), /文件已存在/)
+    assert.equal(await readFile(file, 'utf8'), originalText)
+    assert.equal(useBookmarkStore.getState().isReadOnly, false)
+    savePath = join(directory, '新文件')
+    assert.equal(await createSharedJsonSource(), true)
+    await flushSharedJsonSync()
+    const newFile = `${savePath}.json`
+    assert.equal(sharedJsonSourcePath(), newFile)
+    assert.deepEqual(JSON.parse(await readFile(newFile, 'utf8')), migrated)
+    // 恢复原数据源，继续验证原有冲突保护。
+    utoolsStorage.setItem('shared-json-source-path', file)
+    assert.equal(await initializeSharedJsonSync(), true)
+    await flushSharedJsonSync()
 
     // 运行期间文件与本地同时变更，不能覆盖外部内容。
     const external = { ...migrated, bookmarks: [{ ...migrated.bookmarks[0], title: '外部修改' }] }

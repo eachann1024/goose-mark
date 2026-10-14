@@ -835,6 +835,7 @@
 .goose-home .set-main { @apply flex-1 overflow-y-auto px-[30px] pt-[18px] pb-[34px]; }
 /* margin auto 居中：内容列固定 760px 时避免靠左、右侧大片空白失衡 */
 .goose-home .set-wrap { @apply w-full max-w-[760px] mx-auto flex flex-col gap-6; }
+.goose-home .set-editable-sections { display:flex; flex-direction:column; gap:24px; border:0; margin:0; padding:0; min-width:0; }
 .goose-home .set-section h2 { @apply text-[17px] font-semibold flex items-center gap-2 mb-3; font-family:var(--font-serif); }
 .goose-home .set-section h2 .lucide { @apply text-g-fg-faint text-[17px]; }
 .goose-home .set-card { @apply border border-g-border rounded-g bg-g-surface overflow-hidden; }
@@ -946,6 +947,16 @@
   align-items: stretch;
   gap: 10px;
 }
+/* 操作入口保留左右对齐；长文件路径可换行，空间不足时仅操作区换到下一行。 */
+.goose-home .set-row-action > div:first-child,
+.goose-home .set-row-link > div:first-child { flex:1; min-width:0; }
+.goose-home .set-row-action .rd { overflow-wrap:anywhere; }
+.goose-home .set-data-actions { display:flex; flex:0 0 auto; flex-wrap:wrap; justify-content:flex-end; gap:8px; max-width:100%; margin-left:auto; }
+.goose-home .set-row-action > .btn { flex:0 0 auto; margin-left:auto; }
+.goose-home[data-platform="utools"] .set-row.set-row-action,
+.goose-home[data-platform="utools"] .set-row.set-row-link { flex-direction:row; align-items:center; }
+.goose-home .set-row-action { flex-wrap:wrap; }
+.goose-home .set-row-action > div:first-child { flex-basis:240px; }
 .goose-home[data-platform="utools"] .set-row .radio-seg {
   width: 100%;
   flex-wrap: nowrap;

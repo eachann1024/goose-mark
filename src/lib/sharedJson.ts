@@ -237,14 +237,20 @@ export async function chooseSharedJsonSource() {
 
 export async function createSharedJsonSource() {
   const ut = window.utools
-  if (!ut?.showOpenDialog) throw new Error('当前 uTools 版本不支持文件选择')
-  const dirs = await ut.showOpenDialog({ title: '选择共享 JSON 保存位置', properties: ['openDirectory'] })
-  const dir = dirs?.[0]
-  if (!dir) return false
-  const name = window.prompt('新 JSON 文件名', 'goose-marks.json')?.trim()
-  if (!name) return false
-  if (!/^[^/\\]+\.json$/i.test(name) || name === '.' || name === '..') throw new Error('请输入不含路径的 .json 文件名')
-  const file = modules().path.join(dir, name)
+  if (!ut?.showSaveDialog) throw new Error('当前 uTools 版本不支持保存文件对话框')
+  const selectedPath = await ut.showSaveDialog({
+    title: '新建书签 JSON 文件',
+    defaultPath: defaultSourcePath(),
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+  })
+  if (!selectedPath) return false
+  const file = /\.json$/i.test(selectedPath) ? selectedPath : `${selectedPath}.json`
+  try {
+    await modules().fs.lstat(file)
+    throw new Error('文件已存在，请使用“更换文件”或选择新的文件名')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
   const stamp = snapshotStamp()
   const source = beginSource(file)
   return enqueue(async () => {

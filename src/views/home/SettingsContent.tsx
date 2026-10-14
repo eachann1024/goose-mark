@@ -105,7 +105,7 @@ export function SettingsContent({
   const readOnly = useBookmarkStore(state => state.isReadOnly)
   return (
     <>
-      <fieldset disabled={readOnly} style={{ border: 0, margin: 0, padding: 0, minWidth: 0 }}>
+      <fieldset className="set-editable-sections" disabled={readOnly}>
         <SettingsGeneral themePref={themePref} onThemeChange={onThemeChange} />
         <SettingsDisplay />
         <SettingsAI />

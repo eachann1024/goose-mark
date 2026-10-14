@@ -116,6 +116,11 @@ interface UToolsApi {
     filters?: Array<{ name: string; extensions: string[] }>
     properties?: ('openFile' | 'openDirectory' | 'multiSelections')[]
   }): Promise<string[] | undefined>
+  showSaveDialog?(options: {
+    title?: string
+    defaultPath?: string
+    filters?: Array<{ name: string; extensions: string[] }>
+  }): string | undefined
   readFileSync?(path: string, encoding: 'utf-8'): string | undefined
 }
 
