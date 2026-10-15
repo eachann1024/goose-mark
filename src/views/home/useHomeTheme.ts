@@ -1,6 +1,6 @@
 import type * as React from 'react'
 import { useCallback, useEffect, useState } from 'react'
-import { useSettingsStore, isSettingsFileReadOnly } from '@/stores/settings'
+import { useSettingsStore } from '@/stores/settings'
 import { type Screen, type ViewMode, type Theme, type ThemePref } from './homeTypes'
 import { RUNTIME_PLATFORM, resolveTheme } from './homeRuntime'
 
@@ -94,9 +94,8 @@ export function useHomeViewPreferences({
 }) {
 
 
-  // ---- 交互：主题偏好进入设置 store，由文件模式写回 JSON。 ----
+  // ---- 交互：主题偏好进入设置 store。 ----
   const applyThemePref = useCallback((pref: ThemePref) => {
-    if (isSettingsFileReadOnly()) return
     useSettingsStore.getState().setThemePreference(pref)
     setThemePref(pref)
     setTheme(resolveTheme(pref))
@@ -105,7 +104,6 @@ export function useHomeViewPreferences({
   // ---- 交互：列表/网格切换（设计稿 setView，同步持久化到 settings store） ----
   const changeView = useCallback(
     (v: ViewMode) => {
-      if (isSettingsFileReadOnly()) return
       setView(v)
       setHomeViewMode(v)
       // 书签视图内切换布局；回收站下点视图切换视为「回到书签视图」。
