@@ -263,13 +263,13 @@ async function disconnectSource() {
   utoolsStorage.setItem(PATH_KEY, '')
   if (utoolsStorage.getItem(PATH_KEY) !== '') {
     restorePath(savedPath)
-    throw new Error('移除连接失败，请重试')
+    throw new Error('移除数据文件夹失败，请重试')
   }
   useLocal()
   return true
 }
 
-export const { chooseSharedJsonSource, createSharedJsonSource, removeSharedJsonSource } = createSourceActions({
+export const { chooseSharedJsonSource, openSharedJsonSource, createSharedJsonSource, removeSharedJsonSource } = createSourceActions({
   enqueue, snapshot: currentSnapshot, stamp: snapshotStamp,
   connect: connectSource, disconnect: disconnectSource
 })

@@ -18,7 +18,7 @@ export async function newFolderDestination({ directory, name }: NewDataFolder) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return target
     throw error
   }
-  throw new Error('这个名称已存在，请换一个名称；连接已有数据请使用“打开文件夹”')
+  throw new Error('这个名称已存在，请换一个名称，或选择“使用已有文件夹”')
 }
 
 export async function reserveNewFolder(target: string) {

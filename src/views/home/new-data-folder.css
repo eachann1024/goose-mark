@@ -11,3 +11,11 @@
 .goose-home .new-data-folder-location button {
   flex-shrink: 0;
 }
+
+.goose-home .data-folder-footer {
+  width: 100%;
+}
+
+.goose-home .data-folder-remove {
+  margin-right: auto;
+}

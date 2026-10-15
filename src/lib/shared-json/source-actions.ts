@@ -15,18 +15,21 @@ type SourceRuntime = {
 }
 
 export function createSourceActions(runtime: SourceRuntime) {
-  const chooseSharedJsonSource = () => sourceAction(async () => {
-    const files = await window.utools?.showOpenDialog?.({ title: '选择数据文件夹', properties: ['openDirectory'] })
-    if (!files?.[0]) return false
-    const target = await identifySource(files[0])
+  const openSource = async (directory: string) => {
+    const target = await identifySource(directory)
     return runtime.enqueue(async () => {
       const stamp = runtime.stamp()
       const remote = await readSource(target)
       const counts = importPreviewCounts(remote.snapshot, runtime.snapshot())
-      if (!window.confirm(`打开数据文件夹将替换当前书签与分组，并读取其中的 Goose 设置。\n书签 ${counts.bookmarks} · 分组 ${counts.groups} · 回收站 ${counts.trash} · 冲突 ${counts.conflicts}\n\n${target.path}\n\n确定连接？`)) return false
+      if (!window.confirm(`使用此文件夹中的书签、分组和设置替换当前数据？\n书签 ${counts.bookmarks} · 分组 ${counts.groups} · 回收站 ${counts.trash} · 冲突 ${counts.conflicts}\n\n${target.path}`)) return false
       if ((await readSource(target)).digest !== remote.digest || runtime.stamp() !== stamp) throw new Error('预览期间数据发生变化，请重新打开')
       return runtime.connect(target, remote)
     })
+  }
+  const openSharedJsonSource = (directory: string) => sourceAction(() => openSource(directory))
+  const chooseSharedJsonSource = () => sourceAction(async () => {
+    const files = await window.utools?.showOpenDialog?.({ title: '选择数据文件夹', properties: ['openDirectory'] })
+    return files?.[0] ? openSource(files[0]) : false
   })
   const createSharedJsonSource = (location: NewDataFolder) => sourceAction(() =>
     runtime.enqueue(async () => {
@@ -42,8 +45,8 @@ export function createSourceActions(runtime: SourceRuntime) {
       return runtime.connect(target, remote)
     }))
   const removeSharedJsonSource = () => sourceAction(async () => {
-    if (!window.confirm('断开连接后，当前书签和设置保留在本地，数据文件夹不会删除。确定断开？')) return false
+    if (!window.confirm('移除数据文件夹？当前书签和设置会保留在应用中，磁盘上的文件不会删除。')) return false
     return runtime.enqueue(runtime.disconnect)
   })
-  return { chooseSharedJsonSource, createSharedJsonSource, removeSharedJsonSource }
+  return { chooseSharedJsonSource, openSharedJsonSource, createSharedJsonSource, removeSharedJsonSource }
 }
