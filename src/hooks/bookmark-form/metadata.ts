@@ -4,7 +4,8 @@ import { getAIAvailability, AIProviderRequestError, runAIText } from '@/lib/aiPr
 import { DEFAULT_AI_MODEL } from '@/constants/ai';
 import type { MetadataSource } from '../useAI';
 import { buildMetadataUserPrompt, METADATA_SYSTEM_PROMPT, METADATA_OUTPUT } from '@/constants/aiPrompts';
-import { parseAIJsonObject, truncateAIText } from '@/lib/aiOutput';
+import { parseAIJsonObject } from '@/lib/aiOutput';
+import { groundedMetadata, metadataEvidence } from '@/services/metadata/evidence';
 
 /**
  * 新建/编辑书签表单：模块级 Zustand 单例 + URL 防抖取图标等副作用。
@@ -71,11 +72,11 @@ export const generateMetadataDirect = async (input: {
 } | null> => {
   const params = {
     url: input.url,
-    title: input.title?.trim() || '',
-    desc: input.desc?.trim() || '',
+    ...metadataEvidence(input),
     forceNetworkFallback: !!input.forceNetworkFallback
   };
   if (!params.url) return null;
+  if (!params.title && !params.desc) return null;
   const prompt = buildMetadataUserPrompt(params);
   const messages: AIMessage[] = [{
     role: 'system',
@@ -90,9 +91,8 @@ export const generateMetadataDirect = async (input: {
   try {
     const data = parseAIJsonObject(res);
     return {
-      title: truncateAIText(data.title, 15),
-      desc: truncateAIText(data.desc, 40),
-      source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
+      ...groundedMetadata(data, params),
+      source: params.forceNetworkFallback ? 'network' : 'ai',
       usedNetworkFallback: params.forceNetworkFallback
     };
   } catch {

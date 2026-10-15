@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { DEFAULT_AI_MODEL } from '@/constants/ai'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
 import { probeUrl } from '@/services/siteProbe'
+import { groundedMetadata, metadataEvidence } from '@/services/metadata/evidence'
 import { normalizeAIConfidence, parseAIJsonObject, truncateAIText } from '@/lib/aiOutput'
 import {
   AIProviderRequestError,
@@ -19,18 +20,9 @@ import {
   buildCategoryUserPrompt
 } from '@/constants/aiPrompts'
 
-/**
- * AI 元信息 / 分类建议（React 版）
- * --------------------------------------------------------------------------
- * 旧版 Vue ref 状态 → useState；useDebounceFn → 自定义 useRef + setTimeout 防抖。
- * 仅保留业务逻辑。
- * AI 配置从 settings store 实时读取（useSettingsStore.getState()），与旧版等价。
- */
-
 const MODEL_ERROR_KEYWORDS = ['model', '模型', 'not found', 'unknown', 'unsupported', 'invalid', '不存在', '不可用', '无效']
 
 export type MetadataSource = 'page' | 'ai' | 'network'
-
 export interface GenerateMetadataInput {
   url: string
   title?: string
@@ -72,7 +64,6 @@ export function useAI() {
   const [isSuggestingCategory, setIsSuggestingCategory] = useState(false)
   const [aiError, setAiError] = useState('')
 
-  // 实时读取 AI 设置（非响应式快照，调用时取最新值，等价旧版 settingsStore.aiSettings）
   const getAiSettings = useCallback(() => selectAiSettings(useSettingsStore.getState()), [])
 
   const checkAiAvailable = useCallback((): { available: boolean; reason: string } => {
@@ -130,7 +121,6 @@ export function useAI() {
     [getAiSettings]
   )
 
-  // checkUrl 防抖（500ms），等价旧版 useDebounceFn
   const checkUrlTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const checkUrl = useCallback((url: string) => {
     if (checkUrlTimer.current) clearTimeout(checkUrlTimer.current)
@@ -173,11 +163,11 @@ export function useAI() {
           ? { url: input, title: '', desc: '', forceNetworkFallback: false }
           : {
               url: input.url,
-              title: input.title?.trim() || '',
-              desc: input.desc?.trim() || '',
+              ...metadataEvidence(input),
               forceNetworkFallback: !!input.forceNetworkFallback
             }
       if (!params.url) return null
+      if (!params.title && !params.desc) return null
 
       const { available, reason } = checkAiAvailable()
       if (!available) {
@@ -207,9 +197,8 @@ export function useAI() {
           return null
         }
         const result = {
-          title: truncateAIText(data.title, 15),
-          desc: truncateAIText(data.desc, 40),
-          source: data.source === 'network' || params.forceNetworkFallback ? 'network' : 'ai',
+          ...groundedMetadata(data, params),
+          source: params.forceNetworkFallback ? 'network' : 'ai',
           usedNetworkFallback: params.forceNetworkFallback
         } satisfies GenerateMetadataResult
 

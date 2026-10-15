@@ -151,7 +151,7 @@ declare global {
     gooseWeb?: {
       fetchText: (
         url: string,
-        options?: { timeoutMs?: number; maxBytes?: number; maxDecodedBytes?: number }
+        options?: { timeoutMs?: number; maxBytes?: number; maxDecodedBytes?: number; accept?: 'html' | 'json' }
       ) => Promise<{
         ok: true
         url: string
@@ -161,7 +161,7 @@ declare global {
       }>
       fetchBinary: (
         url: string,
-        options?: { timeoutMs?: number; maxBytes?: number; maxDecodedBytes?: number }
+        options?: { timeoutMs?: number; maxBytes?: number; maxDecodedBytes?: number; accept?: 'html' | 'json' }
       ) => Promise<{
         ok: true
         url: string
