@@ -10,7 +10,6 @@ import { readSource, writeSource, type Source, type SourceRead } from './shared-
 import { defaultSourcePath } from './shared-json/startup'
 import { createSourceInitialization } from './shared-json/initialization'
 import { preserveLocalData } from './shared-json/local-cache'
-import { createLegacyMigration } from './shared-json/migration'
 import type { Connection } from './shared-json/runtime-types'
 export { useSharedJsonStatus } from './shared-json/status'
 
@@ -101,7 +100,7 @@ async function synchronizeExternal(source: Connection) {
       const nextHash = remote.digest
       if (!isActive(source) || nextHash === baseline) return
       const stamp = snapshotStamp()
-      const local = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
+      const local = await portableSnapshot(currentSnapshot(), true)
       if (!isActive(source)) return
       if (snapshotStamp() !== stamp || hash(local) !== localBaseline) {
         return report(source, '文件与本地都有未同步修改，检测到冲突。', true)
@@ -122,23 +121,21 @@ async function synchronizeExternal(source: Connection) {
         apply(previousSnapshot)
         throw error
       }
-      const appliedLocal = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
+      const appliedLocal = await portableSnapshot(currentSnapshot(), true)
       if (isActive(source)) {
         remoteBaseline = remote; saveCheckpoint(nextHash, hash(appliedLocal))
-        if (source.mode === 'folder') {
-          useBookmarkStore.getState().setReadOnly(false); setSettingsFileReadOnly(false)
-        }
+        useBookmarkStore.getState().setReadOnly(false); setSettingsFileReadOnly(false)
       }
     } catch (error) { report(source, error instanceof Error ? error.message : '文件读取失败') }
   })
 }
 
 async function publishLocal(source: Connection) {
-  if (!isActive(source) || applying || source.mode === 'legacy') return
+  if (!isActive(source) || applying) return
   return enqueue(async () => {
     if (!isActive(source)) return
     try {
-      const text = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
+      const text = await portableSnapshot(currentSnapshot(), true)
       const localHash = hash(text)
       if (!isActive(source) || localHash === localBaseline) return
       if (!remoteBaseline) throw new Error('数据源基线缺失，请重新连接')
@@ -171,18 +168,15 @@ async function activateSource(source: Connection, remote: SourceRead) {
     apply(previousSnapshot)
     throw error
   }
-  const appliedLocal = await portableSnapshot(currentSnapshot(), source.mode === 'folder')
+  const appliedLocal = await portableSnapshot(currentSnapshot(), true)
   if (!isActive(source)) return false
   remoteBaseline = remote
   saveCheckpoint(remote.digest, hash(appliedLocal))
   watchSource(source)
-  if (source.mode === 'folder') {
-    useBookmarkStore.getState().setReadOnly(false)
-    setSettingsFileReadOnly(false)
-  }
-  useSharedJsonStatus.setState({ phase: 'connected', sourceMode: source.mode, path: source.file,
-    error: source.mode === 'legacy' ? '旧 JSON（只读），请迁移到新数据文件夹' : null })
-  if (source.mode === 'folder') void publishLocal(source)
+  useBookmarkStore.getState().setReadOnly(false)
+  setSettingsFileReadOnly(false)
+  useSharedJsonStatus.setState({ phase: 'connected', sourceMode: source.mode, path: source.file, error: null })
+  void publishLocal(source)
   return true
 }
 
@@ -218,7 +212,7 @@ const initializeSource = createSourceInitialization({
   connect: connectSource, useLocal
 })
 
-export async function initializeSharedJsonSync(_options: { allowDefaultCreation?: boolean } = {}) {
+export async function initializeSharedJsonSync() {
   if (!window.utools || !window.require) return false
   bindLifecycle()
   return initializeSource()
@@ -275,9 +269,6 @@ async function disconnectSource() {
   useLocal()
   return true
 }
-
-export const migrateLegacySource = createLegacyMigration({ enqueue, active: isActive, stamp: snapshotStamp,
-  snapshot: currentSnapshot, connect: connectSource, source: () => connection, baseline: () => remoteBaseline })
 
 export const { chooseSharedJsonSource, createSharedJsonSource, removeSharedJsonSource } = createSourceActions({
   enqueue, snapshot: currentSnapshot, stamp: snapshotStamp, defaultPath: defaultSourcePath,

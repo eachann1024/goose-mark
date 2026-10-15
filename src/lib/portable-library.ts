@@ -881,16 +881,6 @@ export function createPortableLibrary(node: PortableNode) {
       );
     return createFolder(target, prepared, options);
   }
-  /** Explicit legacy input only; returns raw JSON without migrating or writing any file. */
-  async function readLegacyFile(
-    file: string,
-  ): Promise<{ text: string; digest: string; document: Json }> {
-    if (!path.isAbsolute(file))
-      fail("UNSAFE_PATH", "Legacy input requires an explicit absolute file");
-    await safeDirectory(path.dirname(file));
-    const text = utf8(await readFile(file, PORTABLE_LIMITS.jsonBytes));
-    return { text, digest: digest(text), document: parse(text) };
-  }
   /** File icon loader for an explicit trusted application icon directory; rejects every symlink. */
   async function readIconFile(
     file: string,
@@ -922,7 +912,6 @@ export function createPortableLibrary(node: PortableNode) {
     readBookmarks,
     readAsset,
     readIconFile,
-    readLegacyFile,
     withLock,
     writeLocked,
     write,

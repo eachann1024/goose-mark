@@ -1,5 +1,5 @@
 import { createPortableLibrary, type Json, type PortableDocument } from '@/lib/portable-library'
-import { modules, parse, portableSnapshot, hash, readFile, type Snapshot } from './files'
+import { modules, parse, type Snapshot } from './files'
 import { parseFileSettings } from './settings'
 
 // 共用核心原样复制自 raycast-mark/src/portable-library.ts；协议修改需同步两仓。
@@ -13,7 +13,7 @@ export function portableLibrary() {
   }
   return library
 }
-export type Source = { path: string; mode: 'folder' | 'legacy' }
+export type Source = { path: string; mode: 'folder' }
 export type SourceRead = { snapshot: Snapshot; digest: string; bookmarks: string; settings: string | null }
 export const jsonValue = (value: unknown) => JSON.parse(JSON.stringify(value)) as Json
 
@@ -21,25 +21,10 @@ export async function identifySource(path: string): Promise<Source> {
   const stat = await modules().fs.lstat(path)
   if (stat.isSymbolicLink()) throw new Error('数据源不能是符号链接')
   if (stat.isDirectory()) return { path, mode: 'folder' }
-  if (stat.isFile()) {
-    // 兼容上一轮曾保存的目录内 bookmarks.json 路径。
-    if (modules().path.basename(path) === 'bookmarks.json') {
-      const value = await portableLibrary().readLegacyFile(path)
-      if ((value.document as { schemaVersion?: number })?.schemaVersion === 1) {
-        return { path: modules().path.dirname(path), mode: 'folder' }
-      }
-    }
-    return { path, mode: 'legacy' }
-  }
-  throw new Error('数据源不是普通文件或文件夹')
+  throw new Error('请选择数据文件夹')
 }
 
 export async function readSource(source: Source): Promise<SourceRead> {
-  if (source.mode === 'legacy') {
-    const text = await readFile(source.path)
-    const snapshot = JSON.parse(await portableSnapshot(parse(text))) as Snapshot
-    return { snapshot, digest: hash(text), bookmarks: hash(text), settings: null }
-  }
   return portableLibrary().withLock(source.path, async () => {
     const result = await portableLibrary().read(source.path, { includeSettings: true })
     const snapshot = parse(JSON.stringify(result.document), true)
@@ -74,7 +59,6 @@ export async function prepareFolder(snapshot: Snapshot) {
 }
 
 export async function writeSource(source: Source, snapshot: Snapshot, expected: SourceRead, active: () => boolean) {
-  if (source.mode === 'legacy') throw new Error('旧 JSON 数据源只读，请迁移到新数据文件夹')
   const prepared = await prepareFolder(snapshot)
   return portableLibrary().withLock(source.path, async lock => {
     if (!active()) return null

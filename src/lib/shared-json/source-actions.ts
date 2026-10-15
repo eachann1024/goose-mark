@@ -33,7 +33,7 @@ export function createSourceActions(runtime: SourceRuntime) {
     if (!selected?.[0]) return false
     const target: Source = { path: selected[0], mode: 'folder' }
     return runtime.enqueue(async () => {
-      if (!window.confirm('将当前书签和 Goose 设置保存到新数据文件夹并连接。原有数据源（包括旧 JSON）保留原位。确定新建？')) return false
+      if (!window.confirm('将当前书签和 Goose 设置保存到新数据文件夹并连接。确定新建？')) return false
       const stamp = runtime.stamp()
       const snapshot = runtime.snapshot()
       const prepared = await prepareFolder(snapshot)
@@ -45,7 +45,7 @@ export function createSourceActions(runtime: SourceRuntime) {
     })
   })
   const removeSharedJsonSource = () => sourceAction(async () => {
-    if (!window.confirm('断开连接后，当前书签和设置保留在本地，原数据文件夹或旧 JSON 不会删除。确定断开？')) return false
+    if (!window.confirm('断开连接后，当前书签和设置保留在本地，数据文件夹不会删除。确定断开？')) return false
     return runtime.enqueue(runtime.disconnect)
   })
   return { chooseSharedJsonSource, createSharedJsonSource, removeSharedJsonSource }

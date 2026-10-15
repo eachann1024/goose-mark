@@ -2,7 +2,7 @@ import { create } from 'zustand'
 
 type SharedJsonStatus = {
   phase: 'local' | 'connecting' | 'connected' | 'paused'
-  sourceMode: 'folder' | 'legacy' | null
+  sourceMode: 'folder' | null
   path: string | null
   error: string | null
   busy: boolean

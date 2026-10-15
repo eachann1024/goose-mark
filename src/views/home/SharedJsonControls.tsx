@@ -1,10 +1,9 @@
-import { chooseSharedJsonSource, createSharedJsonSource, initializeSharedJsonSync, migrateLegacySource, removeSharedJsonSource, useSharedJsonStatus } from '@/lib/sharedJson'
+import { chooseSharedJsonSource, createSharedJsonSource, initializeSharedJsonSync, removeSharedJsonSource, useSharedJsonStatus } from '@/lib/sharedJson'
 import type { HomeToastHandler } from './homeInteractionTypes'
 
 export function SharedJsonControls({ onToast }: { onToast?: HomeToastHandler }) {
-  const { phase, sourceMode, path, busy, error } = useSharedJsonStatus()
+  const { phase, path, busy, error } = useSharedJsonStatus()
   const connected = phase !== 'local'
-  const legacy = sourceMode === 'legacy'
   const title = busy ? '处理中' : phase === 'paused' ? '已暂停' : connected ? '已连接' : '未连接'
   const action = async (operation: () => Promise<boolean>, message: string) => {
     try { if (await operation()) onToast?.(message) }
@@ -13,7 +12,7 @@ export function SharedJsonControls({ onToast }: { onToast?: HomeToastHandler }) 
   return (
     <div className="set-row set-row-action">
       <div>
-        <div className="rt" title={error || undefined}>{legacy ? '旧 JSON（只读）' : '数据文件夹'} · {title}</div>
+        <div className="rt" title={error || undefined}>数据文件夹 · {title}</div>
         {path && <div className="rd">{path}</div>}
       </div>
       <div className="set-data-actions" aria-busy={busy}>
@@ -21,8 +20,6 @@ export function SharedJsonControls({ onToast }: { onToast?: HomeToastHandler }) 
           <button className="btn btn-primary" style={{ height: 34, fontSize: 12.5 }} disabled={busy}
             onClick={() => void action(() => initializeSharedJsonSync(), '已重新连接数据源')}>重新连接</button>
         )}
-        {legacy && <button className="btn btn-primary" style={{ height: 34, fontSize: 12.5 }} disabled={busy}
-          onClick={() => void action(migrateLegacySource, '已迁移并连接新数据文件夹')}>迁移到新文件夹</button>}
         <button className="btn btn-outline" style={{ height: 34, fontSize: 12.5 }} disabled={busy}
           onClick={() => void action(createSharedJsonSource, '已创建并连接数据文件夹')}>新建文件夹</button>
         <button className={`btn ${connected ? 'btn-outline' : 'btn-primary'}`} style={{ height: 34, fontSize: 12.5 }} disabled={busy}
