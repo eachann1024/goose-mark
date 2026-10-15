@@ -68,7 +68,7 @@ export function useFormUrlFetch({
         if (metaDesc && isLoginOrAccessWallText(metaDesc)) metaDesc = '';
         titleUsable = !!metaTitle && !isHostLikeTitle(metaTitle, val) && !isLoginOrAccessWallText(metaTitle);
 
-        // 联网兜底：Jina 读页；登录墙/缺字段时再查域名公开服务摘要
+        // 联网兜底只读取目标网页；没有可靠内容时保留空值。
         if (!titleUsable && !latest.isTitleDirty || !metaDesc && !latest.isDescDirty) {
           const fallback = await fetchMetadataFromNetwork(val, JINA_FALLBACK_TIMEOUT_MS);
           latest = useBookmarkFormStore.getState();
@@ -89,7 +89,7 @@ export function useFormUrlFetch({
           set({
             previewIcon: newIcon,
             iconFetchFailed: fetched ? fetched.type === 'text' || fetched.type === 'remote' && !fetched.src : true,
-            iconFetchPhase: 'success'
+            iconFetchPhase: titleUsable || metaDesc ? 'success' : 'failed'
           });
           if (titleUsable && !latest.isTitleDirty) {
             patchDraft({
@@ -151,7 +151,7 @@ export function useFormUrlFetch({
             clearTimeout(formRequests.iconLoadingWatchdog);
             formRequests.iconLoadingWatchdog = null;
           }
-          // 抓取结束后（成功/失败）尝试 AI 清洗润色；有 URL 即可
+          // AI 仅整理已有页面线索，无内容时由元信息服务跳过。
           if (fetchSettled) {
             void runAutoPolishAfterFetch({
               url: val,

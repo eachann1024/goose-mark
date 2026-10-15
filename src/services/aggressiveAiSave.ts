@@ -2,7 +2,7 @@
  * AI 保存：只给 URL → 抓取线索 → 一次 AI 决策（标题/简介/多分组）→ 落库
  */
 import type { Bookmark, BookmarkLocation, IconSource } from '@/types/bookmark'
-import { normalizeAIConfidence, parseAIJsonObject, truncateAIText } from '@/lib/aiOutput'
+import { parseAIJsonObject } from '@/lib/aiOutput'
 import {
   AGGRESSIVE_SAVE_SYSTEM_PROMPT,
   AGGRESSIVE_SAVE_OUTPUT,
@@ -13,8 +13,10 @@ import {
   runAIText,
   type AISettingsLike
 } from '@/lib/aiProvider'
-import { fetchAndCacheIcon } from '@/services/iconCache'
-import { fetchMetadataFromNetwork, isLoginOrAccessWallText } from '@/services/metadataFallback'
+import { readBookmarkPage } from '@/services/metadata/bookmark'
+import { groundedMetadata } from '@/services/metadata/evidence'
+import { isHostLikeTitle, matchCategories, type AggressiveCategoryHit, type ExistingGroup } from './aggressiveAiSaveCategories'
+export type { AggressiveCategoryHit } from './aggressiveAiSaveCategories'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore, selectAiSettings } from '@/stores/settings'
 import {
@@ -27,15 +29,6 @@ export {
   type AggressiveAiSaveErrorCode,
   type AggressiveAiSaveFailure
 } from '@/services/aggressiveAiSaveErrors'
-
-export type AggressiveCategoryHit = {
-  groupId: string
-  groupName: string
-  subGroupId: string
-  subGroupName: string
-  confidence: number
-  reason: string
-}
 
 export type AggressiveAiSaveResult = {
   bookmark: Bookmark
@@ -71,23 +64,6 @@ function getActiveAiSettings(): AISettingsLike {
   return selectAiSettings(useSettingsStore.getState())
 }
 
-function isHostLikeTitle(title: string, rawUrl: string) {
-  const normalizedTitle = title
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, '')
-    .replace(/^www\./, '')
-    .replace(/\/$/, '')
-  if (!normalizedTitle) return false
-  try {
-    const safeUrl = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`
-    const host = new URL(safeUrl).hostname.toLowerCase().replace(/^www\./, '')
-    return normalizedTitle === host
-  } catch {
-    return false
-  }
-}
-
 export function normalizeAggressiveSaveUrl(raw: string): string | null {
   const input = raw.trim()
   if (!input) return null
@@ -113,59 +89,6 @@ function buildTextIcon(value: string): IconSource {
   const base = value.trim()
   const text = base ? base.slice(0, 4).toUpperCase() : '•'
   return { type: 'text', value: text }
-}
-
-type ExistingGroup = {
-  id: string
-  name: string
-  subGroups: { id: string; name: string }[]
-}
-
-function matchCategories(
-  rawList: unknown,
-  existingGroups: ExistingGroup[]
-): AggressiveCategoryHit[] {
-  if (!Array.isArray(rawList) || existingGroups.length === 0) return []
-
-  const hits: AggressiveCategoryHit[] = []
-  const seen = new Set<string>()
-
-  for (const item of rawList) {
-    if (!item || typeof item !== 'object') continue
-    const row = item as Record<string, unknown>
-    const groupName = typeof row.groupName === 'string' ? row.groupName.trim() : ''
-    if (!groupName) continue
-
-    const confidence = normalizeAIConfidence(row.confidence)
-    if (confidence < 0.55) continue
-
-    const matchedGroup = existingGroups.find((g) => g.name === groupName)
-    if (!matchedGroup) continue
-
-    const subName = typeof row.subGroupName === 'string' ? row.subGroupName.trim() : ''
-    const matchedSub = subName
-      ? matchedGroup.subGroups.find((s) => s.name === subName)
-      : matchedGroup.subGroups[0]
-    if (!matchedSub) continue
-
-    const key = `${matchedGroup.id}:${matchedSub.id}`
-    if (seen.has(key)) continue
-    seen.add(key)
-
-    hits.push({
-      groupId: matchedGroup.id,
-      groupName: matchedGroup.name,
-      subGroupId: matchedSub.id,
-      subGroupName: matchedSub.name,
-      confidence,
-      reason: truncateAIText(row.reason, 30)
-    })
-
-    if (hits.length >= 3) break
-  }
-
-  hits.sort((a, b) => b.confidence - a.confidence)
-  return hits
 }
 
 /**
@@ -220,48 +143,7 @@ export async function runAggressiveAiSave(
 
   // 1) 页面线索
   reportProgress('fetching', '正在读取网页标题、简介和图标…')
-  let pageTitle = ''
-  let pageDesc = ''
-  let icon: IconSource | null = null
-  try {
-    const fetched = await fetchAndCacheIcon(finalUrl, true)
-    pageTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : ''
-    pageDesc = typeof fetched?.description === 'string' ? fetched.description.trim() : ''
-    if (pageTitle && (isHostLikeTitle(pageTitle, finalUrl) || isLoginOrAccessWallText(pageTitle))) {
-      pageTitle = ''
-    }
-    if (pageDesc && isLoginOrAccessWallText(pageDesc)) pageDesc = ''
-    if (fetched) {
-      const next: Record<string, unknown> = { type: fetched.type }
-      if ('src' in fetched && fetched.src) next.src = fetched.src
-      if ('path' in fetched && fetched.path) next.path = fetched.path
-      if ('value' in fetched && fetched.value) next.value = fetched.value
-      if ('cache' in fetched && fetched.cache) next.cache = fetched.cache
-      if ('data' in fetched && fetched.data) next.data = fetched.data
-      if ('bgColor' in fetched && fetched.bgColor) next.bgColor = fetched.bgColor
-      if ('fetchedAt' in fetched && fetched.fetchedAt) next.fetchedAt = fetched.fetchedAt
-      icon = next as IconSource
-    }
-    // 缺标题/简介或登录墙：Jina + 域名公开服务摘要兜底
-    if (!pageTitle || !pageDesc) {
-      const fallback = await fetchMetadataFromNetwork(finalUrl)
-      if (fallback) {
-        if (
-          !pageTitle &&
-          fallback.title &&
-          !isHostLikeTitle(fallback.title, finalUrl) &&
-          !isLoginOrAccessWallText(fallback.title)
-        ) {
-          pageTitle = fallback.title
-        }
-        if (!pageDesc && fallback.description && !isLoginOrAccessWallText(fallback.description)) {
-          pageDesc = fallback.description
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[aggressiveAiSave] 元信息抓取失败，继续仅靠 AI:', err)
-  }
+  const { pageTitle, pageDesc, icon } = await readBookmarkPage(finalUrl)
 
   // 2) 一次 AI 决策
   let title = ''
@@ -287,8 +169,9 @@ export async function runAggressiveAiSave(
     ], { output: AGGRESSIVE_SAVE_OUTPUT })
 
     const data = parseAIJsonObject(res)
-    title = truncateAIText(data.title, 15)
-    desc = truncateAIText(data.desc, 40)
+    const metadata = groundedMetadata(data, { url: finalUrl, title: pageTitle, desc: pageDesc })
+    title = metadata.title
+    desc = metadata.desc
     categories = matchCategories(data.categories, existingGroups)
   } catch (error) {
     console.error('[aggressiveAiSave] AI 失败:', error)
@@ -411,36 +294,4 @@ export async function runAggressiveAiSave(
   }
 }
 
-/**
- * 撤销成功卡对应的那一次保存。
- * 新建书签进入回收站；已有书签恢复本次保存前的元信息与分组快照。
- */
-export function undoAggressiveAiSave(result: AggressiveAiSaveResult): 'removed' | 'restored' | 'missing' {
-  const store = useBookmarkStore.getState()
-  const current = store.bookmarks.find((bookmark) => bookmark.id === result.bookmark.id)
-  if (!current) return 'missing'
-
-  if (result.undo.kind === 'created') {
-    store.removeBookmark(current.id)
-    return 'removed'
-  }
-
-  const previous = result.undo.bookmark
-  store.updateBookmark(current.id, {
-    title: previous.title,
-    url: previous.url,
-    desc: previous.desc,
-    tags: [...(previous.tags || [])],
-    icon: previous.icon ? { ...previous.icon } : undefined,
-    pinned: previous.pinned,
-    allowUniversal: previous.allowUniversal,
-    lastUsed: previous.lastUsed,
-    visits: previous.visits,
-    isDeleted: previous.isDeleted
-  })
-  store.updateBookmarkLocations(
-    current.id,
-    result.undo.locations.map((location) => ({ ...location }))
-  )
-  return 'restored'
-}
+export { undoAggressiveAiSave } from './aggressiveAiSaveUndo'

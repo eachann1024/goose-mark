@@ -60,7 +60,7 @@ export const enqueueMetadataHydration = (bookmarkId: string, options: {
       if (hydrationJobIds.get(bookmarkId) !== jobId) return;
       const store = useBookmarkStore.getState();
       const bookmark = store.bookmarks.find(item => item.id === bookmarkId);
-      if (!bookmark) return;
+      if (!bookmark || bookmark.url !== options.url) return;
       const patch: Partial<Bookmark> = {};
       if (nextTitle && shouldHydrateTitle(options.initialTitle, bookmark.title)) patch.title = nextTitle;
       if (nextDesc && shouldHydrateDesc(options.initialDesc, bookmark.desc)) patch.desc = nextDesc;

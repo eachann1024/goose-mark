@@ -520,11 +520,11 @@ function connectViaHttpProxy(proxy, targetHost, targetPort, timeoutMs) {
   })
 }
 
-function makeRequestOptions(parsed, proxy, resolved) {
+function makeRequestOptions(parsed, proxy, resolved, accept) {
   const isHttps = parsed.protocol === 'https:'
   const path = `${parsed.pathname}${parsed.search}`
   const headers = {
-    Accept: 'text/html,application/xhtml+xml,application/xml,text/xml,text/plain,application/json;q=0.9,*/*;q=0.2',
+    Accept: accept === 'json' ? 'application/json' : 'text/html,application/xhtml+xml,application/xml,text/xml,text/plain,application/json;q=0.9,*/*;q=0.2',
     'Accept-Encoding': 'gzip, deflate, br',
     'User-Agent':
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
@@ -615,7 +615,7 @@ async function fetchPublic(rawUrl, options = {}, mode = 'text') {
       }
 
       const startRequest = (createConnection) => {
-        const { library, options: reqOptions } = makeRequestOptions(parsed, useProxy, resolved)
+        const { library, options: reqOptions } = makeRequestOptions(parsed, useProxy, resolved, options.accept)
         if (createConnection) {
           reqOptions.createConnection = createConnection
           // 隧道已建立，agent 默认 keepAlive 可能干扰
