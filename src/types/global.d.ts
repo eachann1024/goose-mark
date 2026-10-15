@@ -113,9 +113,11 @@ interface UToolsApi {
   // 文件对话框 API
   showOpenDialog?(options: {
     title?: string
+    buttonLabel?: string
+    message?: string
     filters?: Array<{ name: string; extensions: string[] }>
     properties?: ('openFile' | 'openDirectory' | 'multiSelections' | 'createDirectory')[]
-  }): Promise<string[] | undefined>
+  }): string[] | undefined | Promise<string[] | undefined>
   showSaveDialog?(options: {
     title?: string
     defaultPath?: string
