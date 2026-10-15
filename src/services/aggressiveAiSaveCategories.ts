@@ -78,4 +78,3 @@ export function matchCategories(
   hits.sort((a, b) => b.confidence - a.confidence)
   return hits
 }
-
