@@ -1,4 +1,5 @@
 import type { IconSource } from '@/types/bookmark'
+import { normalizeInlineIcon } from '@/lib/inlineIcon'
 
 
 export const DEFAULT_GROUP_ID = 'g-default'
@@ -94,14 +95,14 @@ export const sanitizeIcon = (rawIcon: unknown, fallbackText: string): IconSource
     const cache = asNonEmptyString(icon.cache) ?? undefined
     const fetchedAt = asNumber(icon.fetchedAt) ?? undefined
     const bgColor = asNonEmptyString(icon.bgColor) ?? undefined
-    return { type: 'remote', src, cache, fetchedAt, bgColor }
+    return normalizeInlineIcon({ type: 'remote', src, cache, fetchedAt, bgColor })
   }
 
   if (type === 'custom') {
     const data = asNonEmptyString(icon.data)
     if (!data) return undefined
     const bgColor = asNonEmptyString(icon.bgColor) ?? undefined
-    return { type: 'custom', data, bgColor }
+    return normalizeInlineIcon({ type: 'custom', data, bgColor })
   }
 
   if (type === 'text') {

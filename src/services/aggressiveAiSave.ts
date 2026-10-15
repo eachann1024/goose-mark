@@ -237,6 +237,7 @@ export async function runAggressiveAiSave(
       if ('path' in fetched && fetched.path) next.path = fetched.path
       if ('value' in fetched && fetched.value) next.value = fetched.value
       if ('cache' in fetched && fetched.cache) next.cache = fetched.cache
+      if ('data' in fetched && fetched.data) next.data = fetched.data
       if ('bgColor' in fetched && fetched.bgColor) next.bgColor = fetched.bgColor
       if ('fetchedAt' in fetched && fetched.fetchedAt) next.fetchedAt = fetched.fetchedAt
       icon = next as IconSource
