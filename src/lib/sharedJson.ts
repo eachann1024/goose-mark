@@ -47,7 +47,9 @@ function saveCheckpoint(remote: string, local: string) { baseline = remote; loca
 function apply(snapshot: Snapshot) {
   applying = true
   try {
-    applyImportDataToStore(useBookmarkStore.getState(), snapshot, 'overwrite')
+    // Validated source snapshots must replace the cache even while user edits are locked.
+    applyImportDataToStore({ ...useBookmarkStore.getState(),
+      setData: data => useBookmarkStore.setState(data) }, snapshot, 'overwrite')
     useBookmarkStore.getState().ensureValidSelection()
     if (snapshot.settings) {
       useSettingsStore.setState(snapshot.settings)
