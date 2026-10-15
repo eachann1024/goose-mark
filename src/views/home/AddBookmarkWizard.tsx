@@ -533,7 +533,7 @@ function ConfirmStep({
       <div className="gm-cat-head">
         <Ico name="folder" />
         <span className="gm-cat-title">放到哪里</span>
-        <span className="gm-cat-sub">可同时放进多个分组</span>
+        <span className="gm-cat-sub">默认放进一个文件夹</span>
       </div>
 
       {categorySuggestion && (
