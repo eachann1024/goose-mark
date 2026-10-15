@@ -175,7 +175,7 @@ export function createPortableLibrary(node: PortableNode) {
       record(entry);
     return o as unknown as PortableDocument;
   }
-  function image(bytes: NodeBuffer): string {
+  function image(bytes: NodeBuffer, allowSvg = true): string {
     if (!bytes.length || bytes.length > PORTABLE_LIMITS.iconBytes)
       fail("LIMIT", "Image must contain 1 byte to 2 MiB");
     const hex = (start: number, end: number) =>
@@ -213,11 +213,23 @@ export function createPortableLibrary(node: PortableNode) {
         prefix,
       )
     ) {
+      if (!allowSvg) fail("INVALID", "Nested SVG images are not supported");
       const svg = utf8(bytes);
+      // Embedded raster pixels are self-contained; external URLs and nested SVG remain forbidden.
+      const checkedSvg = svg.replace(
+        /\b(?:xlink:)?href\s*=\s*(["'])data:image\/(?:png|jpeg|webp|gif|x-icon|vnd\.microsoft\.icon);base64,([A-Za-z0-9+/]+={0,2})\1/gi,
+        (_attribute, _quote, encoded: string) => {
+          const raster = Buffer.from(encoded, "base64");
+          if (encoded.length % 4 || raster.toString("base64") !== encoded)
+            fail("INVALID", "Invalid embedded raster image");
+          image(raster, false);
+          return 'href="#"';
+        },
+      );
       // SVGs are images, not a transport for external files or executable markup.
       if (
         /<!DOCTYPE|<!ENTITY|<\s*(?:script|foreignObject)\b|\bon\w+\s*=|(?:href|src)\s*=\s*["']\s*(?!#)|url\s*\(\s*(?!["']?#)/i.test(
-          svg,
+          checkedSvg,
         )
       )
         fail(

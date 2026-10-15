@@ -1,6 +1,8 @@
 import { createPortableLibrary, type Json, type PortableDocument } from '@/lib/portable-library'
 import { modules, parse, type Snapshot } from './files'
 import { parseFileSettings } from './settings'
+import { normalizeInlineIcon } from '@/lib/inlineIcon'
+import type { IconSource } from '@/types/bookmark'
 
 // 共用核心原样复制自 raycast-mark/src/portable-library.ts；协议修改需同步两仓。
 let library: ReturnType<typeof createPortableLibrary> | undefined
@@ -34,9 +36,9 @@ export async function readSource(source: Source): Promise<SourceRead> {
   })
 }
 
-function portableIcon(icon: unknown): unknown {
-  if (!icon || typeof icon !== 'object' || Array.isArray(icon)) return icon
-  const value = { ...(icon as Record<string, unknown>) }
+function portableIcon(icon: IconSource | undefined): unknown {
+  if (!icon) return icon
+  const value: Record<string, unknown> = { ...normalizeInlineIcon(icon) }
   delete value.cacheRef
   delete value.dataRef
   if (value.type === 'remote' && !(typeof value.cache === 'string' && value.cache.startsWith('data:image/')) && 'cacheRef' in (icon as object)) {

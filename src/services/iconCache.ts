@@ -1,4 +1,5 @@
 import type { IconSource, Bookmark } from '@/types/bookmark'
+import { normalizeInlineIcon } from '@/lib/inlineIcon'
 
 const isDataUrl = (value: string) => value.startsWith('data:image/')
 const FAVICON_COOLDOWN_MS = 10 * 60 * 1000
@@ -726,10 +727,12 @@ export const fetchAndCacheIcon = async (
       }
       if (utoolsResult.icon && utoolsResult.cache) {
         return {
-          type: 'remote',
-          src: utoolsResult.icon,
-          cache: utoolsResult.cache,
-          fetchedAt: Date.now(),
+          ...normalizeInlineIcon({
+            type: 'remote',
+            src: utoolsResult.icon,
+            cache: utoolsResult.cache,
+            fetchedAt: Date.now()
+          }),
           ...fetchedMeta
         }
       }
@@ -778,7 +781,7 @@ export const ensureIconForBookmark = async (bookmark: Bookmark, force = false): 
   }
   
   const fetched = await fetchAndCacheIcon(bookmark.url, force)
-  if (fetched) return fetched
+  if (fetched) return normalizeInlineIcon(fetched)
   
   return textIconFromBookmark(bookmark)
 }
@@ -795,7 +798,7 @@ export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<strin
       const bookmark = missing[index++]
       const icon = await fetchAndCacheIcon(bookmark.url, false, { allowBrowserAutomation: false })
       if (icon) {
-        result.set(bookmark.id, icon)
+        result.set(bookmark.id, normalizeInlineIcon(icon))
       }
     }
   }

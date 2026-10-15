@@ -1,6 +1,7 @@
 import { parseJsonImportText } from '@/hooks/useImportExport'
 import type { Bookmark, Group } from '@/types/bookmark'
 import { parseFileSettings, type FileSettings } from './settings'
+import { normalizeInlineIcon } from '@/lib/inlineIcon'
 
 const MAX_BYTES = 10 * 1024 * 1024
 const MAX_ICON_BYTES = 2 * 1024 * 1024
@@ -95,8 +96,9 @@ export async function readFile(file: string) {
 export async function portableSnapshot(snapshot: Snapshot, expanded = false): Promise<string> {
   const data = structuredClone(snapshot)
   for (const bookmark of data.bookmarks) {
-    const icon = bookmark.icon
-    if (!icon) continue
+    if (!bookmark.icon) continue
+    const icon = normalizeInlineIcon(bookmark.icon)
+    bookmark.icon = icon
     if (icon.type === 'file') {
       let bytes: Buffer
       try { bytes = await readRegularFile(icon.path, MAX_ICON_BYTES) as Buffer }

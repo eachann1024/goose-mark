@@ -41,6 +41,7 @@ export const toIconSource = (icon: Awaited<ReturnType<typeof fetchAndCacheIcon>>
   if ('path' in icon && icon.path) nextIcon.path = icon.path;
   if ('value' in icon && icon.value) nextIcon.value = icon.value;
   if ('cache' in icon && icon.cache) nextIcon.cache = icon.cache;
+  if ('data' in icon && icon.data) nextIcon.data = icon.data;
   if ('bgColor' in icon && icon.bgColor) nextIcon.bgColor = icon.bgColor;
   if ('fetchedAt' in icon && icon.fetchedAt) nextIcon.fetchedAt = icon.fetchedAt;
   return nextIcon as IconSource;
