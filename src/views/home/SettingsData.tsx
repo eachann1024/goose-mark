@@ -111,7 +111,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
             <button className="btn btn-outline" disabled={readOnly} onClick={() => void handleFolderImport()}>选择文件夹</button>
           </div>
           <div className="set-row set-row-action">
-            <div><div className="rt">导入浏览器书签 / 旧 JSON</div></div>
+            <div><div className="rt">导入浏览器书签</div></div>
             {/* 隐藏的 file input */}
             <input
               ref={fileInputRef}

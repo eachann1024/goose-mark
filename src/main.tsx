@@ -30,16 +30,14 @@ const holder = container as RootHolder
 const root = holder.__gooseRoot ?? (holder.__gooseRoot = createRoot(container))
 
 const bootstrap = async () => {
-  let cacheReadable = true
-  // 缓存只用于首次迁移；损坏时仍继续读取权威文件，不能让缓存阻断插件启动。
+  // 本地缓存不可读时仍尝试已连接的数据文件夹。
   for (const initialize of [initializeSettingsStorePersistence, initializeBookmarkStorePersistence]) {
     try { await initialize() }
     catch (error) {
-      cacheReadable = false
-      console.warn('[Main] 旧缓存读取失败，继续尝试 JSON 文件:', error)
+      console.warn('[Main] 本地缓存读取失败，继续尝试数据文件夹:', error)
     }
   }
-  await initializeSharedJsonSync({ allowDefaultCreation: cacheReadable })
+  await initializeSharedJsonSync()
   // 权威文件读取完成后才补图标，避免旧缓存的后台任务污染刚读取的数据。
   if (!useBookmarkStore.getState().isReadOnly) {
     void useBookmarkStore.getState().backfillIconCache()

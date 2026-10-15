@@ -1,6 +1,7 @@
 import { useBookmarkStore } from '@/stores/bookmark'
 import { setSettingsFileReadOnly } from '@/stores/settings'
 import { utoolsStorage } from '@/lib/utoolsStorage'
+import { modules } from './files'
 import { readSource, type Source, type SourceRead } from './folder'
 import { SOURCE_PATH_KEY } from './source-actions'
 import { sourceAction, useSharedJsonStatus } from './status'
@@ -20,6 +21,12 @@ export function createSourceInitialization(runtime: InitializationRuntime) {
     if (runtime.connected() && !runtime.paused()) return false
     const savedPath = utoolsStorage.getItem(SOURCE_PATH_KEY)
     if (!savedPath) {
+      runtime.useLocal()
+      return false
+    }
+    const stat = await modules().fs.lstat(savedPath).catch(() => undefined)
+    if (stat?.isFile() && !stat.isSymbolicLink()) {
+      utoolsStorage.removeItem(SOURCE_PATH_KEY)
       runtime.useLocal()
       return false
     }
