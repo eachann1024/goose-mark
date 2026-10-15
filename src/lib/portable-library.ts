@@ -2,8 +2,6 @@ import type * as Fs from "node:fs/promises";
 import type * as Path from "node:path";
 import type * as Crypto from "node:crypto";
 import type { Buffer as NodeBuffer } from "node:buffer";
-import { normalizePortableIconInput } from "./portable-icon-input";
-import { svgWithLocalImages } from "./portable-svg";
 
 export interface PortableNode {
   fs: typeof Fs;
@@ -219,7 +217,7 @@ export function createPortableLibrary(node: PortableNode) {
       // SVGs are images, not a transport for external files or executable markup.
       if (
         /<!DOCTYPE|<!ENTITY|<\s*(?:script|foreignObject)\b|\bon\w+\s*=|(?:href|src)\s*=\s*["']\s*(?!#)|url\s*\(\s*(?!["']?#)/i.test(
-          svgWithLocalImages(svg, Buffer, PORTABLE_LIMITS.iconBytes),
+          svg,
         )
       )
         fail(
@@ -433,7 +431,6 @@ export function createPortableLibrary(node: PortableNode) {
     let total = 0;
     const icons = iconEntries(doc);
     for (const icon of icons) {
-      normalizePortableIconInput(icon, Buffer, PORTABLE_LIMITS.iconBytes);
       const field = iconField(icon);
       if (!field) continue;
       const reference = icon[field];
