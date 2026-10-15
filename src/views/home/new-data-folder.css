@@ -12,6 +12,13 @@
   flex-shrink: 0;
 }
 
+.goose-home .data-folder-path {
+  color: var(--fg-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .goose-home .data-folder-footer {
   width: 100%;
 }
