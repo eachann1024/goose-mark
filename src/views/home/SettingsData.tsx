@@ -4,13 +4,11 @@ import { useBookmarkStore } from '@/stores/bookmark'
 import { parseJsonImportText, importHtmlBookmarks, applyImportDataToStore } from '@/hooks/useImportExport'
 import { parseHtmlBookmarks } from '@/lib/htmlBookmarkParser'
 import { Ico } from './icon'
-import { SharedJsonControls } from './SharedJsonControls'
 import { DataImportPreview } from './DataImportPreview'
 import { importPreviewCounts, importTargetStamp } from '@/hooks/import-export/preview'
 import type { ImportData, ImportMode } from '@/hooks/import-export/types'
-import { portableSnapshot, parse } from '@/lib/shared-json/files'
-import { previewFolderImport, exportFolderBackup } from '@/lib/shared-json/backup'
-import { sharedJsonSourcePath } from '@/lib/sharedJson'
+import { portableSnapshot, parse } from '@/lib/bookmark-backup/snapshot'
+import { exportBookmarkBackup } from '@/lib/bookmark-backup/export'
 import type { HomeToastHandler } from './homeInteractionTypes'
 
 export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
@@ -77,7 +75,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
     }
     if (
       !window.confirm(
-        '确定清空全部书签（含回收站）？已连接的数据源也会同步清空，保留默认分组结构，不恢复示例。此操作不可撤销。'
+        '确定清空全部书签（含回收站）？保留默认分组结构，不恢复示例。此操作不可撤销。'
       )
     ) {
       return
@@ -86,15 +84,10 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
     onToast?.('已清空全部书签')
   }, [onToast])
 
-  const handleFolderImport = async () => {
-    try {
-      const data = await previewFolderImport()
-      if (data) showPreview(data)
-    } catch (error) { onToast?.(`导入失败：${error instanceof Error ? error.message : '文件夹不可用'}`) }
-  }
   const handleExport = async () => {
     try {
-      if (await exportFolderBackup(sharedJsonSourcePath())) onToast?.('完整备份已导出')
+      const message = await exportBookmarkBackup()
+      if (message) onToast?.(message)
     } catch (error) { onToast?.(`导出失败：${error instanceof Error ? error.message : '无法完整读取图片'}`) }
   }
 
@@ -105,13 +98,8 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
       <div className="set-section" id="set-data">
         <h2><Ico name="database" />导入与备份</h2>
         <div className="set-card">
-          <SharedJsonControls onToast={onToast} />
           <div className="set-row set-row-action">
-            <div className="rt">导入数据文件夹</div>
-            <button className="btn btn-outline" disabled={readOnly} onClick={() => void handleFolderImport()}>选择文件夹</button>
-          </div>
-          <div className="set-row set-row-action">
-            <div><div className="rt">导入浏览器书签</div></div>
+            <div><div className="rt">导入书签或备份</div></div>
             {/* 隐藏的 file input */}
             <input
               ref={fileInputRef}

@@ -13,10 +13,6 @@ import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepository'
 import { getPersistentItem } from '@/lib/utoolsStorage'
 
-let settingsFileReadOnly = false
-export const setSettingsFileReadOnly = (value: boolean) => { settingsFileReadOnly = value }
-export const isSettingsFileReadOnly = () => settingsFileReadOnly
-
 /** 设置 store：setter 只做业务赋值，持久化由 utools.db 仓储处理。 */
 
 export type ViewMode = 'list' | 'grid' | 'cards'
@@ -227,8 +223,7 @@ export const createDefaultSettingsState = (): SettingsState => {
   }
 }
 
-export const useSettingsStore = create<SettingsStore>()((rawSet, get) => {
-  const set = (patch: Partial<SettingsStore>) => { if (!settingsFileReadOnly) rawSet(patch) }
+export const useSettingsStore = create<SettingsStore>()((set, get) => {
   return {
   ...createDefaultSettingsState(),
 
@@ -321,7 +316,6 @@ export const useSettingsStore = create<SettingsStore>()((rawSet, get) => {
       setAiAggressiveSaveEnabled: (value) => set({ aiAggressiveSaveEnabled: !!value }),
       setAiFormAutoPolish: (value) => set({ aiFormAutoPolish: !!value }),
       setWindowHeight: (value) => {
-        if (settingsFileReadOnly) return
         const next = clampWindowHeight(value)
         set({ windowHeight: next })
         // 即时应用到 uTools 主窗口（preload 仅负责启动恢复，运行时调整由这里驱动）

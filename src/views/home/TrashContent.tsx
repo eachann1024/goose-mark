@@ -45,7 +45,7 @@ export function TrashContent({
     }
     if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
     if (readOnly) return
-    if (!window.confirm('确定永久清空回收站？已连接的数据源也会同步清空，其他书签保留。')) return
+    if (!window.confirm('确定永久清空回收站？其他书签保留。')) return
     emptyTrash()
     setConfirmEmpty(false)
     onToast('回收站已清空')

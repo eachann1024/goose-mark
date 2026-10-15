@@ -9,7 +9,6 @@ import { getRuntimePlatform } from '@/lib/platform'
 import { initErrorReporting } from '@/lib/errorReporting'
 import { initializeBookmarkStorePersistence, useBookmarkStore } from '@/stores/bookmark'
 import { initializeSettingsStorePersistence } from '@/stores/settings'
-import { initializeSharedJsonSync } from '@/lib/sharedJson'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
 initErrorReporting()
 const platform = getRuntimePlatform()
@@ -30,15 +29,14 @@ const holder = container as RootHolder
 const root = holder.__gooseRoot ?? (holder.__gooseRoot = createRoot(container))
 
 const bootstrap = async () => {
-  // 本地缓存不可读时仍尝试已连接的数据文件夹。
-  for (const initialize of [initializeSettingsStorePersistence, initializeBookmarkStorePersistence]) {
-    try { await initialize() }
-    catch (error) {
-      console.warn('[Main] 本地缓存读取失败，继续尝试数据文件夹:', error)
-    }
+  try {
+    await initializeSettingsStorePersistence()
+    await initializeBookmarkStorePersistence()
+  } catch (error) {
+    console.error('[Main] 读取已保存的数据失败:', error)
+    root.render(<div role="alert">书签加载失败，请重新打开应用。</div>)
+    return
   }
-  await initializeSharedJsonSync()
-  // 权威文件读取完成后才补图标，避免旧缓存的后台任务污染刚读取的数据。
   if (!useBookmarkStore.getState().isReadOnly) {
     void useBookmarkStore.getState().backfillIconCache()
     void useBookmarkStore.getState().refreshMissingIcons()
