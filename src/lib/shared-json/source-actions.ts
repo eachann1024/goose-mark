@@ -1,6 +1,6 @@
-import { modules, type Snapshot } from './files'
+import type { Snapshot } from './files'
 import { jsonValue, portableLibrary, prepareFolder, readSource, type Source, type SourceRead } from './folder'
-import { sourceAction, useSharedJsonStatus } from './status'
+import { sourceAction } from './status'
 import { importPreviewCounts } from '@/hooks/import-export/preview'
 import { identifySource } from './folder'
 
@@ -29,11 +29,15 @@ export function createSourceActions(runtime: SourceRuntime) {
     })
   })
   const createSharedJsonSource = () => sourceAction(async () => {
-    const selected = await window.utools?.showOpenDialog?.({ title: '新建数据文件夹（选择空文件夹）', properties: ['openDirectory', 'createDirectory'] })
-    if (!selected?.[0]) return false
+    const selected = await window.utools?.showOpenDialog?.({
+      title: '新建数据文件夹（选择空文件夹）',
+      buttonLabel: '保存并连接',
+      message: '将当前书签和 Goose 设置保存到所选空文件夹。',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (!Array.isArray(selected) || typeof selected[0] !== 'string' || !selected[0].trim()) return false
     const target: Source = { path: selected[0], mode: 'folder' }
     return runtime.enqueue(async () => {
-      if (!window.confirm('将当前书签和 Goose 设置保存到新数据文件夹并连接。确定新建？')) return false
       const stamp = runtime.stamp()
       const snapshot = runtime.snapshot()
       const prepared = await prepareFolder(snapshot)
