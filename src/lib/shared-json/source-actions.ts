@@ -3,13 +3,13 @@ import { jsonValue, portableLibrary, prepareFolder, readSource, type Source, typ
 import { sourceAction } from './status'
 import { importPreviewCounts } from '@/hooks/import-export/preview'
 import { identifySource } from './folder'
+import { newFolderDestination, reserveNewFolder, type NewDataFolder } from './new-folder'
 
 export const SOURCE_PATH_KEY = 'shared-json-source-path'
 type SourceRuntime = {
   enqueue: <T>(operation: () => Promise<T>) => Promise<T>
   snapshot: () => Snapshot
   stamp: () => string
-  defaultPath: () => string
   connect: (source: Source, remote: SourceRead) => Promise<boolean>
   disconnect: () => Promise<boolean>
 }
@@ -28,26 +28,19 @@ export function createSourceActions(runtime: SourceRuntime) {
       return runtime.connect(target, remote)
     })
   })
-  const createSharedJsonSource = () => sourceAction(async () => {
-    const selected = await window.utools?.showOpenDialog?.({
-      title: '新建数据文件夹（选择空文件夹）',
-      buttonLabel: '保存并连接',
-      message: '将当前书签和 Goose 设置保存到所选空文件夹。',
-      properties: ['openDirectory', 'createDirectory']
-    })
-    if (!Array.isArray(selected) || typeof selected[0] !== 'string' || !selected[0].trim()) return false
-    const target: Source = { path: selected[0], mode: 'folder' }
-    return runtime.enqueue(async () => {
+  const createSharedJsonSource = (location: NewDataFolder) => sourceAction(() =>
+    runtime.enqueue(async () => {
+      const target: Source = { path: await newFolderDestination(location), mode: 'folder' }
       const stamp = runtime.stamp()
       const snapshot = runtime.snapshot()
       const prepared = await prepareFolder(snapshot)
       if (runtime.stamp() !== stamp) throw new Error('创建期间本地数据发生变化，请重试')
+      await reserveNewFolder(target.path)
       await portableLibrary().createFolder(target.path, prepared, { settings: jsonValue(snapshot.settings) })
       const remote = await readSource(target)
       if (runtime.stamp() !== stamp) throw new Error('创建期间本地数据发生变化，文件夹已保留，请重新打开')
       return runtime.connect(target, remote)
-    })
-  })
+    }))
   const removeSharedJsonSource = () => sourceAction(async () => {
     if (!window.confirm('断开连接后，当前书签和设置保留在本地，数据文件夹不会删除。确定断开？')) return false
     return runtime.enqueue(runtime.disconnect)

@@ -7,7 +7,6 @@ import { hash, portableSnapshot, type Snapshot } from './shared-json/files'
 import { createSourceActions, SOURCE_PATH_KEY } from './shared-json/source-actions'
 import { useSharedJsonStatus } from './shared-json/status'
 import { readSource, writeSource, type Source, type SourceRead } from './shared-json/folder'
-import { defaultSourcePath } from './shared-json/startup'
 import { createSourceInitialization } from './shared-json/initialization'
 import { preserveLocalData } from './shared-json/local-cache'
 import type { Connection } from './shared-json/runtime-types'
@@ -271,7 +270,7 @@ async function disconnectSource() {
 }
 
 export const { chooseSharedJsonSource, createSharedJsonSource, removeSharedJsonSource } = createSourceActions({
-  enqueue, snapshot: currentSnapshot, stamp: snapshotStamp, defaultPath: defaultSourcePath,
+  enqueue, snapshot: currentSnapshot, stamp: snapshotStamp,
   connect: connectSource, disconnect: disconnectSource
 })
 
