@@ -40,7 +40,7 @@
   --grid-fav-size:var(--grid-icon-size,46px);
 }
 .goose-home[data-theme="dark"] {
-  --bg:#262624; --surface:#30302e; --surface-hover:#3a3936; --surface-blend:#2b2b29; --surface-footer:#2d2d2b; --input:#21211f;
+  --bg:#090A0C; --surface:#30302e; --surface-hover:#3a3936; --surface-blend:#2b2b29; --surface-footer:#2d2d2b; --input:#21211f;
   --fg:#faf9f5; --fg-muted:#b7b5ad; --fg-faint:#75746d;
   --accent:#e0875f; --accent-hover:#ea9670; --accent-subtle:#3a2a22; --accent-tint:#33261f;
   --accent-border:rgba(224,135,95,.42); --accent-border-strong:rgba(224,135,95,.55); --accent-ring:rgba(224,135,95,.2); --accent-ring-strong:rgba(224,135,95,.34);
@@ -102,7 +102,7 @@
 .goose-home [data-lucide],
 .goose-home svg.lucide { width:1em; height:1em; stroke-width:1.75; }
 
-/* 彩蛋激活（egg-on）：分层 = 纯色底(#262624) → 动画 canvas → 图标/UI。
+/* 彩蛋激活（egg-on）：分层 = 纯色底(#090A0C) → 动画 canvas → 图标/UI。
    窗体必须透明，否则半透灰会把动画洗成「灰蒙蒙」。
    选择器带 data-theme="dark" 双保险：彩蛋只在深色模式渲染，浅色下即使误挂 egg-on 也不透明化 */
 .goose-home[data-theme="dark"].egg-on { background:transparent; }
@@ -2333,7 +2333,7 @@
 }
 /* 必须写在 @apply bg-g-bg 之后，强制与深色默认背景一致 */
 .goose-home[data-theme="dark"] .pa-menu {
-  background:#262624 !important;
+  background:#090A0C !important;
 }
 
 .goose-home .pp-top {
@@ -2586,7 +2586,7 @@
   border-top-color: transparent !important;
 }
 .goose-home[data-platform="utools"][data-theme="dark"] .pa-menu {
-  background: #262624 !important;
+  background: #090A0C !important;
 }
 
 /* 分类区：旧内核下现代颜色函数失效时仍用实心 token */

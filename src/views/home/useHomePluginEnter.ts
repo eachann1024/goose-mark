@@ -7,14 +7,12 @@ import { useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookm
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { type Screen, type ViewMode } from './homeTypes'
 import { UTOOLS_PLUGIN_ENTER_EVENT, RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS, BROWSER_URL_READ_TIMEOUT_MS, withFallbackTimeout, DETACH_TOGGLE_FOCUS_GRACE_MS, isDetachedUToolsWindow, type UToolsPluginEnterPayload } from './homeRuntime'
-import { type HomeToastHandler, type HomeAggressivePanelOpener, type HomeScrollBindings, type HomeSearchBindings } from './homeInteractionTypes'
+import { type HomeToastHandler, type HomeScrollBindings, type HomeSearchBindings } from './homeInteractionTypes'
 
 export function useHomePluginEnter({
   getEnterText,
   FEATURE_PREFIX,
-  AI_AGGRESSIVE_SAVE_FEATURE_CODE,
   openNewBookmarkForm,
-  openAggressiveSavePanel,
   fireToastRef,
   activeTemplateBookmarkRef,
   recentDynamicTemplateEnterAtRef,
@@ -36,9 +34,7 @@ export function useHomePluginEnter({
   Pick<HomeSearchBindings, 'applySearchValRef' | 'focusSearchInput'> & {
   getEnterText: (payload: unknown) => string
   FEATURE_PREFIX: string
-  AI_AGGRESSIVE_SAVE_FEATURE_CODE: string
   openNewBookmarkForm: () => void
-  openAggressiveSavePanel: HomeAggressivePanelOpener
   fireToastRef: React.RefObject<HomeToastHandler>
   activeTemplateBookmarkRef: React.RefObject<Bookmark | null>
   recentDynamicTemplateEnterAtRef: React.RefObject<number>
@@ -54,7 +50,7 @@ export function useHomePluginEnter({
   view: ViewMode
 }) {
 
-  // 3.【致命】plugin-enter 事件：处理 bookmarks / quick_save / ai_aggressive_save / bm_tpl: 功能码
+  // plugin-enter 事件：处理 bookmarks / quick_save / bm_tpl: 功能码
   // handler 用 ref 包裹，保持监听器长生命周期的同时始终调用最新逻辑
   const pluginEnterHandlerRef = useRef<(e: Event) => void>(() => {})
   pluginEnterHandlerRef.current = (e: Event) => {
@@ -69,46 +65,6 @@ export function useHomePluginEnter({
     const payloadText = getEnterText(params?.payload).trim()
     const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
     const store = useBookmarkStore.getState()
-
-    // ---- ai_aggressive_save：AI 保存（仅网址 → 自动归类入库）----
-    if (code === AI_AGGRESSIVE_SAVE_FEATURE_CODE) {
-      if (!useSettingsStore.getState().aiEnabled) {
-        openNewBookmarkForm()
-        return
-      }
-      let urlToSave = ''
-      const payload = params?.payload
-      if (typeof payload === 'string') urlToSave = payload.trim()
-      else if (payload && typeof payload === 'object' && 'text' in payload) {
-        urlToSave = String((payload as { text: unknown }).text).trim()
-      }
-      if (!urlToSave && payloadText) urlToSave = payloadText
-
-      if (!urlToSave) {
-        void (async () => {
-          try {
-            const utoolsApi = window.utools as unknown as { readCurrentBrowserUrl?: () => Promise<string> } | undefined
-            if (typeof utoolsApi?.readCurrentBrowserUrl === 'function') {
-              const browserUrl = (
-                await withFallbackTimeout(utoolsApi.readCurrentBrowserUrl(), '', BROWSER_URL_READ_TIMEOUT_MS)
-              ).trim()
-              if (browserUrl) {
-                pluginEnterHandlerRef.current({ detail: { code, payload: browserUrl } } as unknown as Event)
-                return
-              }
-            }
-          } catch (err) {
-            console.warn('[ai_save] 获取浏览器 URL 失败:', err)
-          }
-          openAggressiveSavePanel(undefined, { autoStart: false })
-        })()
-        return
-      }
-
-      // uTools 带入 URL 时进入面板并自动开始；失败重开只回填，不再自动提交。
-      openAggressiveSavePanel(urlToSave, { autoStart: true, clearFailure: true })
-      return
-    }
 
     // ---- quick_save：普通保存当前网址 ----
     if (code === 'quick_save') {

@@ -18,16 +18,11 @@ export function useFormEntry({
       clearTimeout(formRequests.iconLoadingWatchdog);
       formRequests.iconLoadingWatchdog = null;
     }
-    // 递增代际计数器，使所有在途的图标/AI 响应作废：
-    // 关表单再打开同 URL 的另一表单时，旧会话的慢响应不能写进新会话。
-    // 在途请求作废后其 finally 不再清 isGenerating，这里一并兜底重置。
     formRequests.urlFetchRequestId++;
-    formRequests.askAiRequestId++;
     set({
       iconLoading: false,
       iconFetchFailed: false,
-      iconFetchPhase: 'idle',
-      isGenerating: false
+      iconFetchPhase: 'idle'
     });
   }, [set]);
 

@@ -1,13 +1,5 @@
 import type { BookmarkLocation, IconSource } from '@/types/bookmark';
 import { create } from 'zustand';
-export interface CategorySuggestionState {
-  groupId: string;
-  groupName: string;
-  subGroupId: string;
-  subGroupName: string;
-  confidence: number;
-  reason: string;
-}
 export interface DraftState {
   title: string;
   url: string;
@@ -36,14 +28,6 @@ export interface BookmarkFormState {
   originalUrl: string;
   /** 最近一次（排定）读取网页信息时的 URL，用于判断链接是否有未读取变更 */
   lastFetchedUrl: string;
-  isGenerating: boolean;
-  isSuggestingCategory: boolean;
-  aiError: string;
-  originalBeforeAI: {
-    title: string;
-    desc: string;
-  } | null;
-  categorySuggestion: CategorySuggestionState | null;
   set: (patch: Partial<BookmarkFormState>) => void;
   patchDraft: (patch: Partial<DraftState>) => void;
 }
@@ -75,11 +59,6 @@ export const useBookmarkFormStore = create<BookmarkFormState>(set => ({
   titleSuggestion: null,
   originalUrl: '',
   lastFetchedUrl: '',
-  isGenerating: false,
-  isSuggestingCategory: false,
-  aiError: '',
-  originalBeforeAI: null,
-  categorySuggestion: null,
   set: patch => set(patch),
   patchDraft: patch => set(s => ({
     draft: {

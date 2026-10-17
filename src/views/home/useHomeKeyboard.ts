@@ -58,8 +58,7 @@ export function useHomeKeyboard({
           screen === 'add' ||
           screen === 'settings' ||
           screen === 'trash' ||
-          screen === 'groups' ||
-          screen === 'ai-aggressive-save'
+          screen === 'groups'
         ) {
           setScreen(view)
           closeCtx()
@@ -77,7 +76,7 @@ export function useHomeKeyboard({
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         // 表单页（add/edit）正在编辑时忽略 Cmd+K，避免未保存草稿被卸载
-        if (screen === 'add' || screen === 'ai-aggressive-save') return
+        if (screen === 'add') return
         e.preventDefault()
         focusSearchInput()
         return

@@ -8,24 +8,6 @@ export function useFormText({
   set: FormSet;
   patchDraft: PatchDraft;
 }) {
-  const undoTitle = useCallback(() => {
-    const {
-      originalBeforeAI
-    } = useBookmarkFormStore.getState();
-    if (!originalBeforeAI) return;
-    patchDraft({
-      title: originalBeforeAI.title
-    });
-  }, [patchDraft]);
-  const undoDesc = useCallback(() => {
-    const {
-      originalBeforeAI
-    } = useBookmarkFormStore.getState();
-    if (!originalBeforeAI) return;
-    patchDraft({
-      desc: originalBeforeAI.desc
-    });
-  }, [patchDraft]);
   const onTitleInput = useCallback(() => set({
     isTitleDirty: true
   }), [set]);
@@ -59,8 +41,6 @@ export function useFormText({
     });
   }, [set, patchDraft]);
   return {
-    undoTitle,
-    undoDesc,
     onTitleInput,
     takeOverTitle,
     applyTitleSuggestion,

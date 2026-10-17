@@ -11,6 +11,5 @@ export const JINA_FALLBACK_TIMEOUT_MS = 12000;
 export const formRequests = {
   urlFetchTimer: null as ReturnType<typeof setTimeout> | null,
   iconLoadingWatchdog: null as ReturnType<typeof setTimeout> | null,
-  urlFetchRequestId: 0,
-  askAiRequestId: 0
+  urlFetchRequestId: 0
 };

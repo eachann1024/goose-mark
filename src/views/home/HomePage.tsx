@@ -5,7 +5,6 @@ import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { useUToolsMcpBridge } from '@/hooks/useUToolsMcpBridge'
 import { useUTools } from '@/hooks/useUTools'
-import AggressiveAiSavePanel from './AggressiveAiSavePanel'
 import { buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './viewModel'
 import AddBookmarkWizard from './AddBookmarkWizard'
 import GroupManagePage from './GroupManagePage'
@@ -14,7 +13,7 @@ import HelpAboutDialog from './HelpAboutDialog'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
 import './home.css'
-import { type CtxMode, type CtxState, type AggressiveSaveJob, type AggressiveSaveSuccess, type AggressiveSaveFailure, type ToastTone, type ToastAction } from './homeTypes'
+import { type CtxMode, type CtxState, type ToastTone } from './homeTypes'
 import { RUNTIME_PLATFORM, IS_WINDOWS_UTOOLS, getSearchSurface } from './homeRuntime'
 import { type HomeContinuityState, readHomeContinuityState } from './homeContinuity'
 import { useHomeThemeState, useHomeThemeEffects, useHomeViewPreferences } from './useHomeTheme'
@@ -30,8 +29,6 @@ import { useHomeContextActions, useHomePointerInteractions } from './useHomeCont
 import { useHomeToast, useHomeUIToastBridge } from './useHomeToast'
 import { useHomeBookmarkDrag } from './useHomeBookmarkDrag'
 import { useHomeSectionNavigation } from './useHomeSectionNavigation'
-import { useHomeAggressivePanel, useHomeAggressiveQueue, useHomeAiAvailability } from './useHomeAggressiveSave'
-import { useHomeAggressiveReveal } from './useHomeAggressiveReveal'
 import { useHomeScrollSpy } from './useHomeScrollSpy'
 import { useHomeKeyboard } from './useHomeKeyboard'
 import { useHomeLifecycle, useHomeDetachedWindow, useHomeStorageSync, useHomeFeatures } from './homeHostLifecycle'
@@ -42,7 +39,6 @@ import { HomeTabMenu } from './HomeTabMenu'
 import { HomeTemplatePage } from './HomeTemplatePage'
 import { HomeBookmarkPanels } from './HomeBookmarkPanels'
 import { HomeSettingsPage } from './SettingsContent'
-import { HomeAggressiveNotices } from './HomeAggressiveNotices'
 import { HomeContextMenu } from './HomeContextMenu'
 import { HomeToast } from './HomeToast'
 
@@ -65,7 +61,6 @@ export default function HomePage() {
 
   // uTools 特性注册 / 进入文本解析
   const {
-    AI_AGGRESSIVE_SAVE_FEATURE_CODE,
     FEATURE_PREFIX,
     syncFeatures,
     getEnterText
@@ -112,8 +107,6 @@ export default function HomePage() {
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
   const panelContinuous = useSettingsStore((s) => s.panelContinuous)
-  const aiEnabled = useSettingsStore((s) => s.aiEnabled)
-  const aiAggressiveSaveEnabled = useSettingsStore((s) => s.aiAggressiveSaveEnabled)
 
   const homeGroups: HomeGroup[] = useMemo(
     () => buildHomeGroups(groups, bookmarks),
@@ -164,14 +157,7 @@ export default function HomePage() {
   const [toastDesc, setToastDesc] = useState('')
   const [toastJump, setToastJump] = useState<BookmarkLocation | null>(null)
   const [toastTone, setToastTone] = useState<ToastTone>('success')
-  const [toastAction, setToastAction] = useState<ToastAction>(null)
   const [toastKey, setToastKey] = useState(0)
-  /** AI 保存面板的预填 URL（uTools 特性带入） */
-  const [aggressiveSaveUrl, setAggressiveSaveUrl] = useState('')
-  const [aggressiveSaveAutoStart, setAggressiveSaveAutoStart] = useState(false)
-  const [aggressiveSaveJobs, setAggressiveSaveJobs] = useState<AggressiveSaveJob[]>([])
-  const [aggressiveSaveSuccesses, setAggressiveSaveSuccesses] = useState<AggressiveSaveSuccess[]>([])
-  const [aggressiveSaveFailure, setAggressiveSaveFailure] = useState<AggressiveSaveFailure | null>(null)
   const [searchVal, setSearchVal] = useState('')
   // 必须在任何依赖它的 useEffect 之前声明，否则 const TDZ 会在首屏渲染炸掉
   const isSearching = searchVal.trim().length > 0
@@ -194,13 +180,6 @@ export default function HomePage() {
   const ctxMenuRef = useRef<HTMLDivElement>(null)
   const headerSearchRef = useRef<HTMLInputElement>(null)
   const toastTimer = useRef<number | undefined>(undefined)
-  const aggressiveSaveJobSeqRef = useRef(0)
-  const aggressiveSaveQueueRef = useRef<Array<{ id: number; url: string }>>([])
-  const aggressiveSaveRunnerRef = useRef(false)
-  const aggressiveSaveMountedRef = useRef(true)
-  const aggressiveSaveSuccessTimersRef = useRef<Map<number, number>>(new Map())
-  const aggressiveSaveRevealTimersRef = useRef<Set<number>>(new Set())
-  const pumpAggressiveSaveQueueRef = useRef<() => void>(() => {})
   // 侧栏点击触发的程序化滚动期间抑制 scroll-spy，避免高亮闪过中间分组
   const isAnchorScrollingRef = useRef(false)
   const anchorScrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -355,7 +334,6 @@ export default function HomePage() {
     setToastDesc,
     setToastJump,
     setToastTone,
-    setToastAction,
     setToastKey,
     setToastOpen,
     toastTimer
@@ -401,29 +379,6 @@ export default function HomePage() {
     }
   }, [view, scrollToSection])
 
-  const { openAggressiveSavePanel, clearAggressiveSaveSuccessTimer, dismissAggressiveSaveSuccess, scheduleAggressiveSaveSuccessDismiss } = useHomeAggressivePanel({
-    setFormEditItem,
-    setFormKey,
-    setScreen,
-    setAggressiveSaveUrl,
-    setAggressiveSaveAutoStart,
-    setAggressiveSaveFailure,
-    aggressiveSaveSuccessTimersRef,
-    setAggressiveSaveSuccesses
-  })
-
-  const { jumpToAggressiveSaveResult } = useHomeAggressiveReveal({
-    applySearchVal,
-    setScreen,
-    view,
-    setActiveSubId,
-    contentRef,
-    aggressiveSaveRevealTimersRef,
-    smoothRafRef,
-    isAnchorScrollingRef,
-    setSelectedId
-  })
-
   /** 从主面板进入新建：先把 UI 当前选中（含 scroll-spy 的 activeSubId）写入 store，再开表单 */
   const openNewBookmarkForm = useCallback(() => {
     const store = useBookmarkStore.getState()
@@ -437,30 +392,8 @@ export default function HomePage() {
     setScreen('add')
   }, [activeGroupId, activeSubId])
 
-  const { takeOverAggressiveSave, undoAggressiveSave, enqueueAggressiveSave } = useHomeAggressiveQueue({
-    dismissAggressiveSaveSuccess,
-    fireToast,
-    setFormEditItem,
-    setFormKey,
-    setScreen,
-    aggressiveSaveRunnerRef,
-    aggressiveSaveQueueRef,
-    setAggressiveSaveJobs,
-    aggressiveSaveMountedRef,
-    setAggressiveSaveFailure,
-    setAggressiveSaveUrl,
-    setAggressiveSaveAutoStart,
-    setAggressiveSaveSuccesses,
-    jumpToAggressiveSaveResult,
-    scheduleAggressiveSaveSuccessDismiss,
-    getScreenRef: () => screenRef,
-    pumpAggressiveSaveQueueRef,
-    aggressiveSaveJobSeqRef,
-    applySearchVal,
-    view
-  })
-
   const { handleActiveSubIdFix } = useHomeScrollSpy({
+
     setActiveSubId,
     view,
     screen,
@@ -500,9 +433,6 @@ export default function HomePage() {
 
   useHomeLifecycle({
     toastTimer,
-    aggressiveSaveMountedRef,
-    aggressiveSaveSuccessTimersRef,
-    aggressiveSaveRevealTimersRef,
     setScrollTimeout,
     smoothRafRef
   })
@@ -543,9 +473,7 @@ export default function HomePage() {
   useHomePluginEnter({
     getEnterText,
     FEATURE_PREFIX,
-    AI_AGGRESSIVE_SAVE_FEATURE_CODE,
     openNewBookmarkForm,
-    openAggressiveSavePanel,
     fireToastRef,
     activeTemplateBookmarkRef,
     recentDynamicTemplateEnterAtRef,
@@ -583,15 +511,8 @@ export default function HomePage() {
     syncFeatures
   })
 
-  useHomeAiAvailability({
-    screen,
-    aiEnabled,
-    setFormEditItem,
-    setFormKey,
-    setScreen
-  })
-
   const { scrollToSetSection } = useHomeSettingsNavigation({
+
     screen,
     setMainRef,
     isSetScrollingRef,
@@ -609,11 +530,6 @@ export default function HomePage() {
     return null
   }, [homeGroups, selectedId])
 
-  const activeAggressiveSaveJob =
-    aggressiveSaveJobs.find((job) => job.status === 'running') ??
-    aggressiveSaveJobs.find((job) => job.status === 'queued')
-  const aggressiveSaveWaitingCount = Math.max(0, aggressiveSaveJobs.length - (activeAggressiveSaveJob ? 1 : 0))
-
   const rootCls = [
     'goose-home',
     toastOpen ? 'toast-open' : '',
@@ -630,7 +546,7 @@ export default function HomePage() {
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'blackhole' && (
         <div
           className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none"
-          style={{ backgroundColor: '#262624' }}
+          style={{ backgroundColor: '#090A0C' }}
         >
           <BlackHole
             brightness={0.75}
@@ -671,9 +587,6 @@ export default function HomePage() {
             headerSearchRef={headerSearchRef}
             searchVal={searchVal}
             applySearchVal={applySearchVal}
-            aiAggressiveSaveEnabled={aiAggressiveSaveEnabled}
-            aiEnabled={aiEnabled}
-            openAggressiveSavePanel={openAggressiveSavePanel}
             openNewBookmarkForm={openNewBookmarkForm}
             avatarRef={avatarRef}
             paOpen={paOpen}
@@ -766,42 +679,8 @@ export default function HomePage() {
         {/* ---------- Add/Edit wizard (沉浸式三步) ---------- */}
         {screen === 'add' && <AddBookmarkWizard key={`wiz-${formKey}`} editItem={formEditItem} onBack={backToList} />}
 
-        {/* ---------- AI 保存（仅网址） ---------- */}
-        {screen === 'ai-aggressive-save' && aiEnabled && (
-          <AggressiveAiSavePanel
-            key={`ag-save-${aggressiveSaveUrl || 'empty'}`}
-            initialUrl={aggressiveSaveUrl}
-            autoStart={aggressiveSaveAutoStart}
-            job={activeAggressiveSaveJob}
-            failure={aggressiveSaveFailure}
-            onBack={() => setScreen(view)}
-            onSubmit={enqueueAggressiveSave}
-            onClearFailure={() => setAggressiveSaveFailure(null)}
-            onOpenSettings={() => setScreen('settings')}
-          />
-        )}
-
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}
-
-        {/* ---------- AI 保存：右上角后台进度 + S1 成功卡 ---------- */}
-        <HomeAggressiveNotices
-            activeAggressiveSaveJob={activeAggressiveSaveJob}
-            aggressiveSaveSuccesses={aggressiveSaveSuccesses}
-            aggressiveSaveFailure={aggressiveSaveFailure}
-            screen={screen}
-            aggressiveSaveWaitingCount={aggressiveSaveWaitingCount}
-            clearAggressiveSaveSuccessTimer={clearAggressiveSaveSuccessTimer}
-            scheduleAggressiveSaveSuccessDismiss={scheduleAggressiveSaveSuccessDismiss}
-            dismissAggressiveSaveSuccess={dismissAggressiveSaveSuccess}
-            jumpToAggressiveSaveResult={jumpToAggressiveSaveResult}
-            undoAggressiveSave={undoAggressiveSave}
-            takeOverAggressiveSave={takeOverAggressiveSave}
-            setAggressiveSaveFailure={setAggressiveSaveFailure}
-            openAggressiveSavePanel={openAggressiveSavePanel}
-            enqueueAggressiveSave={enqueueAggressiveSave}
-            setScreen={setScreen}
-          />
 
         {/* ---------- Context menu ---------- */}
         <HomeContextMenu
@@ -823,15 +702,11 @@ export default function HomePage() {
           />
 
         {/* ---------- Toast ---------- */}
-        {/* 通用 toast：支持成功/错误语义，以及跳转或重新打开 AI 保存。 */}
         <HomeToast
             toastTone={toastTone}
             toastJump={toastJump}
-            toastAction={toastAction}
             toastKey={toastKey}
-            openNewBookmarkForm={openNewBookmarkForm}
             setToastOpen={setToastOpen}
-            setAggressiveSaveAutoStart={setAggressiveSaveAutoStart}
             setScreen={setScreen}
             view={view}
             setActiveSubId={setActiveSubId}

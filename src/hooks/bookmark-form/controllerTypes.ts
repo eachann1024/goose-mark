@@ -3,13 +3,8 @@ import type { ToastOptions } from '../useUIManager';
 import type { IconSource, BookmarkLocation } from '@/types/bookmark';
 export type FormSet = BookmarkFormState['set'];
 export type PatchDraft = BookmarkFormState['patchDraft'];
-export type FormView = Pick<BookmarkFormState, 'showAdd' | 'modalTitle' | 'editingId' | 'draft' | 'draftLocations' | 'previewIcon' | 'showCategorySelector' | 'showIconSelector' | 'formError' | 'isSaving' | 'iconLoading' | 'iconFetchFailed' | 'iconFetchPhase' | 'isGenerating' | 'isSuggestingCategory' | 'aiError' | 'categorySuggestion' | 'originalBeforeAI' | 'originalUrl' | 'lastFetchedUrl' | 'isTitleDirty' | 'isDescDirty' | 'titleSuggestion'>;
+export type FormView = Pick<BookmarkFormState, 'showAdd' | 'modalTitle' | 'editingId' | 'draft' | 'draftLocations' | 'previewIcon' | 'showCategorySelector' | 'showIconSelector' | 'formError' | 'isSaving' | 'iconLoading' | 'iconFetchFailed' | 'iconFetchPhase' | 'originalUrl' | 'lastFetchedUrl' | 'isTitleDirty' | 'isDescDirty' | 'titleSuggestion'>;
 export type ShowToast = (options: ToastOptions) => void;
 export type BuildTextIcon = () => IconSource;
 export type ResolveLocationsForSave = () => BookmarkLocation[];
 export type ResetPendingIconFetch = () => void;
-export type MetadataAutoPolish = (input: {
-  url: string;
-  forceNetworkFallback: boolean;
-  fetchRequestId: number;
-}) => Promise<void>;

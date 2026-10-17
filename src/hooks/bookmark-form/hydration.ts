@@ -1,7 +1,6 @@
 import { fetchAndCacheIcon } from '@/services/iconCache';
 import { toIconSource, isHostLikeTitle, buildTextIconFromValue } from './icons';
 import { isLoginOrAccessWallText, fetchMetadataFromNetwork } from '@/services/metadataFallback';
-import { checkAiAvailable, generateMetadataDirect } from './metadata';
 import { useBookmarkStore } from '@/stores/bookmark';
 import type { Bookmark } from '@/types/bookmark';
 export const shouldHydrateTitle = (initialTitle: string, currentTitle: string) => !initialTitle.trim() && !currentTitle.trim();
@@ -15,12 +14,10 @@ export const enqueueMetadataHydration = (bookmarkId: string, options: {
   url: string;
   initialTitle: string;
   initialDesc: string;
-  forceAi?: boolean;
 }) => {
   const jobId = Date.now() + Math.random();
   hydrationJobIds.set(bookmarkId, jobId);
   void (async () => {
-    let usedNetworkFallback = false;
     try {
       const fetched = await fetchAndCacheIcon(options.url, true);
       let rawTitle = typeof fetched?.title === 'string' ? fetched.title.trim() : '';
@@ -39,24 +36,10 @@ export const enqueueMetadataHydration = (bookmarkId: string, options: {
           if (!rawDesc && fallback.description && !isLoginOrAccessWallText(fallback.description)) {
             rawDesc = fallback.description;
           }
-          usedNetworkFallback = true;
         }
       }
-      let nextTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) && !isLoginOrAccessWallText(rawTitle) ? rawTitle : '';
-      let nextDesc = rawDesc && !isLoginOrAccessWallText(rawDesc) ? rawDesc : '';
-      const aiReady = checkAiAvailable().available;
-      if (options.forceAi && aiReady) {
-        const aiResult = await generateMetadataDirect({
-          url: options.url,
-          title: rawTitle,
-          desc: rawDesc,
-          forceNetworkFallback: usedNetworkFallback
-        });
-        if (aiResult) {
-          nextTitle = aiResult.title || nextTitle;
-          nextDesc = aiResult.desc || nextDesc;
-        }
-      }
+      const nextTitle = rawTitle && !isHostLikeTitle(rawTitle, options.url) && !isLoginOrAccessWallText(rawTitle) ? rawTitle : '';
+      const nextDesc = rawDesc && !isLoginOrAccessWallText(rawDesc) ? rawDesc : '';
       if (hydrationJobIds.get(bookmarkId) !== jobId) return;
       const store = useBookmarkStore.getState();
       const bookmark = store.bookmarks.find(item => item.id === bookmarkId);

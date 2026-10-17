@@ -1,6 +1,5 @@
-import type { AIStructuredOutput } from '@/constants/aiPrompts'
 import { parseAIJsonObject } from '@/lib/aiOutput'
-import { type AIMessage } from './types'
+import { type AIMessage, type AIStructuredOutput } from './types'
 
 export function normalizeMessages(messages: AIMessage[]) {
   return messages

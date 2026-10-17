@@ -2,8 +2,6 @@ import type { FormView } from './controllerTypes';
 import { useMemo } from 'react';
 import { iconToDisplayUrl } from '@/services/iconCache';
 import { getTemplateLabel } from '@/lib/utils';
-import { useSettingsStore } from '@/stores/settings';
-import { checkAiAvailable } from './metadata';
 import { useBookmarkStore } from '@/stores/bookmark';
 export function useFormView({
   form
@@ -24,15 +22,10 @@ export function useFormView({
   const draftTemplateLabel = useMemo(() => getTemplateLabel(form.draft.url), [form.draft.url]);
   const needsBackgroundSave = useMemo(() => {
     if (!form.draft.url.trim()) return false;
-    if (form.iconLoading || form.isGenerating) return true;
+    if (form.iconLoading) return true;
     return !form.draft.title.trim();
-  }, [form.draft.url, form.draft.title, form.iconLoading, form.isGenerating]);
+  }, [form.draft.url, form.draft.title, form.iconLoading]);
   const saveButtonLabel = needsBackgroundSave ? '后台保存' : '保存';
-  const aiEnabled = useSettingsStore(s => s.aiEnabled);
-  const aiAvailability = useMemo(() => checkAiAvailable(), [aiEnabled, form.showAdd]);
-  const canUseAi = aiAvailability.available;
-  const aiUnavailableReason = aiAvailability.reason;
-  const hasAIGenerated = !!form.originalBeforeAI;
   const selectedLocationsLabel = useMemo(() => {
     if (form.draftLocations.length === 0) return '';
     const groups = useBookmarkStore.getState().groups;
@@ -51,10 +44,6 @@ export function useFormView({
     draftTemplateLabel,
     needsBackgroundSave,
     saveButtonLabel,
-    aiEnabled,
-    canUseAi,
-    aiUnavailableReason,
-    hasAIGenerated,
     selectedLocationsLabel
   };
 }
