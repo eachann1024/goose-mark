@@ -109,11 +109,24 @@ def prepare(force, offline):
             if existing['prerelease']:
                 raise ValueError('Existing published tag is a prerelease; do not overwrite it')
             unchanged = True
+        if version:
+            published = published_version(version)
+            if published:
+                unchanged = True
+                if not force:
+                    message = f"版本 {version} 已发布为 {published['tag_name']}，跳过编译"
+                    print(message)
+                    summary = os.environ.get('GITHUB_STEP_SUMMARY')
+                    if summary:
+                        with open(summary, 'a', encoding='utf-8') as file:
+                            file.write(message + '\n')
     STATE.mkdir(exist_ok=True)
     plan = {'schema': 1, 'commit': commit, 'fingerprint': digest, 'tag': tag,
             'branch': branch, 'version': version, 'title': f"{CONFIG['name']} {version or date}"}
     (STATE / 'plan.json').write_text(json.dumps(plan, indent=2) + '\n')
-    output('build', str(force or not unchanged).lower())
+    decision = str(force or not unchanged).lower()
+    output('build', decision)
+    output('should_build', decision)
     output('tag', tag)
     output('commit', commit)
 
@@ -183,6 +196,14 @@ def find_release(tag):
     return next((r for page in pages for r in page if r['tag_name'] == tag), None)
 
 
+def published_version(version):
+    exact, prefix = f'v{version}', f'v{version}-'
+    pages = json.loads(gh('api', '--paginate', '--slurp', f'repos/{REPO}/releases?per_page=100'))
+    return next((r for page in pages for r in page
+                 if not r.get('draft') and not r.get('prerelease')
+                 and ((r.get('tag_name') or '') == exact or (r.get('tag_name') or '').startswith(prefix))), None)
+
+
 def verify_tag(tag, commit):
     reference = api(f'git/ref/tags/{tag}')
     if not reference:
@@ -206,6 +227,9 @@ def publish():
         return
     tag = plan['tag']
     verify_tag(tag, plan['commit'])
+    if plan.get('version') and published_version(plan['version']):
+        print('同版本已发布，保持不变')
+        return
     existing = find_release(tag)
     if existing and not existing['draft']:
         print(f'{tag} is published; keeping its assets intact.')
