@@ -3,7 +3,7 @@ import { AbsoluteFill, Img, staticFile, useCurrentFrame } from 'remotion'
 import { ACCENT, INK, M, SOFT } from '../theme'
 import { BigTitle } from '../parts/Type'
 import { Check, Paper, Rule } from '../parts/ui'
-import { CornerBrackets, DotField, HalftoneSwatch, Sparkle } from '../parts/deco'
+import { DotField } from '../parts/deco'
 import { cardIn, stampSpring } from '../lib/anim'
 
 const CARD = { left: M, top: 442, width: 648, height: 480 }
@@ -60,7 +60,6 @@ export const S3: React.FC = () => {
   return (
     <AbsoluteFill>
       <DotField drift={frame * 1.4} />
-      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
       <BigTitle lines={[[{ t: '图标、正文、描述' }], [{ t: '一次装齐', k: 'serif' }]]} top={132} left={M} size={88} start={2} />
 
       <Paper style={{ ...CARD, transform: `scale(${0.92 + enter * 0.08})` }}>
@@ -188,8 +187,6 @@ export const S3: React.FC = () => {
         {frame > 198 ? <Check size={46} left={CARD.width - 82} top={244 - 23} progress={check} /> : null}
       </Paper>
 
-      <CornerBrackets left={CARD.left} top={CARD.top} width={CARD.width} height={CARD.height} progress={cardIn(frame, 16, 34)} />
-
       <Img
         src={staticFile('halftone/goose-cheer-220.png')}
         style={{
@@ -201,7 +198,6 @@ export const S3: React.FC = () => {
           transform: `translateY(${Math.round((1 - cardIn(frame, 28, 22)) * 42 + Math.sin(frame / 21) * 4)}px)`,
         }}
       />
-      <Sparkle left={CARD.left + CARD.width - 56} top={CARD.top + 244} progress={stampSpring(frame, 206)} scale={0.66} />
     </AbsoluteFill>
   )
 }

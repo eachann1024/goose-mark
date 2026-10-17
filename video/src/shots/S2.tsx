@@ -3,7 +3,7 @@ import { AbsoluteFill, useCurrentFrame } from 'remotion'
 import { ACCENT, INK, M } from '../theme'
 import { BigTitle, Mono } from '../parts/Type'
 import { Rule } from '../parts/ui'
-import { AccentRail, DotField, HalftoneSwatch, Sparkle, Underline } from '../parts/deco'
+import { AccentRail, DotField } from '../parts/deco'
 import { cardIn, stampSpring, textSpring } from '../lib/anim'
 
 const ROWS = ['认得网址', '抓取网站', '译成中文', '归到分组']
@@ -16,10 +16,8 @@ export const S2: React.FC = () => {
   return (
     <AbsoluteFill>
       <DotField drift={frame * 1.4} />
-      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
 
       <BigTitle lines={[[{ t: '它先读懂' }], [{ t: '再替你动手', k: 'serif' }]]} top={132} left={M} size={92} start={2} />
-      <Underline left={M + 6} top={352} width={470} progress={cardIn(frame, 30, 26)} height={3} />
 
       <AccentRail left={60} top={TOP} height={ROWS.length * ROW_H} progress={cardIn(frame, 44, 40)} />
 
@@ -86,8 +84,6 @@ export const S2: React.FC = () => {
         )
       })}
       <Rule left={M} top={TOP + ROWS.length * ROW_H} width={888} color={INK} opacity={0.18} />
-
-      <Sparkle left={64} top={TOP + ROWS.length * ROW_H} progress={stampSpring(frame, 150)} scale={0.62} />
     </AbsoluteFill>
   )
 }

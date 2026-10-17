@@ -4,7 +4,7 @@ import { ACCENT, INK, M, SOFT } from '../theme'
 import { BigTitle } from '../parts/Type'
 import { Paper } from '../parts/ui'
 import { cardIn, stampSpring } from '../lib/anim'
-import { CornerBrackets, DotField, HalftoneSwatch, Sparkle } from '../parts/deco'
+import { DotField } from '../parts/deco'
 
 const WIN = { left: M, top: 442, width: 888, height: 508 }
 const PAD = 44
@@ -39,7 +39,6 @@ export const S4: React.FC = () => {
   return (
     <AbsoluteFill>
       <DotField drift={frame * 1.4} />
-      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
       <BigTitle
         lines={[[{ t: '原文是英文' }], [{ t: '读的是中文', k: 'serif' }]]}
         top={132}
@@ -140,18 +139,7 @@ export const S4: React.FC = () => {
             zIndex: 3,
           }}
         />
-        <div style={{ position: 'absolute', left: 0, top: 0, width: WIN.width, height: 20, background: '#FFFFFF', zIndex: 2 }} />
-        <div style={{ position: 'absolute', left: 0, top: WIN.height - 20, width: WIN.width, height: 20, background: '#FFFFFF', zIndex: 2 }} />
       </Paper>
-
-      <CornerBrackets left={WIN.left} top={WIN.top} width={WIN.width} height={WIN.height} progress={cardIn(frame, 14, 34)} />
-      <Sparkle
-        left={WIN.left + 96}
-        top={WIN.top + 190}
-        progress={stampSpring(frame, 74)}
-        scale={0.5}
-        fade={1 - cardIn(frame, 130, 22)}
-      />
     </AbsoluteFill>
   )
 }

@@ -4,7 +4,7 @@ import { ACCENT, INK, M, PAPER, SOFT } from '../theme'
 import { BigTitle } from '../parts/Type'
 import { Check, Paper, Toggle } from '../parts/ui'
 import { cardIn, EASE_FALL, stampSpring } from '../lib/anim'
-import { CornerBrackets, DotField, HalftoneSwatch, Sparkle } from '../parts/deco'
+import { DotField } from '../parts/deco'
 
 const COL_W = 280
 const COL_GAP = 16
@@ -31,7 +31,7 @@ export const S6: React.FC = () => {
 
   const tx = colLeft(TARGET.col)
   const ty = subTop(TARGET.sub)
-  const slotTop = ty + 46
+  const slotTop = ty + 48
   const fromY = slotTop - 234
 
   const configRows = ['允许新建主分组', '允许新建子分组']
@@ -39,7 +39,6 @@ export const S6: React.FC = () => {
   return (
     <AbsoluteFill>
       <DotField drift={frame * 1.4} />
-      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
       <BigTitle lines={[[{ t: '位置不对' }], [{ t: '就自己新建', k: 'serif' }]]} top={132} left={M} size={86} start={2} />
 
       {COLS.map((col, ci) => (
@@ -95,9 +94,10 @@ export const S6: React.FC = () => {
                   style={{
                     position: 'absolute',
                     right: 16,
-                    top: 14,
+                    top: 12,
                     fontFamily: '"Menlo",monospace',
                     fontSize: 18,
+                    lineHeight: '28px',
                     letterSpacing: '0.08em',
                     color: INK,
                     opacity: 0.32,
@@ -114,9 +114,9 @@ export const S6: React.FC = () => {
       <div
         style={{
           position: 'absolute',
-          left: tx + 12,
+          left: tx + 16,
           top: slotTop + (1 - fall) * (fromY - slotTop),
-          width: COL_W - 24,
+          width: COL_W - 32,
           height: 52,
           opacity: cardIn(frame, 44, 10),
           transform: `scaleY(${1 - squash * 0.07}) scaleX(${1 + squash * 0.02})`,
@@ -169,14 +169,14 @@ export const S6: React.FC = () => {
         </div>
       </div>
 
-      {frame > 88 ? <Check size={40} left={tx + COL_W - 42} top={COL_TOP - 2} progress={check} /> : null}
+      {frame > 88 ? <Check size={32} left={tx + 60} top={COL_TOP + 3} progress={check} /> : null}
 
       <Paper
         style={{
           left: M,
           top: 806,
           width: 888,
-          height: 132,
+          height: 142,
           opacity: cardIn(frame, 22, 16),
           transform: `translateY(${(1 - cardIn(frame, 22, 18)) * 24}px)`,
         }}
@@ -188,7 +188,7 @@ export const S6: React.FC = () => {
               style={{
                 position: 'absolute',
                 left: 24,
-                top: 22 + i * 52,
+                top: 24 + i * 54,
                 fontFamily: '"PingFang SC","Hiragino Sans GB",sans-serif',
                 fontWeight: 500,
                 fontSize: 24,
@@ -199,24 +199,10 @@ export const S6: React.FC = () => {
             >
               {row}
             </div>
-            <Toggle pos={cardIn(frame, 44 + i * 18, 16)} left={888 - 24 - 74} top={21 + i * 52} />
+            <Toggle pos={cardIn(frame, 44 + i * 18, 16)} left={888 - 24 - 74} top={23 + i * 54} />
           </React.Fragment>
         ))}
       </Paper>
-
-      <CornerBrackets left={M} top={748} width={888} height={132} progress={cardIn(frame, 20, 30)} />
-      <CornerBrackets
-        left={tx}
-        top={ty}
-        width={COL_W}
-        height={SUB_H}
-        progress={cardIn(frame, 84, 26)}
-        size={13}
-        thickness={2}
-        gap={-7}
-      />
-      <Sparkle left={tx + COL_W - 26} top={ty + SUB_H + 4} progress={stampSpring(frame, 98)} scale={0.6} />
-      <Sparkle left={tx + 18} top={slotTop + 26} progress={stampSpring(frame, 82)} scale={0.42} />
     </AbsoluteFill>
   )
 }

@@ -4,7 +4,7 @@ import { INK, M, SOFT } from '../theme'
 import { BigTitle, Mono } from '../parts/Type'
 import { Check, Paper, Rule } from '../parts/ui'
 import { cardIn, stampSpring } from '../lib/anim'
-import { CornerBrackets, DotField, HalftoneSwatch, Sparkle } from '../parts/deco'
+import { DotField } from '../parts/deco'
 
 const CARD = { left: M, top: 442, width: 888, height: 480 }
 const INNER = CARD.width - 72
@@ -62,14 +62,13 @@ export const S5: React.FC = () => {
   return (
     <AbsoluteFill>
       <DotField drift={frame * 1.4} />
-      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
       <BigTitle lines={[[{ t: '标题不超 20 字' }], [{ t: '描述不超 150 字', k: 'serif' }]]} top={132} left={M} size={88} start={2} />
 
       <Paper style={{ ...CARD, transform: `scale(${0.92 + enter * 0.08})` }}>
-        <Mono top={44} left={CARD.width - 138} opacity={0.36} size={22}>
+        <Mono top={46} right={36} opacity={0.36} size={22}>
           ≤ 20
         </Mono>
-        <div style={{ position: 'absolute', left: 40, top: 40, width: INNER - 130 }}>
+        <div style={{ position: 'absolute', left: 36, top: 40, width: INNER - 130 }}>
           <div style={{ opacity: 1 - outTitle }}>
             {LONG_TITLE.map((t, i) => (
               <Line
@@ -102,10 +101,10 @@ export const S5: React.FC = () => {
 
         <Rule left={36} top={190} width={INNER} color={INK} opacity={0.14} />
 
-        <Mono top={220} left={CARD.width - 158} opacity={0.36} size={22}>
+        <Mono top={222} right={36} opacity={0.36} size={22}>
           ≤ 150
         </Mono>
-        <div style={{ position: 'absolute', left: 40, top: 214, width: INNER - 150 }}>
+        <div style={{ position: 'absolute', left: 36, top: 214, width: INNER - 150 }}>
           <div style={{ opacity: 1 - outDesc }}>
             {LONG_DESC.map((t, i) => (
               <Line
@@ -139,7 +138,7 @@ export const S5: React.FC = () => {
 
         <Rule left={36} top={382} width={INNER} color={INK} opacity={0.14} />
 
-        <div style={{ position: 'absolute', left: 40, top: 398, width: INNER }}>
+        <div style={{ position: 'absolute', left: 36, top: 398, width: INNER }}>
           <div
             style={{
               position: 'absolute',
@@ -159,9 +158,6 @@ export const S5: React.FC = () => {
 
         {frame > 172 ? <Check size={44} left={CARD.width - 80} top={390} progress={check} /> : null}
       </Paper>
-
-      <CornerBrackets left={CARD.left} top={CARD.top} width={CARD.width} height={CARD.height} progress={cardIn(frame, 12, 34)} />
-      <Sparkle left={CARD.left + CARD.width - 60} top={CARD.top + 384} progress={stampSpring(frame, 178)} scale={0.8} />
     </AbsoluteFill>
   )
 }
