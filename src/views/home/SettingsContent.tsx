@@ -17,9 +17,11 @@ export const SET_NAV: Array<[string, string, string]> = [
   ['分组管理', 'folder', 'set-categories'],
 ]
 
+const EDITABLE_SECTIONS = new Set(['set-general', 'set-list', 'set-grid', 'set-ai'])
+
 export function HomeSettingsPage({
   setNavIdx,
-  scrollToSetSection,
+  setSetNavIdx,
   fireToast,
   setMainRef,
   theme,
@@ -29,13 +31,14 @@ export function HomeSettingsPage({
   setScreen
 }: Pick<HomeNavigationBindings, 'view' | 'setScreen'> & {
   setNavIdx: number
-  scrollToSetSection: (idx: number) => void
+  setSetNavIdx: (idx: number) => void
   fireToast: HomeToastHandler
   setMainRef: React.RefObject<HTMLDivElement | null>
   theme: Theme
   themePref: ThemePref
   applyThemePref: (pref: ThemePref) => void
 }) {
+  const sectionId = SET_NAV[setNavIdx]?.[2] ?? SET_NAV[0][2]
   return (
     <div className="settings">
           <nav className="set-nav">
@@ -43,7 +46,11 @@ export function HomeSettingsPage({
               <button
                 key={label}
                 className={i === setNavIdx ? 'on' : ''}
-                onClick={() => scrollToSetSection(i)}
+                onClick={() => {
+                  setSetNavIdx(i)
+                  const main = setMainRef.current
+                  if (main) main.scrollTop = 0
+                }}
               >
                 <Ico name={ic} />
                 {label}
@@ -57,6 +64,7 @@ export function HomeSettingsPage({
           <div className="set-main" ref={setMainRef}>
             <div className="set-wrap">
               <SettingsContent
+                sectionId={sectionId}
                 theme={theme}
                 themePref={themePref}
                 view={view}
@@ -88,6 +96,7 @@ export function SettingsGroups({ onGoToGroups }: { onGoToGroups?: () => void }) 
 }
 
 export function SettingsContent({
+  sectionId,
   theme,
   themePref,
   view,
@@ -95,6 +104,7 @@ export function SettingsContent({
   onToast,
   onGoToGroups,
 }: {
+  sectionId: string
   theme: Theme
   themePref: ThemePref
   view: ViewMode
@@ -103,15 +113,18 @@ export function SettingsContent({
   onGoToGroups?: () => void
 }) {
   const readOnly = useBookmarkStore(state => state.isReadOnly)
+  const body = (() => {
+    if (sectionId === 'set-general') return <SettingsGeneral themePref={themePref} onThemeChange={onThemeChange} />
+    if (sectionId === 'set-list') return <SettingsDisplay section="list" />
+    if (sectionId === 'set-grid') return <SettingsDisplay section="grid" />
+    if (sectionId === 'set-ai') return <SettingsAI />
+    if (sectionId === 'set-data') return <SettingsData onToast={onToast} />
+    return <SettingsGroups onGoToGroups={onGoToGroups} />
+  })()
+  if (!EDITABLE_SECTIONS.has(sectionId)) return body
   return (
-    <>
-      <fieldset className="set-editable-sections" disabled={readOnly}>
-        <SettingsGeneral themePref={themePref} onThemeChange={onThemeChange} />
-        <SettingsDisplay />
-        <SettingsAI />
-      </fieldset>
-      <SettingsData onToast={onToast} />
-      <SettingsGroups onGoToGroups={onGoToGroups} />
-    </>
+    <fieldset className="set-editable-sections" disabled={readOnly}>
+      {body}
+    </fieldset>
   )
 }

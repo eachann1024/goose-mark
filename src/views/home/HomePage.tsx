@@ -34,7 +34,6 @@ import { useHomeScrollSpy } from './useHomeScrollSpy'
 import { useHomeKeyboard } from './useHomeKeyboard'
 import { useHomeLifecycle, useHomeDetachedWindow, useHomeStorageSync, useHomeFeatures } from './homeHostLifecycle'
 import { useHomePluginEnter } from './useHomePluginEnter'
-import { useHomeSettingsNavigation } from './useHomeSettingsNavigation'
 import { HomeHeader } from './HomeHeader'
 import { HomeTabMenu } from './HomeTabMenu'
 import { HomeTemplatePage } from './HomeTemplatePage'
@@ -142,8 +141,6 @@ export default function HomePage() {
   const centerSidebar = useCallback(() => setSidebarCenterSignal((n) => n + 1), [])
   const [setNavIdx, setSetNavIdx] = useState(0)
   const setMainRef = useRef<HTMLDivElement>(null)
-  const isSetScrollingRef = useRef(false)
-  const setScrollTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [ctx, setCtx] = useState<CtxState>({ open: false, x: 0, y: 0 })
   const [ctxMode, setCtxMode] = useState<CtxMode>('menu')
   // 当前被右键点击的书签项（用于右键菜单操作）
@@ -438,7 +435,6 @@ export default function HomePage() {
 
   useHomeLifecycle({
     toastTimer,
-    setScrollTimeout,
     smoothRafRef
   })
 
@@ -514,15 +510,6 @@ export default function HomePage() {
 
   useHomeFeatures({
     syncFeatures
-  })
-
-  const { scrollToSetSection } = useHomeSettingsNavigation({
-
-    screen,
-    setMainRef,
-    isSetScrollingRef,
-    setSetNavIdx,
-    setScrollTimeout
   })
 
   // 当前选中书签（供右键「复制」Toast 副标题展示书签名，对齐设计稿）
@@ -672,7 +659,7 @@ export default function HomePage() {
         {/* ---------- Settings ---------- */}
         <HomeSettingsPage
             setNavIdx={setNavIdx}
-            scrollToSetSection={scrollToSetSection}
+            setSetNavIdx={setSetNavIdx}
             fireToast={fireToast}
             setMainRef={setMainRef}
             theme={theme}

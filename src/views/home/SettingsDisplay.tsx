@@ -2,7 +2,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { Ico } from './icon'
 import { Seg } from './SettingsControls'
 
-export function SettingsDisplay() {
+export function SettingsDisplay({ section }: { section: 'list' | 'grid' }) {
   const gridColumns = useSettingsStore((s) => s.gridColumns)
   const setGridColumns = useSettingsStore((s) => s.setGridColumns)
   const gridIconSize = useSettingsStore((s) => s.gridIconSize)
@@ -16,8 +16,33 @@ export function SettingsDisplay() {
   const cols = String(gridColumns)
   const iconSizeSeg: '小' | '中' | '大' = gridIconSize === 'small' ? '小' : gridIconSize === 'large' ? '大' : '中'
 
+  if (section === 'grid') {
+    return (
+      <div className="set-section" id="set-grid">
+        <h2><Ico name="layout-grid" />网格设置</h2>
+        <div className="set-card">
+          <div className="set-row">
+            <div><div className="rt">网格列数</div><div className="rd">网格视图每行显示的书签数量</div></div>
+            <Seg
+              opts={['2', '3', '4', '5']}
+              value={cols}
+              onChange={(v) => setGridColumns(Number(v))}
+            />
+          </div>
+          <div className="set-row">
+            <div><div className="rt">图标大小</div><div className="rd">宫格卡片中书签图标的尺寸</div></div>
+            <Seg
+              opts={['小', '中', '大']}
+              value={iconSizeSeg}
+              onChange={(v) => setGridIconSize(v === '小' ? 'small' : v === '大' ? 'large' : 'medium')}
+            />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <>
       <div className="set-section" id="set-list">
         <h2><Ico name="list" />列表设置</h2>
         <div className="set-card">
@@ -44,28 +69,5 @@ export function SettingsDisplay() {
           </div>
         </div>
       </div>
-
-      <div className="set-section" id="set-grid">
-        <h2><Ico name="layout-grid" />网格设置</h2>
-        <div className="set-card">
-          <div className="set-row">
-            <div><div className="rt">网格列数</div><div className="rd">网格视图每行显示的书签数量</div></div>
-            <Seg
-              opts={['2', '3', '4', '5']}
-              value={cols}
-              onChange={(v) => setGridColumns(Number(v))}
-            />
-          </div>
-          <div className="set-row">
-            <div><div className="rt">图标大小</div><div className="rd">宫格卡片中书签图标的尺寸</div></div>
-            <Seg
-              opts={['小', '中', '大']}
-              value={iconSizeSeg}
-              onChange={(v) => setGridIconSize(v === '小' ? 'small' : v === '大' ? 'large' : 'medium')}
-            />
-          </div>
-        </div>
-      </div>
-    </>
   )
 }
