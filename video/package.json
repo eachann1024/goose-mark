@@ -8,7 +8,10 @@
     "halftone": "node scripts/make-halftone.mjs",
     "audio": "node scripts/make-audio.mjs",
     "render": "remotion render src/index.ts GooseAI out/goose-ai-raw.mp4 --crf=18 --codec=h264 --pixel-format=yuv420p --x264-preset=slow --concurrency=6 && ffmpeg -y -v error -i out/goose-ai-raw.mp4 -c copy -movflags +faststart out/goose-ai.mp4",
-    "build": "npm run halftone && npm run audio && npm run render"
+    "build": "npm run halftone && npm run audio && npm run render",
+    "pixel:audio": "node scripts/make-pixel-audio.mjs",
+    "pixel:render": "remotion render src/index.ts GooseAIPixel out/goose-ai-pixel-raw.mp4 --crf=18 --codec=h264 --pixel-format=yuv420p --x264-preset=slow --concurrency=6 && ffmpeg -y -v error -i out/goose-ai-pixel-raw.mp4 -c:v copy -c:a aac -b:a 192k -movflags +faststart out/goose-ai-pixel.mp4",
+    "pixel:qa": "node scripts/pixel-qa.mjs"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.536",
