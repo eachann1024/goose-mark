@@ -1,0 +1,25 @@
+{
+  "name": "goose-mark-ai-video",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio",
+    "halftone": "node scripts/make-halftone.mjs",
+    "audio": "node scripts/make-audio.mjs",
+    "render": "remotion render src/index.ts GooseAI out/goose-ai-raw.mp4 --crf=18 --codec=h264 --pixel-format=yuv420p --x264-preset=slow --concurrency=6 && ffmpeg -y -v error -i out/goose-ai-raw.mp4 -c copy -movflags +faststart out/goose-ai.mp4",
+    "build": "npm run halftone && npm run audio && npm run render"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.536",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "remotion": "^4.0.536"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "sharp": "^0.35.5",
+    "typescript": "^7.0.2"
+  }
+}
