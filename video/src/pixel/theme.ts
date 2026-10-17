@@ -25,9 +25,9 @@ const CJK = '"PingFang SC","Hiragino Sans GB","Heiti SC",sans-serif'
 const MONO = '"Menlo","SF Mono","Courier New",monospace'
 
 export const FONTS: Record<Role, { family: string; weight: number; size: number; spacing: number; step: number; dot: number }> = {
-  H: { family: CJK, weight: 600, size: 100, spacing: 6, step: 6, dot: 4.6 },
-  B: { family: CJK, weight: 500, size: 48, spacing: 3, step: 4, dot: 3.2 },
-  U: { family: MONO, weight: 700, size: 44, spacing: 0, step: 4, dot: 3.2 },
+  H: { family: CJK, weight: 600, size: 100, spacing: 6, step: 4, dot: 4 },
+  B: { family: CJK, weight: 500, size: 48, spacing: 3, step: 3, dot: 3 },
+  U: { family: MONO, weight: 700, size: 44, spacing: 0, step: 3, dot: 3 },
   N: { family: MONO, weight: 700, size: 260, spacing: -4, step: 8, dot: 6.4 },
 }
 

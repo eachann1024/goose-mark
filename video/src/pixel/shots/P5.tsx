@@ -94,7 +94,7 @@ export const drawP5 = (p: Painter, f: number) => {
         const x = lerp(P.ax[i], P.bx[i], t)
         const y = lerp(P.ay[i], P.by[i], t)
         if (u >= 192 && !unwipe(c0, c1 + 300, out)(x)) continue
-        p.dot(x, y, 3.2, INK)
+        p.dot(x, y, 3, INK)
       }
     }
   }
