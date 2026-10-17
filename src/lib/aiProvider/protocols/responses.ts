@@ -1,6 +1,6 @@
 import type { AIStructuredOutput } from '../types'
 import { type AISettingsLike, type AIMessage } from '../types'
-import { getOpenAIResponsesUrl, resolveCustomBaseURL } from '../config'
+import { getOpenAIResponsesUrl, getProtocolLabel, resolveCustomBaseURL } from '../config'
 import { readErrorMessage, getAuthFailedMessage } from '../errors'
 import { normalizeMessages, extractStructuredText, isRecord, extractTextFromJsonPayload } from '../text'
 import { runOpenAIChatCompletionsText } from './chat-completions'
@@ -108,7 +108,7 @@ export async function runOfficialOpenAIResponsesText(
     .filter((message) => message.role === 'user' || message.role === 'assistant')
     .map((message) => ({ role: message.role, content: message.content }))
 
-  const baseURL = resolveCustomBaseURL('openai-responses', settings.customBaseURL)
+  const baseURL = resolveCustomBaseURL(settings.protocol, settings.customBaseURL)
   const official = isOfficialOpenAIBaseURL(baseURL)
   const textFormat = buildResponsesTextFormat(output)
 
@@ -168,7 +168,7 @@ export async function runOfficialOpenAIResponsesText(
       if (!response.ok) {
         const detail = await readErrorMessage(response)
         if (response.status === 401 || response.status === 403) {
-          throw new Error(getAuthFailedMessage('OpenAI 官方 Responses API'))
+          throw new Error(getAuthFailedMessage(getProtocolLabel(settings.protocol)))
         }
         lastError = new Error(detail || `调用 OpenAI Responses API 失败（${response.status}）`)
         continue

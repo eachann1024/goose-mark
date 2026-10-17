@@ -1,4 +1,4 @@
-import { type AIProtocol } from '@/constants/ai'
+import { isAIProtocol, resolveRequestProtocol, type AIProtocol } from '@/constants/ai'
 import { type AISettingsLike, type AIMessage, type RunAITextOptions } from './types'
 import { resolveCustomBaseURL, getSelectedCustomModelId } from './config'
 import { AIProviderRequestError, isInvalidJsonResponseError, normalizeStructuredOutputError } from './errors'
@@ -29,12 +29,11 @@ export async function runCustomText(
     })
   }
 
-  const protocol: AIProtocol =
-    settings.protocol === 'anthropic' ||
-    settings.protocol === 'openai-compatible' ||
-    settings.protocol === 'openai-responses'
-      ? settings.protocol
-      : 'openai-responses'
+  const storedProtocol: AIProtocol = isAIProtocol(settings.protocol)
+    ? settings.protocol
+    : 'openai-responses'
+  const protocol = resolveRequestProtocol(storedProtocol, selectedModelId)
+  const baseURL = resolveCustomBaseURL(storedProtocol, settings.customBaseURL)
   const { generateText, Output, jsonSchema } = await import('ai')
   const requestMessages = appendStructuredOutputInstruction(messages, options.output)
   const normalizedMessages = normalizeMessages(requestMessages)
@@ -51,18 +50,18 @@ export async function runCustomText(
   try {
     const model = protocol === 'openai-responses'
       ? (await import('@ai-sdk/openai')).createOpenAI({
-          baseURL: resolveCustomBaseURL(protocol, settings.customBaseURL),
+          baseURL,
           apiKey: settings.customApiKey.trim(),
-          name: 'openai.responses'
+          name: storedProtocol === 'deepseek' ? 'deepseek.responses' : 'openai.responses'
         }).responses(selectedModelId)
       : protocol === 'openai-compatible'
         ? (await import('@ai-sdk/openai-compatible')).createOpenAICompatible({
-            baseURL: resolveCustomBaseURL(protocol, settings.customBaseURL),
+            baseURL,
             apiKey: settings.customApiKey.trim(),
-            name: 'openai.compatible'
+            name: storedProtocol === 'deepseek' ? 'deepseek.chat' : 'openai.compatible'
           }).chatModel(selectedModelId)
         : (await import('@ai-sdk/anthropic')).createAnthropic({
-            baseURL: resolveCustomBaseURL(protocol, settings.customBaseURL),
+            baseURL,
             apiKey: settings.customApiKey.trim(),
             name: 'anthropic.official',
             headers: {

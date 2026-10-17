@@ -1,4 +1,4 @@
-import { DEFAULT_AI_MODEL, DEFAULT_ANTHROPIC_MODEL, getProtocolMeta, type AIProtocol } from '@/constants/ai'
+import { getProtocolMeta, type AIProtocol } from '@/constants/ai'
 import { type AIProviderMode, type AIModelOption, type AISettingsLike } from './types'
 
 export const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1'
@@ -16,7 +16,7 @@ export function getOpenAIResponsesUrl(baseURL: string) {
 }
 
 export function getDefaultBaseURL(protocol: AIProtocol = 'openai-responses') {
-  return protocol === 'anthropic' ? DEFAULT_ANTHROPIC_BASE_URL : DEFAULT_OPENAI_BASE_URL
+  return getProtocolMeta(protocol).baseURL
 }
 
 /** 解析用户自定义 Base URL，空值回落到协议官方默认 */
@@ -29,10 +29,11 @@ export function resolveCustomBaseURL(
 }
 
 export function getDefaultModelId(protocol: AIProtocol = 'openai-responses') {
-  return protocol === 'anthropic' ? DEFAULT_ANTHROPIC_MODEL : DEFAULT_AI_MODEL
+  return getProtocolMeta(protocol).defaultModel
 }
 
 export function getProtocolLabel(protocol: AIProtocol) {
+  if (protocol === 'deepseek') return 'DeepSeek'
   if (protocol === 'anthropic') return 'Anthropic 原生接口'
   if (protocol === 'openai-compatible') return 'OpenAI 兼容接口'
   return 'OpenAI Responses API'

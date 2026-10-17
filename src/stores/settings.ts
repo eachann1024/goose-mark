@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { AIProtocol } from '@/constants/ai'
-import { DEFAULT_AI_MODEL, isAIProtocol, resolveProtocolByBaseURL } from '@/constants/ai'
+import { DEFAULT_AI_MODEL, isAIProtocol, isDeepSeekBaseURL, resolveProtocolByBaseURL } from '@/constants/ai'
 import type { AIModelOption, AISettingsLike } from '@/lib/aiProvider'
 import {
   getDefaultAISettings,
@@ -422,6 +422,13 @@ export const normalizePersistedSettings = (state: Partial<SettingsState> | null 
     patch.aiProtocol = resolveProtocolByBaseURL(
       typeof patch.aiCustomBaseURL === 'string' ? patch.aiCustomBaseURL : ''
     )
+  }
+  if (
+    patch.aiProtocol !== 'deepseek'
+    && typeof patch.aiCustomBaseURL === 'string'
+    && isDeepSeekBaseURL(patch.aiCustomBaseURL)
+  ) {
+    patch.aiProtocol = 'deepseek'
   }
   const protocol = patch.aiProtocol ?? 'openai-responses'
   const defaultBaseURL = getDefaultBaseURL(protocol)
