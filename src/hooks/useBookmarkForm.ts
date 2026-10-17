@@ -4,12 +4,9 @@ import { useUIManager } from './useUIManager';
 import { useFormView } from './bookmark-form/useFormView';
 import { useFormSaveInputs, useFormSave } from './bookmark-form/useFormSave';
 import { useFormEntry } from './bookmark-form/useFormEntry';
-import { useFormMetadata } from './bookmark-form/useFormMetadata';
 import { useFormText } from './bookmark-form/useFormText';
-import { useFormCategory } from './bookmark-form/useFormCategory';
 import { useFormUrlFetch } from './bookmark-form/useFormUrlFetch';
 import { useFormEffects } from './bookmark-form/useFormEffects';
-import { checkAiAvailable } from './bookmark-form/metadata';
 
 /** 新建/编辑表单编排。状态、请求代际与各职责控制器均保持单一归属。 */
 export function useBookmarkForm() {
@@ -27,11 +24,6 @@ export function useBookmarkForm() {
     iconLoading: s.iconLoading,
     iconFetchFailed: s.iconFetchFailed,
     iconFetchPhase: s.iconFetchPhase,
-    isGenerating: s.isGenerating,
-    isSuggestingCategory: s.isSuggestingCategory,
-    aiError: s.aiError,
-    categorySuggestion: s.categorySuggestion,
-    originalBeforeAI: s.originalBeforeAI,
     originalUrl: s.originalUrl,
     lastFetchedUrl: s.lastFetchedUrl,
     isTitleDirty: s.isTitleDirty,
@@ -50,10 +42,6 @@ export function useBookmarkForm() {
     draftTemplateLabel,
     needsBackgroundSave,
     saveButtonLabel,
-    aiEnabled,
-    canUseAi,
-    aiUnavailableReason,
-    hasAIGenerated,
     selectedLocationsLabel
   } = useFormView({
     form
@@ -70,15 +58,6 @@ export function useBookmarkForm() {
     set
   });
   const {
-    askAI,
-    runAutoPolishAfterFetch
-  } = useFormMetadata({
-    set,
-    patchDraft
-  });
-  const {
-    undoTitle,
-    undoDesc,
     onTitleInput,
     takeOverTitle,
     applyTitleSuggestion,
@@ -87,14 +66,6 @@ export function useBookmarkForm() {
   } = useFormText({
     set,
     patchDraft
-  });
-  const {
-    applyCategorySuggestion,
-    askCategorySuggestion,
-    dismissCategorySuggestion
-  } = useFormCategory({
-    set,
-    showToast
   });
   const {
     requestDelete,
@@ -110,8 +81,7 @@ export function useBookmarkForm() {
   } = useFormUrlFetch({
     set,
     patchDraft,
-    showToast,
-    runAutoPolishAfterFetch
+    showToast
   });
   useFormEffects({
     form,
@@ -134,30 +104,18 @@ export function useBookmarkForm() {
     draftTemplateLabel,
     needsBackgroundSave,
     saveButtonLabel,
-    aiEnabled,
-    canUseAi,
-    aiUnavailableReason,
-    hasAIGenerated,
     openAdd,
     openEdit,
     handleSave,
     runUrlFetch,
-    askAI,
-    undoTitle,
-    undoDesc,
     onTitleInput,
     onDescInput,
     takeOverTitle,
     takeOverDesc,
     applyTitleSuggestion,
-    askCategorySuggestion,
-    applyCategorySuggestion,
-    dismissCategorySuggestion,
-    requestDelete,
-    checkAiAvailable
+    requestDelete
   };
 }
-export type { CategorySuggestionState } from "./bookmark-form/state";
 export { useBookmarkFormStore } from "./bookmark-form/state";
 export { isValidUrlInput } from "./bookmark-form/icons";
 export { enqueueMetadataHydration } from "./bookmark-form/hydration";

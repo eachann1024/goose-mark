@@ -1,5 +1,10 @@
 import { type AIProtocol } from '@/constants/ai'
-import type { AIStructuredOutput } from '@/constants/aiPrompts'
+
+export type AIStructuredOutput = {
+  name: string
+  description: string
+  schema: Record<string, unknown>
+}
 
 export type AIProviderMode = 'utools' | 'custom'
 

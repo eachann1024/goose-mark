@@ -8,7 +8,7 @@ import { type HomeGroup } from './viewModel'
 import { type SearchSurface } from './homeRuntime'
 import { type Screen } from './homeTypes'
 import { SortableTab } from './BookmarkDragParts'
-import { type HomeAggressivePanelOpener, type HomeSearchBindings } from './homeInteractionTypes'
+import { type HomeSearchBindings } from './homeInteractionTypes'
 import type { SensorDescriptor, SensorOptions } from '@dnd-kit/core'
 
 export function HomeHeader({
@@ -38,9 +38,6 @@ export function HomeHeader({
   headerSearchRef,
   searchVal,
   applySearchVal,
-  aiAggressiveSaveEnabled,
-  aiEnabled,
-  openAggressiveSavePanel,
   openNewBookmarkForm,
   avatarRef,
   paOpen,
@@ -68,9 +65,6 @@ export function HomeHeader({
   startTabAdd: () => void
   searchSurface: SearchSurface
   headerSearchRef: React.RefObject<HTMLInputElement | null>
-  aiAggressiveSaveEnabled: boolean
-  aiEnabled: boolean
-  openAggressiveSavePanel: HomeAggressivePanelOpener
   openNewBookmarkForm: () => void
   avatarRef: React.RefObject<HTMLButtonElement | null>
   paOpen: boolean
@@ -150,43 +144,17 @@ export function HomeHeader({
               )}
             </div>
           )}
-          {/* 方案 A：AI 保存开启时主操作独占胶囊；收集/设置仅图标
-              InstantTooltip：0 延迟 + portal，顶栏优先向下，不够再自动翻面 */}
           <div className="header-actions">
-            {aiAggressiveSaveEnabled && aiEnabled ? (
-              <>
-                <InstantTooltip label="AI 快速保存：粘贴网址自动归类">
-                  <button
-                    type="button"
-                    className="collect-btn ag-collect-btn"
-                    onClick={() => openAggressiveSavePanel()}
-                  >
-                    <Ico name="sparkles" />
-                    AI 快速保存
-                  </button>
-                </InstantTooltip>
-                <InstantTooltip label="手动收集">
-                  <button
-                    type="button"
-                    className="header-icon-btn"
-                    onClick={openNewBookmarkForm}
-                  >
-                    <Ico name="plus" />
-                  </button>
-                </InstantTooltip>
-              </>
-            ) : (
-              <InstantTooltip label="手动填写网址与分组">
-                <button
-                  type="button"
-                  className="collect-btn"
-                  onClick={openNewBookmarkForm}
-                >
-                  <Ico name="plus" />
-                  收集
-                </button>
-              </InstantTooltip>
-            )}
+            <InstantTooltip label="手动填写网址与分组">
+              <button
+                type="button"
+                className="collect-btn"
+                onClick={openNewBookmarkForm}
+              >
+                <Ico name="plus" />
+                收集
+              </button>
+            </InstantTooltip>
             <InstantTooltip label="设置">
               <button
                 type="button"

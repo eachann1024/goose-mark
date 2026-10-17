@@ -67,7 +67,6 @@ export function useFormSave({
     });
   }, [set, showToast]);
   const handleSave = useCallback(async (options?: {
-    forceAi?: boolean;
     background?: boolean;
   }) => {
     const state = useBookmarkFormStore.getState();
@@ -75,8 +74,7 @@ export function useFormSave({
       draft,
       editingId,
       previewIcon,
-      iconLoading,
-      isGenerating
+      iconLoading
     } = state;
     set({
       formError: ''
@@ -134,13 +132,12 @@ export function useFormSave({
           icon: iconToSave
         }, locationsToSave);
         if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created);
-        const shouldHydrateInBackground = !!options?.forceAi || !!options?.background || !titleToSave || !descToSave || !previewIcon || iconLoading || isGenerating;
+        const shouldHydrateInBackground = !!options?.background || !titleToSave || !descToSave || !previewIcon || iconLoading;
         if (shouldHydrateInBackground) {
           enqueueMetadataHydration(created.id, {
             url: urlToSave,
             initialTitle: titleToSave,
-            initialDesc: descToSave,
-            forceAi: options?.forceAi
+            initialDesc: descToSave
           });
         }
         const firstLoc = locationsToSave[0];

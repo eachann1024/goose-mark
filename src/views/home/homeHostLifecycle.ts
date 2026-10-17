@@ -8,31 +8,15 @@ import { UTOOLS_PLUGIN_ENTER_EVENT, UTOOLS_PLUGIN_OUT_EVENT, isDetachedUToolsWin
 
 export function useHomeLifecycle({
   toastTimer,
-  aggressiveSaveMountedRef,
-  aggressiveSaveSuccessTimersRef,
-  aggressiveSaveRevealTimersRef,
   setScrollTimeout,
   smoothRafRef
 }: {
   toastTimer: React.RefObject<number | undefined>
-  aggressiveSaveMountedRef: React.RefObject<boolean>
-  aggressiveSaveSuccessTimersRef: React.RefObject<Map<number, number>>
-  aggressiveSaveRevealTimersRef: React.RefObject<Set<number>>
   setScrollTimeout: React.RefObject<ReturnType<typeof setTimeout> | null>
   smoothRafRef: React.RefObject<number | null>
 }) {
 
   useEffect(() => () => window.clearTimeout(toastTimer.current), [])
-  useEffect(() => {
-    aggressiveSaveMountedRef.current = true
-    return () => {
-      aggressiveSaveMountedRef.current = false
-      aggressiveSaveSuccessTimersRef.current.forEach((timer) => window.clearTimeout(timer))
-      aggressiveSaveSuccessTimersRef.current.clear()
-      aggressiveSaveRevealTimersRef.current.forEach((timer) => window.clearTimeout(timer))
-      aggressiveSaveRevealTimersRef.current.clear()
-    }
-  }, [])
   useEffect(() => () => {
     if (setScrollTimeout.current) clearTimeout(setScrollTimeout.current)
     if (smoothRafRef.current != null) cancelAnimationFrame(smoothRafRef.current)

@@ -1,4 +1,4 @@
-export { type AIProviderMode, type AIProtocol, type AIModelOption, type AISettingsLike, type AIMessage, type RunAITextOptions } from './aiProvider/types'
+export { type AIProviderMode, type AIProtocol, type AIStructuredOutput, type AIModelOption, type AISettingsLike, type AIMessage, type RunAITextOptions } from './aiProvider/types'
 export { AIProviderRequestError } from './aiProvider/errors'
 export { getDefaultBaseURL, resolveCustomBaseURL, getDefaultModelId, getAIProviderMode, getStoredAIModelOptions, getDefaultAISettings, getProtocolDefaults } from './aiProvider/config'
 export { normalizeAIModelOptions, fetchCustomAIModels } from './aiProvider/models'

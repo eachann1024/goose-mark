@@ -2,13 +2,11 @@ import type * as React from 'react'
 import type { Bookmark, BookmarkLocation } from '@/types/bookmark'
 import type { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import type { HomeGroup, HomeItem } from './viewModel'
-import { type Screen, type ViewMode, type ToastTone, type ToastAction } from './homeTypes'
+import { type Screen, type ViewMode, type ToastTone } from './homeTypes'
 import { type GroupPanelState, type GroupPanelMap } from './homeContinuity'
 import type { SearchViewMode } from '@/stores/settings'
 
-export type HomeToastHandler = (title?: string, options?: { description?: string; jump?: BookmarkLocation | null; duration?: number; tone?: ToastTone; action?: ToastAction; }) => void
-
-export type HomeAggressivePanelOpener = (url?: string, options?: { autoStart?: boolean; clearFailure?: boolean; }) => void
+export type HomeToastHandler = (title?: string, options?: { description?: string; jump?: BookmarkLocation | null; duration?: number; tone?: ToastTone }) => void
 
 export type HomePanelMemoryUpdater = (groupId: string | null | undefined, patch: Partial<GroupPanelState>) => void
 

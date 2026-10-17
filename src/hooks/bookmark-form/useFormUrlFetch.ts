@@ -1,4 +1,4 @@
-import type { FormSet, PatchDraft, ShowToast, MetadataAutoPolish } from './controllerTypes';
+import type { FormSet, PatchDraft, ShowToast } from './controllerTypes';
 import { useCallback } from 'react';
 import { URL_FETCH_IMMEDIATE_MS, formRequests, ICON_LOADING_WATCHDOG_MS, JINA_FALLBACK_TIMEOUT_MS } from './runtime';
 import { useBookmarkFormStore } from './state';
@@ -8,13 +8,11 @@ import { isLoginOrAccessWallText, fetchMetadataFromNetwork } from '@/services/me
 export function useFormUrlFetch({
   set,
   patchDraft,
-  showToast,
-  runAutoPolishAfterFetch
+  showToast
 }: {
   set: FormSet;
   patchDraft: PatchDraft;
   showToast: ShowToast;
-  runAutoPolishAfterFetch: MetadataAutoPolish;
 }) {
   // 手动触发抓取；debounceMs 默认 400（读取按钮/失焦/重试），粘贴后自动读取用 500ms 短防抖。
   const runUrlFetch = useCallback((debounceMs = URL_FETCH_IMMEDIATE_MS) => {
@@ -53,7 +51,6 @@ export function useFormUrlFetch({
     }, ICON_LOADING_WATCHDOG_MS);
     formRequests.urlFetchTimer = setTimeout(async () => {
       formRequests.urlFetchTimer = null;
-      let usedNetworkFallback = false;
       let titleUsable = false;
       let fetchSettled = false;
       try {
@@ -74,7 +71,6 @@ export function useFormUrlFetch({
           latest = useBookmarkFormStore.getState();
           if (thisRequestId !== formRequests.urlFetchRequestId || latest.draft.url !== val) return;
           if (fallback) {
-            usedNetworkFallback = true;
             if (!titleUsable && fallback.title && !isHostLikeTitle(fallback.title, val) && !isLoginOrAccessWallText(fallback.title)) {
               metaTitle = fallback.title;
               titleUsable = true;
@@ -125,7 +121,6 @@ export function useFormUrlFetch({
             });
           }
         }
-        fetchSettled = true;
       } catch {
         // 代际校验：旧会话的失败响应不覆盖新表单
         const latestOnCatch = useBookmarkFormStore.getState();
@@ -139,7 +134,6 @@ export function useFormUrlFetch({
           title: '获取网页信息失败：网络异常或站点拒绝访问，请手动填写标题和描述',
           variant: 'warning'
         });
-        fetchSettled = true;
       } finally {
         // iconLoading 只在请求仍有效时才关闭（已被新请求接管则不干扰）
         if (thisRequestId === formRequests.urlFetchRequestId) {
@@ -151,18 +145,10 @@ export function useFormUrlFetch({
             clearTimeout(formRequests.iconLoadingWatchdog);
             formRequests.iconLoadingWatchdog = null;
           }
-          // AI 仅整理已有页面线索，无内容时由元信息服务跳过。
-          if (fetchSettled) {
-            void runAutoPolishAfterFetch({
-              url: val,
-              forceNetworkFallback: usedNetworkFallback || !titleUsable,
-              fetchRequestId: thisRequestId
-            });
-          }
         }
       }
     }, debounceMs);
-  }, [runAutoPolishAfterFetch, set, patchDraft, showToast]);
+  }, [set, patchDraft, showToast]);
   return {
     runUrlFetch
   };

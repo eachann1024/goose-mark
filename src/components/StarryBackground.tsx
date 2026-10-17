@@ -13,7 +13,7 @@ const STAR_BASE_OPACITY_MIN = 0.1
 const STAR_BASE_OPACITY_MAX = 0.6
 const ROTATION_SPEED = 0.00001
 /** 星空底色：与深色模式默认背景一致，纯色实底，不用渐变 */
-const SKY_BASE_STYLE = { backgroundColor: '#262624' }
+const SKY_BASE_STYLE = { backgroundColor: '#090A0C' }
 
 interface Star {
   x: number

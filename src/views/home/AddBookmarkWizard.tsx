@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, type UIEvent } from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
-import { useSettingsStore } from '@/stores/settings'
 import {
   useBookmarkForm,
   useBookmarkFormStore,
@@ -38,11 +37,9 @@ export default function AddBookmarkWizard({
     iconFetchPhase,
     formError,
     isSaving,
-    isGenerating,
     editingId,
     originalUrl,
     lastFetchedUrl,
-    categorySuggestion,
     set,
     patchDraft,
     openAdd,
@@ -50,8 +47,6 @@ export default function AddBookmarkWizard({
     handleSave,
     runUrlFetch,
     requestDelete,
-    applyCategorySuggestion,
-    dismissCategorySuggestion,
     onTitleInput,
     onDescInput,
     isTitleDirty,
@@ -61,11 +56,7 @@ export default function AddBookmarkWizard({
     applyTitleSuggestion,
     takeOverTitle,
     takeOverDesc,
-    canUseAi,
   } = useBookmarkForm()
-
-  const aiFormAutoPolish = useSettingsStore((s) => s.aiFormAutoPolish)
-  const setAiFormAutoPolish = useSettingsStore((s) => s.setAiFormAutoPolish)
 
   // 以入口 editItem 为准（比 store.editingId 更稳：openEdit 异步生效前首帧不会误判新建）
   const isNewEntry = !editItem
@@ -159,8 +150,6 @@ export default function AddBookmarkWizard({
             iconFetchPhase={iconFetchPhase}
             titleFetching={titleFetching}
             descFetching={descFetching}
-            isGenerating={isGenerating}
-            categorySuggestion={categorySuggestion}
             patchDraft={patchDraft}
             onTitleInput={onTitleInput}
             onDescInput={onDescInput}
@@ -169,8 +158,6 @@ export default function AddBookmarkWizard({
             takeOverTitle={takeOverTitle}
             takeOverDesc={takeOverDesc}
             setLocations={(v: BookmarkLocation[]) => set({ draftLocations: v })}
-            applyCategorySuggestion={applyCategorySuggestion}
-            dismissCategorySuggestion={dismissCategorySuggestion}
             setUrl={setUrl}
             allowUniversal={draft.allowUniversal}
             isDraftTemplate={isDraftTemplate}
@@ -179,9 +166,6 @@ export default function AddBookmarkWizard({
             lastFetchedUrl={lastFetchedUrl}
             runUrlFetch={runUrlFetch}
             isNewEntry={isNewEntry}
-            canUseAi={canUseAi}
-            aiFormAutoPolish={aiFormAutoPolish}
-            onAiFormAutoPolishChange={setAiFormAutoPolish}
           />
 
           {formError && (
@@ -233,8 +217,6 @@ function ConfirmStep({
   iconFetchPhase,
   titleFetching,
   descFetching,
-  isGenerating,
-  categorySuggestion,
   patchDraft,
   onTitleInput,
   onDescInput,
@@ -243,8 +225,6 @@ function ConfirmStep({
   takeOverTitle,
   takeOverDesc,
   setLocations,
-  applyCategorySuggestion,
-  dismissCategorySuggestion,
   setUrl,
   allowUniversal,
   isDraftTemplate,
@@ -253,9 +233,6 @@ function ConfirmStep({
   lastFetchedUrl,
   runUrlFetch,
   isNewEntry,
-  canUseAi,
-  aiFormAutoPolish,
-  onAiFormAutoPolishChange,
 }: {
   draft: { title: string; desc: string; url: string }
   draftLocations: BookmarkLocation[]
@@ -265,13 +242,6 @@ function ConfirmStep({
   iconFetchPhase: 'idle' | 'loading' | 'success' | 'failed'
   titleFetching: boolean
   descFetching: boolean
-  isGenerating: boolean
-  categorySuggestion: {
-    groupName: string
-    subGroupName: string
-    reason: string
-    confidence: number
-  } | null
   patchDraft: (p: Partial<{ title: string; desc: string; url: string; allowUniversal: boolean }>) => void
   onTitleInput: () => void
   onDescInput: (v: string) => void
@@ -280,8 +250,6 @@ function ConfirmStep({
   takeOverTitle: () => void
   takeOverDesc: () => void
   setLocations: (v: BookmarkLocation[]) => void
-  applyCategorySuggestion: () => void
-  dismissCategorySuggestion: () => void
   setUrl: (v: string) => void
   allowUniversal: boolean
   isDraftTemplate: boolean
@@ -290,9 +258,6 @@ function ConfirmStep({
   lastFetchedUrl: string
   runUrlFetch: (debounceMs?: number) => void
   isNewEntry: boolean
-  canUseAi: boolean
-  aiFormAutoPolish: boolean
-  onAiFormAutoPolishChange: (value: boolean) => void
 }) {
   // 读取触发策略：打字不触发；粘贴后短防抖自动读；失焦时若链接有效且有未读取变更则自动读。
   const pasteArmedRef = useRef(false)
@@ -325,7 +290,6 @@ function ConfirmStep({
   const previewText = ((draft.title || draft.url) || 'ICON').trim().slice(0, 2).toUpperCase()
   const hasUrl = !!draft.url.trim()
   const hasTemplateToken = /\{[^}]+\}/.test(draft.url)
-  const showAiPolish = canUseAi && isNewEntry
 
   // 链接有效、与上次读取时不一致、且不是编辑模式下未改动的原始链接 → 有「待读取」变更
   const urlOutdated =
@@ -338,12 +302,11 @@ function ConfirmStep({
     if (!draft.url.trim()) return isEdit ? '粘贴或输入新链接后自动读取网页信息' : '粘贴或输入链接后自动读取标题、简介和图标'
     if (!isValidUrlInput(draft.url)) return '链接格式待确认'
     if (iconLoading) return '正在读取网页信息'
-    if (isGenerating) return 'AI 正在整理标题和简介'
     if (urlOutdated) return '链接已修改，失焦后自动更新网页信息'
     if (iconFetchPhase === 'success') return '已读取网页信息'
     if (iconFetchPhase === 'failed') return '未能读取网页信息，可手动填写'
     return '修改链接不会立即读取，失焦后自动更新'
-  }, [draft.url, iconFetchPhase, iconLoading, isGenerating, isEdit, urlOutdated])
+  }, [draft.url, iconFetchPhase, iconLoading, isEdit, urlOutdated])
 
   // 失焦时链接有效且有未读取变更 → 自动读一次；打字过程中绝不触发
   const handleUrlBlur = useCallback(() => {
@@ -362,7 +325,7 @@ function ConfirmStep({
       </div>
 
       <section className="gm-confirm-url">
-        <div className={`gm-url-big${iconLoading || isGenerating ? ' is-orbiting' : ''}${isGenerating ? ' is-orbiting-ai' : ''}`}>
+        <div className={`gm-url-big${iconLoading ? ' is-orbiting' : ''}`}>
           <Ico name="link" className="gm-url-icon" />
           <div className={`gm-url-field-wrap${hasUrl ? ' has-value' : ''}${hasTemplateToken ? ' has-token' : ''}`}>
             {/* 空值：伪占位，{q} 标蓝 */}
@@ -400,35 +363,12 @@ function ConfirmStep({
         <div className="gm-url-meta">
           <span className={`gm-url-state${iconFetchPhase === 'failed' && !urlOutdated ? ' warn' : urlOutdated && !iconLoading ? ' attention' : ''}`}>
             <Ico
-              name={iconLoading || isGenerating ? 'loader' : urlOutdated ? 'refresh-cw' : iconFetchPhase === 'failed' ? 'alert-circle' : 'check-circle'}
-              className={iconLoading || isGenerating ? 'spin' : ''}
+              name={iconLoading ? 'loader' : urlOutdated ? 'refresh-cw' : iconFetchPhase === 'failed' ? 'alert-circle' : 'check-circle'}
+              className={iconLoading ? 'spin' : ''}
             />
             {metadataStatus}
           </span>
         </div>
-        {showAiPolish && (
-          <div className={`gm-tpl-tip${aiFormAutoPolish ? ' on' : ''}`}>
-            <div className="gm-tpl-tip-body">
-              <div className="gm-tpl-tip-title">
-                <Ico name="sparkles" />
-                AI 清洗润色
-              </div>
-              <div className="gm-tpl-tip-desc">
-                读取网页信息后，自动清洗标题/简介并中文润色；必要时联网补全
-              </div>
-            </div>
-            <div className="gm-tpl-tip-switch">
-              <span className="gm-tpl-tip-switch-lbl">自动</span>
-              <div
-                className={`g-switch${aiFormAutoPolish ? ' on' : ''}`}
-                role="switch"
-                aria-checked={aiFormAutoPolish}
-                aria-label="AI 清洗润色"
-                onClick={() => onAiFormAutoPolishChange(!aiFormAutoPolish)}
-              />
-            </div>
-          </div>
-        )}
         {isDraftTemplate && (
           <div className={`gm-tpl-tip${allowUniversal ? ' on' : ''}`}>
             <div className="gm-tpl-tip-body">
@@ -535,26 +475,6 @@ function ConfirmStep({
         <span className="gm-cat-title">放到哪里</span>
         <span className="gm-cat-sub">默认放进一个文件夹</span>
       </div>
-
-      {categorySuggestion && (
-        <div className="gm-ai-suggest">
-          <Ico name="sparkles" />
-          <div className="gm-ai-suggest-meta">
-            <div className="gm-ai-suggest-name">
-              {categorySuggestion.groupName} / {categorySuggestion.subGroupName}
-            </div>
-            <div className="gm-ai-suggest-reason">{categorySuggestion.reason}</div>
-          </div>
-          <span className="gm-conf">{Math.round(categorySuggestion.confidence * 100)}%</span>
-          <button className="btn btn-ai sm" onClick={() => applyCategorySuggestion()}>
-            <Ico name="check" />
-            采纳
-          </button>
-          <button className="gm-ai-suggest-x" onClick={dismissCategorySuggestion} title="忽略">
-            <Ico name="x" />
-          </button>
-        </div>
-      )}
 
       <div className="gm-cat-select form-category-select">
         <CategoryMultiSelect inline value={draftLocations} onChange={setLocations} />

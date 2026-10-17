@@ -109,7 +109,7 @@ export function SettingsAI() {
         <div className="set-card set-card--ai">
           <div className="set-ai-body">
             <div className="set-row">
-              <div><div className="rt">AI 功能</div><div className="rd">{aiEnabled ? '收集时可自动整理标题、简介和分组' : '已关闭，收集走普通入口'}</div></div>
+              <div><div className="rt">AI 功能</div></div>
               <div
                 className={`g-switch${aiEnabled ? ' on' : ''}`}
                 role="switch"

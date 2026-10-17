@@ -1,19 +1,15 @@
 import type * as React from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
-import { useSettingsStore } from '@/stores/settings'
 import { Ico } from './icon'
-import { type ToastTone, type ToastAction } from './homeTypes'
+import { type ToastTone } from './homeTypes'
 import { type HomeNavigationBindings } from './homeInteractionTypes'
 
 export function HomeToast({
   toastTone,
   toastJump,
-  toastAction,
   toastKey,
-  openNewBookmarkForm,
   setToastOpen,
-  setAggressiveSaveAutoStart,
   setScreen,
   view,
   setActiveSubId,
@@ -23,33 +19,19 @@ export function HomeToast({
 }: Pick<HomeNavigationBindings, 'setScreen' | 'view' | 'setActiveSubId'> & {
   toastTone: ToastTone
   toastJump: BookmarkLocation | null
-  toastAction: ToastAction
   toastKey: number
-  openNewBookmarkForm: () => void
   setToastOpen: React.Dispatch<React.SetStateAction<boolean>>
-  setAggressiveSaveAutoStart: React.Dispatch<React.SetStateAction<boolean>>
   scrollToSection: (groupId: string, subId: string) => void
   toastTitle: string
   toastDesc: string
 }) {
   return (
     <div
-          className={`toast is-${toastTone}${toastJump || toastAction ? ' is-action' : ''}`}
+          className={`toast is-${toastTone}${toastJump ? ' is-action' : ''}`}
           key={`toast-${toastKey}`}
-          role={toastJump || toastAction ? 'button' : undefined}
-          tabIndex={toastJump || toastAction ? 0 : undefined}
+          role={toastJump ? 'button' : undefined}
+          tabIndex={toastJump ? 0 : undefined}
           onClick={() => {
-            if (toastAction === 'open-ai-save') {
-              if (!useSettingsStore.getState().aiEnabled) {
-                openNewBookmarkForm()
-                setToastOpen(false)
-                return
-              }
-              setAggressiveSaveAutoStart(false)
-              setScreen('ai-aggressive-save')
-              setToastOpen(false)
-              return
-            }
             if (!toastJump) return
             setScreen(view)
             setActiveSubId(toastJump.subGroupId)
@@ -60,7 +42,7 @@ export function HomeToast({
             setToastOpen(false)
           }}
           onKeyDown={(e) => {
-            if (!toastJump && !toastAction) return
+            if (!toastJump) return
             if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault()
               ;(e.currentTarget as HTMLDivElement).click()
@@ -73,7 +55,7 @@ export function HomeToast({
             {toastDesc ? (
               <div className="td">
                 {toastDesc}
-                {toastJump ? ' · 点击跳转' : toastAction === 'open-ai-save' ? ' · 点击查看并重试' : ''}
+                {toastJump ? ' · 点击跳转' : ''}
               </div>
             ) : null}
           </div>

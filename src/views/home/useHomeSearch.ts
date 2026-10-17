@@ -288,7 +288,7 @@ export function useHomeSubInputSync({
       const text = (e as CustomEvent<{ text: string }>).detail?.text ?? ''
       if (activeTemplateBookmarkRef.current) return
       const curScreen = screenRef.current
-      if (curScreen === 'add' || curScreen === 'ai-aggressive-save') return
+      if (curScreen === 'add') return
       if (curScreen === 'settings' || curScreen === 'trash' || curScreen === 'groups') {
         setScreenRef.current(viewRef.current)
       }

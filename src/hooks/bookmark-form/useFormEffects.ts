@@ -74,9 +74,6 @@ export function useFormEffects({
         iconFetchFailed: false,
         formError: '',
         isSaving: false,
-        isGenerating: false,
-        originalBeforeAI: null,
-        categorySuggestion: null,
         originalUrl: '',
         lastFetchedUrl: '',
         isTitleDirty: false,
@@ -91,9 +88,7 @@ export function useFormEffects({
         clearTimeout(formRequests.iconLoadingWatchdog);
         formRequests.iconLoadingWatchdog = null;
       }
-      // 关表单即作废所有在途的图标/AI 请求，防止慢响应写入下一次表单会话
       formRequests.urlFetchRequestId++;
-      formRequests.askAiRequestId++;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.showAdd]);

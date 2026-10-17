@@ -2,7 +2,7 @@ import type * as React from 'react'
 import { useCallback, useEffect, useRef } from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useUIManager } from '@/hooks/useUIManager'
-import { type ToastTone, type ToastAction } from './homeTypes'
+import { type ToastTone } from './homeTypes'
 import { type HomeToastHandler } from './homeInteractionTypes'
 
 export function useHomeToast({
@@ -11,7 +11,6 @@ export function useHomeToast({
   setToastDesc,
   setToastJump,
   setToastTone,
-  setToastAction,
   setToastKey,
   setToastOpen,
   toastTimer
@@ -21,7 +20,6 @@ export function useHomeToast({
   setToastDesc: React.Dispatch<React.SetStateAction<string>>
   setToastJump: React.Dispatch<React.SetStateAction<BookmarkLocation | null>>
   setToastTone: React.Dispatch<React.SetStateAction<ToastTone>>
-  setToastAction: React.Dispatch<React.SetStateAction<ToastAction>>
   setToastKey: React.Dispatch<React.SetStateAction<number>>
   setToastOpen: React.Dispatch<React.SetStateAction<boolean>>
   toastTimer: React.RefObject<number | undefined>
@@ -34,14 +32,12 @@ export function useHomeToast({
       jump?: BookmarkLocation | null
       duration?: number
       tone?: ToastTone
-      action?: ToastAction
     }) => void
   >(() => {})
 
   // ---- 交互：复制 → Toast ----
   // 用自增 toastKey 作为 Toast 元素 key：每次复制都强制重新挂载，CSS 飞入动画必从头重放
   // （比依赖 DOM reflow 更可靠，且符合 React 范式；连续复制也能看到动画重播）。
-  // options.jump：成功消息可点击，跳到对应分组/位置（AI 保存用）
   const fireToast = useCallback(
     (
       title?: string,
@@ -50,7 +46,6 @@ export function useHomeToast({
         jump?: BookmarkLocation | null
         duration?: number
         tone?: ToastTone
-        action?: ToastAction
       }
     ) => {
       closeCtx()
@@ -58,7 +53,6 @@ export function useHomeToast({
       setToastDesc(options?.description || '')
       setToastJump(options?.jump ?? null)
       setToastTone(options?.tone ?? 'success')
-      setToastAction(options?.action ?? null)
       setToastKey((k) => k + 1)
       setToastOpen(true)
       window.clearTimeout(toastTimer.current)

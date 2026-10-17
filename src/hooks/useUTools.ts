@@ -3,10 +3,8 @@ import { useCallback } from 'react'
 /** uTools 旧入口清理 / 进入文本解析 / 窗口控制。 */
 
 const FEATURE_PREFIX = 'bm_tpl:'
-/** 历史 AI 快捷保存特性码：仅用于清理，不再注册。 */
-const LEGACY_AI_QUICK_SAVE_FEATURE_CODE = 'ai_quick_save'
-const AI_AGGRESSIVE_SAVE_FEATURE_CODE = 'ai_aggressive_save'
-const DYNAMIC_ENTRY_CODES = new Set([LEGACY_AI_QUICK_SAVE_FEATURE_CODE, AI_AGGRESSIVE_SAVE_FEATURE_CODE, 'quick_save'])
+/** 历史 AI / 快捷保存特性码：仅用于清理，不再注册。 */
+const LEGACY_FEATURE_CODES = new Set(['ai_quick_save', 'ai_aggressive_save', 'quick_save'])
 
 // ponytail: 只保留主入口；旧动态书签/AI 入口在下次同步时移除，需要快捷键时走主界面操作。
 const syncFeaturesImpl = async () => {
@@ -14,7 +12,7 @@ const syncFeaturesImpl = async () => {
   if (!ut?.getFeatures || !ut?.removeFeature) return
   try {
     for (const feature of ut.getFeatures()) {
-      if (feature.code.startsWith(FEATURE_PREFIX) || DYNAMIC_ENTRY_CODES.has(feature.code)) ut.removeFeature(feature.code)
+      if (feature.code.startsWith(FEATURE_PREFIX) || LEGACY_FEATURE_CODES.has(feature.code)) ut.removeFeature(feature.code)
     }
   } catch (error) {
     console.warn('[uTools] 清理旧快捷入口失败:', error)
@@ -71,7 +69,6 @@ export function useUTools() {
   const setExpendHeight = useCallback((height: number) => setExpendHeightImpl(height), [])
 
   return {
-    AI_AGGRESSIVE_SAVE_FEATURE_CODE,
     FEATURE_PREFIX,
     syncFeatures,
     getEnterText,

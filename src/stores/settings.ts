@@ -121,10 +121,6 @@ export interface SettingsState {
   uiScale: UIScale
   /** 宫格模式：图标大小 */
   gridIconSize: GridIconSize
-  /** AI 保存：仅输网址，AI 自动生成元信息并归入合适分组（控制 uTools 特性是否注册） */
-  aiAggressiveSaveEnabled: boolean
-  /** 新建书签表单：URL 元信息抓取完成后自动 AI 清洗润色标题/简介（默认开启） */
-  aiFormAutoPolish: boolean
   /** uTools 主窗口展开高度（px），preload 启动时读取并 setExpendHeight 恢复 */
   windowHeight: number
   /** uTools 分离窗口最后一次停留位置，下次切换独立窗口时恢复 */
@@ -166,8 +162,6 @@ export interface SettingsActions {
   setListShowTags: (value: boolean) => void
   setUiScale: (value: UIScale) => void
   setGridIconSize: (value: GridIconSize) => void
-  setAiAggressiveSaveEnabled: (value: boolean) => void
-  setAiFormAutoPolish: (value: boolean) => void
   /** 设置 uTools 窗口高度：持久化 + 即时 setExpendHeight 应用 */
   setWindowHeight: (value: number) => void
   setDetachedWindowPosition: (value: DetachedWindowPosition | null) => void
@@ -215,8 +209,6 @@ export const createDefaultSettingsState = (): SettingsState => {
     listShowTags: true,
     uiScale: 'normal',
     gridIconSize: 'medium',
-    aiAggressiveSaveEnabled: true,
-    aiFormAutoPolish: true,
     windowHeight: WINDOW_HEIGHT_DEFAULT,
     detachedWindowPosition: null,
     useUtoolsBrowser: false
@@ -313,8 +305,6 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => {
       setListShowTags: (value) => set({ listShowTags: !!value }),
       setUiScale: (value) => set({ uiScale: (['large', 'normal', 'small'] as const).includes(value) ? value : 'normal' }),
       setGridIconSize: (value) => set({ gridIconSize: ['small', 'medium', 'large'].includes(value) ? value : 'medium' }),
-      setAiAggressiveSaveEnabled: (value) => set({ aiAggressiveSaveEnabled: !!value }),
-      setAiFormAutoPolish: (value) => set({ aiFormAutoPolish: !!value }),
       setWindowHeight: (value) => {
         const next = clampWindowHeight(value)
         set({ windowHeight: next })
@@ -365,8 +355,6 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   listShowTags: state.listShowTags,
   uiScale: state.uiScale,
   gridIconSize: state.gridIconSize,
-  aiAggressiveSaveEnabled: state.aiAggressiveSaveEnabled,
-  aiFormAutoPolish: state.aiFormAutoPolish,
   windowHeight: state.windowHeight,
   detachedWindowPosition: state.detachedWindowPosition,
   useUtoolsBrowser: state.useUtoolsBrowser
@@ -445,9 +433,8 @@ export const normalizePersistedSettings = (state: Partial<SettingsState> | null 
   if (!['large', 'normal', 'small'].includes(String(patch.uiScale))) patch.uiScale = 'normal'
   if (typeof patch.easterEggEnabled !== 'boolean') patch.easterEggEnabled = true
   if (!['starry', 'blackhole'].includes(String(patch.easterEggVariant))) patch.easterEggVariant = 'starry'
-  if (typeof patch.aiAggressiveSaveEnabled !== 'boolean') patch.aiAggressiveSaveEnabled = true
-  if (typeof patch.aiFormAutoPolish !== 'boolean') patch.aiFormAutoPolish = true
-  // 丢弃已移除的「AI 快捷保存」「打开后自动关闭窗口」字段
+  delete (patch as { aiAggressiveSaveEnabled?: unknown }).aiAggressiveSaveEnabled
+  delete (patch as { aiFormAutoPolish?: unknown }).aiFormAutoPolish
   delete (patch as { aiQuickSaveEnabled?: unknown }).aiQuickSaveEnabled
   delete (patch as { autoCloseWindow?: unknown }).autoCloseWindow
   if (

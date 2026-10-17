@@ -142,16 +142,6 @@ export interface UToolsPluginEnterPayload {
 
 
 
-export const aggressiveSaveHostOf = (url: string) => {
-  try {
-    return new URL(url).hostname.replace(/^www\./, '')
-  } catch {
-    return url.replace(/^https?:\/\//, '').split('/')[0] || url
-  }
-}
-
-
-
 export function resolveTheme(pref: ThemePref): Theme {
   if (pref === 'system') {
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'

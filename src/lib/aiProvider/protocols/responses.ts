@@ -1,4 +1,4 @@
-import type { AIStructuredOutput } from '@/constants/aiPrompts'
+import type { AIStructuredOutput } from '../types'
 import { type AISettingsLike, type AIMessage } from '../types'
 import { getOpenAIResponsesUrl, resolveCustomBaseURL } from '../config'
 import { readErrorMessage, getAuthFailedMessage } from '../errors'
