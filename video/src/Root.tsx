@@ -4,6 +4,8 @@ import { GooseAI } from './Video'
 import { FPS, H, TOTAL, W } from './theme'
 import { PixelVideo } from './pixel/PixelVideo'
 import { TOTAL as PIXEL_TOTAL } from './pixel/theme'
+import { GhibliVideo } from './ghibli/GhibliVideo'
+import { TOTAL as GHIBLI_TOTAL } from './ghibli/theme'
 
 export const RemotionRoot: React.FC = () => (
   <>
@@ -16,5 +18,6 @@ export const RemotionRoot: React.FC = () => (
       height={H}
     />
     <Composition id="GooseAIPixel" component={PixelVideo} durationInFrames={PIXEL_TOTAL} fps={60} width={1080} height={1080} />
+    <Composition id="GooseAIGhibli" component={GhibliVideo} durationInFrames={GHIBLI_TOTAL} fps={60} width={1080} height={1080} />
   </>
 )

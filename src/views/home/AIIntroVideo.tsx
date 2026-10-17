@@ -1,30 +1,37 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 
-const VIDEO_SRC = 'media/ai-create-pixel.mp4'
-const EASE = 'cubic-bezier(0.65, 0, 0.35, 1)'
-const DURATION = 720
+const VIDEO_SRC = 'media/ai-intro.mp4'
+const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'
+const DURATION = 650
 const VOLUME = 0.35
+const FULL_CLIP = 'inset(0px 0px 0px 0px round 0px)'
 
 type Phase = 'idle' | 'opening' | 'open' | 'closing'
+
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 /** 方块在视口中的位置 → 全屏层的 clip-path inset。 */
 function insetFor(el: HTMLElement | null): string {
   if (!el) return 'inset(50% 50% 50% 50%)'
   const r = el.getBoundingClientRect()
-  const w = window.innerWidth
-  const h = window.innerHeight
-  return `inset(${r.top}px ${w - r.right}px ${h - r.bottom}px ${r.left}px round 12px)`
+  return `inset(${r.top}px ${window.innerWidth - r.right}px ${window.innerHeight - r.bottom}px ${r.left}px round 12px)`
+}
+
+/** FLIP：视频终态矩形 → 方块矩形的反向变换。 */
+function invertFor(box: HTMLElement | null, video: HTMLElement): string {
+  if (!box) return 'none'
+  const b = box.getBoundingClientRect()
+  const f = video.getBoundingClientRect()
+  if (!f.width) return 'none'
+  return `translate(${b.left - f.left}px, ${b.top - f.top}px) scale(${b.width / f.width})`
 }
 
 /** 像素风播放键：阶梯三角形，与像素动画视觉一致。 */
 function PixelPlay() {
   return (
     <svg viewBox="0 0 10 12" width="30" height="36" shapeRendering="crispEdges" aria-hidden="true">
-      <path
-        fill="currentColor"
-        d="M0 0h2v1h2v1h2v1h2v1h2v4H8v1H6v1H4v1H2v1H0z"
-      />
+      <path fill="currentColor" d="M0 0h2v1h2v1h2v1h2v1h2v4H8v1H6v1H4v1H2v1H0z" />
     </svg>
   )
 }
@@ -40,15 +47,20 @@ export function AIIntroVideo() {
   const close = useCallback(() => {
     if (phaseRef.current !== 'open' && phaseRef.current !== 'opening') return
     const layer = layerRef.current
-    videoRef.current?.pause()
+    const video = videoRef.current
+    video?.pause()
     setPhase('closing')
-    if (!layer) { setPhase('idle'); return }
-    const from = getComputedStyle(layer).clipPath
+    if (!layer || !video || reducedMotion()) { setPhase('idle'); return }
+    const clipFrom = getComputedStyle(layer).clipPath
+    const tfFrom = getComputedStyle(video).transform
     layer.getAnimations().forEach((a) => a.cancel())
+    video.getAnimations().forEach((a) => a.cancel())
+    const opts: KeyframeAnimationOptions = { duration: DURATION, easing: EASE, fill: 'forwards' }
     const anim = layer.animate(
-      [{ clipPath: from && from !== 'none' ? from : 'inset(0px 0px 0px 0px round 0px)' }, { clipPath: insetFor(boxRef.current) }],
-      { duration: DURATION, easing: EASE, fill: 'forwards' }
+      [{ clipPath: clipFrom && clipFrom !== 'none' ? clipFrom : FULL_CLIP }, { clipPath: insetFor(boxRef.current) }],
+      opts
     )
+    video.animate([{ transform: tfFrom || 'none' }, { transform: invertFor(boxRef.current, video) }], opts)
     anim.onfinish = () => setPhase('idle')
   }, [])
 
@@ -57,24 +69,24 @@ export function AIIntroVideo() {
     setPhase('opening')
   }, [])
 
-  // 全屏层挂载后执行展开动画，结束后开始播放
-  useEffect(() => {
+  // 全屏层挂载后执行 FLIP 展开，结束后开始播放
+  useLayoutEffect(() => {
     if (phase !== 'opening') return
     const layer = layerRef.current
-    if (!layer) return
-    const anim = layer.animate(
-      [{ clipPath: insetFor(boxRef.current) }, { clipPath: 'inset(0px 0px 0px 0px round 0px)' }],
-      { duration: DURATION, easing: EASE, fill: 'forwards' }
-    )
-    anim.onfinish = () => {
+    const video = videoRef.current
+    if (!layer || !video) return
+    const start = () => {
       if (phaseRef.current !== 'opening') return
       setPhase('open')
-      const v = videoRef.current
-      if (!v) return
-      v.volume = VOLUME
-      v.currentTime = 0
-      void v.play().catch(() => close())
+      video.volume = VOLUME
+      video.currentTime = 0
+      void video.play().catch(() => close())
     }
+    if (reducedMotion()) { layer.style.clipPath = FULL_CLIP; start(); return }
+    const opts: KeyframeAnimationOptions = { duration: DURATION, easing: EASE, fill: 'forwards' }
+    const anim = layer.animate([{ clipPath: insetFor(boxRef.current) }, { clipPath: FULL_CLIP }], opts)
+    video.animate([{ transform: invertFor(boxRef.current, video) }, { transform: 'none' }], opts)
+    anim.onfinish = start
   }, [phase, close])
 
   // Esc 关闭（捕获阶段拦截，避免触发页面级 Esc 返回）
@@ -101,6 +113,7 @@ export function AIIntroVideo() {
         aria-label="播放介绍视频"
         onClick={open}
       >
+        <video className="ai-intro-thumb" src={VIDEO_SRC} preload="metadata" muted playsInline aria-hidden="true" />
         <span className="ai-intro-play"><PixelPlay /></span>
       </button>
       {active && createPortal(
