@@ -96,7 +96,7 @@ export const Seal: React.FC<{
   color?: string
   ink?: string
 }> = ({ text, progress, top, left, size = 132, color = ACCENT, ink = ACCENT }) => {
-  const p = Math.max(0, Math.min(1.15, progress))
+  const p = Math.max(0, Math.min(1.14, progress))
   return (
     <div
       style={{
@@ -115,7 +115,7 @@ export const Seal: React.FC<{
         fontWeight: 700,
         fontSize: size * 0.42,
         letterSpacing: '0.02em',
-        transform: `rotate(${-8 + p * 8 - (p > 1 ? (p - 1) * 9 : 0)}deg) scale(${0.86 + p * 0.14})`,
+        transform: `rotate(${-8 + p * 8}deg) scale(${0.86 + p * 0.14})`,
         opacity: Math.min(1, p * 4),
         transformOrigin: '50% 50%',
       }}
