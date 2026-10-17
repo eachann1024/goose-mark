@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
+import { useSettingsStore } from '@/stores/settings'
+import { extractUrlCandidates } from '@/services/aiCreate/extractUrl'
+import { AI_CREATE_ID, AI_CREATE_ITEM } from './useHomeAICreate'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { bookmarkToHomeItem, type HomeGroup, type HomeItem } from './viewModel'
 import { type Screen, type ViewMode } from './homeTypes'
@@ -52,6 +55,7 @@ export function useHomeSearchResults({
   bookmarks,
   openBookmarkLinkBase,
   clearSearchFnRef,
+  aiCreateFnRef,
   openBookmarkLink,
   selectedId,
   setSelectedId
@@ -60,6 +64,7 @@ export function useHomeSearchResults({
   Pick<HomeBookmarkBindings, 'homeGroups' | 'bookmarks' | 'openBookmarkLink'> & {
   openBookmarkLinkBase: ReturnType<typeof useBookmarkOperations>['openBookmarkLink']
   clearSearchFnRef: React.RefObject<() => void>
+  aiCreateFnRef: React.RefObject<(text: string) => void>
 }) {
 
   // 已访问过的一级分组：保活内容面板，避免切 Tab 卸载卡片导致图标重新解码闪白
@@ -144,20 +149,32 @@ export function useHomeSearchResults({
   }, [isSearching, filteredGroups, bookmarks])
   const isUniversalFallback = isSearching && universalFallbackItems.length > 0
 
+  // 开启 AI 且搜索词里含网址时，追加「AI 创建书签」虚拟命令项
+  const aiEnabled = useSettingsStore((s) => s.aiEnabled)
+  const aiCreateItem = useMemo<HomeItem | null>(
+    () => (aiEnabled && isSearching && extractUrlCandidates(searchVal).length > 0 ? AI_CREATE_ITEM : null),
+    [aiEnabled, isSearching, searchVal]
+  )
+
   // 当前视图下可键盘导航的扁平书签列表（基于过滤后的数据）
   // 网格与列表现已同为全量连续渲染，导航集合一致：全部分组扁平去重。
   // 搜索无匹配且有全局搜索书签时，导航落到底部命令条。
   const navigableItems = useMemo<HomeItem[]>(() => {
-    if (isUniversalFallback) return universalFallbackItems
+    if (isUniversalFallback) return aiCreateItem ? [aiCreateItem, ...universalFallbackItems] : universalFallbackItems
     const seen = new Set<string>()
-    return filteredGroups
+    const local = filteredGroups
       .flatMap((g) => g.subs.flatMap((s) => s.items))
       .filter((b) => (seen.has(b.id) ? false : (seen.add(b.id), true)))
-  }, [filteredGroups, isUniversalFallback, universalFallbackItems])
+    return aiCreateItem ? [...local, aiCreateItem] : local
+  }, [filteredGroups, isUniversalFallback, universalFallbackItems, aiCreateItem])
 
   /** 打开列表项：全局搜索回退态用当前搜索词填模板并直跳；其余走常规 open（含模板输入页） */
   const openHomeItem = useCallback(
     (item: HomeItem) => {
+      if (item.id === AI_CREATE_ID) {
+        aiCreateFnRef.current(searchVal)
+        return
+      }
       const realBookmark = bookmarks.find((b) => b.id === item.id)
       if (!realBookmark) return
       if (isUniversalFallback && realBookmark.allowUniversal) {
@@ -194,7 +211,7 @@ export function useHomeSearchResults({
     setSelectedId(navigableItemsRef.current[0]?.id ?? null)
   }, [searchVal])
 
-  return { keptGroups, searchResultItems, universalFallbackItems, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef }
+  return { keptGroups, searchResultItems, universalFallbackItems, aiCreateItem, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef }
 }
 
 export function useHomeSearchActions({

@@ -34,4 +34,4 @@ export interface CtxState {
 
 
 
-export type ToastTone = 'success' | 'error'
+export type ToastTone = 'success' | 'error' | 'loading'

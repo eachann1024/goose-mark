@@ -27,6 +27,7 @@ import { useHomeGroupNavigation } from './useHomeGroupNavigation'
 import { useHomeGroupTabs } from './useHomeGroupTabs'
 import { useHomeContextActions, useHomePointerInteractions } from './useHomeContextActions'
 import { useHomeToast, useHomeUIToastBridge } from './useHomeToast'
+import { useHomeAICreate } from './useHomeAICreate'
 import { useHomeBookmarkDrag } from './useHomeBookmarkDrag'
 import { useHomeSectionNavigation } from './useHomeSectionNavigation'
 import { useHomeScrollSpy } from './useHomeScrollSpy'
@@ -81,6 +82,7 @@ export default function HomePage() {
   // enterTemplateMode / clearSearch 声明在后方，用 ref 间接引用避免 TDZ。
   const enterTemplateModeFnRef = useRef<(b: Bookmark) => void>(() => {})
   const clearSearchFnRef = useRef<() => void>(() => {})
+  const aiCreateFnRef = useRef<(text: string) => void>(() => {})
   const openBookmarkLink = useCallback(
     (bookmark: Bookmark, options?: Parameters<typeof openBookmarkLinkBase>[1]) => {
       if (window.utools && /{[^}]+}/.test(bookmark.url) && !options?.source?.startsWith('template')) {
@@ -219,7 +221,7 @@ export default function HomePage() {
     headerSearchRef
   })
 
-  const { keptGroups, searchResultItems, universalFallbackItems, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef } = useHomeSearchResults({
+  const { keptGroups, searchResultItems, universalFallbackItems, aiCreateItem, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef } = useHomeSearchResults({
     activeGroupId,
     homeGroups,
     searchVal,
@@ -227,6 +229,7 @@ export default function HomePage() {
     bookmarks,
     openBookmarkLinkBase,
     clearSearchFnRef,
+    aiCreateFnRef,
     openBookmarkLink,
     selectedId,
     setSelectedId
@@ -338,6 +341,8 @@ export default function HomePage() {
     setToastOpen,
     toastTimer
   })
+
+  useHomeAICreate({ fireToast, clearSearch, aiCreateFnRef })
 
   const { handleDndDragStart, handleDndDragEnd } = useHomeBookmarkDrag({
     setActiveDragItem,
@@ -655,6 +660,7 @@ export default function HomePage() {
             gridColumns={gridColumns}
             selectedId={selectedId}
             universalFallbackItems={universalFallbackItems}
+            aiCreateItem={aiCreateItem}
             setSearchViewMode={setSearchViewMode}
             setSelectedId={setSelectedId}
             openHomeItem={openHomeItem}

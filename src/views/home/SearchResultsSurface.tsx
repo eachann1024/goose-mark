@@ -2,7 +2,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { Ico } from './icon'
 import { type HomeItem } from './viewModel'
 import { Fav, GRID_ICON_SIZE_PX } from './BookmarkCard'
-import { SearchEmptyUniversal } from './SearchEmptyUniversal'
+import { AICreateCommand, SearchEmptyUniversal } from './SearchEmptyUniversal'
 import { GridCells } from './GridContent'
 
 /** 搜索结果行（列表布局）：密度按搜索场景收紧，扁平无分组段 */
@@ -57,6 +57,7 @@ export function SearchResultsSurface({
   columns,
   selectedId,
   universalItems,
+  aiItem,
   onViewModeChange,
   onSelect,
   onOpen,
@@ -68,6 +69,7 @@ export function SearchResultsSurface({
   columns: number
   selectedId: string | null
   universalItems: HomeItem[]
+  aiItem: HomeItem | null
   onViewModeChange: (mode: 'list' | 'grid') => void
   onSelect: (id: string) => void
   onOpen?: (item: HomeItem) => void
@@ -77,6 +79,12 @@ export function SearchResultsSurface({
   const iconSize = GRID_ICON_SIZE_PX[gridIconSize] ?? '46px'
   const count = items.length
   const hasUniversal = count === 0 && universalItems.length > 0
+  const hasCommands = count === 0 && (hasUniversal || !!aiItem)
+  const aiFooter = aiItem && count > 0 ? (
+    <div className="search-ai-foot">
+      <AICreateCommand item={aiItem} selected={aiItem.id === selectedId} onSelect={onSelect} onOpen={onOpen} />
+    </div>
+  ) : null
 
   return (
     <div className="search-surface">
@@ -119,9 +127,10 @@ export function SearchResultsSurface({
       </div>
 
       {count === 0 ? (
-        hasUniversal ? (
+        hasCommands ? (
           <SearchEmptyUniversal
             items={universalItems}
+            aiItem={aiItem}
             selectedId={selectedId}
             searchQuery={query}
             onSelect={onSelect}
@@ -144,6 +153,7 @@ export function SearchResultsSurface({
             onOpen={onOpen}
             subtitleMode="host"
           />
+          {aiFooter}
         </div>
       ) : (
         <div className="search-list">
@@ -156,6 +166,7 @@ export function SearchResultsSurface({
               onOpen={onOpen}
             />
           ))}
+          {aiFooter}
         </div>
       )}
     </div>

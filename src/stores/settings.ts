@@ -85,6 +85,9 @@ export interface SettingsState {
   preferLocalSnapshotOnStartup: boolean
   localMirrorDirectory: string
   aiEnabled: boolean
+  /** AI 创建书签：允许新建主分组 / 子分组 */
+  aiAllowCreateGroup: boolean
+  aiAllowCreateSubGroup: boolean
   /** 历史兼容：仅老用户已手动开启过 AI 时保留 uTools 内置 AI 路径 */
   aiAllowLegacyUTools: boolean
   aiSelectedModelId: string
@@ -142,6 +145,8 @@ export interface SettingsActions {
   setPreferLocalSnapshotOnStartup: (value: boolean) => void
   setLocalMirrorDirectory: (value: string) => void
   setAiEnabled: (value: boolean) => void
+  setAiAllowCreateGroup: (value: boolean) => void
+  setAiAllowCreateSubGroup: (value: boolean) => void
   setAiSelectedModelId: (value: string | null) => void
   setAiCustomProviderEnabled: (value: boolean) => void
   /** 切换接入协议：写入默认 BaseURL，并清空旧协议的模型缓存 */
@@ -187,6 +192,8 @@ export const createDefaultSettingsState = (): SettingsState => {
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
     aiEnabled: defaults.enabled,
+    aiAllowCreateGroup: false,
+    aiAllowCreateSubGroup: true,
     aiAllowLegacyUTools: defaults.allowLegacyUTools,
     aiSelectedModelId: active.selectedModelId,
     aiUseCustomProvider: defaults.useCustomProvider,
@@ -225,6 +232,8 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => {
       setPreferLocalSnapshotOnStartup: (value) => set({ preferLocalSnapshotOnStartup: !!value }),
       setLocalMirrorDirectory: (value) => set({ localMirrorDirectory: String(value || '').trim() }),
       setAiEnabled: (value) => set({ aiEnabled: !!value }),
+      setAiAllowCreateGroup: (value) => set({ aiAllowCreateGroup: !!value }),
+      setAiAllowCreateSubGroup: (value) => set({ aiAllowCreateSubGroup: !!value }),
       setAiSelectedModelId: (value) => {
         const current = get()
         const protocol = current.aiProtocol
@@ -333,6 +342,8 @@ const pickPersistedSettings = (state: SettingsStore): PersistedSettingsState => 
   preferLocalSnapshotOnStartup: state.preferLocalSnapshotOnStartup,
   localMirrorDirectory: state.localMirrorDirectory,
   aiEnabled: state.aiEnabled,
+  aiAllowCreateGroup: state.aiAllowCreateGroup,
+  aiAllowCreateSubGroup: state.aiAllowCreateSubGroup,
   aiAllowLegacyUTools: state.aiAllowLegacyUTools,
   aiSelectedModelId: state.aiSelectedModelId,
   aiUseCustomProvider: state.aiUseCustomProvider,
@@ -390,6 +401,8 @@ export const normalizePersistedSettings = (state: Partial<SettingsState> | null 
   const patch: Partial<SettingsState> = { ...state }
   if (!['system', 'light', 'dark'].includes(String(patch.themePreference))) patch.themePreference = 'light'
   if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
+  if (typeof patch.aiAllowCreateGroup !== 'boolean') patch.aiAllowCreateGroup = false
+  if (typeof patch.aiAllowCreateSubGroup !== 'boolean') patch.aiAllowCreateSubGroup = true
   // 丢弃已移除的 AI 对话面板专用字段，避免再次被持久化
   delete (patch as { readLocalSkills?: unknown }).readLocalSkills
   delete (patch as { userGlobalPrompt?: unknown }).userGlobalPrompt
