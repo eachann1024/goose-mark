@@ -113,10 +113,16 @@ export function SettingsAI() {
     return (
       <div className="set-section set-section--ai" id="set-ai">
         <div className="ai-intro">
-          <button type="button" className="btn btn-ai ai-intro-start" onClick={() => setAiEnabled(true)}>
-            <Ico name="sparkles" />
-            启动 AI
-          </button>
+          <div className="set-row ai-intro-start">
+            <div><div className="rt">启用 AI</div></div>
+            <div
+              className="g-switch"
+              role="switch"
+              aria-checked={false}
+              aria-label="启用 AI"
+              onClick={() => setAiEnabled(true)}
+            />
+          </div>
           <AIIntroVideo />
         </div>
       </div>
@@ -130,12 +136,12 @@ export function SettingsAI() {
         <div className="set-card set-card--ai">
           <div className="set-ai-body">
             <div className="set-row">
-              <div><div className="rt">AI 功能</div></div>
+              <div><div className="rt">启用 AI</div></div>
               <div
                 className={`g-switch${aiEnabled ? ' on' : ''}`}
                 role="switch"
                 aria-checked={aiEnabled}
-                aria-label="AI 功能"
+                aria-label="启用 AI"
                 onClick={() => setAiEnabled(!aiEnabled)}
               />
             </div>

@@ -2,6 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
+    "resolveJsonModule": true,
     "moduleResolution": "bundler",
     "jsx": "react-jsx",
     "strict": true,

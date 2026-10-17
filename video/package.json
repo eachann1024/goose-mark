@@ -11,7 +11,10 @@
     "build": "npm run halftone && npm run audio && npm run render",
     "pixel:audio": "node scripts/make-pixel-audio.mjs",
     "pixel:render": "remotion render src/index.ts GooseAIPixel out/goose-ai-pixel-raw.mp4 --crf=18 --codec=h264 --pixel-format=yuv420p --x264-preset=slow --concurrency=6 && ffmpeg -y -v error -i out/goose-ai-pixel-raw.mp4 -c:v copy -c:a aac -b:a 192k -movflags +faststart out/goose-ai-pixel.mp4",
-    "pixel:qa": "node scripts/pixel-qa.mjs"
+    "pixel:qa": "node scripts/pixel-qa.mjs",
+    "ghibli:audio": "node scripts/make-ghibli-audio.mjs",
+    "ghibli:render": "remotion render src/index.ts GooseAIGhibli out/goose-ai-ghibli-raw.mp4 --crf=18 --codec=h264 --pixel-format=yuv420p --x264-preset=slow --concurrency=6 && ffmpeg -y -v error -i out/goose-ai-ghibli-raw.mp4 -c:v copy -c:a aac -b:a 192k -movflags +faststart out/goose-ai-ghibli.mp4",
+    "ghibli:qa": "node scripts/ghibli-qa.mjs"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.536",
