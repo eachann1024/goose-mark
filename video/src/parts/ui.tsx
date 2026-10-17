@@ -125,31 +125,42 @@ export const Seal: React.FC<{
   )
 }
 
-/** 设置开关 */
-export const Toggle: React.FC<{ on: boolean; left: number; top: number; dark?: boolean }> = ({ on, left, top, dark }) => (
-  <div
-    style={{
-      position: 'absolute',
-      left,
-      top,
-      width: 74,
-      height: 42,
-      borderRadius: 21,
-      background: on ? ACCENT : 'transparent',
-      border: `2px solid ${on ? ACCENT : dark ? 'rgba(251,250,246,0.4)' : FAINT}`,
-      boxSizing: 'border-box',
-    }}
-  >
+/** 设置开关：pos 0→1 驱动滑块位置 */
+export const Toggle: React.FC<{ on?: boolean; pos?: number; left: number; top: number; dark?: boolean }> = ({
+  on,
+  pos,
+  left,
+  top,
+  dark,
+}) => {
+  const p = Math.max(0, Math.min(1, pos ?? (on ? 1 : 0)))
+  return (
     <div
       style={{
         position: 'absolute',
-        top: 4,
-        left: on ? 74 - 2 - 30 - 4 : 4,
-        width: 30,
-        height: 30,
-        borderRadius: 15,
-        background: on ? '#FFFFFF' : dark ? 'rgba(251,250,246,0.6)' : 'rgba(22,21,18,0.35)',
+        left,
+        top,
+        width: 74,
+        height: 42,
+        borderRadius: 21,
+        border: `2px solid ${dark ? 'rgba(251,250,246,0.35)' : FAINT}`,
+        boxSizing: 'border-box',
       }}
-    />
-  </div>
-)
+    >
+      <div style={{ position: 'absolute', inset: 0, borderRadius: 19, background: ACCENT, opacity: p }} />
+      <div
+        style={{
+          position: 'absolute',
+          top: 4,
+          left: 4 + p * 34,
+          width: 30,
+          height: 30,
+          borderRadius: 15,
+          background: dark ? '#FBFAF6' : '#FFFFFF',
+          border: dark ? 'none' : `1.5px solid ${p > 0.5 ? ACCENT : 'rgba(22,21,18,0.28)'}`,
+          boxSizing: 'border-box',
+        }}
+      />
+    </div>
+  )
+}
