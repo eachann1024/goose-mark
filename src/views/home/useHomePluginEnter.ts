@@ -5,6 +5,7 @@ import { flushBookmarkStorePersistence, useBookmarkStore } from '@/stores/bookma
 import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookmarkForm'
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
+import { AI_SAVE_FEATURE_CODE } from '@/hooks/useUTools'
 import { type Screen, type ViewMode } from './homeTypes'
 import { UTOOLS_PLUGIN_ENTER_EVENT, RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS, BROWSER_URL_READ_TIMEOUT_MS, withFallbackTimeout, DETACH_TOGGLE_FOCUS_GRACE_MS, isDetachedUToolsWindow, type UToolsPluginEnterPayload } from './homeRuntime'
 import { type HomeToastHandler, type HomeScrollBindings, type HomeSearchBindings } from './homeInteractionTypes'
@@ -29,7 +30,8 @@ export function useHomePluginEnter({
   focusSearchInput,
   setScreenRef,
   view,
-  restoreHomeScrollRef
+  restoreHomeScrollRef,
+  aiCreateFnRef
 }: Pick<HomeScrollBindings, 'suppressScrollIntoViewRef' | 'restoreHomeScrollRef'> &
   Pick<HomeSearchBindings, 'applySearchValRef' | 'focusSearchInput'> & {
   getEnterText: (payload: unknown) => string
@@ -48,6 +50,7 @@ export function useHomePluginEnter({
   searchValRef: React.RefObject<string>
   setScreenRef: React.RefObject<React.Dispatch<React.SetStateAction<Screen>>>
   view: ViewMode
+  aiCreateFnRef: React.RefObject<(text: string) => void>
 }) {
 
   // plugin-enter 事件：处理 bookmarks / quick_save / bm_tpl: 功能码
@@ -65,6 +68,23 @@ export function useHomePluginEnter({
     const payloadText = getEnterText(params?.payload).trim()
     const isTemplateFeature = typeof code === 'string' && code.startsWith(FEATURE_PREFIX)
     const store = useBookmarkStore.getState()
+
+    // ---- ai_save：AI 保存到书签（无 payload 时读取当前浏览器网址）----
+    if (code === AI_SAVE_FEATURE_CODE) {
+      if (payloadText) {
+        aiCreateFnRef.current(payloadText)
+        return
+      }
+      void (async () => {
+        const utoolsApi = window.utools as unknown as { readCurrentBrowserUrl?: () => Promise<string> } | undefined
+        const browserUrl = typeof utoolsApi?.readCurrentBrowserUrl === 'function'
+          ? (await withFallbackTimeout(utoolsApi.readCurrentBrowserUrl(), '', BROWSER_URL_READ_TIMEOUT_MS).catch(() => '')).trim()
+          : ''
+        if (browserUrl) aiCreateFnRef.current(browserUrl)
+        else fireToastRef.current('未检测到网址', { tone: 'error' })
+      })()
+      return
+    }
 
     // ---- quick_save：普通保存当前网址 ----
     if (code === 'quick_save') {
