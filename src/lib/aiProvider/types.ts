@@ -21,7 +21,7 @@ export interface AISettingsLike {
   allowLegacyUTools: boolean
   selectedModelId: string | null
   useCustomProvider: boolean
-  /** OpenAI Responses / OpenAI-compatible Chat Completions / Anthropic */
+  /** DeepSeek / OpenAI Responses / OpenAI-compatible Chat Completions / Anthropic */
   protocol: AIProtocol
   customBaseURL: string
   customApiKey: string

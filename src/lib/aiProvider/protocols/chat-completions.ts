@@ -1,6 +1,6 @@
 import type { AIStructuredOutput } from '../types'
 import { type AISettingsLike, type AIMessage } from '../types'
-import { resolveCustomBaseURL } from '../config'
+import { getProtocolLabel, resolveCustomBaseURL } from '../config'
 import { readErrorMessage, getAuthFailedMessage } from '../errors'
 import { normalizeMessages, extractStructuredText } from '../text'
 
@@ -14,7 +14,7 @@ export async function runOpenAIChatCompletionsText(
   selectedModelId: string,
   output?: AIStructuredOutput
 ) {
-  const baseURL = resolveCustomBaseURL('openai-compatible', settings.customBaseURL)
+  const baseURL = resolveCustomBaseURL(settings.protocol, settings.customBaseURL)
   const url = `${baseURL.replace(/\/+$/, '')}/chat/completions`
   const normalized = normalizeMessages(messages)
 
@@ -61,7 +61,7 @@ export async function runOpenAIChatCompletionsText(
       if (!response.ok) {
         const detail = await readErrorMessage(response)
         if (response.status === 401 || response.status === 403) {
-          throw new Error(getAuthFailedMessage('OpenAI 兼容接口'))
+          throw new Error(getAuthFailedMessage(getProtocolLabel(settings.protocol)))
         }
         lastError = new Error(detail || `调用 Chat Completions 失败（${response.status}）`)
         const lower = (detail || '').toLowerCase()

@@ -1,4 +1,4 @@
-import { type AIProtocol } from '@/constants/ai'
+import { DEEPSEEK_FALLBACK_MODELS, isAIProtocol, type AIProtocol } from '@/constants/ai'
 import { type AIModelOption } from './types'
 import { ANTHROPIC_API_VERSION, getOpenAIModelsUrl, resolveCustomBaseURL, getProtocolLabel } from './config'
 import { readErrorMessage, getApiKeyMissingMessage, getAuthFailedMessage } from './errors'
@@ -65,12 +65,7 @@ export async function fetchCustomAIModels(config: {
   apiKey: string
   protocol?: AIProtocol
 }) {
-  const protocol: AIProtocol =
-    config.protocol === 'anthropic' ||
-    config.protocol === 'openai-compatible' ||
-    config.protocol === 'openai-responses'
-      ? config.protocol
-      : 'openai-responses'
+  const protocol: AIProtocol = isAIProtocol(config.protocol) ? config.protocol : 'openai-responses'
   const apiKey = config.apiKey.trim()
   const baseURL = resolveCustomBaseURL(protocol, config.baseURL)
   if (!apiKey) {
@@ -110,7 +105,10 @@ export async function fetchCustomAIModels(config: {
       .map((item: unknown) => normalizeModelOption(item))
       .filter((item: AIModelOption | null): item is AIModelOption => Boolean(item))
 
-    if (!models.length) throw new Error('未读取到可用模型')
+    if (!models.length) {
+      if (protocol === 'deepseek') return DEEPSEEK_FALLBACK_MODELS.map((item) => ({ ...item }))
+      throw new Error('未读取到可用模型')
+    }
 
     return models
   } catch (err) {

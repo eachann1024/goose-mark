@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
 import { Ico } from './icon'
-import { DEFAULT_AI_MODEL, AI_PROTOCOLS } from '@/constants/ai'
+import { DEFAULT_AI_MODEL, AI_PROTOCOLS, DEEPSEEK_FALLBACK_MODELS } from '@/constants/ai'
 import { fetchCustomAIModels, getDefaultBaseURL, getDefaultModelId } from '@/lib/aiProvider'
 import { SettingsSelect } from './SettingsControls'
 
@@ -25,7 +25,9 @@ export function SettingsAI() {
   const protocolDefaultModel = getDefaultModelId(aiProtocol)
   const modelOptions = aiCustomModelOptions.length > 0
     ? aiCustomModelOptions
-    : [{ id: protocolDefaultModel, label: protocolDefaultModel }]
+    : aiProtocol === 'deepseek'
+      ? DEEPSEEK_FALLBACK_MODELS.map((item) => ({ ...item }))
+      : [{ id: protocolDefaultModel, label: protocolDefaultModel }]
 
   // 自愈：选中模型若不在可选项内（如换协议后旧模型 id 残留），归一到首个可选项。
   useEffect(() => {
