@@ -4,6 +4,7 @@ import { Ico } from './icon'
 import { DEFAULT_AI_MODEL, AI_PROTOCOLS, DEEPSEEK_FALLBACK_MODELS } from '@/constants/ai'
 import { fetchCustomAIModels, getDefaultBaseURL, getDefaultModelId } from '@/lib/aiProvider'
 import { SettingsSelect } from './SettingsControls'
+import { AIIntroVideo } from './AIIntroVideo'
 
 export function SettingsAI() {
   const aiEnabled = useSettingsStore((s) => s.aiEnabled)
@@ -107,6 +108,20 @@ export function SettingsAI() {
       setFetchingModels(false)
     }
   }, [apiKeyDraft, baseUrlDraft, protocolDefaultBaseURL, aiProtocol, saveAiCustomConfig])
+
+  if (!aiEnabled) {
+    return (
+      <div className="set-section set-section--ai" id="set-ai">
+        <div className="ai-intro">
+          <button type="button" className="btn btn-ai ai-intro-start" onClick={() => setAiEnabled(true)}>
+            <Ico name="sparkles" />
+            启动 AI
+          </button>
+          <AIIntroVideo />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <>
