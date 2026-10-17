@@ -2007,11 +2007,6 @@
 }
 
 /* 分类区：旧内核下现代颜色函数失效时仍用实心 token */
-.goose-home[data-platform="utools"] .form-category-select .cat-ms-root,
-.goose-home[data-platform="utools"] .gm-cat-select .cat-ms-root {
-  background: var(--input) !important;
-  border-color: var(--border) !important;
-}
 .goose-home[data-platform="utools"] .form-category-select .cat-ms-chip {
   background: var(--surface) !important;
   border-color: var(--border) !important;
@@ -2020,19 +2015,6 @@
 .goose-home[data-platform="utools"] .form-category-select .cat-ms-chip--on {
   background: var(--accent-subtle) !important;
   border-color: var(--accent) !important;
-  color: var(--accent) !important;
-}
-.goose-home[data-platform="utools"] .form-category-select .cat-ms-chip-check {
-  border-color: var(--border) !important;
-  background: transparent;
-}
-.goose-home[data-platform="utools"] .form-category-select .cat-ms-chip-check--on {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: var(--accent-fg) !important;
-}
-.goose-home[data-platform="utools"] .form-category-select .cat-ms-picked-chip {
-  background: var(--accent-subtle) !important;
   color: var(--accent) !important;
 }
 
