@@ -1,7 +1,8 @@
 import React from 'react'
 import { AbsoluteFill, Img, staticFile, useCurrentFrame } from 'remotion'
 import { INK, SANS, SERIF } from '../theme'
-import { cardIn } from '../lib/anim'
+import { cardIn, stampSpring } from '../lib/anim'
+import { DotField, HalftoneSwatch, Sparkle, Underline } from '../parts/deco'
 
 export const S8: React.FC = () => {
   const frame = useCurrentFrame()
@@ -10,6 +11,8 @@ export const S8: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ background: '#F9F8F3' }}>
+      <DotField drift={frame * 1.2} />
+      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
       <Img
         src={staticFile('halftone/goose-cheer-260.png')}
         style={{
@@ -18,7 +21,7 @@ export const S8: React.FC = () => {
           top: 262,
           width: 260,
           height: 260,
-          transform: `translateY(${Math.round((1 - p) * 32)}px)`,
+          transform: `translateY(${Math.round((1 - p) * 32 + Math.sin(frame / 24) * 4)}px)`,
         }}
       />
 
@@ -61,6 +64,8 @@ export const S8: React.FC = () => {
         贴个网址，就收好了
       </div>
 
+      <Underline left={498} top={812} width={84} progress={cardIn(frame, 34, 24)} height={3} />
+      <Sparkle left={762} top={600} progress={stampSpring(frame, 52)} scale={0.85} />
     </AbsoluteFill>
   )
 }

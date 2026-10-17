@@ -3,7 +3,6 @@ export const H = 1080
 export const M = 96
 export const FPS = 60
 export const BPM = 120
-export const TOTAL = 1830
 
 export const INK = '#161512'
 export const PAPER = '#FFFFFF'
@@ -21,13 +20,15 @@ export const SCENE_BG = ['#F7F5EF', '#EFF4F1', '#F1F3F8', '#F8F1EC', '#F3F0F5', 
 
 export type Shot = { id: number; from: number; len: number; bg: string }
 
-const LENS = [300, 270, 240, 270, 210, 210, 180, 150]
+const LENS = [420, 270, 240, 270, 210, 210, 180, 150]
 
 export const SHOTS: Shot[] = LENS.reduce<Shot[]>((acc, len, i) => {
   const from = i === 0 ? 0 : acc[i - 1].from + acc[i - 1].len
   acc.push({ id: i, from, len, bg: SCENE_BG[i] })
   return acc
 }, [])
+
+export const TOTAL = SHOTS.reduce((n, s) => n + s.len, 0)
 
 export const stills = SHOTS.map((s) => s.from)
 export const midpoint = (s: Shot) => s.from + Math.round(s.len / 2)

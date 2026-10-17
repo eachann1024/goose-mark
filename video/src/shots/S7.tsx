@@ -4,6 +4,7 @@ import { ACCENT } from '../theme'
 import { BigTitle } from '../parts/Type'
 import { Seal } from '../parts/ui'
 import { cardIn, stampSpring } from '../lib/anim'
+import { DotField, Sparkle, Underline } from '../parts/deco'
 
 const LIGHT = '#FBFAF6'
 
@@ -14,6 +15,7 @@ export const S7: React.FC = () => {
 
   return (
     <AbsoluteFill style={{ background: '#11100E' }}>
+      <DotField drift={frame * 1.2} color={LIGHT} opacity={0.07} />
       <Img
         src={staticFile('halftone/goose-idle-400-inv.png')}
         style={{
@@ -35,7 +37,12 @@ export const S7: React.FC = () => {
         ink={LIGHT}
       />
 
+      <Underline left={260} top={794} width={566} progress={cardIn(frame, 96, 26)} height={3} />
+
       <Seal text="AI" progress={seal} left={806} top={812} size={150} color={ACCENT} ink={ACCENT} />
+
+      <Sparkle left={862} top={430} progress={stampSpring(frame, 46)} scale={0.95} />
+      <Sparkle left={210} top={806} progress={stampSpring(frame, 124)} scale={0.7} />
     </AbsoluteFill>
   )
 }

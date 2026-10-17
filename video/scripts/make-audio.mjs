@@ -11,7 +11,7 @@ const BEAT = 60 / BPM // 0.5s
 const BAR = BEAT * 4 // 2s
 const LOOP_BARS = 4
 const LOOP = BAR * LOOP_BARS // 8s
-const TOTAL_FRAMES = 1830
+const TOTAL_FRAMES = 1950
 const DUR = TOTAL_FRAMES / FPS // 30.5s
 const SR = 48000
 const N = Math.round(DUR * SR)
@@ -94,12 +94,13 @@ for (let loop = 0; loop * LOOP < DUR; loop++) {
 
 /** 8ms / 1200Hz 正弦 + 指数衰减 */
 const CLICKS = [
-  150, // S1 网址圈定
-  746, // S3 图标·正文·描述 装齐
-  1252, // S5 压缩落定
-  1388, // S6 书签归位
-  1574, // S7 印章
-  1680, // S8 品牌定格
+  130, // S1 网址圈定
+  420, // S2 能力条落定
+  896, // S3 图标·正文·描述 装齐
+  1368, // S5 压缩落定
+  1508, // S6 书签归位
+  1694, // S7 印章
+  1800, // S8 品牌定格
 ]
 for (const frame of CLICKS) {
   const n0 = Math.round((frame / FPS) * SR)

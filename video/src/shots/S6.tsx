@@ -4,6 +4,7 @@ import { ACCENT, INK, M, PAPER, SOFT } from '../theme'
 import { BigTitle } from '../parts/Type'
 import { Check, Paper, Toggle } from '../parts/ui'
 import { cardIn, EASE_FALL, stampSpring } from '../lib/anim'
+import { CornerBrackets, DotField, HalftoneSwatch, Sparkle } from '../parts/deco'
 
 const COL_W = 280
 const COL_GAP = 16
@@ -37,6 +38,8 @@ export const S6: React.FC = () => {
 
   return (
     <AbsoluteFill>
+      <DotField drift={frame * 1.4} />
+      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
       <BigTitle lines={[[{ t: '位置不对' }], [{ t: '就自己新建', k: 'serif' }]]} top={132} left={M} size={86} start={2} />
 
       {COLS.map((col, ci) => (
@@ -196,10 +199,24 @@ export const S6: React.FC = () => {
             >
               {row}
             </div>
-            <Toggle on left={888 - 24 - 74} top={21 + i * 52} />
+            <Toggle pos={cardIn(frame, 44 + i * 18, 16)} left={888 - 24 - 74} top={21 + i * 52} />
           </React.Fragment>
         ))}
       </Paper>
+
+      <CornerBrackets left={M} top={748} width={888} height={132} progress={cardIn(frame, 20, 30)} />
+      <CornerBrackets
+        left={tx}
+        top={ty}
+        width={COL_W}
+        height={SUB_H}
+        progress={cardIn(frame, 84, 26)}
+        size={13}
+        thickness={2}
+        gap={-7}
+      />
+      <Sparkle left={tx + COL_W - 26} top={ty + SUB_H + 4} progress={stampSpring(frame, 98)} scale={0.6} />
+      <Sparkle left={tx + 18} top={slotTop + 26} progress={stampSpring(frame, 82)} scale={0.42} />
     </AbsoluteFill>
   )
 }

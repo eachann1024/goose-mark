@@ -3,7 +3,8 @@ import { AbsoluteFill, useCurrentFrame } from 'remotion'
 import { ACCENT, INK, M, SOFT } from '../theme'
 import { BigTitle } from '../parts/Type'
 import { Paper } from '../parts/ui'
-import { cardIn } from '../lib/anim'
+import { cardIn, stampSpring } from '../lib/anim'
+import { CornerBrackets, DotField, HalftoneSwatch, Sparkle } from '../parts/deco'
 
 const WIN = { left: M, top: 442, width: 888, height: 508 }
 const PAD = 44
@@ -37,6 +38,8 @@ export const S4: React.FC = () => {
 
   return (
     <AbsoluteFill>
+      <DotField drift={frame * 1.4} />
+      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 20, 30)} />
       <BigTitle
         lines={[[{ t: '原文是英文' }], [{ t: '读的是中文', k: 'serif' }]]}
         top={132}
@@ -46,6 +49,7 @@ export const S4: React.FC = () => {
       />
 
       <Paper style={{ ...WIN, overflow: 'hidden', transform: `scale(${0.92 + enter * 0.08})` }}>
+
         <div style={{ position: 'absolute', left: PAD, top: -scroll, width: WIN.width - PAD * 2 }}>
           <div
             style={{
@@ -113,7 +117,41 @@ export const S4: React.FC = () => {
             </div>
           ))}
         </div>
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 0,
+            width: 3,
+            height: WIN.height,
+            background: INK,
+            opacity: 0.07,
+          }}
+        />
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: (scroll / MAX_SCROLL) * (WIN.height - 120),
+            width: 3,
+            height: 120,
+            background: ACCENT,
+            opacity: 0.55,
+            zIndex: 3,
+          }}
+        />
+        <div style={{ position: 'absolute', left: 0, top: 0, width: WIN.width, height: 20, background: '#FFFFFF', zIndex: 2 }} />
+        <div style={{ position: 'absolute', left: 0, top: WIN.height - 20, width: WIN.width, height: 20, background: '#FFFFFF', zIndex: 2 }} />
       </Paper>
+
+      <CornerBrackets left={WIN.left} top={WIN.top} width={WIN.width} height={WIN.height} progress={cardIn(frame, 14, 34)} />
+      <Sparkle
+        left={WIN.left + 96}
+        top={WIN.top + 190}
+        progress={stampSpring(frame, 74)}
+        scale={0.5}
+        fade={1 - cardIn(frame, 130, 22)}
+      />
     </AbsoluteFill>
   )
 }
