@@ -32,11 +32,13 @@ export const getPairs = () => {
 
 const drawPairs = (p: Painter, u: number, P: ReturnType<typeof pairDots>, off: Float32Array) => {
   const sc = INOUT(prog(u, SCATTER_START, SCATTER_DUR))
-  const rf = u >= REFORM_START ? FIRM(u - REFORM_START, REFORM_DUR) : 0
+  const r0 = u >= REFORM_START ? FIRM(u - REFORM_START, REFORM_DUR) : 0
+  // 接近终点时直接吸附到网格，避免残余抖动造成毛刺
+  const rf = r0 > 0.97 ? 1 : r0
   for (let i = 0; i < P.n; i++) {
     const sx = P.ax[i] + off[i * 2] * sc
     const sy = P.ay[i] + off[i * 2 + 1] * sc
-    p.dot(lerp(sx, P.bx[i], rf), lerp(sy, P.by[i], rf), 3.2, INK)
+    p.dot(lerp(sx, P.bx[i], rf), lerp(sy, P.by[i], rf), 3, INK)
   }
 }
 

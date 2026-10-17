@@ -120,7 +120,7 @@ export const concatDots = (list: Dots[]): Dots => {
     y.set(d.y, k)
     k += d.n
   }
-  return { x, y, n, size: list[0]?.size ?? 3.2 }
+  return { x, y, n, size: list[0]?.size ?? 3 }
 }
 
 export const sortedOrder = (d: Dots): Int32Array => {
@@ -258,6 +258,11 @@ export class Painter {
     }
     const c = this.ctx
     c.fillStyle = color
+    // 文字像素（≤5px）画成整数对齐的实心方块，避免圆角与抗锯齿发糊
+    if (s <= 5) {
+      c.fillRect(Math.round(x), Math.round(y), Math.round(s), Math.round(s))
+      return
+    }
     c.beginPath()
     c.roundRect(x, y, s, s, s * 0.25)
     c.fill()
