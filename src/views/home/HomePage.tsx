@@ -491,7 +491,8 @@ export default function HomePage() {
     focusSearchInput,
     setScreenRef,
     view,
-    restoreHomeScrollRef
+    restoreHomeScrollRef,
+    aiCreateFnRef
   })
 
   useHomeSubInputSync({

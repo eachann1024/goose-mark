@@ -1,21 +1,44 @@
 import { useCallback } from 'react'
+import { getAIAvailability } from '@/lib/aiProvider'
+import { selectAiSettings, useSettingsStore } from '@/stores/settings'
 
-/** uTools 旧入口清理 / 进入文本解析 / 窗口控制。 */
+/** uTools 动态入口同步 / 进入文本解析 / 窗口控制。 */
 
 const FEATURE_PREFIX = 'bm_tpl:'
+/** AI 保存全局入口：AI 可用时注册，否则移除。 */
+export const AI_SAVE_FEATURE_CODE = 'ai_save'
 /** 历史 AI / 快捷保存特性码：仅用于清理，不再注册。 */
 const LEGACY_FEATURE_CODES = new Set(['ai_quick_save', 'ai_aggressive_save', 'quick_save'])
 
-// ponytail: 只保留主入口；旧动态书签/AI 入口在下次同步时移除，需要快捷键时走主界面操作。
+const AI_SAVE_FEATURE = {
+  code: AI_SAVE_FEATURE_CODE,
+  explain: 'AI 保存到书签',
+  cmds: [
+    'AI 保存书签',
+    {
+      type: 'regex',
+      label: 'AI 保存到书签',
+      match: '/(https?:\\/\\/|www\\.)\\S+|^\\s*[\\w-]+(\\.[\\w-]+)+(:\\d+)?([\\/?#]\\S*)?\\s*$/i',
+      minLength: 4,
+      maxLength: 4096
+    }
+  ]
+}
+
 const syncFeaturesImpl = async () => {
   const ut = window.utools
   if (!ut?.getFeatures || !ut?.removeFeature) return
   try {
-    for (const feature of ut.getFeatures()) {
+    const features = ut.getFeatures()
+    for (const feature of features) {
       if (feature.code.startsWith(FEATURE_PREFIX) || LEGACY_FEATURE_CODES.has(feature.code)) ut.removeFeature(feature.code)
     }
+    const aiReady = getAIAvailability(selectAiSettings(useSettingsStore.getState())).ok
+    const registered = features.some((f) => f.code === AI_SAVE_FEATURE_CODE)
+    if (aiReady && !registered) ut.setFeature?.(AI_SAVE_FEATURE)
+    else if (!aiReady && registered) ut.removeFeature(AI_SAVE_FEATURE_CODE)
   } catch (error) {
-    console.warn('[uTools] 清理旧快捷入口失败:', error)
+    console.warn('[uTools] 同步快捷入口失败:', error)
   }
 }
 

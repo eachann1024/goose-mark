@@ -136,8 +136,18 @@ export function useHomeFeatures({
   syncFeatures: ReturnType<typeof useUTools>['syncFeatures']
 }) {
 
-  // 安装/升级后清理旧的动态书签与快捷保存入口。
+  // 安装/升级后清理旧入口；AI 配置变化时同步「AI 保存到书签」全局入口。
   useEffect(() => {
     void syncFeatures()
+    return useSettingsStore.subscribe((state, prev) => {
+      if (
+        state.aiEnabled !== prev.aiEnabled ||
+        state.aiSelectedModelId !== prev.aiSelectedModelId ||
+        state.aiCustomApiKey !== prev.aiCustomApiKey ||
+        state.aiUseCustomProvider !== prev.aiUseCustomProvider ||
+        state.aiAllowLegacyUTools !== prev.aiAllowLegacyUTools ||
+        state.aiCustomModelOptions !== prev.aiCustomModelOptions
+      ) void syncFeatures()
+    })
   }, [syncFeatures])
 }
