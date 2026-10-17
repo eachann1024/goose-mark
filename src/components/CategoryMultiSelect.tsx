@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, X } from 'lucide-react'
+import { Check, Plus } from 'lucide-react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { cn } from '@/lib/utils'
@@ -7,7 +7,7 @@ import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEd
 
 /**
  * 书签放到哪里。默认单选：点另一个子分组就换过去。
- * 已有多个位置，或打开「同时放进多个」后，才累加。
+ * 已有多个位置，或打开「多选」后，才累加。
  * 样式由 .goose-home .form-category-select 下的 home.css 接管。
  */
 export interface CategoryMultiSelectProps {
@@ -69,19 +69,9 @@ export function CategoryMultiSelect({
     )
   }
 
-  const removeLocation = (loc: BookmarkLocation) => {
-    if (readonly) return
-    onChange(value.filter((item) => !(item.groupId === loc.groupId && item.subGroupId === loc.subGroupId)))
-  }
-
   const setMultiMode = (next: boolean) => {
     setMulti(next)
     if (!next && value.length > 1) onChange(value.slice(0, 1))
-  }
-
-  const locationLabel = (loc: BookmarkLocation) => {
-    const group = groups.find((g) => g.id === loc.groupId)
-    return group?.children.find((c) => c.id === loc.subGroupId)?.name ?? ''
   }
 
   const cancelAdd = () => {
@@ -103,107 +93,91 @@ export function CategoryMultiSelect({
 
   return (
     <div className={cn('cat-ms-root', inline && 'cat-ms-root--inline')} onClick={(e) => e.stopPropagation()}>
-      {!readonly && (
-        <label className="cat-ms-multi">
-          <input type="checkbox" checked={multi} onChange={(e) => setMultiMode(e.target.checked)} />
-          同时放进多个
-        </label>
-      )}
-
       {displayGroups.length === 0 ? (
         <div className="cat-ms-empty">暂无分组</div>
       ) : (
-        <div className="cat-ms-split">
-          <div className="cat-ms-rail" role="tablist">
-            {displayGroups.map((group) => {
-              const here = value.some((loc) => loc.groupId === group.id)
-              return (
-                <button
-                  key={group.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={group.id === currentGroup?.id}
-                  className={cn('cat-ms-rail-item', group.id === currentGroup?.id && 'cat-ms-rail-item--on')}
-                  onClick={() => {
-                    setGroupId(group.id)
-                    cancelAdd()
-                  }}
-                >
-                  <span className="cat-ms-rail-label">{group.name}</span>
-                  {here && <span className="cat-ms-rail-mark" aria-hidden />}
-                </button>
-              )
-            })}
-          </div>
-
-          <div className="cat-ms-pane">
-            <div className="cat-ms-chips">
-              {currentGroup?.children.map((sub) => {
-                const selected = isSelected(currentGroup.id, sub.id)
+        <>
+          <div className="cat-ms-head">
+            <div className="cat-ms-tabs" role="tablist">
+              {displayGroups.map((group) => {
+                const count = value.filter((loc) => loc.groupId === group.id).length
+                const on = group.id === currentGroup?.id
                 return (
                   <button
-                    key={sub.id}
+                    key={group.id}
                     type="button"
-                    aria-pressed={selected}
-                    className={cn('cat-ms-chip', selected && 'cat-ms-chip--on')}
-                    disabled={readonly}
-                    onClick={() => choose(currentGroup.id, sub.id)}
+                    role="tab"
+                    aria-selected={on}
+                    className={cn('cat-ms-tab', on && 'cat-ms-tab--on')}
+                    onClick={() => {
+                      setGroupId(group.id)
+                      cancelAdd()
+                    }}
                   >
-                    <span className="cat-ms-chip-label">{sub.name}</span>
+                    <span className="cat-ms-tab-label">{group.name}</span>
+                    {count > 0 && <b className="cat-ms-tab-count">{count}</b>}
                   </button>
                 )
               })}
-              {!readonly && adding && (
-                <input
-                  ref={addInputRef}
-                  className="cat-ms-chip-input"
-                  placeholder="子分组名称…"
-                  value={addVal}
-                  onChange={(e) => setAddVal(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      e.preventDefault()
-                      cancelAdd()
-                      return
-                    }
-                    handleInlineRenameEnter(e, commitAdd)
-                  }}
-                  onBlur={() => deferInlineRenameCommit(commitAdd)}
-                />
-              )}
-              {!readonly && !adding && (
-                <button type="button" className="cat-ms-chip cat-ms-chip--add" onClick={() => setAdding(true)}>
-                  <Plus className="lucide" strokeWidth={2} />
-                  <span className="cat-ms-chip-label">新建</span>
-                </button>
-              )}
             </div>
+            {!readonly && (
+              <button
+                type="button"
+                role="switch"
+                aria-checked={multi}
+                className={cn('cat-ms-multi', multi && 'cat-ms-multi--on')}
+                onClick={() => setMultiMode(!multi)}
+              >
+                <span>多选</span>
+                <span className="cat-ms-sw" aria-hidden />
+              </button>
+            )}
           </div>
-        </div>
-      )}
 
-      {multi && value.length > 0 && (
-        <div className="cat-ms-picked">
-          <div className="cat-ms-picked-chips">
-            {value.map((loc) => (
-              <div key={`${loc.groupId}-${loc.subGroupId}`} className="cat-ms-picked-chip">
-                <span className="cat-ms-picked-label">{locationLabel(loc)}</span>
-                {!readonly && (
-                  <button
-                    type="button"
-                    className="cat-ms-picked-remove"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removeLocation(loc)
-                    }}
-                  >
-                    <X className="lucide" strokeWidth={2} />
-                  </button>
-                )}
-              </div>
-            ))}
+          <div className="cat-ms-chips">
+            {currentGroup?.children.map((sub) => {
+              const selected = isSelected(currentGroup.id, sub.id)
+              return (
+                <button
+                  key={sub.id}
+                  type="button"
+                  aria-pressed={selected}
+                  className={cn('cat-ms-chip', selected && 'cat-ms-chip--on')}
+                  disabled={readonly}
+                  onClick={() => choose(currentGroup.id, sub.id)}
+                >
+                  {selected && <Check className="lucide cat-ms-chip-ck" strokeWidth={2.6} />}
+                  <span className="cat-ms-chip-label">{sub.name}</span>
+                </button>
+              )
+            })}
+            {!readonly && adding && (
+              <input
+                ref={addInputRef}
+                className="cat-ms-chip-input"
+                placeholder="文件夹名"
+                value={addVal}
+                onChange={(e) => setAddVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    cancelAdd()
+                    return
+                  }
+                  handleInlineRenameEnter(e, commitAdd)
+                }}
+                onBlur={() => deferInlineRenameCommit(commitAdd)}
+              />
+            )}
+            {!readonly && !adding && (
+              <button type="button" className="cat-ms-chip cat-ms-chip--add" onClick={() => setAdding(true)}>
+                <Plus className="lucide" strokeWidth={2} />
+                <span className="cat-ms-chip-label">新建</span>
+              </button>
+            )}
           </div>
-        </div>
+        </>
       )}
 
       {!inline && onClose && (

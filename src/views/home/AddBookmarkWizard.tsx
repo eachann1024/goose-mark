@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, type UIEvent } from 'react'
+import { useCallback, useEffect, useRef, type ReactNode, type UIEvent } from 'react'
 import type { BookmarkLocation } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
 import {
@@ -131,17 +131,42 @@ export default function AddBookmarkWizard({
     return () => document.removeEventListener('keydown', onKey)
   }, [isSaving, draftLocations.length, handleSaveClick])
 
+  const actions = (
+    <>
+      {isEdit && (
+        <button
+          type="button"
+          className="gm-act-btn gm-act-icon danger"
+          onClick={handleDeleteClick}
+          disabled={isSaving}
+          title="删除"
+          aria-label="删除"
+        >
+          <Ico name="trash-2" />
+        </button>
+      )}
+      <button type="button" className="gm-act-btn" onClick={handleCancel} disabled={isSaving}>
+        取消
+      </button>
+      <button
+        type="button"
+        className="gm-act-btn primary"
+        onClick={handleSaveClick}
+        disabled={isSaving || draftLocations.length === 0}
+      >
+        {isSaving ? <Ico name="loader" className="spin" /> : <Ico name="check" />}
+        保存
+      </button>
+    </>
+  )
+
   return (
     <div className={`gm-wiz${isEdit ? ' is-edit' : ' is-new'} no-rail`}>
       <div className="gm-wiz-main">
-        <div className="gm-wiz-topbar">
-          <button className="gm-rail-back gm-wiz-back" onClick={handleCancel} disabled={isSaving}>
-            <Ico name="arrow-left" />
-            返回列表
-          </button>
-        </div>
         <div className="gm-wiz-body">
           <ConfirmStep
+            actions={actions}
+            formError={formError}
             draft={draft}
             draftLocations={draftLocations}
             previewIconUrl={previewIconUrl}
@@ -167,35 +192,7 @@ export default function AddBookmarkWizard({
             runUrlFetch={runUrlFetch}
             isNewEntry={isNewEntry}
           />
-
-          {formError && (
-            <div className="gm-wiz-error">
-              <Ico name="alert-circle" />
-              {formError}
-            </div>
-          )}
         </div>
-
-        <footer className="gm-wiz-foot">
-          {isEdit && (
-            <button className="btn btn-ghost danger" onClick={handleDeleteClick} disabled={isSaving}>
-              <Ico name="trash-2" />
-              删除
-            </button>
-          )}
-          <div style={{ flex: 1 }} />
-          <button className="btn btn-ghost" onClick={handleCancel} disabled={isSaving}>
-            取消
-          </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSaveClick}
-            disabled={isSaving || draftLocations.length === 0}
-          >
-            {isSaving ? <Ico name="loader" className="spin" /> : <Ico name="check" />}
-            {isEdit ? '保存修改' : '保存书签'}
-          </button>
-        </footer>
       </div>
     </div>
   )
@@ -209,6 +206,8 @@ function highlightTemplateTokens(url: string): string {
 }
 
 function ConfirmStep({
+  actions,
+  formError,
   draft,
   draftLocations,
   previewIconUrl,
@@ -234,6 +233,8 @@ function ConfirmStep({
   runUrlFetch,
   isNewEntry,
 }: {
+  actions: ReactNode
+  formError: string
   draft: { title: string; desc: string; url: string }
   draftLocations: BookmarkLocation[]
   previewIconUrl: string
@@ -273,8 +274,6 @@ function ConfirmStep({
     runUrlFetch(URL_FETCH_PASTE_DEBOUNCE_MS)
   }, [draft.url, editingId, originalUrl, runUrlFetch])
 
-  const isEdit = !!editingId
-
   // 仅新建：挂载后把焦点放到网址输入框（编辑不抢焦点；用入口 isNewEntry 避免首帧误判）
   useEffect(() => {
     if (!isNewEntry) return
@@ -298,16 +297,6 @@ function ConfirmStep({
     draft.url !== lastFetchedUrl &&
     !(editingId && draft.url === originalUrl)
 
-  const metadataStatus = useMemo(() => {
-    if (!draft.url.trim()) return isEdit ? '粘贴或输入新链接后自动读取网页信息' : '粘贴或输入链接后自动读取标题、简介和图标'
-    if (!isValidUrlInput(draft.url)) return '链接格式待确认'
-    if (iconLoading) return '正在读取网页信息'
-    if (urlOutdated) return '链接已修改，失焦后自动更新网页信息'
-    if (iconFetchPhase === 'success') return '已读取网页信息'
-    if (iconFetchPhase === 'failed') return '未能读取网页信息，可手动填写'
-    return '修改链接不会立即读取，失焦后自动更新'
-  }, [draft.url, iconFetchPhase, iconLoading, isEdit, urlOutdated])
-
   // 失焦时链接有效且有未读取变更 → 自动读一次；打字过程中绝不触发
   const handleUrlBlur = useCallback(() => {
     if (!urlOutdated || iconLoading) return
@@ -320,18 +309,14 @@ function ConfirmStep({
 
   return (
     <div className="gm-confirm">
-      <div className="gm-confirm-head">
-        <h2>{isEdit ? '编辑书签' : '新增书签'}</h2>
-      </div>
-
-      <section className="gm-confirm-url">
+      <div className="gm-confirm-row">
         <div className={`gm-url-big${iconLoading ? ' is-orbiting' : ''}`}>
           <Ico name="link" className="gm-url-icon" />
           <div className={`gm-url-field-wrap${hasUrl ? ' has-value' : ''}${hasTemplateToken ? ' has-token' : ''}`}>
             {/* 空值：伪占位，{q} 标蓝 */}
             {!hasUrl && (
               <div className="gm-url-ph" aria-hidden="true">
-                https://… 或含 <span className="gm-url-ph-token">{'{q}'}</span> 的搜索模板
+                链接或 <span className="gm-url-ph-token">{'{q}'}</span> 搜索模板
               </div>
             )}
             {/* 有值：镜像层高亮任意 {占位符}，输入层透明描光标 */}
@@ -359,105 +344,77 @@ function ConfirmStep({
               aria-label="链接或含 {q} 的搜索模板"
             />
           </div>
+          {urlOutdated && !iconLoading && (
+            <Ico name="refresh-cw" className="gm-url-pending" />
+          )}
         </div>
-        <div className="gm-url-meta">
-          <span className={`gm-url-state${iconFetchPhase === 'failed' && !urlOutdated ? ' warn' : urlOutdated && !iconLoading ? ' attention' : ''}`}>
-            <Ico
-              name={iconLoading ? 'loader' : urlOutdated ? 'refresh-cw' : iconFetchPhase === 'failed' ? 'alert-circle' : 'check-circle'}
-              className={iconLoading ? 'spin' : ''}
-            />
-            {metadataStatus}
-          </span>
-        </div>
-        {isDraftTemplate && (
-          <div className={`gm-tpl-tip${allowUniversal ? ' on' : ''}`}>
-            <div className="gm-tpl-tip-body">
-              <div className="gm-tpl-tip-title">
-                <Ico name="sparkles" />
-                已识别搜索模板
-              </div>
-              <div className="gm-tpl-tip-desc">
-                支持 <span className="gm-url-ph-token">{'{q}'}</span>、<span className="gm-url-ph-token">{'{关键词}'}</span> 等任意 {'{占位符}'}。
-                {allowUniversal
-                  ? ' 已开启全局搜索：uTools 主输入框任意键入即可匹配，面板内无书签命中时也会列出。'
-                  : ' 开启全局搜索后，uTools 主输入框任意键入即可匹配，面板内无书签命中时也会列出。'}
-              </div>
-            </div>
-            <div className="gm-tpl-tip-switch">
-              <span className="gm-tpl-tip-switch-lbl">全局搜索</span>
-              <div
-                className={`g-switch${allowUniversal ? ' on' : ''}`}
-                role="switch"
-                aria-checked={allowUniversal}
-                aria-label="显示到 uTools 全局搜索"
-                onClick={() => patchDraft({ allowUniversal: !allowUniversal })}
-              />
-            </div>
-          </div>
-        )}
-      </section>
+        {actions}
+      </div>
 
-      <div className="gm-id-card">
-        <div className="gm-id-top">
-          <div
-            className={`gm-id-fav${iconFetchPhase === 'success' ? ' fetch-success' : iconFetchPhase === 'failed' ? ' fetch-failed' : ''}`}
-            style={{ background: previewIcon?.bgColor || 'var(--surface-hover)' }}
-          >
-            {iconLoading ? (
-              <span className="icon-countdown">
-                <svg viewBox="0 0 60 60" className="icon-countdown-ring" preserveAspectRatio="none">
-                  <rect className="icon-countdown-track" x="1.25" y="1.25" width="57.5" height="57.5" rx="13.75" pathLength={100} />
-                  <rect className="icon-countdown-fill" x="1.25" y="1.25" width="57.5" height="57.5" rx="13.75" pathLength={100} />
-                </svg>
-              </span>
-            ) : previewIconUrl ? (
-              <Image bare src={previewIconUrl} alt="" />
-            ) : (
-              <span className="gm-id-fav-text">{previewText}</span>
-            )}
-          </div>
-          <div className="gm-id-fields">
-            <div className="gm-id-label">标题</div>
-            <div className={`gm-id-orbit${titleFetching ? ' is-orbiting' : ''}`}>
-              <input
-                className="gm-id-input"
-                value={draft.title}
-                placeholder={titleFetching ? '正在获取标题…' : '网站标题'}
-                readOnly={titleFetching}
-                onPointerDown={() => {
-                  if (titleFetching) takeOverTitle()
-                }}
-                onKeyDown={(e) => {
-                  if (titleFetching && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) takeOverTitle()
-                }}
-                onChange={(e) => {
-                  patchDraft({ title: e.target.value })
-                  onTitleInput()
-                }}
-              />
-            </div>
-            {titleSuggestion && titleSuggestion !== draft.title.trim() && (
-              <button
-                type="button"
-                className="gm-id-suggest"
-                onClick={applyTitleSuggestion}
-                title="点击替换为匹配到的标题"
-              >
-                <Ico name="sparkles" />
-                <span className="gm-id-suggest-label">匹配到</span>
-                <span className="gm-id-suggest-text">{titleSuggestion}</span>
-              </button>
-            )}
-          </div>
+      {formError && (
+        <div className="gm-wiz-error">
+          <Ico name="alert-circle" />
+          {formError}
         </div>
-        <div className="gm-id-desc-block">
-          <div className="gm-id-label">简介 / 笔记</div>
+      )}
+
+      <div className="gm-meta">
+        <div
+          className={`gm-id-fav${iconFetchPhase === 'success' ? ' fetch-success' : iconFetchPhase === 'failed' ? ' fetch-failed' : ''}`}
+          style={{ background: previewIcon?.bgColor || 'var(--surface)' }}
+        >
+          {iconLoading ? (
+            <span className="icon-countdown">
+              <svg viewBox="0 0 60 60" className="icon-countdown-ring" preserveAspectRatio="none">
+                <rect className="icon-countdown-track" x="1.25" y="1.25" width="57.5" height="57.5" rx="13.75" pathLength={100} />
+                <rect className="icon-countdown-fill" x="1.25" y="1.25" width="57.5" height="57.5" rx="13.75" pathLength={100} />
+              </svg>
+            </span>
+          ) : previewIconUrl ? (
+            <Image bare src={previewIconUrl} alt="" />
+          ) : (
+            <span className="gm-id-fav-text">{previewText}</span>
+          )}
+        </div>
+        <div className="gm-meta-stack">
+          <div className={`gm-id-orbit${titleFetching ? ' is-orbiting' : ''}`}>
+            <input
+              className="gm-id-input"
+              value={draft.title}
+              placeholder={titleFetching ? '正在获取标题…' : '标题'}
+              readOnly={titleFetching}
+              aria-label="标题"
+              onPointerDown={() => {
+                if (titleFetching) takeOverTitle()
+              }}
+              onKeyDown={(e) => {
+                if (titleFetching && (e.key.length === 1 || e.key === 'Backspace' || e.key === 'Delete')) takeOverTitle()
+              }}
+              onChange={(e) => {
+                patchDraft({ title: e.target.value })
+                onTitleInput()
+              }}
+            />
+          </div>
+          {titleSuggestion && titleSuggestion !== draft.title.trim() && (
+            <button
+              type="button"
+              className="gm-id-suggest"
+              onClick={applyTitleSuggestion}
+              title="点击替换为匹配到的标题"
+            >
+              <Ico name="sparkles" />
+              <span className="gm-id-suggest-label">匹配到</span>
+              <span className="gm-id-suggest-text">{titleSuggestion}</span>
+            </button>
+          )}
           <div className={`gm-id-orbit${descFetching ? ' is-orbiting' : ''}`}>
             <textarea
               className="gm-id-textarea"
               value={draft.desc}
-              placeholder={descFetching ? '正在获取描述…' : '一句话描述这个网站，或写点笔记…'}
+              placeholder={descFetching ? '正在获取描述…' : '简介 / 笔记'}
               readOnly={descFetching}
+              aria-label="简介 / 笔记"
               onPointerDown={() => {
                 if (descFetching) takeOverDesc()
               }}
@@ -470,15 +427,24 @@ function ConfirmStep({
         </div>
       </div>
 
-      <div className="gm-cat-head">
-        <Ico name="folder" />
-        <span className="gm-cat-title">放到哪里</span>
-        <span className="gm-cat-sub">默认放进一个文件夹</span>
-      </div>
+      {isDraftTemplate && (
+        <button
+          type="button"
+          className={`gm-tpl-row${allowUniversal ? ' on' : ''}`}
+          role="switch"
+          aria-checked={allowUniversal}
+          aria-label="显示到 uTools 全局搜索"
+          onClick={() => patchDraft({ allowUniversal: !allowUniversal })}
+        >
+          <Ico name="sparkles" />
+          <span>全局搜索</span>
+          <span className="gm-sw" aria-hidden />
+        </button>
+      )}
 
-      <div className="gm-cat-select form-category-select">
+      <section className="gm-cat-select form-category-select">
         <CategoryMultiSelect inline value={draftLocations} onChange={setLocations} />
-      </div>
+      </section>
     </div>
   )
 }
