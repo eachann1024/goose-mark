@@ -40,6 +40,7 @@ export function HomeBookmarkPanels({
   gridColumns,
   selectedId,
   universalFallbackItems,
+  aiCreateItem,
   setSearchViewMode,
   setSelectedId,
   openHomeItem,
@@ -62,6 +63,7 @@ export function HomeBookmarkPanels({
   searchResultItems: HomeItem[]
   gridColumns: number
   universalFallbackItems: HomeItem[]
+  aiCreateItem: HomeItem | null
   setSearchViewMode: (mode: SearchViewMode) => void
   keptGroups: HomeGroup[]
   activeDragItem: HomeItem | null
@@ -120,6 +122,7 @@ export function HomeBookmarkPanels({
                   columns={gridColumns}
                   selectedId={selectedId}
                   universalItems={universalFallbackItems}
+                  aiItem={aiCreateItem}
                   onViewModeChange={setSearchViewMode}
                   onSelect={setSelectedId}
                   onOpen={openHomeItem}

@@ -8,6 +8,10 @@ import { SettingsSelect } from './SettingsControls'
 export function SettingsAI() {
   const aiEnabled = useSettingsStore((s) => s.aiEnabled)
   const setAiEnabled = useSettingsStore((s) => s.setAiEnabled)
+  const aiAllowCreateGroup = useSettingsStore((s) => s.aiAllowCreateGroup)
+  const setAiAllowCreateGroup = useSettingsStore((s) => s.setAiAllowCreateGroup)
+  const aiAllowCreateSubGroup = useSettingsStore((s) => s.aiAllowCreateSubGroup)
+  const setAiAllowCreateSubGroup = useSettingsStore((s) => s.setAiAllowCreateSubGroup)
   const aiSelectedModelId = useSettingsStore((s) => s.aiSelectedModelId)
   const setAiSelectedModelId = useSettingsStore((s) => s.setAiSelectedModelId)
   const aiProtocol = useSettingsStore((s) => s.aiProtocol)
@@ -216,6 +220,31 @@ export function SettingsAI() {
                 onChange={setAiSelectedModelId}
               />
             </div>
+            ) : null}
+
+            {aiEnabled ? (
+            <>
+            <div className="set-row">
+              <div><div className="rt">允许新建主分组</div></div>
+              <div
+                className={`g-switch${aiAllowCreateGroup ? ' on' : ''}`}
+                role="switch"
+                aria-checked={aiAllowCreateGroup}
+                aria-label="允许新建主分组"
+                onClick={() => setAiAllowCreateGroup(!aiAllowCreateGroup)}
+              />
+            </div>
+            <div className="set-row">
+              <div><div className="rt">允许新建子分组</div></div>
+              <div
+                className={`g-switch${aiAllowCreateSubGroup ? ' on' : ''}`}
+                role="switch"
+                aria-checked={aiAllowCreateSubGroup}
+                aria-label="允许新建子分组"
+                onClick={() => setAiAllowCreateSubGroup(!aiAllowCreateSubGroup)}
+              />
+            </div>
+            </>
             ) : null}
 
           </div>

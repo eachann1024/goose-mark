@@ -56,7 +56,9 @@ export function useHomeToast({
       setToastKey((k) => k + 1)
       setToastOpen(true)
       window.clearTimeout(toastTimer.current)
-      toastTimer.current = window.setTimeout(() => setToastOpen(false), options?.duration ?? 4200)
+      if (options?.tone !== 'loading') {
+        toastTimer.current = window.setTimeout(() => setToastOpen(false), options?.duration ?? 4200)
+      }
     },
     [closeCtx]
   )

@@ -49,7 +49,7 @@ export function HomeToast({
             }
           }}
         >
-          <span className="tic"><Ico name={toastTone === 'error' ? 'alert-circle' : 'check'} /></span>
+          <span className="tic"><Ico name={toastTone === 'error' ? 'alert-circle' : toastTone === 'loading' ? 'loader' : 'check'} /></span>
           <div>
             <div className="tt">{toastTitle || '操作完成'}</div>
             {toastDesc ? (
