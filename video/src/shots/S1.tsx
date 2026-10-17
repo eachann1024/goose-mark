@@ -3,7 +3,7 @@ import { AbsoluteFill, useCurrentFrame } from 'remotion'
 import { ACCENT, INK, M, SOFT } from '../theme'
 import { BigTitle, Mono } from '../parts/Type'
 import { Paper } from '../parts/ui'
-import { CornerBrackets, DotField, HalftoneSwatch, Underline } from '../parts/deco'
+import { CornerBrackets, DotField, Underline } from '../parts/deco'
 import { cardIn, EASE_BG, EASE_CARD, stampSpring } from '../lib/anim'
 
 const CARD = { left: M, top: 470, width: 888, height: 404 }
@@ -46,7 +46,6 @@ export const S1: React.FC = () => {
   return (
     <AbsoluteFill>
       <DotField drift={frame * 1.4} />
-      <HalftoneSwatch left={892} top={126} progress={cardIn(frame, 24, 30)} />
 
       <BigTitle
         lines={[[{ t: '塞一段乱文' }], [{ t: '网址自己浮上来', k: 'serif' }]]}
