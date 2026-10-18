@@ -358,7 +358,7 @@ function useIconSource(icon: IconSource | null | undefined) {
 // ---- 进度轨 ----
 type StepState = 'done' | 'active' | 'pending' | 'failed' | 'skipped'
 
-function ProgressRail({ states, reduced }: { states: StepState[]; reduced: boolean }) {
+function ProgressRail({ states, reduced, searched }: { states: StepState[]; reduced: boolean; searched: boolean }) {
   return (
     <ol className="ais-rail">
       {AI_SAVE_STEPS.map((step, i) => {
@@ -398,7 +398,7 @@ function ProgressRail({ states, reduced }: { states: StepState[]; reduced: boole
                 )}
               </AnimatePresence>
             </span>
-            <span className="ais-step-label">{STEP_LABEL[step]}</span>
+            <span className="ais-step-label">{step === 'detect' && searched ? '搜索' : STEP_LABEL[step]}</span>
           </li>
         )
       })}
@@ -462,7 +462,13 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
     return i < stepIdx ? 'done' : i === stepIdx ? 'active' : 'pending'
   })
 
-  const heading = failed ? '保存失败' : settled ? (s.phase === 'exists' ? '已在书签中' : '已保存') : '正在保存'
+  const heading = failed
+    ? '保存失败'
+    : settled
+      ? (s.phase === 'exists' ? '已在书签中' : '已保存')
+      : s.searched && !s.url
+        ? '正在搜索'
+        : '正在保存'
   const pendingLayer = failed ? -1 : revealed
   const isShown = (k: number) => revealed > k
 
@@ -474,6 +480,7 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
 
   return (
     <div className="ais-stage">
+      {settled && s.phase === 'done' && !reduced && <SaveConfetti />}
       <div className="ais-heading-row">
         <AnimatePresence mode="wait" initial={false}>
           <motion.h1
@@ -536,7 +543,7 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
         </LayoutGroup>
       </div>
 
-      <ProgressRail states={states} reduced={reduced} />
+      <ProgressRail states={states} reduced={reduced} searched={s.searched} />
 
       <div className="ais-bottom">
         <AnimatePresence>
@@ -568,6 +575,72 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
       </div>
     </div>
   )
+}
+
+function SaveConfetti() {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useEffect(() => {
+    const canvas = ref.current
+    if (!canvas) return
+    let raf = 0
+    let stopped = false
+    const start = () => {
+      if (stopped) return
+      const ctx = canvas.getContext('2d')
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      if (!ctx || width < 2 || height < 2) return
+      const dpr = Math.min(window.devicePixelRatio || 1, 2)
+      canvas.width = Math.floor(width * dpr)
+      canvas.height = Math.floor(height * dpr)
+      const accent = getComputedStyle(canvas).getPropertyValue('--accent').trim() || '#6d5efc'
+      const colors = [accent, '#f2c14e', '#5bc0a0', '#f07167', '#8eb6ff']
+      const parts = Array.from({ length: 72 }, () => ({
+        x: canvas.width * (0.32 + Math.random() * 0.36),
+        y: canvas.height * 0.42,
+        vx: (Math.random() - 0.5) * 9 * dpr,
+        vy: (-7 - Math.random() * 6) * dpr,
+        g: (0.18 + Math.random() * 0.08) * dpr,
+        w: (4 + Math.random() * 4) * dpr,
+        h: (7 + Math.random() * 5) * dpr,
+        rot: Math.random() * Math.PI,
+        vr: (Math.random() - 0.5) * 0.28,
+        color: colors[Math.floor(Math.random() * colors.length)] || accent,
+        life: 1
+      }))
+      let frame = 0
+      const tick = () => {
+        if (stopped) return
+        frame += 1
+        ctx.clearRect(0, 0, canvas.width, canvas.height)
+        let alive = false
+        for (const part of parts) {
+          part.vy += part.g
+          part.x += part.vx
+          part.y += part.vy
+          part.rot += part.vr
+          part.life -= 0.012
+          if (part.life <= 0) continue
+          alive = true
+          ctx.save()
+          ctx.globalAlpha = part.life
+          ctx.translate(part.x, part.y)
+          ctx.rotate(part.rot)
+          ctx.fillStyle = part.color
+          ctx.fillRect(-part.w / 2, -part.h / 2, part.w, part.h)
+          ctx.restore()
+        }
+        if (alive && frame < 160) raf = requestAnimationFrame(tick)
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(start)
+    return () => {
+      stopped = true
+      cancelAnimationFrame(raf)
+    }
+  }, [])
+  return <canvas ref={ref} className="ais-confetti" aria-hidden />
 }
 
 /** 各层揭示时长（毫秒），用于串行衔接 */

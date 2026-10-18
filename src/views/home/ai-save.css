@@ -35,11 +35,20 @@
 .goose-home .ais-back:hover { color: var(--fg); background: var(--surface-hover); }
 
 .goose-home .ais-stage {
+  position: relative;
   width: min(440px, calc(100% - 48px));
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 22px;
+}
+.goose-home .ais-confetti {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 80;
 }
 
 /* ---- 标题 ---- */

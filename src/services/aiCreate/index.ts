@@ -9,9 +9,11 @@ import { extractUrlCandidates } from './extractUrl'
 import { resolvePlacement, type Placement } from './placement'
 import { getAICreateSettings } from './settings'
 import {
-  ORGANIZE_OUTPUT, ORGANIZE_SYSTEM, PICK_URL_OUTPUT, PICK_URL_SYSTEM,
-  buildOrganizePrompt, buildPickUrlPrompt, type PromptGroup
+  ORGANIZE_OUTPUT, ORGANIZE_SYSTEM, PICK_HIT_SYSTEM, PICK_URL_OUTPUT, PICK_URL_SYSTEM,
+  SEARCH_QUERY_OUTPUT, SEARCH_QUERY_SYSTEM,
+  buildOrganizePrompt, buildPickHitPrompt, buildPickUrlPrompt, buildSearchQueryPrompt, type PromptGroup
 } from './prompts'
+import { searchWeb, type SearchHit } from './webSearch'
 
 /** 分组落点（展示用） */
 export interface AICreatePath {
@@ -23,6 +25,7 @@ export interface AICreatePath {
 
 /** 执行过程事件：每一步拿到数据立即发出，供 UI 渐进揭示 */
 export type AICreateEvent =
+  | { type: 'searching' }
   | { type: 'url'; url: string }
   | { type: 'site'; icon: IconSource | null; pageTitle: string; pageDesc: string }
   | { type: 'draft'; title: string; description: string }
@@ -54,20 +57,66 @@ async function askJSON(
   return parseAIJsonObject(raw)
 }
 
-async function resolveUrl(text: string): Promise<string> {
-  const candidates = extractUrlCandidates(text)
-  if (candidates.length === 0) throw new Error('未识别到网址')
-  if (candidates.length === 1) return candidates[0]
+function fallbackQuery(text: string) {
+  const cleaned = text
+    .replace(/[，。！？、；,.!?]/g, ' ')
+    .replace(/帮我|请你|麻烦|查询一下|查一下|搜一下|搜索一下|看一下|了解一下|这个网站|是做什么的|做什么的|干什么的|并且|然后|收藏到|保存到|加到|放到|分组里|分组/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return (cleaned || text.trim()).slice(0, 80)
+}
+
+async function resolveSearchQuery(text: string) {
   try {
     const picked = await askJSON(
-      [{ role: 'system', content: PICK_URL_SYSTEM }, { role: 'user', content: buildPickUrlPrompt(text, candidates) }],
+      [{ role: 'system', content: SEARCH_QUERY_SYSTEM }, { role: 'user', content: buildSearchQueryPrompt(text) }],
+      SEARCH_QUERY_OUTPUT
+    )
+    const query = typeof picked.query === 'string' ? picked.query.trim() : ''
+    if (query) return query.slice(0, 80)
+  } catch {
+    // 抽词失败时用原话里剩下的关键词
+  }
+  return fallbackQuery(text)
+}
+
+async function pickHit(text: string, hits: SearchHit[]) {
+  try {
+    const picked = await askJSON(
+      [{ role: 'system', content: PICK_HIT_SYSTEM }, { role: 'user', content: buildPickHitPrompt(text, hits) }],
       PICK_URL_OUTPUT
     )
     const url = typeof picked.url === 'string' ? picked.url : ''
-    return candidates.find((c) => c === url || isSamePage(url, c)) ?? candidates[0]
+    const hit = hits.find((item) => item.url === url || isSamePage(url, item.url))
+    if (hit) return hit.url
   } catch {
-    return candidates[0]
+    // 选站失败时用第一条搜索结果
   }
+  return hits[0].url
+}
+
+async function resolveUrl(text: string, emit: (event: AICreateEvent) => void): Promise<string> {
+  const candidates = extractUrlCandidates(text)
+  if (candidates.length === 1) return candidates[0]
+  if (candidates.length > 1) {
+    try {
+      const picked = await askJSON(
+        [{ role: 'system', content: PICK_URL_SYSTEM }, { role: 'user', content: buildPickUrlPrompt(text, candidates) }],
+        PICK_URL_OUTPUT
+      )
+      const url = typeof picked.url === 'string' ? picked.url : ''
+      return candidates.find((c) => c === url || isSamePage(url, c)) ?? candidates[0]
+    } catch {
+      return candidates[0]
+    }
+  }
+
+  emit({ type: 'searching' })
+  const query = await resolveSearchQuery(text)
+  if (!query) throw new Error('没有可搜索的内容')
+  const hits = await searchWeb(query)
+  if (!hits.length) throw new Error('没有搜到可收藏的网站')
+  return pickHit(text, hits)
 }
 
 function findExisting(url: string) {
@@ -101,7 +150,7 @@ function existingPath(location: BookmarkLocation | null): AICreatePath | null {
   return { groupName: group.name, subGroupName: sub.name, createdGroup: false, createdSub: false }
 }
 
-/** AI 创建书签：识别网址 → 抓取 → AI 整理 → 校验分组并保存 */
+/** AI 创建书签：文本里没有网址时先搜索，再抓取、整理并保存 */
 export async function runAICreate(
   input: string,
   onEvent: (event: AICreateEvent) => void = () => {}
@@ -116,7 +165,7 @@ export async function runAICreate(
 }
 
 async function runSteps(input: string, emit: (event: AICreateEvent) => void): Promise<AICreateResult> {
-  const url = await resolveUrl(input)
+  const url = await resolveUrl(input, emit)
   emit({ type: 'url', url })
   const existing = findExisting(url)
   if (existing) {
@@ -153,7 +202,8 @@ async function runSteps(input: string, emit: (event: AICreateEvent) => void): Pr
           description: pageDesc || '',
           content,
           groups: buildGroupTree(),
-          permissions
+          permissions,
+          instruction: input
         })
       }
     ],
