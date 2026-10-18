@@ -2,10 +2,10 @@ import { create } from 'zustand'
 import { runAICreate, type AICreateEvent, type AICreatePath } from '@/services/aiCreate'
 import type { BookmarkLocation, IconSource } from '@/types/bookmark'
 
-export type AISaveStep = 'detect' | 'fetch' | 'organize' | 'save'
+export type AISaveStep = 'judge' | 'detect' | 'fetch' | 'organize' | 'save'
 export type AISavePhase = 'idle' | 'running' | 'done' | 'exists' | 'error'
 
-export const AI_SAVE_STEPS: AISaveStep[] = ['detect', 'fetch', 'organize', 'save']
+export const AI_SAVE_STEPS: AISaveStep[] = ['judge', 'detect', 'fetch', 'organize', 'save']
 
 interface AISaveData {
   url: string | null
@@ -14,6 +14,7 @@ interface AISaveData {
   pageTitle: string
   pageDesc: string
   searched: boolean
+  rejected: boolean
   title: string | null
   description: string | null
   path: AICreatePath | null
@@ -36,6 +37,7 @@ const EMPTY: AISaveData = {
   pageTitle: '',
   pageDesc: '',
   searched: false,
+  rejected: false,
   title: null,
   description: null,
   path: null,
@@ -48,15 +50,18 @@ export const useAISaveSession = create<AISaveSessionState>((set, get) => ({
   sessionId: 0,
   input: '',
   phase: 'idle',
-  step: 'detect',
+  step: 'judge',
   begin: (input) => {
     const sessionId = get().sessionId + 1
-    set({ ...EMPTY, sessionId, input, phase: 'running', step: 'detect' })
+    set({ ...EMPTY, sessionId, input, phase: 'running', step: 'judge' })
     return sessionId
   },
   apply: (sessionId, event) => {
     if (get().sessionId !== sessionId) return
     switch (event.type) {
+      case 'judged':
+        set({ step: 'detect' })
+        break
       case 'searching':
         set({ searched: true, step: 'detect' })
         break
@@ -88,7 +93,7 @@ export const useAISaveSession = create<AISaveSessionState>((set, get) => ({
         })
         break
       case 'error':
-        set({ phase: 'error', error: event.message })
+        set({ phase: 'error', error: event.message, rejected: event.rejected === true })
         break
     }
   }
@@ -112,7 +117,11 @@ export function startAISave(input: string) {
 async function runMock(variant: string, emit: (event: AICreateEvent) => void) {
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const url = 'https://github.com/pmndrs/zustand'
-  await wait(500)
+  await wait(400)
+  if (variant === 'reject') {
+    emit({ type: 'error', message: '检测不到书签', rejected: true })
+    return
+  }
   if (variant === 'error') {
     emit({ type: 'url', url })
     await wait(900)

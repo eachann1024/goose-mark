@@ -9,9 +9,9 @@ import { extractUrlCandidates } from './extractUrl'
 import { resolvePlacement, type Placement } from './placement'
 import { getAICreateSettings } from './settings'
 import {
-  ORGANIZE_OUTPUT, ORGANIZE_SYSTEM, PICK_HIT_SYSTEM, PICK_URL_OUTPUT, PICK_URL_SYSTEM,
+  JUDGE_OUTPUT, JUDGE_SYSTEM, ORGANIZE_OUTPUT, ORGANIZE_SYSTEM, PICK_HIT_SYSTEM, PICK_URL_OUTPUT, PICK_URL_SYSTEM,
   SEARCH_QUERY_OUTPUT, SEARCH_QUERY_SYSTEM,
-  buildOrganizePrompt, buildPickHitPrompt, buildPickUrlPrompt, buildSearchQueryPrompt, type PromptGroup
+  buildJudgePrompt, buildOrganizePrompt, buildPickHitPrompt, buildPickUrlPrompt, buildSearchQueryPrompt, type PromptGroup
 } from './prompts'
 import { searchWeb, type SearchHit } from './webSearch'
 
@@ -25,6 +25,7 @@ export interface AICreatePath {
 
 /** 执行过程事件：每一步拿到数据立即发出，供 UI 渐进揭示 */
 export type AICreateEvent =
+  | { type: 'judged' }
   | { type: 'searching' }
   | { type: 'url'; url: string }
   | { type: 'site'; icon: IconSource | null; pageTitle: string; pageDesc: string }
@@ -39,7 +40,20 @@ export type AICreateEvent =
       location: BookmarkLocation | null
       path: AICreatePath | null
     }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; rejected?: boolean }
+
+export const BOOKMARK_NOT_FOUND = '检测不到书签'
+
+export class BookmarkNotFound extends Error {
+  readonly rejected = true
+  constructor() {
+    super(BOOKMARK_NOT_FOUND)
+  }
+}
+
+function isRejected(err: unknown) {
+  return err instanceof BookmarkNotFound
+}
 
 export type AICreateResult =
   | { status: 'exists'; title: string; location: BookmarkLocation | null }
@@ -80,19 +94,24 @@ async function resolveSearchQuery(text: string) {
   return fallbackQuery(text)
 }
 
+async function assertIntent(text: string) {
+  if (!text.trim()) throw new BookmarkNotFound()
+  const picked = await askJSON(
+    [{ role: 'system', content: JUDGE_SYSTEM }, { role: 'user', content: buildJudgePrompt(text) }],
+    JUDGE_OUTPUT
+  )
+  if (picked.ok !== true) throw new BookmarkNotFound()
+}
+
 async function pickHit(text: string, hits: SearchHit[]) {
-  try {
-    const picked = await askJSON(
-      [{ role: 'system', content: PICK_HIT_SYSTEM }, { role: 'user', content: buildPickHitPrompt(text, hits) }],
-      PICK_URL_OUTPUT
-    )
-    const url = typeof picked.url === 'string' ? picked.url : ''
-    const hit = hits.find((item) => item.url === url || isSamePage(url, item.url))
-    if (hit) return hit.url
-  } catch {
-    // 选站失败时用第一条搜索结果
-  }
-  return hits[0].url
+  const picked = await askJSON(
+    [{ role: 'system', content: PICK_HIT_SYSTEM }, { role: 'user', content: buildPickHitPrompt(text, hits) }],
+    PICK_URL_OUTPUT
+  )
+  const url = typeof picked.url === 'string' ? picked.url : ''
+  const hit = hits.find((item) => item.url === url || isSamePage(url, item.url))
+  if (!hit) throw new BookmarkNotFound()
+  return hit.url
 }
 
 async function resolveUrl(text: string, emit: (event: AICreateEvent) => void): Promise<string> {
@@ -113,9 +132,9 @@ async function resolveUrl(text: string, emit: (event: AICreateEvent) => void): P
 
   emit({ type: 'searching' })
   const query = await resolveSearchQuery(text)
-  if (!query) throw new Error('没有可搜索的内容')
+  if (!query) throw new BookmarkNotFound()
   const hits = await searchWeb(query)
-  if (!hits.length) throw new Error('没有搜到可收藏的网站')
+  if (!hits.length) throw new BookmarkNotFound()
   return pickHit(text, hits)
 }
 
@@ -159,12 +178,18 @@ export async function runAICreate(
     const result = await runSteps(input, onEvent)
     return result
   } catch (err) {
-    onEvent({ type: 'error', message: err instanceof Error ? err.message : String(err) })
+    onEvent({
+      type: 'error',
+      message: err instanceof Error ? err.message : String(err),
+      rejected: isRejected(err)
+    })
     throw err
   }
 }
 
 async function runSteps(input: string, emit: (event: AICreateEvent) => void): Promise<AICreateResult> {
+  await assertIntent(input)
+  emit({ type: 'judged' })
   const url = await resolveUrl(input, emit)
   emit({ type: 'url', url })
   const existing = findExisting(url)
