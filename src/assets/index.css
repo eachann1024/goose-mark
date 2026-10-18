@@ -125,28 +125,29 @@
     --chart-5: 27 87% 67%;
   }
 
-  /* Force dark mode variables when .dark class is present on html/body */
+  /* Force dark mode variables when .dark class is present on html/body
+     暗色正文不用纯白：46 16% 90%（#eae8e1），比 #faf9f5 暗一档，长时间阅读不刺眼 */
   .dark {
     --background: 220 14% 4.5%;         /* #090A0C */
-    --foreground: 48 33.3% 97.1%;
+    --foreground: 46 16% 90%;           /* #eae8e1 */
 
     --card: 60 2.1% 18.4%;
-    --card-foreground: 48 33.3% 97.1%;
+    --card-foreground: 46 16% 90%;
 
     --popover: 45 3.6% 22%;
-    --popover-foreground: 48 33.3% 97.1%;
+    --popover-foreground: 46 16% 90%;
 
     --primary: 19 67.5% 62.5%;           /* 珊瑚（暗色提亮）#e0875f */
     --primary-foreground: 0 0% 100%;
 
     --secondary: 45 3.6% 22%;
-    --secondary-foreground: 48 33.3% 97.1%;
+    --secondary-foreground: 46 16% 90%;
 
     --muted: 60 2.1% 18.4%;
     --muted-foreground: 48 6.5% 69.8%;
 
     --accent: 45 3.6% 22%;
-    --accent-foreground: 48 33.3% 97.1%;
+    --accent-foreground: 46 16% 90%;
 
     --destructive: 3 57.2% 57.8%;
     --destructive-foreground: 0 0% 100%;

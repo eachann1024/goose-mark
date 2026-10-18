@@ -41,7 +41,7 @@
 }
 .goose-home[data-theme="dark"] {
   --bg:#090A0C; --surface:#30302e; --surface-hover:#3a3936; --surface-blend:#2b2b29; --surface-footer:#2d2d2b; --input:#21211f;
-  --fg:#faf9f5; --fg-muted:#b7b5ad; --fg-faint:#75746d;
+  --fg:#eae8e1; --fg-muted:#b7b5ad; --fg-faint:#75746d;
   --accent:#e0875f; --accent-hover:#ea9670; --accent-subtle:#3a2a22; --accent-tint:#33261f;
   --accent-border:rgba(224,135,95,.42); --accent-border-strong:rgba(224,135,95,.55); --accent-ring:rgba(224,135,95,.2); --accent-ring-strong:rgba(224,135,95,.34);
   --ai:#a78bfa; --ai-subtle:#2c2640; --ai-bright:#d9bdf6;

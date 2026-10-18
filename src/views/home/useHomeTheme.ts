@@ -58,7 +58,7 @@ export function useHomeThemeEffects({
     const rootEl = document.getElementById('root')
     if (RUNTIME_PLATFORM === 'utools') {
       const bg = eggOn ? 'transparent' : theme === 'dark' ? '#090A0C' : '#faf9f5'
-      const fg = theme === 'dark' ? '#faf9f5' : '#1f1e1d'
+      const fg = theme === 'dark' ? '#eae8e1' : '#1f1e1d'
       document.body.style.backgroundColor = bg
       document.body.style.color = fg
       document.documentElement.style.backgroundColor = bg
