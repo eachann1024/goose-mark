@@ -13,6 +13,7 @@ interface AISaveData {
   icon: IconSource | null | undefined
   pageTitle: string
   pageDesc: string
+  searched: boolean
   title: string | null
   description: string | null
   path: AICreatePath | null
@@ -34,6 +35,7 @@ const EMPTY: AISaveData = {
   icon: undefined,
   pageTitle: '',
   pageDesc: '',
+  searched: false,
   title: null,
   description: null,
   path: null,
@@ -55,6 +57,9 @@ export const useAISaveSession = create<AISaveSessionState>((set, get) => ({
   apply: (sessionId, event) => {
     if (get().sessionId !== sessionId) return
     switch (event.type) {
+      case 'searching':
+        set({ searched: true, step: 'detect' })
+        break
       case 'url':
         set({ url: event.url, step: 'fetch' })
         break

@@ -4,7 +4,6 @@ import PinyinMatch from 'pinyin-match'
 import type { Bookmark } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
-import { extractUrlCandidates } from '@/services/aiCreate/extractUrl'
 import { AI_CREATE_ID, AI_CREATE_ITEM } from './useHomeAICreate'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { bookmarkToHomeItem, type HomeGroup, type HomeItem } from './viewModel'
@@ -149,10 +148,10 @@ export function useHomeSearchResults({
   }, [isSearching, filteredGroups, bookmarks])
   const isUniversalFallback = isSearching && universalFallbackItems.length > 0
 
-  // 开启 AI 且搜索词里含网址时，追加「AI 创建书签」虚拟命令项
+  // 开启 AI 后，任意搜索词都给出「AI 创建书签」，不要求文本里已有网址
   const aiEnabled = useSettingsStore((s) => s.aiEnabled)
   const aiCreateItem = useMemo<HomeItem | null>(
-    () => (aiEnabled && isSearching && extractUrlCandidates(searchVal).length > 0 ? AI_CREATE_ITEM : null),
+    () => (aiEnabled && isSearching && searchVal.trim().length > 0 ? AI_CREATE_ITEM : null),
     [aiEnabled, isSearching, searchVal]
   )
 

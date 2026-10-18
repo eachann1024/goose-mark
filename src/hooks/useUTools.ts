@@ -16,13 +16,16 @@ const AI_SAVE_FEATURE = {
   cmds: [
     'AI 保存书签',
     {
-      type: 'regex',
-      label: 'AI 保存到书签',
-      match: '/(https?:\\/\\/|www\\.)\\S+|^\\s*[\\w-]+(\\.[\\w-]+)+(:\\d+)?([\\/?#]\\S*)?\\s*$/i',
-      minLength: 4,
+      type: 'over',
+      label: 'AI 收藏',
+      minLength: 1,
       maxLength: 4096
     }
   ]
+}
+
+function hasOverCmd(feature: { cmds?: unknown[] } | undefined) {
+  return !!feature?.cmds?.some((cmd) => !!cmd && typeof cmd === 'object' && (cmd as { type?: unknown }).type === 'over')
 }
 
 const syncFeaturesImpl = async () => {
@@ -34,9 +37,15 @@ const syncFeaturesImpl = async () => {
       if (feature.code.startsWith(FEATURE_PREFIX) || LEGACY_FEATURE_CODES.has(feature.code)) ut.removeFeature(feature.code)
     }
     const aiReady = getAIAvailability(selectAiSettings(useSettingsStore.getState())).ok
-    const registered = features.some((f) => f.code === AI_SAVE_FEATURE_CODE)
-    if (aiReady && !registered) ut.setFeature?.(AI_SAVE_FEATURE)
-    else if (!aiReady && registered) ut.removeFeature(AI_SAVE_FEATURE_CODE)
+    const current = features.find((f) => f.code === AI_SAVE_FEATURE_CODE)
+    if (aiReady) {
+      if (!hasOverCmd(current)) {
+        if (current) ut.removeFeature(AI_SAVE_FEATURE_CODE)
+        ut.setFeature?.(AI_SAVE_FEATURE)
+      }
+    } else if (current) {
+      ut.removeFeature(AI_SAVE_FEATURE_CODE)
+    }
   } catch (error) {
     console.warn('[uTools] 同步快捷入口失败:', error)
   }
