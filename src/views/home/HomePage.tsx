@@ -13,6 +13,7 @@ import AvatarMenu from './AvatarMenu'
 import HelpAboutDialog from './HelpAboutDialog'
 import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
+import { useEasterEggPaused } from './useEasterEggPaused'
 import './home.css'
 import { type CtxMode, type CtxState, type ToastTone } from './homeTypes'
 import { RUNTIME_PLATFORM, IS_WINDOWS_UTOOLS, getSearchSurface } from './homeRuntime'
@@ -108,6 +109,8 @@ export default function HomePage() {
   const setUiScale = useSettingsStore((s) => s.setUiScale)
   const easterEggEnabled = useSettingsStore((s) => s.easterEggEnabled)
   const easterEggVariant = useSettingsStore((s) => s.easterEggVariant)
+  // 面板收起 / 页面进后台时停掉彩蛋渲染（背景是纯装饰，不可见就不该占 CPU/GPU）
+  const easterEggPaused = useEasterEggPaused()
   const panelContinuous = useSettingsStore((s) => s.panelContinuous)
 
   const homeGroups: HomeGroup[] = useMemo(
@@ -553,7 +556,9 @@ export default function HomePage() {
 
   return (
     <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface}>
-      {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && <StarryBackground />}
+      {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && (
+        <StarryBackground paused={easterEggPaused} />
+      )}
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'blackhole' && (
         <div
           className="fixed inset-0 z-0 overflow-hidden pointer-events-none select-none"
@@ -562,6 +567,7 @@ export default function HomePage() {
           <BlackHole
             brightness={0.75}
             speed={0.9}
+            paused={easterEggPaused}
             quality={IS_WINDOWS_UTOOLS ? 'low' : 'auto'}
             resolutionScale={IS_WINDOWS_UTOOLS ? 0.35 : undefined}
             maxFps={IS_WINDOWS_UTOOLS ? 24 : undefined}
