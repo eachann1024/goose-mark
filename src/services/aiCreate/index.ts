@@ -4,7 +4,7 @@ import { TRASH_GROUP_ID, useBookmarkStore } from '@/stores/bookmark'
 import { fetchAndCacheIcon } from '@/services/iconCache'
 import { fetchPageContent } from '@/services/metadata/content'
 import { isSamePage } from '@/services/metadata/quality'
-import type { BookmarkLocation } from '@/types/bookmark'
+import type { BookmarkLocation, IconSource } from '@/types/bookmark'
 import { extractUrlCandidates } from './extractUrl'
 import { resolvePlacement, type Placement } from './placement'
 import { getAICreateSettings } from './settings'
@@ -13,7 +13,30 @@ import {
   buildOrganizePrompt, buildPickUrlPrompt, type PromptGroup
 } from './prompts'
 
-export type AICreateStage = '识别网址…' | '抓取网页…' | 'AI 整理中…' | '保存中…'
+/** 分组落点（展示用） */
+export interface AICreatePath {
+  groupName: string
+  subGroupName: string
+  createdGroup: boolean
+  createdSub: boolean
+}
+
+/** 执行过程事件：每一步拿到数据立即发出，供 UI 渐进揭示 */
+export type AICreateEvent =
+  | { type: 'url'; url: string }
+  | { type: 'site'; icon: IconSource | null; pageTitle: string; pageDesc: string }
+  | { type: 'draft'; title: string; description: string }
+  | ({ type: 'placement' } & AICreatePath & BookmarkLocation)
+  | { type: 'done'; title: string; placement: Placement }
+  | {
+      type: 'exists'
+      title: string
+      description: string
+      icon: IconSource | null
+      location: BookmarkLocation | null
+      path: AICreatePath | null
+    }
+  | { type: 'error'; message: string }
 
 export type AICreateResult =
   | { status: 'exists'; title: string; location: BookmarkLocation | null }
@@ -70,26 +93,54 @@ function buildGroupTree(): PromptGroup[] {
 
 const optionalString = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : null)
 
+function existingPath(location: BookmarkLocation | null): AICreatePath | null {
+  if (!location) return null
+  const group = useBookmarkStore.getState().groups.find((g) => g.id === location.groupId)
+  const sub = group?.children.find((c) => c.id === location.subGroupId)
+  if (!group || !sub) return null
+  return { groupName: group.name, subGroupName: sub.name, createdGroup: false, createdSub: false }
+}
+
 /** AI 创建书签：识别网址 → 抓取 → AI 整理 → 校验分组并保存 */
 export async function runAICreate(
   input: string,
-  onProgress: (stage: AICreateStage) => void = () => {}
+  onEvent: (event: AICreateEvent) => void = () => {}
 ): Promise<AICreateResult> {
-  onProgress('识别网址…')
+  try {
+    const result = await runSteps(input, onEvent)
+    return result
+  } catch (err) {
+    onEvent({ type: 'error', message: err instanceof Error ? err.message : String(err) })
+    throw err
+  }
+}
+
+async function runSteps(input: string, emit: (event: AICreateEvent) => void): Promise<AICreateResult> {
   const url = await resolveUrl(input)
+  emit({ type: 'url', url })
   const existing = findExisting(url)
   if (existing) {
-    return { status: 'exists', title: existing.title || existing.url, location: useBookmarkStore.getState().getBookmarkLocations(existing.id)[0] ?? null }
+    const location = useBookmarkStore.getState().getBookmarkLocations(existing.id)[0] ?? null
+    const title = existing.title || existing.url
+    emit({
+      type: 'exists',
+      title,
+      description: existing.desc || '',
+      icon: existing.icon ?? null,
+      location,
+      path: existingPath(location)
+    })
+    return { status: 'exists', title, location }
   }
 
-  onProgress('抓取网页…')
   const [site, content] = await Promise.all([
     fetchAndCacheIcon(url).catch(() => null),
     fetchPageContent(url).catch(() => '')
   ])
   const { title: pageTitle, description: pageDesc, ...icon } = site ?? {}
+  const siteIcon = site ? (icon as IconSource) : null
+  emit({ type: 'site', icon: siteIcon, pageTitle: pageTitle || '', pageDesc: pageDesc || '' })
 
-  onProgress('AI 整理中…')
   const { permissions } = getAICreateSettings()
   const draft = await askJSON(
     [
@@ -110,8 +161,8 @@ export async function runAICreate(
   )
   const title = truncateAIText(draft.title, TITLE_MAX) || truncateAIText(pageTitle, TITLE_MAX) || new URL(url).hostname
   const desc = truncateAIText(draft.description, DESC_MAX)
+  emit({ type: 'draft', title, description: desc })
 
-  onProgress('保存中…')
   const placement = resolvePlacement(
     {
       groupId: optionalString(draft.groupId),
@@ -121,9 +172,11 @@ export async function runAICreate(
     },
     permissions
   )
+  emit({ type: 'placement', ...placement })
   useBookmarkStore.getState().addBookmark(
-    { title, url, desc, tags: [], icon: site ? (icon as NonNullable<typeof site>) : undefined },
+    { title, url, desc, tags: [], icon: siteIcon ?? undefined },
     [{ groupId: placement.groupId, subGroupId: placement.subGroupId }]
   )
+  emit({ type: 'done', title, placement })
   return { status: 'created', title, placement }
 }

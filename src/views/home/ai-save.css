@@ -1,0 +1,311 @@
+/* AI 保存到书签 · 进度页（.ais-*）；只使用 home.css 的主题变量与单一强调色 --accent */
+
+.goose-home .ais-page {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+}
+.goose-home[data-screen="aiSave"] .app-header,
+.goose-home[data-screen="aiSave"] .app-main { visibility: hidden; }
+
+.goose-home .ais-back {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg-muted);
+  font-size: 16px;
+  cursor: pointer;
+  transition: color .18s cubic-bezier(0.22, 1, 0.36, 1), background-color .18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goose-home .ais-back:hover { color: var(--fg); background: var(--surface-hover); }
+
+.goose-home .ais-stage {
+  width: min(440px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+}
+
+/* ---- 标题 ---- */
+.goose-home .ais-heading-row { height: 30px; display: flex; align-items: flex-end; }
+.goose-home .ais-heading {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+
+/* ---- 卡片 ---- */
+.goose-home .ais-card-shell { transform-origin: 50% 50%; }
+.goose-home .ais-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--input);
+  box-shadow: var(--shadow-sm);
+}
+.goose-home[data-theme="dark"] .ais-card { background: var(--surface-blend); }
+
+/* 骨架槽位：形变为内容 */
+.goose-home .ais-slot { position: relative; max-width: 100%; }
+.goose-home .ais-slot.is-ready { width: auto; }
+.goose-home .ais-skel {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 6px;
+  background: var(--surface);
+}
+.goose-home .ais-slot-body { min-width: 0; }
+
+/* 网址行 */
+.goose-home .ais-url-slot { align-self: flex-start; }
+.goose-home .ais-url {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 14px;
+}
+.goose-home .ais-url-host { color: var(--fg-muted); }
+.goose-home .ais-url-rest { color: var(--fg-faint); }
+
+/* 头像 + 文本 */
+.goose-home .ais-head { display: flex; align-items: flex-start; gap: 14px; }
+.goose-home .ais-avatar {
+  position: relative;
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  overflow: hidden;
+}
+.goose-home .ais-avatar.is-ready { overflow: visible; }
+.goose-home .ais-avatar .ais-skel { border-radius: 14px; }
+.goose-home .ais-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
+.goose-home .ais-title-slot { align-self: flex-start; }
+.goose-home .ais-desc-slot { align-self: stretch; }
+
+.goose-home .ais-title {
+  display: block;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+.goose-home .ais-ch-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+  padding-bottom: .06em;
+  margin-bottom: -.06em;
+}
+.goose-home .ais-ch { display: inline-block; white-space: pre; }
+
+.goose-home .ais-desc {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--fg-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.goose-home .ais-chunk { display: inline; }
+
+/* 图标揭示 */
+.goose-home .ais-img-wrap,
+.goose-home .ais-mono,
+.goose-home .ais-pixels,
+.goose-home .ais-shards,
+.goose-home .ais-flip {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 14px;
+}
+.goose-home .ais-img-wrap { overflow: hidden; background: var(--bg); }
+.goose-home .ais-img-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.goose-home .ais-mono {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--fg);
+  overflow: hidden;
+}
+.goose-home .ais-mono-mask { display: block; overflow: hidden; line-height: 1.1; }
+.goose-home .ais-mono-letter { display: block; font-family: var(--font-serif); font-weight: 600; letter-spacing: -0.01em; }
+.goose-home .ais-pixels { overflow: visible; background: transparent; }
+.goose-home .ais-pixel {
+  position: absolute;
+  display: block;
+  background-repeat: no-repeat;
+}
+.goose-home .ais-shards { overflow: visible; }
+.goose-home .ais-shard { position: absolute; inset: 0; border-radius: 14px; }
+.goose-home .ais-flip { perspective: 320px; }
+.goose-home .ais-flip-inner {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transform-style: preserve-3d;
+}
+.goose-home .ais-flip-face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 14px; }
+.goose-home .ais-flip-face.is-back { transform: rotateY(180deg); }
+
+/* 分组路径 */
+.goose-home .ais-foot { padding-top: 14px; border-top: 1px solid var(--border-muted); }
+.goose-home .ais-path-slot { align-self: flex-start; }
+.goose-home .ais-path { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.goose-home .ais-path-item { display: inline-flex; align-items: center; gap: 4px; }
+.goose-home .ais-path-sep { display: inline-flex; color: var(--fg-faint); font-size: 13px; }
+.goose-home .ais-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.goose-home .ais-chip .lucide { font-size: 13px; color: var(--fg-muted); }
+.goose-home .ais-chip.is-new { border-color: var(--accent); }
+
+/* ---- 进度轨 ---- */
+.goose-home .ais-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0 6px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+}
+.goose-home .ais-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.goose-home .ais-track {
+  position: absolute;
+  top: 6px;
+  right: calc(50% + 12px);
+  left: calc(-50% + 12px);
+  height: 1.5px;
+  border-radius: 1px;
+  background: var(--border);
+  overflow: hidden;
+}
+.goose-home .ais-track-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  transform-origin: 0 50%;
+}
+.goose-home .ais-dot {
+  position: relative;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color .2s cubic-bezier(0.22, 1, 0.36, 1), background-color .2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goose-home .ais-step.is-active .ais-dot { border-color: var(--accent); }
+.goose-home .ais-step.is-done .ais-dot { border-color: var(--accent); background: var(--accent); }
+.goose-home .ais-step.is-failed .ais-dot { border-color: var(--fg); background: var(--fg); }
+.goose-home .ais-step.is-skipped .ais-dot { border-style: dashed; }
+.goose-home .ais-dot-ring {
+  position: absolute;
+  inset: -1.5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent);
+}
+.goose-home .ais-dot-mark { display: flex; color: var(--accent-fg); font-size: 9px; }
+.goose-home .ais-step.is-failed .ais-dot-mark { color: var(--bg); }
+.goose-home .ais-dot-mark .lucide { stroke-width: 3; }
+.goose-home .ais-step-label { font-size: 12px; line-height: 1; color: var(--fg-faint); transition: color .2s cubic-bezier(0.22, 1, 0.36, 1); }
+.goose-home .ais-step.is-active .ais-step-label,
+.goose-home .ais-step.is-failed .ais-step-label { color: var(--fg); }
+.goose-home .ais-step.is-done .ais-step-label { color: var(--fg-muted); }
+
+/* ---- 操作 ---- */
+.goose-home .ais-bottom { min-height: 66px; }
+.goose-home .ais-actions { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.goose-home .ais-error {
+  margin: 0;
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  text-align: center;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.goose-home .ais-btns { display: flex; justify-content: center; gap: 10px; }
+.goose-home .ais-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color .18s cubic-bezier(0.22, 1, 0.36, 1), border-color .18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.goose-home .ais-btn:hover { background: var(--surface-hover); }
+.goose-home .ais-btn:focus-visible { outline: 2px solid var(--accent-ring-strong); outline-offset: 2px; }
+.goose-home .ais-btn .lucide { font-size: 14px; }
+.goose-home .ais-btn.is-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.goose-home .ais-btn.is-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+
+@media (prefers-reduced-motion: reduce) {
+  .goose-home .ais-back,
+  .goose-home .ais-dot,
+  .goose-home .ais-btn,
+  .goose-home .ais-step-label { transition: none; }
+}

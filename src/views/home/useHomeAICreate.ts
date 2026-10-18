@@ -1,8 +1,8 @@
 import type * as React from 'react'
-import { useCallback, useRef } from 'react'
-import { runAICreate } from '@/services/aiCreate'
+import { useCallback, useEffect } from 'react'
+import { isAISaveRunning, startAISave } from '@/stores/aiSaveSession'
 import { type HomeItem } from './viewModel'
-import { type HomeToastHandler } from './homeInteractionTypes'
+import { type Screen } from './homeTypes'
 
 export const AI_CREATE_ID = '__ai-create__'
 
@@ -22,43 +22,28 @@ export const AI_CREATE_ITEM: HomeItem = {
 }
 
 export function useHomeAICreate({
-  fireToast,
   clearSearch,
+  setScreen,
   aiCreateFnRef
 }: {
-  fireToast: HomeToastHandler
   clearSearch: () => void
+  setScreen: (screen: Screen) => void
   aiCreateFnRef: React.RefObject<(text: string) => void>
 }) {
-  const busyRef = useRef(false)
-
   const trigger = useCallback((text: string) => {
-    if (busyRef.current) {
-      fireToast('已有 AI 创建任务进行中', { tone: 'error' })
-      return
-    }
-    busyRef.current = true
     clearSearch()
-    fireToast('识别网址…', { tone: 'loading' })
-    runAICreate(text, (stage) => fireToast(stage, { tone: 'loading' }))
-      .then((result) => {
-        if (result.status === 'exists') {
-          fireToast(`已存在：${result.title}`, { jump: result.location, description: '该网址已在书签中' })
-          return
-        }
-        const { groupName, subGroupName, createdGroup, createdSub, groupId, subGroupId } = result.placement
-        fireToast(`已保存：${result.title}`, {
-          description: `${groupName}${createdGroup ? '（新建）' : ''}/${subGroupName}${createdSub ? '（新建）' : ''}`,
-          jump: { groupId, subGroupId }
-        })
-      })
-      .catch((err) => {
-        fireToast('AI 创建失败', { tone: 'error', description: err instanceof Error ? err.message : String(err) })
-      })
-      .finally(() => {
-        busyRef.current = false
-      })
-  }, [fireToast, clearSearch])
+    setScreen('aiSave')
+    // 已有任务进行中：只切到进度页，不重复启动
+    if (isAISaveRunning()) return
+    startAISave(text)
+  }, [clearSearch, setScreen])
 
   aiCreateFnRef.current = trigger
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    const w = window as unknown as { __aiSave?: (text: string) => void }
+    w.__aiSave = trigger
+    return () => { delete w.__aiSave }
+  }, [trigger])
 }
