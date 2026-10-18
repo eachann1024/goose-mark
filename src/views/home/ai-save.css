@@ -219,7 +219,7 @@
   margin: 0;
   padding: 0 6px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
 }
 .goose-home .ais-step {
   position: relative;

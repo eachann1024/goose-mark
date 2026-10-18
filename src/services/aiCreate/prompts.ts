@@ -42,6 +42,28 @@ export const ORGANIZE_OUTPUT: AIStructuredOutput = {
   }
 }
 
+export const JUDGE_OUTPUT: AIStructuredOutput = {
+  name: 'bookmark_intent',
+  description: '判断用户这句话是否在收藏一个真实网站',
+  schema: {
+    type: 'object',
+    properties: {
+      ok: { type: 'boolean' }
+    },
+    required: ['ok'],
+    additionalProperties: false
+  }
+}
+
+export const JUDGE_SYSTEM = `你判断用户这句话能不能用来收藏一个真实网站。只输出 JSON：{"ok": boolean}。
+ok 为 true 的唯一条件：能定位到一个具体网站、产品或域名。
+乱码、无意义重复、闲聊、情绪、菜名或词组堆砌、没有网站或产品名，全部 ok 为 false。
+拿不准就 ok 为 false。不要脑补网站。`
+
+export function buildJudgePrompt(text: string) {
+  return `用户原话：\n${text}`
+}
+
 export const SEARCH_QUERY_OUTPUT: AIStructuredOutput = {
   name: 'search_query',
   description: '从用户原话抽出用于搜索网站的关键词',

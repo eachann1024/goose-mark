@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import confetti, { type Options } from 'canvas-confetti'
 import { AnimatePresence, LayoutGroup, motion, useAnimate, useReducedMotion, type Transition } from 'motion/react'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { AI_SAVE_STEPS, startAISave, useAISaveSession, type AISaveStep } from '@/stores/aiSaveSession'
@@ -18,7 +19,7 @@ const FADE_OUT: Transition = { duration: 0.2, ease: EASE_FADE }
 const LAYER_GAP = 120
 const MORPH_LEAD = 0.18 // 骨架形变先行，内容随后揭示（秒）
 
-const STEP_LABEL: Record<AISaveStep, string> = { detect: '识别', fetch: '抓取', organize: '整理', save: '保存' }
+const STEP_LABEL: Record<AISaveStep, string> = { judge: '判断', detect: '识别', fetch: '抓取', organize: '整理', save: '保存' }
 
 type IconVariant = 'pixels' | 'iris' | 'flip' | 'shards'
 const ICON_VARIANTS: IconVariant[] = ['pixels', 'iris', 'flip', 'shards']
@@ -457,18 +458,20 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
   const stepIdx = AI_SAVE_STEPS.indexOf(s.step)
   const states: StepState[] = AI_SAVE_STEPS.map((_, i) => {
     if (s.phase === 'done') return 'done'
-    if (s.phase === 'exists') return i === 0 ? 'done' : 'skipped'
+    if (s.phase === 'exists') return i < stepIdx ? 'done' : 'skipped'
     if (failed) return i < stepIdx ? 'done' : i === stepIdx ? 'failed' : 'pending'
     return i < stepIdx ? 'done' : i === stepIdx ? 'active' : 'pending'
   })
 
   const heading = failed
-    ? '保存失败'
+    ? (s.rejected ? '检测不到书签' : '保存失败')
     : settled
       ? (s.phase === 'exists' ? '已在书签中' : '已保存')
-      : s.searched && !s.url
-        ? '正在搜索'
-        : '正在保存'
+      : s.step === 'judge'
+        ? '正在判断'
+        : s.searched && !s.url
+          ? '正在搜索'
+          : '正在保存'
   const pendingLayer = failed ? -1 : revealed
   const isShown = (k: number) => revealed > k
 
@@ -556,18 +559,18 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
               exit={{ opacity: 0, transition: FADE_OUT }}
               transition={{ duration: 0.2, ease: EASE_MOVE }}
             >
-              {failed && s.error && <p className="ais-error">{s.error}</p>}
+              {failed && s.error && !s.rejected && <p className="ais-error">{s.error}</p>}
               <div className="ais-btns">
-                {failed ? (
+                {failed && !s.rejected ? (
                   <button ref={primaryRef} type="button" className="ais-btn is-primary" onClick={() => startAISave(s.input)}>
                     <Ico name="rotate-ccw" />重试
                   </button>
-                ) : s.location ? (
+                ) : !failed && s.location ? (
                   <button ref={primaryRef} type="button" className="ais-btn is-primary" onClick={() => onJump(s.location!)}>
                     <Ico name="folder-open" />查看位置
                   </button>
                 ) : null}
-                <button type="button" className="ais-btn" onClick={onBack}>返回</button>
+                <button ref={failed && s.rejected ? primaryRef : undefined} type="button" className={failed && s.rejected ? 'ais-btn is-primary' : 'ais-btn'} onClick={onBack}>返回</button>
               </div>
             </motion.div>
           )}
@@ -582,62 +585,26 @@ function SaveConfetti() {
   useEffect(() => {
     const canvas = ref.current
     if (!canvas) return
-    let raf = 0
-    let stopped = false
-    const start = () => {
-      if (stopped) return
-      const ctx = canvas.getContext('2d')
-      const width = canvas.clientWidth
-      const height = canvas.clientHeight
-      if (!ctx || width < 2 || height < 2) return
-      const dpr = Math.min(window.devicePixelRatio || 1, 2)
-      canvas.width = Math.floor(width * dpr)
-      canvas.height = Math.floor(height * dpr)
-      const accent = getComputedStyle(canvas).getPropertyValue('--accent').trim() || '#6d5efc'
-      const colors = [accent, '#f2c14e', '#5bc0a0', '#f07167', '#8eb6ff']
-      const parts = Array.from({ length: 72 }, () => ({
-        x: canvas.width * (0.32 + Math.random() * 0.36),
-        y: canvas.height * 0.42,
-        vx: (Math.random() - 0.5) * 9 * dpr,
-        vy: (-7 - Math.random() * 6) * dpr,
-        g: (0.18 + Math.random() * 0.08) * dpr,
-        w: (4 + Math.random() * 4) * dpr,
-        h: (7 + Math.random() * 5) * dpr,
-        rot: Math.random() * Math.PI,
-        vr: (Math.random() - 0.5) * 0.28,
-        color: colors[Math.floor(Math.random() * colors.length)] || accent,
-        life: 1
-      }))
-      let frame = 0
-      const tick = () => {
-        if (stopped) return
-        frame += 1
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        let alive = false
-        for (const part of parts) {
-          part.vy += part.g
-          part.x += part.vx
-          part.y += part.vy
-          part.rot += part.vr
-          part.life -= 0.012
-          if (part.life <= 0) continue
-          alive = true
-          ctx.save()
-          ctx.globalAlpha = part.life
-          ctx.translate(part.x, part.y)
-          ctx.rotate(part.rot)
-          ctx.fillStyle = part.color
-          ctx.fillRect(-part.w / 2, -part.h / 2, part.w, part.h)
-          ctx.restore()
-        }
-        if (alive && frame < 160) raf = requestAnimationFrame(tick)
-      }
-      raf = requestAnimationFrame(tick)
+    const shoot = confetti.create(canvas, { resize: true, useWorker: false, disableForReducedMotion: true })
+    const accent = getComputedStyle(canvas).getPropertyValue('--accent').trim() || '#8c6a4f'
+    const colors = [accent, '#e4d3b4', '#c9846a', '#7f9a86', '#f3eee6']
+    const base: Options = {
+      colors,
+      gravity: 0.35,
+      decay: 0.94,
+      ticks: 520,
+      scalar: 0.8,
+      startVelocity: 14,
+      shapes: ['circle', 'square'],
+      origin: { x: 0.5, y: 0.36 }
     }
-    raf = requestAnimationFrame(start)
+    void shoot({ ...base, particleCount: 42, spread: 46 })
+    const timer = window.setTimeout(() => {
+      void shoot({ ...base, particleCount: 24, spread: 72, startVelocity: 10, origin: { x: 0.5, y: 0.42 } })
+    }, 420)
     return () => {
-      stopped = true
-      cancelAnimationFrame(raf)
+      window.clearTimeout(timer)
+      shoot.reset()
     }
   }, [])
   return <canvas ref={ref} className="ais-confetti" aria-hidden />
