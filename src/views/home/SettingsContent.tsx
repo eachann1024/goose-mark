@@ -10,9 +10,9 @@ import { type HomeToastHandler, type HomeNavigationBindings } from './homeIntera
 
 export const SET_NAV: Array<[string, string, string]> = [
   ['通用设置', 'settings', 'set-general'],
+  ['AI 助手', 'sparkles', 'set-ai'],
   ['列表设置', 'list', 'set-list'],
   ['网格设置', 'layout-grid', 'set-grid'],
-  ['AI 助手', 'sparkles', 'set-ai'],
   ['导入与备份', 'database', 'set-data'],
   ['分组管理', 'folder', 'set-categories'],
 ]
