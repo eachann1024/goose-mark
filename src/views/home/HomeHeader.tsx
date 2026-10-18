@@ -20,6 +20,7 @@ export function HomeHeader({
   tabRenameVal,
   setTabRenameVal,
   commitTabRename,
+  tabRenameBox,
   setTabRenaming,
   isSearching,
   screen,
@@ -51,6 +52,7 @@ export function HomeHeader({
   tabRenameVal: string
   setTabRenameVal: React.Dispatch<React.SetStateAction<string>>
   commitTabRename: () => void
+  tabRenameBox: { width: number; height: number } | null
   setTabRenaming: React.Dispatch<React.SetStateAction<string | null>>
   activeGroupId: string
   screen: Screen
@@ -82,6 +84,11 @@ export function HomeHeader({
                       key={g.id}
                       ref={tabRenameRef}
                       className="group-tab-rename"
+                      style={{
+                        width: tabRenameBox?.width ?? undefined,
+                        height: tabRenameBox?.height ?? undefined,
+                        lineHeight: tabRenameBox ? `${Math.max(tabRenameBox.height - 2, 1)}px` : undefined
+                      }}
                       value={tabRenameVal}
                       onChange={(e) => setTabRenameVal(e.target.value)}
                       onKeyDown={(e) => {

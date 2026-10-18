@@ -22,21 +22,20 @@ export const AI_CREATE_ITEM: HomeItem = {
 }
 
 export function useHomeAICreate({
-  clearSearch,
   setScreen,
   aiCreateFnRef
 }: {
-  clearSearch: () => void
   setScreen: (screen: Screen) => void
   aiCreateFnRef: React.RefObject<(text: string) => void>
 }) {
+  // 直接切到 AI 识别页：不清搜索词，避免主列表在切屏的同一帧重建（图标重新解码 → 深色下一闪）。
+  // 搜索词在「返回」时由 HomePage 统一清掉，保证返回落到主列表。
   const trigger = useCallback((text: string) => {
-    clearSearch()
     setScreen('aiSave')
     // 已有任务进行中：只切到进度页，不重复启动
     if (isAISaveRunning()) return
     startAISave(text)
-  }, [clearSearch, setScreen])
+  }, [setScreen])
 
   aiCreateFnRef.current = trigger
 

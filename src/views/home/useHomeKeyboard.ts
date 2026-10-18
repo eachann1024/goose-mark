@@ -54,12 +54,18 @@ export function useHomeKeyboard({
         if (useBookmarkFormStore.getState().isSaving) return
         // 退出 add 表单时统一走关闭逻辑（问题2）
         if (screen === 'add') useBookmarkFormStore.getState().set({ showAdd: false })
+        // AI 保存页进入时保留了搜索词，Esc 与「返回」一致：清空搜索后回主列表
+        if (screen === 'aiSave') {
+          clearSearch()
+          setScreen(view)
+          closeCtx()
+          return
+        }
         if (
           screen === 'add' ||
           screen === 'settings' ||
           screen === 'trash' ||
-          screen === 'groups' ||
-          screen === 'aiSave'
+          screen === 'groups'
         ) {
           setScreen(view)
           closeCtx()
