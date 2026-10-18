@@ -10,7 +10,7 @@
  * 明暗用根容器 data-theme 控制，配色全部来自 home.css 的独立 CSS 变量。
  */
 
-export type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups'
+export type Screen = 'list' | 'grid' | 'add' | 'settings' | 'trash' | 'groups' | 'aiSave'
 
 
 export type ViewMode = 'list' | 'grid'

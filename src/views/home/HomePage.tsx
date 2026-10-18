@@ -8,6 +8,7 @@ import { useUTools } from '@/hooks/useUTools'
 import { buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './viewModel'
 import AddBookmarkWizard from './AddBookmarkWizard'
 import GroupManagePage from './GroupManagePage'
+import AISavePage from './AISavePage'
 import AvatarMenu from './AvatarMenu'
 import HelpAboutDialog from './HelpAboutDialog'
 import StarryBackground from '@/components/StarryBackground'
@@ -339,7 +340,7 @@ export default function HomePage() {
     toastTimer
   })
 
-  useHomeAICreate({ fireToast, clearSearch, aiCreateFnRef })
+  useHomeAICreate({ clearSearch, setScreen, aiCreateFnRef })
 
   const { handleDndDragStart, handleDndDragEnd } = useHomeBookmarkDrag({
     setActiveDragItem,
@@ -379,6 +380,16 @@ export default function HomePage() {
       setActiveSubId(jump.subGroupId)
       if (view === 'list' || view === 'grid') scrollToSection(jump.groupId, jump.subGroupId)
     }
+  }, [view, scrollToSection])
+
+  /** AI 保存页「查看位置」：切回主视图并定位到书签落地的分组/子分组 */
+  const jumpToLocation = useCallback((jump: BookmarkLocation) => {
+    setScreen(view)
+    setActiveSubId(jump.subGroupId)
+    useBookmarkStore.getState().selectGroup(jump.groupId, jump.subGroupId)
+    requestAnimationFrame(() => {
+      if (view === 'list' || view === 'grid') scrollToSection(jump.groupId, jump.subGroupId)
+    })
   }, [view, scrollToSection])
 
   /** 从主面板进入新建：先把 UI 当前选中（含 scroll-spy 的 activeSubId）写入 store，再开表单 */
@@ -672,6 +683,9 @@ export default function HomePage() {
 
         {/* ---------- Add/Edit wizard (沉浸式三步) ---------- */}
         {screen === 'add' && <AddBookmarkWizard key={`wiz-${formKey}`} editItem={formEditItem} onBack={backToList} />}
+
+        {/* ---------- AI 保存进度页 ---------- */}
+        {screen === 'aiSave' && <AISavePage onBack={() => setScreen(view)} onJump={jumpToLocation} />}
 
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}

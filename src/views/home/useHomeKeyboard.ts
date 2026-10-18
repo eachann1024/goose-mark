@@ -58,7 +58,8 @@ export function useHomeKeyboard({
           screen === 'add' ||
           screen === 'settings' ||
           screen === 'trash' ||
-          screen === 'groups'
+          screen === 'groups' ||
+          screen === 'aiSave'
         ) {
           setScreen(view)
           closeCtx()
