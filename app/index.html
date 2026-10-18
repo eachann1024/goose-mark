@@ -13,8 +13,42 @@
     <link rel="manifest" href="./manifest.json" />
 
     <!-- PWA 主题色 -->
-    <meta name="theme-color" content="#ffffff" />
-    <script type="module" crossorigin src="./assets/index-CeOT2xDM.js"></script>
+    <meta name="theme-color" content="#090A0C" />
+
+    <!--
+      启动底色：脚本与样式表加载完之前先按「已保存的主题」铺底色，
+      避免每次打开先闪一屏白（深色下尤其晃眼）。默认深色。
+    -->
+    <style>html{--lightningcss-light: ;--lightningcss-dark:initial;color-scheme:dark;background:#090a0c}html[data-boot-theme=light]{--lightningcss-light:initial;--lightningcss-dark: ;color-scheme:light;background:#faf9f5}body{background:inherit}</style>
+    <script>
+      ;(function () {
+        var pref = null
+        try {
+          var api = window.utools
+          var settingsDoc = api && api.db && api.db.get && api.db.get('gm:settings')
+          if (settingsDoc && settingsDoc.data && typeof settingsDoc.data.themePreference === 'string') {
+            pref = settingsDoc.data.themePreference
+          }
+          if (pref === null && api && api.dbStorage && api.dbStorage.getItem) {
+            pref = api.dbStorage.getItem('goose-marks.theme-mode')
+          }
+          if (pref === null) {
+            pref =
+              window.localStorage.getItem('goose-marks.theme-mode') ||
+              window.localStorage.getItem('vueuse-color-scheme')
+          }
+        } catch (err) {}
+        var dark =
+          pref === 'dark' ||
+          (pref !== 'light' &&
+            !(pref === 'system' && window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').matches))
+        var root = document.documentElement
+        root.dataset.bootTheme = dark ? 'dark' : 'light'
+        if (dark) root.classList.add('dark')
+        window.__bootTheme = dark ? 'dark' : 'light'
+      })()
+    </script>
+    <script type="module" crossorigin src="./assets/index-ufT7ce0X.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-BZDvdNDp.css">
   </head>
 
