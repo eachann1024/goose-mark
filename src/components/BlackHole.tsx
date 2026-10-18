@@ -33,12 +33,17 @@
  * @prop brightness    - 整体亮度 0~2，默认 1；作背景时可调低（0.6~0.8）避免喧宾夺主
  * @prop interactive   - 开启后鼠标位置对相机做 ±0.15 rad 缓动倾斜，默认 false
  * @prop paused        - 暂停渲染循环（保留最后一帧），默认 false
- * @prop maxFps        - 渲染帧率上限。不传则跟随画质档位（low30/medium45/high60）。
- *                       传入则覆盖档位值；0 = 不限帧（跟随显示器刷新率）
- * @prop quality       - 画质档位，默认 'auto'：探测设备性能定初判档 + 运行时实测
- *                       帧率兜底降档（办公电脑/核显自动降到流畅档）。也可强制
- *                       'low'|'medium'|'high'，强制时不再自动降档。
+ * @prop maxFps        - 渲染帧率上限。不传则跟随画质档位（minimal20/low30/medium45/high60），
+ *                       运行时还会按实测帧率阶梯下行（60→45→30→24）保底流畅。
+ *                       传入则覆盖档位值并关闭自适应（调用方自己负责）；0 = 不限帧。
+ * @prop quality       - 画质档位，默认 'auto'：探测设备性能定初判档；运行时实测帧率
+ *                       不足时先降帧率（不重编译、不损画质），仍不足才降档（降分辨率+步数），
+ *                       从而在办公电脑/核显/软件渲染上都不卡。也可强制
+ *                       'minimal'|'low'|'medium'|'high'，强制时不再自动降档。
  *                       注：resolutionScale/maxFps 不传时由档位决定；传入则覆盖。
+ *
+ * 帧率与暂停：paused / 页面不可见（document.hidden）时完全停帧，只剩最后一帧画面；
+ *             prefers-reduced-motion 时只渲染一帧静态画面。
  */
 
 import { useEffect, useRef, CSSProperties } from 'react'
@@ -95,6 +100,12 @@ const FRAG_SRC_BODY = /* glsl */ `
   uniform float u_speed;
   uniform float u_brightness;
   uniform vec2  u_mouse;   // 归一化 [-1,1]，interactive 时生效
+  // 相机基向量与 uv 缩放在 CPU 算好（每像素省下 2 次 normalize / 3 次 cross / 1 次除法）
+  uniform float u_uvScale;
+  uniform vec3  u_ro;
+  uniform vec3  u_uu;
+  uniform vec3  u_vv;
+  uniform vec3  u_ww;
 
   // ── 工具函数 ──────────────────────────────────────────────────────────────
 
@@ -137,27 +148,14 @@ const FRAG_SRC_BODY = /* glsl */ `
   // ── 主渲染 ────────────────────────────────────────────────────────────────
 
   void main() {
-    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / min(u_resolution.x, u_resolution.y);
+    vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) * u_uvScale;
 
-    // 相机设置：位于 (0,1,-8.5) 朝向原点，FOV ≈ 1.2 rad
-    // interactive 时鼠标偏移驱动相机做微倾（缓动在 JS 侧，这里直接用 u_mouse）
-    float pitch = u_mouse.y * 0.15;
-    float yaw   = u_mouse.x * 0.15;
-
-    vec3 ro = vec3(0.0, 1.0 + pitch * 2.0, -8.5);   // 相机原点（ray origin）
-
-    // 构建相机矩阵：前方向 w，右方向 u，上方向 v
-    vec3 ta = vec3(0.0);                              // 注视点
-    vec3 ww = normalize(ta - ro);
-    vec3 uu = normalize(cross(ww, vec3(0,1,0)));
-    vec3 vv = cross(uu, ww);
-
-    // 应用偏航（yaw）旋转
-    uu = cos(yaw)*uu + sin(yaw)*ww;
-    ww = normalize(cross(vv, uu));
+    // 相机位于 (0,1,-8.5) 朝向原点，FOV ≈ 1.2 rad；
+    // 基向量（ro/uu/vv/ww）由 CPU 按 u_mouse 每帧算好，这里直接取用
+    vec3 ro = u_ro;
 
     // 初始光线方向（FOV ≈ 1.2）
-    vec3 rd = normalize(uv.x * uu + uv.y * vv + 0.84 * ww);
+    vec3 rd = normalize(uv.x * u_uu + uv.y * u_vv + 0.84 * u_ww);
 
     // ── 光线步进：史瓦西度规测地线近似 ─────────────────────────────────────
     vec3 p  = ro;           // 光子当前位置
@@ -193,7 +191,8 @@ const FRAG_SRC_BODY = /* glsl */ `
 
       // ── 测地线积分：a = -1.5 * h² * p / |p|^5 ────────────────────────
       // 物理意义：史瓦西度规下光子轨道的引力加速度（角动量修正项）
-      vec3 a = -1.5 * h2 * p / pow(dist2, 2.5);
+      // |p|^5 用乘法展开，比 pow(dist2, 2.5) 便宜一个数量级，数值等价
+      vec3 a = -1.5 * h2 * p / (dist2 * dist2 * dist);
       v += a * dt;
       p += v * dt;
 
@@ -213,7 +212,7 @@ const FRAG_SRC_BODY = /* glsl */ `
           // 用 flow-cycling 限制缠绕：两套相位各自在周期 T 内回绕，按三角权重
           // 交叉淡化，缠绕量有上界，细节密度恒定且视觉连续。
           float baseAng = atan(hit.z, hit.x);
-          float omega   = u_speed * 5.5 / pow(r, 1.5);
+          float omega   = u_speed * 5.5 / (r * sqrt(r));
           float T  = 8.0;
           float t1 = mod(u_time, T);
           float t2 = mod(u_time + 0.5 * T, T);
@@ -247,7 +246,8 @@ const FRAG_SRC_BODY = /* glsl */ `
           //           远离观察者的一侧辐射拉伸（红移变暗）
           // tangent：盘物质切向速度方向（逆时针绕 y 轴公转）
           vec3 tangent    = normalize(cross(vec3(0,1,0), hit));
-          float dopplerFac = pow(max(0.0, 1.0 + 0.75 * dot(tangent, normalize(v))), 3.0);
+          float doppler = max(0.0, 1.0 + 0.75 * dot(tangent, normalize(v)));
+          float dopplerFac = doppler * doppler * doppler;
           diskColor *= dopplerFac;
 
           // 内外缘 smoothstep 渐隐：r 边界的二值硬切在掠射视角下被压缩成
@@ -275,8 +275,7 @@ const FRAG_SRC_BODY = /* glsl */ `
     // 纯色 #090A0C 只做 canvas 下方的 CSS 底层。
     vec3 skyColor = vec3(0.0);
 
-    float lenP = length(p);
-    if (lenP > 1.0 && transmit > 0.01) {
+    if (dot(p, p) > 1.0 && transmit > 0.01) {
       vec3 dir = normalize(v);   // 逃逸方向（已被透镜扭曲）
 
       // 球面经纬映射：dir → uv（连续、无奇点在赤道）
@@ -355,8 +354,11 @@ function buildFragSrc(steps: number, dtScale: number): string {
 
 // ─── 性能分档 ────────────────────────────────────────────────────────────────
 
-/** 画质档位：流畅 / 均衡 / 精细 */
-export type QualityTier = 'low' | 'medium' | 'high'
+/**
+ * 画质档位：兜底 / 流畅 / 均衡 / 精细
+ * 'minimal' 是软件渲染（SwiftShader / 驱动异常）时的最后兜底，正常设备上不会用到。
+ */
+export type QualityTier = 'minimal' | 'low' | 'medium' | 'high'
 
 interface TierParams {
   steps: number          // ray marching 步数（编译期常量）
@@ -366,12 +368,15 @@ interface TierParams {
 }
 
 const TIER_TABLE: Record<QualityTier, TierParams> = {
+  // 软件渲染兜底：像素量与步数都压到最低，只保证「能动、不卡死」
+  minimal: { steps: 20, dtScale: 2.4, resolutionScale: 0.35, maxFps: 15 },
   low:    { steps: 32, dtScale: 2.0, resolutionScale: 0.5, maxFps: 30 },
   medium: { steps: 48, dtScale: 1.35, resolutionScale: 0.7, maxFps: 45 },
   high:   { steps: 64, dtScale: 1.0, resolutionScale: 1.0, maxFps: 60 },
 }
 
-const TIER_ORDER: QualityTier[] = ['high', 'medium', 'low']
+/** 降档顺序（只降不升） */
+const TIER_ORDER: QualityTier[] = ['high', 'medium', 'low', 'minimal']
 
 /**
  * 设备性能探测：综合 CPU 核数、内存、GPU renderer 字符串静态定档。
@@ -388,9 +393,9 @@ function detectTier(gl: WebGLRenderingContext): QualityTier {
     // 某些隐私设置下扩展被屏蔽，忽略
   }
 
-  // 软渲染 / 明确的弱 GPU → 直接最低档
+  // 软渲染 / 明确异常 → 直接兜底档（真实 GPU 上不会走到这里）
   const isSoftware = /swiftshader|software|llvmpipe|microsoft basic|angle \(google/.test(renderer)
-  if (isSoftware) return 'low'
+  if (isSoftware) return 'minimal'
 
   // 明确的高端独显标识 → 最高档
   const isHighEnd = /rtx|radeon rx|geforce (gtx|rtx)|apple m[1-9]|nvidia/.test(renderer)
@@ -486,10 +491,20 @@ export function BlackHole({
     wrap.appendChild(canvas)
 
     // ── 获取 WebGL 上下文 ────────────────────────────────────────────────
+    // alpha/depth/stencil 全部关掉：全屏不透明三角形用不到，省下每帧的清屏与带宽
+    const ctxAttrs: WebGLContextAttributes = {
+      antialias: false,
+      alpha: false,
+      depth: false,
+      stencil: false,
+      premultipliedAlpha: false,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance'
+    }
     let gl: WebGLRenderingContext | null = null
     try {
-      gl = canvas.getContext('webgl', { antialias: false, alpha: false }) ??
-           canvas.getContext('experimental-webgl', { antialias: false, alpha: false }) as WebGLRenderingContext | null
+      gl = canvas.getContext('webgl', ctxAttrs) ??
+           canvas.getContext('experimental-webgl', ctxAttrs) as WebGLRenderingContext | null
     } catch {
       // ignore
     }
@@ -508,13 +523,29 @@ export function BlackHole({
     let tier: QualityTier = autoTier ? detectTier(glCtx) : qualityProp
     let tierParams = TIER_TABLE[tier]
 
-    // ── 构建 GL 资源 ─────────────────────────────────────────────────────
-    let prog     = createProgram(glCtx, tierParams.steps, tierParams.dtScale)
-    let buf      = glCtx.createBuffer()
-    let isLost   = false
+    // ── GL 资源 + 位置缓存 ───────────────────────────────────────────────
+    // program 一旦重建（降档 / 上下文恢复），attrib 与 uniform 位置全部失效，
+    // 所以把它们打成一个 state，只在重建时查询一次，渲染循环里不再查表。
+    interface GlState {
+      prog: WebGLProgram
+      aPos: number
+      uRes: WebGLUniformLocation | null
+      uTime: WebGLUniformLocation | null
+      uSpeed: WebGLUniformLocation | null
+      uBr: WebGLUniformLocation | null
+      uMouse: WebGLUniformLocation | null
+      uUvScale: WebGLUniformLocation | null
+      uRo: WebGLUniformLocation | null
+      uUu: WebGLUniformLocation | null
+      uVv: WebGLUniformLocation | null
+      uWw: WebGLUniformLocation | null
+    }
+
+    let buf = glCtx.createBuffer()
+    let isLost = false
 
     const setupGeom = () => {
-      if (!prog || !buf) return
+      if (!buf) return
       // 全屏三角形（两个三角形组成一个全屏 quad）
       glCtx.bindBuffer(glCtx.ARRAY_BUFFER, buf)
       glCtx.bufferData(
@@ -525,9 +556,26 @@ export function BlackHole({
     }
     setupGeom()
 
-    // ── uniform 位置缓存 ─────────────────────────────────────────────────
-    const getUniform = (name: string) =>
-      prog ? glCtx.getUniformLocation(prog, name) : null
+    const buildState = (): GlState | null => {
+      const prog = createProgram(glCtx, tierParams.steps, tierParams.dtScale)
+      if (!prog) return null
+      return {
+        prog,
+        aPos: glCtx.getAttribLocation(prog, 'a_pos'),
+        uRes: glCtx.getUniformLocation(prog, 'u_resolution'),
+        uTime: glCtx.getUniformLocation(prog, 'u_time'),
+        uSpeed: glCtx.getUniformLocation(prog, 'u_speed'),
+        uBr: glCtx.getUniformLocation(prog, 'u_brightness'),
+        uMouse: glCtx.getUniformLocation(prog, 'u_mouse'),
+        uUvScale: glCtx.getUniformLocation(prog, 'u_uvScale'),
+        uRo: glCtx.getUniformLocation(prog, 'u_ro'),
+        uUu: glCtx.getUniformLocation(prog, 'u_uu'),
+        uVv: glCtx.getUniformLocation(prog, 'u_vv'),
+        uWw: glCtx.getUniformLocation(prog, 'u_ww')
+      }
+    }
+
+    let state = buildState()
 
     // ── resize：用 ResizeObserver 监听容器尺寸 ──────────────────────────
     let canvasW = 1, canvasH = 1
@@ -536,17 +584,17 @@ export function BlackHole({
       // 分辨率缩放：显式 prop 优先，否则用当前档位值（运行时降档会更新 tierParams）
       const rs = propsRef.current.resolutionScale ?? tierParams.resolutionScale
       const dpr = Math.min(window.devicePixelRatio ?? 1, 2)
-      canvasW     = Math.max(1, Math.round(w * dpr * rs))
-      canvasH     = Math.max(1, Math.round(h * dpr * rs))
+      const nextW = Math.max(1, Math.round(w * dpr * rs))
+      const nextH = Math.max(1, Math.round(h * dpr * rs))
+      // 尺寸没变就不重设（窗口拖动时 ResizeObserver 会高频触发）
+      if (nextW === canvasW && nextH === canvasH) return
+      canvasW = nextW
+      canvasH = nextH
       canvas.width  = canvasW
       canvas.height = canvasH
       glCtx.viewport(0, 0, canvasW, canvasH)
-      // 问题 4 修复：reducedMotion / paused 静止时 resize 后补渲一帧，避免画面拉伸
-      // kickRef 在 render 定义后赋值，通过间接引用规避 TDZ；
-      // rafRef.current === 0 表示当前没有活跃循环（render 结束后会置 0）
-      if (rafRef.current === 0) {
-        kickRef.current?.()
-      }
+      // 静止态（reducedMotion / paused）下 resize 后补渲一帧，避免画面拉伸
+      if (rafRef.current === 0) kickRef.current?.()
     }
 
     const ro = new ResizeObserver((entries) => {
@@ -562,67 +610,81 @@ export function BlackHole({
       typeof window !== 'undefined' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    // ── 运行时帧率兜底降档 ───────────────────────────────────────────────
-    // 静态探测可能误判（同样标 Intel 的核显性能跨度很大），实测最可靠。
-    // 仅 auto 模式生效：采样一段窗口的平均帧率，连续过低则降一档并重建。
-    // 重建需重新编译 shader（步数是编译期常量），代价不小，故只降不升、有冷却。
-    let fpsAccumTime = 0       // 采样窗口累计时长（ms）
-    let fpsAccumFrames = 0     // 采样窗口累计帧数
-    let prevTs = 0             // 上一帧时间戳（算 delta）
-    let cooldownUntil = 0      // 降档冷却截止时间戳（避免重建后立刻又判降）
-    const SAMPLE_WINDOW = 2000 // 每 2s 评估一次
+    // ── 自适应帧率 / 档位 ────────────────────────────────────────────────
+    // 静态探测会误判（同为 Intel 核显性能跨度极大），运行时实测最可靠。
+    // 阶梯是「先降帧、再降档」：降帧不重编译、不损画质（黑洞自转很慢，
+    // 30fps 与 60fps 的观感差异远小于分辨率损失），降档才改分辨率与步数。
+    const FPS_STEPS = [60, 45, 30, 24]
+    let fpsLevel = 0
+    let winStart = 0
+    let winFrames = 0
+    const SAMPLE_WINDOW = 2000
+
+    const targetFps = () => {
+      const propFps = propsRef.current.maxFps
+      if (propFps !== undefined) return propFps
+      return Math.min(tierParams.maxFps, FPS_STEPS[Math.min(fpsLevel, FPS_STEPS.length - 1)])
+    }
 
     const rebuildForTier = (next: QualityTier) => {
       tier = next
       tierParams = TIER_TABLE[next]
-      // 重新编译 program（步数变化）
-      if (prog) glCtx.deleteProgram(prog)
-      prog = createProgram(glCtx, tierParams.steps, tierParams.dtScale)
-      // 重设画布尺寸（分辨率缩放变化），setSize 内部会补渲一帧
+      fpsLevel = 0
+      if (state) glCtx.deleteProgram(state.prog)
+      state = buildState()
+      // 重设画布尺寸（分辨率缩放变化）
+      canvasW = 0
+      canvasH = 0
       setSize(wrap.clientWidth || 1, wrap.clientHeight || 1)
     }
 
-    const sampleFps = (now: number) => {
-      // 仅 auto 模式且能继续降档时才采样
+    const adaptDown = () => {
+      // 强制档位时不再自动降（调用方明确指定了画质）
       if (!autoTier) return
+      // 先找阶梯里下一个严格更低的帧率（不低于 24fps）
+      const current = targetFps()
+      for (let i = 0; i < FPS_STEPS.length; i++) {
+        if (FPS_STEPS[i] < current && FPS_STEPS[i] >= 24) {
+          fpsLevel = i
+          return
+        }
+      }
+      // 帧率已经压到最低仍吃力，才牺牲分辨率/步数
       const idx = TIER_ORDER.indexOf(tier)
-      if (idx >= TIER_ORDER.length - 1) return  // 已是最低档
-      if (now < cooldownUntil) { prevTs = now; return }
+      if (idx < TIER_ORDER.length - 1) rebuildForTier(TIER_ORDER[idx + 1])
+    }
 
-      if (prevTs > 0) {
-        const dt = now - prevTs
-        // 跳过异常大间隔（切后台/断点导致），不计入采样
-        if (dt > 0 && dt < 500) {
-          fpsAccumTime += dt
-          fpsAccumFrames += 1
-        }
+    /** 采样窗口：只看真正绘制出来的帧间隔 */
+    const sampleFrames = (now: number) => {
+      if (winStart === 0) {
+        winStart = now
+        winFrames = 0
+        return
       }
-      prevTs = now
-
-      if (fpsAccumTime >= SAMPLE_WINDOW && fpsAccumFrames > 0) {
-        const avgFps = (fpsAccumFrames * 1000) / fpsAccumTime
-        // 目标帧率取当前档上限；实测低于其 75% 视为吃力 → 降档
-        const target = tierParams.maxFps
-        if (avgFps < target * 0.75) {
-          rebuildForTier(TIER_ORDER[idx + 1])
-          cooldownUntil = now + 3000
-        }
-        fpsAccumTime = 0
-        fpsAccumFrames = 0
-      }
+      winFrames += 1
+      const elapsed = now - winStart
+      if (elapsed < SAMPLE_WINDOW) return
+      const avgFps = (winFrames * 1000) / elapsed
+      winStart = now
+      winFrames = 0
+      // 后台节流（约 1fps）不是 GPU 不行，不参与判定
+      if (avgFps < 12) return
+      const target = targetFps()
+      if (target > 0 && avgFps < target * 0.8) adaptDown()
     }
 
     // ── 渲染帧 ───────────────────────────────────────────────────────────
     const startTime = performance.now()
     let lastFrameAt = 0   // 上一次真正绘制的 rAF 时间戳（限帧用）
 
+    const isActive = () =>
+      !propsRef.current.paused && !reducedMotion && !document.hidden
+
     const render = (now?: number) => {
-      if (isLost || !prog || !buf) {
-        return
-      }
-      const { speed: sp, brightness: br, interactive: iact, paused: ps } = propsRef.current
-      // 帧率上限：显式 prop 优先，否则用当前档位值
-      const fps = propsRef.current.maxFps ?? tierParams.maxFps
+      const st = state
+      if (isLost || !st || !buf) return
+      const { speed: sp, brightness: br, interactive: iact } = propsRef.current
+      const fps = targetFps()
 
       // 限帧节流：仅对 rAF 驱动的连续帧生效（now 为 rAF 时间戳），
       // 手动踢帧（无参调用，如首帧/resize 补渲）总是立即绘制。
@@ -630,11 +692,7 @@ export function BlackHole({
       if (now !== undefined && fps > 0) {
         if (now - lastFrameAt < 1000 / fps - 1) {
           // 间隔未到：跳过绘制但维持循环（停帧条件与帧尾一致）
-          if (!ps && !reducedMotion && !document.hidden) {
-            rafRef.current = requestAnimationFrame(render)
-          } else {
-            rafRef.current = 0
-          }
+          rafRef.current = isActive() ? requestAnimationFrame(render) : 0
           return
         }
         lastFrameAt = now
@@ -646,47 +704,75 @@ export function BlackHole({
         m.cx += (m.tx - m.cx) * 0.06
         m.cy += (m.ty - m.cy) * 0.06
       } else {
-        m.cx += (0 - m.cx) * 0.06
-        m.cy += (0 - m.cy) * 0.06
+        if (m.cx !== 0) m.cx += (0 - m.cx) * 0.06
+        if (m.cy !== 0) m.cy += (0 - m.cy) * 0.06
+        if (Math.abs(m.cx) < 1e-5) m.cx = 0
+        if (Math.abs(m.cy) < 1e-5) m.cy = 0
       }
 
       const t = (performance.now() - startTime) / 1000
 
-      glCtx.useProgram(prog)
+      // ── 相机基向量：从 shader 里搬到这里算（每像素省 2 次 normalize、
+      //    3 次 cross、1 次除法；每帧只算一次）────────────────────────────
+      const pitch = m.cy * 0.15
+      const yaw   = m.cx * 0.15
+      const roX = 0, roY = 1 + pitch * 2, roZ = -8.5
+
+      // ww = normalize(ta - ro)，ta = (0,0,0)
+      let wwX = -roX, wwY = -roY, wwZ = -roZ
+      let len = Math.hypot(wwX, wwY, wwZ)
+      wwX /= len; wwY /= len; wwZ /= len
+
+      // uu = normalize(cross(ww, (0,1,0))) = normalize(-wwZ, 0, wwX)
+      let uuX = -wwZ, uuY = 0, uuZ = wwX
+      len = Math.hypot(uuX, uuZ)
+      uuX /= len; uuZ /= len
+
+      // vv = cross(uu, ww)
+      let vvX = uuY * wwZ - uuZ * wwY
+      let vvY = uuZ * wwX - uuX * wwZ
+      let vvZ = uuX * wwY - uuY * wwX
+
+      // uu = cos(yaw) * uu + sin(yaw) * ww
+      const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw)
+      uuX = cosYaw * uuX + sinYaw * wwX
+      uuY = cosYaw * uuY + sinYaw * wwY
+      uuZ = cosYaw * uuZ + sinYaw * wwZ
+
+      // ww = normalize(cross(vv, uu))
+      wwX = vvY * uuZ - vvZ * uuY
+      wwY = vvZ * uuX - vvX * uuZ
+      wwZ = vvX * uuY - vvY * uuX
+      len = Math.hypot(wwX, wwY, wwZ)
+      wwX /= len; wwY /= len; wwZ /= len
+
+      glCtx.useProgram(st.prog)
       glCtx.bindBuffer(glCtx.ARRAY_BUFFER, buf)
+      glCtx.enableVertexAttribArray(st.aPos)
+      glCtx.vertexAttribPointer(st.aPos, 2, glCtx.FLOAT, false, 0, 0)
 
-      const aPos = glCtx.getAttribLocation(prog, 'a_pos')
-      glCtx.enableVertexAttribArray(aPos)
-      glCtx.vertexAttribPointer(aPos, 2, glCtx.FLOAT, false, 0, 0)
-
-      const uRes   = getUniform('u_resolution')
-      const uTime  = getUniform('u_time')
-      const uSpeed = getUniform('u_speed')
-      const uBr    = getUniform('u_brightness')
-      const uMouse = getUniform('u_mouse')
-
-      if (uRes)   glCtx.uniform2f(uRes,   canvasW, canvasH)
-      if (uTime)  glCtx.uniform1f(uTime,  t)
-      if (uSpeed) glCtx.uniform1f(uSpeed, sp)
-      if (uBr)    glCtx.uniform1f(uBr,    br)
-      if (uMouse) glCtx.uniform2f(uMouse, m.cx, m.cy)
+      if (st.uRes)     glCtx.uniform2f(st.uRes, canvasW, canvasH)
+      if (st.uTime)    glCtx.uniform1f(st.uTime, t)
+      if (st.uSpeed)   glCtx.uniform1f(st.uSpeed, sp)
+      if (st.uBr)      glCtx.uniform1f(st.uBr, br)
+      if (st.uMouse)   glCtx.uniform2f(st.uMouse, m.cx, m.cy)
+      if (st.uUvScale) glCtx.uniform1f(st.uUvScale, 1 / Math.min(canvasW, canvasH))
+      if (st.uRo)      glCtx.uniform3f(st.uRo, roX, roY, roZ)
+      if (st.uUu)      glCtx.uniform3f(st.uUu, uuX, uuY, uuZ)
+      if (st.uVv)      glCtx.uniform3f(st.uVv, vvX, vvY, vvZ)
+      if (st.uWw)      glCtx.uniform3f(st.uWw, wwX, wwY, wwZ)
 
       glCtx.drawArrays(glCtx.TRIANGLES, 0, 3)
-      // 运行时帧率采样（仅 rAF 连续帧；手动踢帧 now 为 undefined 不计入）
-      if (now !== undefined) sampleFps(now)
 
-      if (!ps && !reducedMotion && !document.hidden) {
-        rafRef.current = requestAnimationFrame(render)
-      } else {
-        // 循环停止：置 0 让 setSize 的静止补渲检测可以工作
-        rafRef.current = 0
-      }
+      // 运行时采样（仅 rAF 连续帧；手动踢帧不计入）
+      if (now !== undefined) sampleFrames(now)
+
+      rafRef.current = isActive() ? requestAnimationFrame(render) : 0
     }
 
-    // 问题 1 修复：paused 恢复时通过 kickRef 踢一帧续循环
+    // paused 恢复时通过 kickRef 踢一帧续循环
     // render 定义后立即赋值，确保 setSize 的间接调用也能拿到
     kickRef.current = () => {
-      // 确认 propsRef 已更新（由 React 同步赋值），再踢帧
       cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(render)
     }
@@ -694,12 +780,10 @@ export function BlackHole({
     // 首帧总是渲染（静态模式下只渲染这一帧）
     render()
 
-    // ── 可见性变化：后台时停帧 ──────────────────────────────────────────
+    // ── 可见性变化：不可见时停帧，回来时续上 ────────────────────────────
     const onVisibility = () => {
-      if (!document.hidden && !propsRef.current.paused && !reducedMotion) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = requestAnimationFrame(render)
-      }
+      winStart = 0
+      if (isActive()) kickRef.current?.()
     }
     document.addEventListener('visibilitychange', onVisibility)
 
@@ -723,10 +807,12 @@ export function BlackHole({
         return
       }
       isLost = false
-      prog   = createProgram(glCtx, tierParams.steps, tierParams.dtScale)
+      if (state) glCtx.deleteProgram(state.prog)
+      state  = buildState()
       buf    = glCtx.createBuffer()
       setupGeom()
-      if (!propsRef.current.paused) {
+      winStart = 0
+      if (isActive()) {
         rafRef.current = requestAnimationFrame(render)
       }
     }
@@ -758,7 +844,7 @@ export function BlackHole({
       canvas.removeEventListener('webglcontextrestored', onRestored)
       window.removeEventListener('mousemove', onMouseMove)
 
-      if (prog) glCtx.deleteProgram(prog)
+      if (state) glCtx.deleteProgram(state.prog)
       if (buf)  glCtx.deleteBuffer(buf)
 
       // 主动释放上下文，避免 Chrome 对废弃 canvas 保留 GPU 资源；
