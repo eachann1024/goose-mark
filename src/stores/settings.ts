@@ -187,7 +187,8 @@ export const createDefaultSettingsState = (): SettingsState => {
     selectedModelId: defaults.selectedModelId ?? DEFAULT_AI_MODEL
   })
   return {
-    themePreference: 'light',
+    // 默认深色：启动底色、主题 token、AI 页都按深色起步，避免首开白屏晃眼
+    themePreference: 'dark',
     gridColumns: 3,
     preferLocalSnapshotOnStartup: false,
     localMirrorDirectory: '',
@@ -399,7 +400,7 @@ const normalizeProtocolConfigs = (
 export const normalizePersistedSettings = (state: Partial<SettingsState> | null | undefined): Partial<SettingsState> => {
   if (!state) return {}
   const patch: Partial<SettingsState> = { ...state }
-  if (!['system', 'light', 'dark'].includes(String(patch.themePreference))) patch.themePreference = 'light'
+  if (!['system', 'light', 'dark'].includes(String(patch.themePreference))) patch.themePreference = 'dark'
   if (typeof patch.aiEnabled !== 'boolean') patch.aiEnabled = false
   if (typeof patch.aiAllowCreateGroup !== 'boolean') patch.aiAllowCreateGroup = false
   if (typeof patch.aiAllowCreateSubGroup !== 'boolean') patch.aiAllowCreateSubGroup = true

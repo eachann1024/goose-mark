@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 import { useSettingsStore } from '@/stores/settings'
 import { type Screen, type ViewMode, type Theme, type ThemePref } from './homeTypes'
 import { RUNTIME_PLATFORM, resolveTheme } from './homeRuntime'
@@ -51,8 +51,9 @@ export function useHomeThemeEffects({
     return () => mq.removeEventListener('change', handler)
   }, [themePref])
 
-  // 同步 .dark class 到 documentElement，让 Tailwind token（index.css 第 83 行）在深色模式下生效
-  useEffect(() => {
+  // 同步 .dark class 到 documentElement，让 Tailwind token（index.css 第 83 行）在深色模式下生效。
+  // 用 layout effect：在首帧绘制前落定，避免启动时先按浅色画一帧再切深色（白闪）。
+  useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
     const eggOn = theme === 'dark' && easterEggEnabled
     const rootEl = document.getElementById('root')
