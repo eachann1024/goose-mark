@@ -35,7 +35,7 @@ export function createBookmarkLocationActions(get: BookmarkGet, commit: Bookmark
       get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
     },
 
-    moveBookmarkToSubGroup: (bookmarkId, fromGroupId, fromSubId, toGroupId, toSubId) => {
+    moveBookmarkToSubGroup: (bookmarkId, fromGroupId, fromSubId, toGroupId, toSubId, insertIndex) => {
       if (fromGroupId === toGroupId && fromSubId === toSubId) return false
       const groups = clone(get().groups)
       const bookmarks = clone(get().bookmarks)
@@ -53,7 +53,11 @@ export function createBookmarkLocationActions(get: BookmarkGet, commit: Bookmark
       fromSub.updatedAt = now
       fromGroup.updatedAt = now
       if (!toSub.bookmarkIds.includes(bookmarkId)) {
-        toSub.bookmarkIds.push(bookmarkId)
+        // 拖到目标段的第 N 项之前：按落点插入（拖拽让位位置与最终落点一致），缺省追加到末尾
+        const at = typeof insertIndex === 'number' && Number.isFinite(insertIndex)
+          ? Math.max(0, Math.min(Math.floor(insertIndex), toSub.bookmarkIds.length))
+          : toSub.bookmarkIds.length
+        toSub.bookmarkIds.splice(at, 0, bookmarkId)
         toSub.updatedAt = now
         toGroup.updatedAt = now
       }

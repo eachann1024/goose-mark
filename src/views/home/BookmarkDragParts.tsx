@@ -1,10 +1,11 @@
-import type * as React from 'react'
-import { useDroppable, closestCenter, pointerWithin, type CollisionDetection } from '@dnd-kit/core'
+import { useMemo, type ReactElement } from 'react'
+import { useDndContext, useDroppable, closestCenter, pointerWithin, type CollisionDetection } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
-import { type HomeItem } from './viewModel'
+import { type HomeGroup, type HomeItem } from './viewModel'
 import { Fav, BookmarkCard } from './BookmarkCard'
+import { resolveDropGap, type DropGapInfo } from './dropGap'
 
 // ── SortableTab：顶栏一级分组 Tab 可拖拽单项（模块顶层，避免 TDZ）──────────
 export interface SortableTabProps {
@@ -31,6 +32,7 @@ export function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }
       {...attributes}
       {...listeners}
       className={`group-tab${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}`}
+      data-group-id={id}
       onClick={onTabClick}
       onContextMenu={onTabContextMenu}
     >
@@ -45,6 +47,30 @@ export function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }
 export const bookmarkCollision: CollisionDetection = (args) => {
   const pointerHits = pointerWithin(args)
   return pointerHits.length ? pointerHits : closestCenter(args)
+}
+
+
+
+// ── DropGap：跨子分组拖拽的落点占位（真实占位元素，靠布局让后面的卡片/格子让开）──
+export function DropGap({ height, view }: { height: number; view: 'list' | 'grid' }) {
+  return <div className={`drop-gap is-${view}`} style={height > 0 ? { height } : undefined} aria-hidden />
+}
+
+/** 当前拖拽落点是否落在别的子分组（同段由 dnd-kit 自身让位） */
+export function useDragDropGap(groups: HomeGroup[], view: 'list' | 'grid'): DropGapInfo | null {
+  const { active, over } = useDndContext()
+  return useMemo(() => resolveDropGap(active, over, groups, view), [active, over, groups, view])
+}
+
+/** 在指定下标插入落点占位 */
+export function insertDropGap(nodes: ReactElement[], gap: DropGapInfo | null): ReactElement[] {
+  if (!gap) return nodes
+  const at = Math.max(0, Math.min(gap.index, nodes.length))
+  return [
+    ...nodes.slice(0, at),
+    <DropGap key="__drop-gap__" height={gap.height} view={gap.view} />,
+    ...nodes.slice(at)
+  ]
 }
 
 

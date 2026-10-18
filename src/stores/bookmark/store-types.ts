@@ -85,7 +85,9 @@ export interface BookmarkActions {
     fromGroupId: string,
     fromSubId: string,
     toGroupId: string,
-    toSubId: string
+    toSubId: string,
+    /** 目标子分组内的插入位置（缺省＝追加到末尾） */
+    insertIndex?: number
   ) => boolean
   quickSaveBookmark: (url: string, title?: string, desc?: string) => Bookmark
   getOrCreateQuickCollectGroup: () => { group: Group; subGroup: SubGroup }

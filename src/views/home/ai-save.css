@@ -12,6 +12,11 @@
   color: var(--fg);
   font-family: var(--font-sans);
 }
+/* AI 页是整屏接管：窗体强制实底。彩蛋开启时 .window 本来是透明的（透出动画 canvas），
+   切进 AI 页时底层一旦重绘就会露出系统底色（深色下就是「白闪」），这里直接钉成不透明。 */
+.goose-home[data-screen="aiSave"] .window {
+  background: var(--bg) !important;
+}
 .goose-home[data-screen="aiSave"] .app-header,
 .goose-home[data-screen="aiSave"] .app-main { visibility: hidden; }
 

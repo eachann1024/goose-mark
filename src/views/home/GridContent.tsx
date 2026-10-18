@@ -5,8 +5,15 @@ import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { Ico } from './icon'
 import { type HomeGroup, type HomeItem } from './viewModel'
 import { Fav, GRID_ICON_SIZE_PX } from './BookmarkCard'
-import { SecBlock, SortableGridCell } from './BookmarkDragParts'
+import { SecBlock, SortableGridCell, DropGap, useDragDropGap } from './BookmarkDragParts'
 import { SearchEmptyUniversal } from './SearchEmptyUniversal'
+
+/** 把落点占位插到指定下标（跨子分组拖拽时用） */
+function withGap(cells: React.ReactNode[], gapAt: number | null | undefined, gapNode: React.ReactNode): React.ReactNode[] {
+  if (!gapNode || typeof gapAt !== 'number') return cells
+  const at = Math.max(0, Math.min(gapAt, cells.length))
+  return [...cells.slice(0, at), gapNode, ...cells.slice(at)]
+}
 
 /** 单个宫格集合（共用：分组段内与搜索扁平态） */
 export function GridCells({
@@ -19,6 +26,8 @@ export function GridCells({
   groupId,
   subId,
   subtitleMode = 'default',
+  gapAt,
+  gapNode,
 }: {
   items: HomeItem[]
   columns: number
@@ -30,6 +39,9 @@ export function GridCells({
   subId?: string
   /** default=首页设置；host=搜索格子固定展示 host */
   subtitleMode?: 'default' | 'host'
+  /** 跨子分组拖拽：落点占位插入到该下标处，让后面的格子真正让位 */
+  gapAt?: number | null
+  gapNode?: React.ReactNode
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
   // 非搜索态（有归属分组）才可拖拽；搜索扁平宫格无 groupId，保持普通渲染
@@ -89,9 +101,9 @@ export function GridCells({
     >
       {canDrag ? (
         <SortableContext items={items.map((b) => b.id)} strategy={rectSortingStrategy}>
-          {cells}
+          {withGap(cells, gapAt, gapNode)}
         </SortableContext>
-      ) : cells}
+      ) : withGap(cells, gapAt, gapNode)}
     </div>
   )
 }
@@ -126,6 +138,8 @@ export function GridContent({
 }) {
   const gridIconSize = useSettingsStore((s) => s.gridIconSize)
   const iconSize = GRID_ICON_SIZE_PX[gridIconSize] ?? '46px'
+  // 跨子分组拖拽：目标段靠落点占位让位（同段由 dnd-kit 自身让位）
+  const dropGap = useDragDropGap(groups, 'grid')
 
   // 搜索态：全局匹配结果扁平成一个宫格，不分段
   if (searching) {
@@ -172,31 +186,36 @@ export function GridContent({
   return (
     <>
       {groups.map((g) =>
-        g.subs.map((s) => (
-          <SecBlock
-            key={`${g.id}-${s.id}`}
-            groupId={g.id}
-            subId={s.id}
-            subName={s.name}
-            count={s.items.length}
-            view="grid"
-          >
-            {s.items.length === 0 ? (
-              <div className="sec-empty">暂无书签</div>
-            ) : (
-              <GridCells
-                items={s.items}
-                columns={columns}
-                selectedId={selectedId}
-                iconSize={iconSize}
-                onSelect={onSelect}
-                onOpen={onOpen}
-                groupId={g.id}
-                subId={s.id}
-              />
-            )}
-          </SecBlock>
-        ))
+        g.subs.map((s) => {
+          const gap = dropGap && dropGap.subId === s.id ? dropGap : null
+          return (
+            <SecBlock
+              key={`${g.id}-${s.id}`}
+              groupId={g.id}
+              subId={s.id}
+              subName={s.name}
+              count={s.items.length}
+              view="grid"
+            >
+              {s.items.length === 0 ? (
+                gap ? <DropGap height={gap.height} view="grid" /> : <div className="sec-empty">暂无书签</div>
+              ) : (
+                <GridCells
+                  items={s.items}
+                  columns={columns}
+                  selectedId={selectedId}
+                  iconSize={iconSize}
+                  onSelect={onSelect}
+                  onOpen={onOpen}
+                  groupId={g.id}
+                  subId={s.id}
+                  gapAt={gap?.index ?? null}
+                  gapNode={gap ? <DropGap height={gap.height} view="grid" /> : null}
+                />
+              )}
+            </SecBlock>
+          )
+        })
       )}
     </>
   )

@@ -293,7 +293,7 @@ export default function HomePage() {
     setActiveGroup
   })
 
-  const { tabSensors, dndSensors, handleTabDragEnd, tabCtx, tabRenaming, setTabRenaming, tabRenameVal, setTabRenameVal, tabMenuRef, tabRenameRef, tabAdding, setTabAdding, tabAddVal, setTabAddVal, tabAddRef, startTabAdd, commitTabAdd, openTabCtx, startTabRename, commitTabRename, deleteTabGroup } = useHomeGroupTabs({
+  const { tabSensors, dndSensors, handleTabDragEnd, tabCtx, tabRenaming, setTabRenaming, tabRenameVal, setTabRenameVal, tabRenameBox, tabMenuRef, tabRenameRef, tabAdding, setTabAdding, tabAddVal, setTabAddVal, tabAddRef, startTabAdd, commitTabAdd, openTabCtx, startTabRename, commitTabRename, deleteTabGroup } = useHomeGroupTabs({
     homeGroups,
     reorderGroups,
     addGroup,
@@ -340,7 +340,7 @@ export default function HomePage() {
     toastTimer
   })
 
-  useHomeAICreate({ clearSearch, setScreen, aiCreateFnRef })
+  useHomeAICreate({ setScreen, aiCreateFnRef })
 
   const { handleDndDragStart, handleDndDragEnd } = useHomeBookmarkDrag({
     setActiveDragItem,
@@ -382,15 +382,22 @@ export default function HomePage() {
     }
   }, [view, scrollToSection])
 
+  /** AI 保存页「返回」：退出搜索态后回到书签视图（AI 页进入时保留了搜索词，这里统一清空） */
+  const leaveAISave = useCallback(() => {
+    clearSearch()
+    setScreen(view)
+  }, [clearSearch, view, setScreen])
+
   /** AI 保存页「查看位置」：切回主视图并定位到书签落地的分组/子分组 */
   const jumpToLocation = useCallback((jump: BookmarkLocation) => {
+    clearSearch()
     setScreen(view)
     setActiveSubId(jump.subGroupId)
     useBookmarkStore.getState().selectGroup(jump.groupId, jump.subGroupId)
     requestAnimationFrame(() => {
       if (view === 'list' || view === 'grid') scrollToSection(jump.groupId, jump.subGroupId)
     })
-  }, [view, scrollToSection])
+  }, [view, scrollToSection, clearSearch, setScreen])
 
   /** 从主面板进入新建：先把 UI 当前选中（含 scroll-spy 的 activeSubId）写入 store，再开表单 */
   const openNewBookmarkForm = useCallback(() => {
@@ -573,6 +580,7 @@ export default function HomePage() {
             tabRenameVal={tabRenameVal}
             setTabRenameVal={setTabRenameVal}
             commitTabRename={commitTabRename}
+            tabRenameBox={tabRenameBox}
             setTabRenaming={setTabRenaming}
             isSearching={isSearching}
             screen={screen}
@@ -685,7 +693,7 @@ export default function HomePage() {
         {screen === 'add' && <AddBookmarkWizard key={`wiz-${formKey}`} editItem={formEditItem} onBack={backToList} />}
 
         {/* ---------- AI 保存进度页 ---------- */}
-        {screen === 'aiSave' && <AISavePage onBack={() => setScreen(view)} onJump={jumpToLocation} />}
+        {screen === 'aiSave' && <AISavePage onBack={leaveAISave} onJump={jumpToLocation} />}
 
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}

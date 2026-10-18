@@ -29,11 +29,12 @@ export function useHomeGroupTabs({
 
   // ---- 顶栏 Tab 拖拽排序（distance:5 保证点击/右键不被误判为拖拽）----
   const tabSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
-  // 书签 / 侧栏子分组统一拖拽 sensors：MouseSensor + TouchSensor（dnd-kit 推荐的更兼容组合，
-  // 鼠标/触摸都稳；distance:8 比点击略大，避免「点开书签」被误判为拖拽；触摸长按 180ms 起拖、避免与滚动冲突）
+  // 书签 / 侧栏子分组统一拖拽 sensors：
+  // 鼠标 3px 即可起拖（按下去几乎立即跟手，同时仍能区分「点开」与「拖拽」）；
+  // 触摸保留长按，避免与列表滚动冲突
   const dndSensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 3 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } })
   )
 
   const handleTabDragEnd = useCallback((event: DragEndEvent) => {
@@ -53,6 +54,8 @@ export function useHomeGroupTabs({
   const [tabCtx, setTabCtx] = useState<{ open: boolean; x: number; y: number; groupId: string }>({ open: false, x: 0, y: 0, groupId: '' })
   const [tabRenaming, setTabRenaming] = useState<string | null>(null)
   const [tabRenameVal, setTabRenameVal] = useState('')
+  // 重命名输入框复用被替换 tab 的实测宽高：进出编辑态 tab 栏零位移
+  const [tabRenameBox, setTabRenameBox] = useState<{ width: number; height: number } | null>(null)
   const tabMenuRef = useRef<HTMLDivElement>(null)
   const tabRenameRef = useRef<HTMLInputElement>(null)
 
@@ -91,6 +94,14 @@ export function useHomeGroupTabs({
   const startTabRename = useCallback((groupId: string) => {
     const g = homeGroups.find((x) => x.id === groupId)
     if (!g) return
+    const tabEl = Array.from(document.querySelectorAll<HTMLElement>('.group-tab'))
+      .find((el) => el.dataset.groupId === groupId)
+    if (tabEl) {
+      const rect = tabEl.getBoundingClientRect()
+      setTabRenameBox({ width: rect.width, height: rect.height })
+    } else {
+      setTabRenameBox(null)
+    }
     setTabRenaming(groupId)
     setTabRenameVal(g.name)
     closeTabCtx()
@@ -124,5 +135,5 @@ export function useHomeGroupTabs({
     return () => { window.removeEventListener('mousedown', onDown); window.removeEventListener('keydown', onKey) }
   }, [tabCtx.open, closeTabCtx])
 
-  return { tabSensors, dndSensors, handleTabDragEnd, tabCtx, tabRenaming, setTabRenaming, tabRenameVal, setTabRenameVal, tabMenuRef, tabRenameRef, tabAdding, setTabAdding, tabAddVal, setTabAddVal, tabAddRef, startTabAdd, commitTabAdd, openTabCtx, startTabRename, commitTabRename, deleteTabGroup }
+  return { tabSensors, dndSensors, handleTabDragEnd, tabCtx, tabRenaming, setTabRenaming, tabRenameVal, setTabRenameVal, tabRenameBox, tabMenuRef, tabRenameRef, tabAdding, setTabAdding, tabAddVal, setTabAddVal, tabAddRef, startTabAdd, commitTabAdd, openTabCtx, startTabRename, commitTabRename, deleteTabGroup }
 }

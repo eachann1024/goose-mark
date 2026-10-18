@@ -169,8 +169,10 @@
 }
 .goose-home .group-tabs::-webkit-scrollbar { display:none; }
 .goose-home .group-tab {
-  @apply shrink-0 flex items-center gap-1.5 px-3 py-1.5 h-auto text-[13px] font-medium text-g-fg-muted leading-none rounded-g-md cursor-pointer whitespace-nowrap relative transition-[color,background-color] duration-150;
+  @apply shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium text-g-fg-muted leading-none rounded-g-md cursor-pointer whitespace-nowrap relative transition-[color,background-color] duration-150;
   background:transparent; border:none;
+  /* 行高锁死：内联重命名输入框复用同一组尺寸，进出编辑态不产生任何位移 */
+  height:25px;
 }
 .goose-home .group-tab:hover { @apply text-g-fg bg-g-surface; }
 .goose-home .group-tab.on {
@@ -179,9 +181,18 @@
 .goose-home .group-tab.on:hover { @apply bg-g-accent-subtle; }
 /* Tab 拖拽态：半透明 + 轻阴影提示浮起 */
 .goose-home .group-tab.dragging { @apply opacity-50 bg-g-surface; }
-/* Tab 重命名内联输入：尺寸对齐胶囊，避免布局跳动 */
+/* Tab 重命名内联输入：外层尺寸由 tab 实测宽高内联给出，这里只负责「同一个盒子」的内边距/边框，
+   保证进入与退出编辑态时 tab 栏零位移（旧写法 padding 10px + 1px 边框会撑高 3px、宽度也从内容宽变 96px）。 */
 .goose-home .group-tab-rename {
-  @apply shrink-0 px-[10px] py-1.5 h-auto leading-none text-[13px] font-medium text-g-fg bg-g-input border border-g-accent rounded-g-md outline-none w-24 max-w-[120px];
+  @apply shrink-0 text-[13px] font-medium text-g-fg bg-g-input outline-none;
+  box-sizing:border-box;
+  height:25px;
+  width:96px;
+  max-width:160px;
+  padding:0 11px;
+  line-height:23px;
+  border:1px solid var(--accent-border-strong);
+  border-radius:var(--radius-md);
 }
 
 /* 顶栏搜索框：仅浏览器独立调试（data-search-surface=inline）渲染；uTools 含独立窗用顶部原生搜索 */
@@ -228,6 +239,8 @@
 .goose-home .nav-item {
   @apply relative flex items-center gap-2 w-full py-1.5 pr-2 pl-[18px] rounded-g-sm text-[12.5px] text-g-fg-muted text-left select-none cursor-pointer transition-all duration-[120ms];
   font-family:inherit;
+  /* 行高与右侧 18px 计数/⋯ 槽位对齐并锁死：内联重命名时行高不变（旧写法 normal 行高让行从 30 → 26.5 抖一下） */
+  line-height:18px;
 }
 .goose-home .nav-item .count { @apply ml-auto text-[10.5px] text-g-fg-faint tabular-nums; }
 .goose-home .nav-item:hover { @apply text-g-fg bg-g-surface; }
@@ -1126,7 +1139,7 @@
 }
 .goose-home .grp-label-editing { @apply gap-1; }
 .goose-home .nav-item-editing { cursor:default; }
-.goose-home .nav-item-editing .sidebar-inline-input { font-size:12.5px; }
+.goose-home .nav-item-editing .sidebar-inline-input { font-size:12.5px; height:18px; line-height:18px; }
 
 /* 顶栏「新建主分组」+：虚线胶囊，hover 染上 accent；默认隐藏，group-tabs hover 时浮现 */
 .goose-home .tab-add {
@@ -1699,6 +1712,20 @@
   @apply bg-g-surface rounded-g-sm z-10;
   box-shadow: var(--shadow-sm);
 }
+/* 拖拽落点占位：跨子分组拖拽时在目标位置撑出一个空位（真实占位元素，布局让位） */
+.goose-home .drop-gap {
+  pointer-events: none;
+  border: 1px dashed var(--accent-border);
+  background: var(--accent-tint);
+}
+.goose-home .drop-gap.is-list {
+  @apply rounded-g-md;
+  min-height: 40px;
+}
+.goose-home .drop-gap.is-grid {
+  @apply rounded-[12px];
+  min-height: 64px;
+}
 /* 跟手预览（DragOverlay）：书签卡片浮起，强制不透明底避免透出彩蛋背景 */
 .goose-home .drag-overlay { cursor: grabbing; }
 .goose-home .drag-overlay .card,
@@ -1853,6 +1880,10 @@
   from { opacity:0; }
   to   { opacity:1; }
 }
+@keyframes gm-fade-in {
+  from { opacity:0; }
+  to   { opacity:1; }
+}
 
 /* 右键 / 一级 Tab / 侧栏浮动菜单：display:none→flex 时触发，锚点在上方展开 */
 .goose-home .ctx-menu.show,
@@ -1872,10 +1903,9 @@
   transform-origin:center;
   animation:gm-pop-in .2s cubic-bezier(.16,1,.3,1);
 }
-/* 新建分组：+ 就地展开为输入框 */
+/* 新建分组：+ 就地展开为输入框（纯淡入，不做缩放，避免尺寸变化时的“抖一下”观感） */
 .goose-home .group-tab-rename {
-  transform-origin:left center;
-  animation:gm-pop-in .16s cubic-bezier(.16,1,.3,1);
+  animation:gm-fade-in .12s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {

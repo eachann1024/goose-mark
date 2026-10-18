@@ -18,7 +18,7 @@ export function useHomeBookmarkDrag({
   setActiveDragItem: React.Dispatch<React.SetStateAction<HomeItem | null>>
   reorderSubGroups: (groupId: string, newChildren: SubGroup[]) => void
   reorderInSub: (groupId: string, subId: string, fromId: string, toId: string) => void
-  moveBookmarkToSubGroup: (bookmarkId: string, fromGroupId: string, fromSubId: string, toGroupId: string, toSubId: string) => boolean
+  moveBookmarkToSubGroup: (bookmarkId: string, fromGroupId: string, fromSubId: string, toGroupId: string, toSubId: string, insertIndex?: number) => boolean
 }) {
 
   // ---- 统一拖拽：书签卡片（列表/网格）+ 侧栏子分组共用一个 DndContext ----
@@ -28,7 +28,7 @@ export function useHomeBookmarkDrag({
     if (data?.type === 'bookmark' && data.item) setActiveDragItem(data.item)
   }, [])
 
-  // onDragEnd：按 active.type 分流 —— 子分组排序 / 书签排序 / 书签跨子分组移动
+  // onDragEnd：按 active.type 分流 —— 子分组排序 / 书签排序 / 书签跨子分组移动（带落点位置）
   const handleDndDragEnd = useCallback((event: DragEndEvent) => {
     setActiveDragItem(null)
     const { active, over } = event
@@ -36,6 +36,14 @@ export function useHomeBookmarkDrag({
     const a = active.data.current as { type?: string; groupId?: string; subId?: string } | undefined
     const o = over.data.current as { type?: string; groupId?: string; subId?: string } | undefined
     if (!a) return
+
+    /** 目标书签在它所属子分组里的下标：拖到卡片上时“插到它前面”，与拖拽让位的空位一致 */
+    const findItemIndexInSub = (groupId: string, subId: string, bookmarkId: string): number | undefined => {
+      const sub = homeGroups.find((g) => g.id === groupId)?.subs.find((s) => s.id === subId)
+      if (!sub) return undefined
+      const idx = sub.items.findIndex((b) => b.id === bookmarkId)
+      return idx < 0 ? undefined : idx
+    }
 
     // 1) 侧栏子分组排序（active 与 over 都是子分组，同一一级分组内）
     if (a.type === 'sub') {
@@ -81,8 +89,9 @@ export function useHomeBookmarkDrag({
       }
       return
     }
-    // 跨子分组移动
-    const ok = moveBookmarkToSubGroup(String(active.id), a.groupId, a.subId, toGroupId, toSubId)
+    // 跨子分组移动：落在卡片上按该卡片在目标段的位置插入（与拖拽让位的空位一致），落在段落空白/侧栏项时追加到末尾
+    const insertIndex = overBookmarkId ? findItemIndexInSub(a.groupId, toSubId, overBookmarkId) : undefined
+    const ok = moveBookmarkToSubGroup(String(active.id), a.groupId, a.subId, toGroupId, toSubId, insertIndex)
     if (ok) fireToast('已移动')
   }, [homeGroups, reorderSubGroups, reorderInSub, moveBookmarkToSubGroup, fireToast])
 
