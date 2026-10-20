@@ -7,6 +7,7 @@ import { type HomeGroup, type HomeItem } from './viewModel'
 import { Fav, GRID_ICON_SIZE_PX } from './BookmarkCard'
 import { SecBlock, SortableGridCell, DropGap, useDragDropGap } from './BookmarkDragParts'
 import { SearchEmptyUniversal } from './SearchEmptyUniversal'
+import { bookmarkDragId } from './bookmarkDragId'
 
 /** 把落点占位插到指定下标（跨子分组拖拽时用） */
 function withGap(cells: React.ReactNode[], gapAt: number | null | undefined, gapNode: React.ReactNode): React.ReactNode[] {
@@ -100,7 +101,7 @@ export function GridCells({
       } as React.CSSProperties}
     >
       {canDrag ? (
-        <SortableContext items={items.map((b) => b.id)} strategy={rectSortingStrategy}>
+        <SortableContext items={items.map((b) => bookmarkDragId(groupId!, subId!, b.id))} strategy={rectSortingStrategy}>
           {withGap(cells, gapAt, gapNode)}
         </SortableContext>
       ) : withGap(cells, gapAt, gapNode)}

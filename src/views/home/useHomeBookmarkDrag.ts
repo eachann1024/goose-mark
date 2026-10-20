@@ -33,8 +33,8 @@ export function useHomeBookmarkDrag({
     setActiveDragItem(null)
     const { active, over } = event
     if (!over) return
-    const a = active.data.current as { type?: string; groupId?: string; subId?: string } | undefined
-    const o = over.data.current as { type?: string; groupId?: string; subId?: string } | undefined
+    const a = active.data.current as { type?: string; groupId?: string; subId?: string; bookmarkId?: string } | undefined
+    const o = over.data.current as { type?: string; groupId?: string; subId?: string; bookmarkId?: string } | undefined
     if (!a) return
 
     /** 目标书签在它所属子分组里的下标：拖到卡片上时“插到它前面”，与拖拽让位的空位一致 */
@@ -63,14 +63,14 @@ export function useHomeBookmarkDrag({
     }
 
     // 2) 书签拖拽：先解析落点所属子分组
-    if (a.type !== 'bookmark' || !a.groupId || !a.subId) return
+    if (a.type !== 'bookmark' || !a.groupId || !a.subId || !a.bookmarkId) return
     let toGroupId: string | undefined
     let toSubId: string | undefined
     let overBookmarkId: string | undefined
     if (o?.type === 'bookmark') {
       toGroupId = o.groupId
       toSubId = o.subId
-      overBookmarkId = String(over.id)
+      overBookmarkId = o.bookmarkId
     } else if (o?.type === 'sub') {
       // 落到侧栏子分组项：over.id 即目标子分组 id
       toGroupId = o.groupId
@@ -85,13 +85,13 @@ export function useHomeBookmarkDrag({
     if (a.groupId === toGroupId && a.subId === toSubId) {
       // 同子分组内排序（仅当落在另一张卡片上）
       if (overBookmarkId && active.id !== over.id) {
-        reorderInSub(a.groupId, a.subId, String(active.id), overBookmarkId)
+        reorderInSub(a.groupId, a.subId, a.bookmarkId, overBookmarkId)
       }
       return
     }
     // 跨子分组移动：落在卡片上按该卡片在目标段的位置插入（与拖拽让位的空位一致），落在段落空白/侧栏项时追加到末尾
-    const insertIndex = overBookmarkId ? findItemIndexInSub(a.groupId, toSubId, overBookmarkId) : undefined
-    const ok = moveBookmarkToSubGroup(String(active.id), a.groupId, a.subId, toGroupId, toSubId, insertIndex)
+    const insertIndex = overBookmarkId ? findItemIndexInSub(toGroupId, toSubId, overBookmarkId) : undefined
+    const ok = moveBookmarkToSubGroup(a.bookmarkId, a.groupId, a.subId, toGroupId, toSubId, insertIndex)
     if (ok) fireToast('已移动')
   }, [homeGroups, reorderSubGroups, reorderInSub, moveBookmarkToSubGroup, fireToast])
 
