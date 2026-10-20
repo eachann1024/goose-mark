@@ -6,6 +6,7 @@ import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { type HomeGroup, type HomeItem } from './viewModel'
 import { Fav, BookmarkCard } from './BookmarkCard'
 import { resolveDropGap, type DropGapInfo } from './dropGap'
+import { bookmarkDragId } from './bookmarkDragId'
 
 // ── SortableTab：顶栏一级分组 Tab 可拖拽单项（模块顶层，避免 TDZ）──────────
 export interface SortableTabProps {
@@ -45,8 +46,19 @@ export function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }
 
 // ── 书签拖拽：碰撞策略（优先指针命中，空则回退到最近中心，兼顾「拖到段落空白/侧栏」与同段排序）──
 export const bookmarkCollision: CollisionDetection = (args) => {
-  const pointerHits = pointerWithin(args)
-  return pointerHits.length ? pointerHits : closestCenter(args)
+  // 保活的隐藏面板仍在注册表中，不能用它们缓存的矩形决定落点。
+  const droppableContainers = args.droppableContainers.filter((container) => {
+    const node = container.node.current
+    if (!node || node.getClientRects().length === 0) return false
+    if (args.active.data.current?.type === 'sub') {
+      return container.data.current?.type === 'sub'
+        && container.data.current.groupId === args.active.data.current.groupId
+    }
+    return true
+  })
+  const visibleArgs = { ...args, droppableContainers }
+  const pointerHits = pointerWithin(visibleArgs)
+  return pointerHits.length ? pointerHits : closestCenter(visibleArgs)
 }
 
 
@@ -131,8 +143,8 @@ export function SortableCard({
   onOpen?: (item: HomeItem) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id,
-    data: { type: 'bookmark', groupId, subId, item },
+    id: bookmarkDragId(groupId, subId, item.id),
+    data: { type: 'bookmark', groupId, subId, bookmarkId: item.id, item },
   })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -177,8 +189,8 @@ export function SortableGridCell({
   onOpen?: (item: HomeItem) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: item.id,
-    data: { type: 'bookmark', groupId, subId, item },
+    id: bookmarkDragId(groupId, subId, item.id),
+    data: { type: 'bookmark', groupId, subId, bookmarkId: item.id, item },
   })
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),

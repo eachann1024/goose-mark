@@ -4,6 +4,7 @@ import { type HomeGroup, type HomeItem } from './viewModel'
 import { BookmarkCard } from './BookmarkCard'
 import { SecBlock, SortableCard, DropGap, useDragDropGap, insertDropGap } from './BookmarkDragParts'
 import { SearchEmptyUniversal } from './SearchEmptyUniversal'
+import { bookmarkDragId } from './bookmarkDragId'
 
 export function ListContent({
   groups,
@@ -66,7 +67,7 @@ export function ListContent({
                   </div>
                 ))
               ) : (
-                <SortableContext items={s.items.map((b) => b.id)} strategy={verticalListSortingStrategy}>
+                <SortableContext items={s.items.map((b) => bookmarkDragId(g.id, s.id, b.id))} strategy={verticalListSortingStrategy}>
                   {insertDropGap(
                     s.items.map((b) => (
                       <SortableCard

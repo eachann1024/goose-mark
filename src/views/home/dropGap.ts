@@ -15,6 +15,7 @@ interface DragData {
   type?: string
   groupId?: string
   subId?: string
+  bookmarkId?: string
 }
 
 function findSub(groups: HomeGroup[], subId: string) {
@@ -47,7 +48,7 @@ export function resolveDropGap(
   if (o.type === 'bookmark') {
     if (!o.subId || o.subId === a.subId) return null
     const sub = findSub(groups, o.subId)
-    const at = sub?.items.findIndex((b) => b.id === String(over!.id)) ?? -1
+    const at = sub?.items.findIndex((b) => b.id === o.bookmarkId) ?? -1
     if (at < 0) return null
     targetSubId = o.subId
     index = at
