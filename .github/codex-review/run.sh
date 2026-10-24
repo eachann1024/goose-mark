@@ -87,7 +87,12 @@ def safe_excerpt(text, n=180):
     text = re.sub(
         r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z ]*PRIVATE KEY-----",
         "[redacted]", str(text))
-    text = re.sub(r"(?i)\b(bearer|token|authorization)\b\s*[:=]\s*\S+", r"\1 [redacted]", text)
+    # Authorization: Bearer <凭据> 必须整段去掉，不能只替换 Bearer 这个词
+    text = re.sub(
+        r"(?i)\b(authorization|proxy-authorization)\b\s*[:=]\s*(?:bearer\s+)?\S+",
+        r"\1 [redacted]", text)
+    text = re.sub(r"(?i)\bbearer\s+\S+", "bearer [redacted]", text)
+    text = re.sub(r"(?i)\b(token|api[_-]?key|password|secret)\b\s*[:=]\s*\S+", r"\1 [redacted]", text)
     text = re.sub(r"\b(?:ghp_|github_pat_|sk-|AKIA)[A-Za-z0-9_\-]{6,}", "[redacted]", text)
     text = " ".join(text.split())
     if not text:

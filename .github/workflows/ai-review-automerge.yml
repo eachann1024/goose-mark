@@ -200,7 +200,12 @@ jobs:
               text = re.sub(
                   r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z ]*PRIVATE KEY-----",
                   "[redacted]", str(text))
-              text = re.sub(r"(?i)\b(bearer|token|authorization)\b\s*[:=]\s*\S+", r"\1 [redacted]", text)
+              # Authorization: Bearer <凭据> 必须整段去掉，不能只替换 Bearer 这个词
+              text = re.sub(
+                  r"(?i)\b(authorization|proxy-authorization)\b\s*[:=]\s*(?:bearer\s+)?\S+",
+                  r"\1 [redacted]", text)
+              text = re.sub(r"(?i)\bbearer\s+\S+", "bearer [redacted]", text)
+              text = re.sub(r"(?i)\b(token|api[_-]?key|password|secret)\b\s*[:=]\s*\S+", r"\1 [redacted]", text)
               text = re.sub(r"\b(?:ghp_|github_pat_|sk-|AKIA)[A-Za-z0-9_\-]{6,}", "[redacted]", text)
               text = " ".join(text.split())
               if not text:
@@ -378,7 +383,15 @@ jobs:
               if p.startswith("*"):
                   return n.endswith(p[1:])
               return base.startswith(p)
-          secret_hit = [n for n in names if any(protected(n, p) for p in SECRET_PATHS)]
+          def is_secret(n):
+              if any(protected(n, p) for p in SECRET_PATHS):
+                  return True
+              # 目录名同样算密钥材料，避免 .github/secrets/token.json 被主人豁免放行
+              for seg in n.split("/")[:-1]:
+                  if any(protected(seg, p) for p in SECRET_PATHS):
+                      return True
+              return False
+          secret_hit = [n for n in names if is_secret(n)]
           hit = [n for n in names if any(protected(n, p) for p in prot)]
           other_hit = [n for n in hit if n not in set(secret_hit)]
           if secret_hit:
