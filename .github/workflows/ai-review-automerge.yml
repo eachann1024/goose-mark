@@ -287,12 +287,14 @@ jobs:
           # 主人 + 同仓库 + safe_to_merge：不要求 bot-automerge，非密钥受保护路径也可合并。
           owner_safe = author == "eachann1024" and head_repo == repo and rec_now == "safe_to_merge"
           allowed = {a.strip() for a in env["ALLOWED_AUTHORS"].split(",") if a.strip()}
-          # 产物缺失时先确认这条运行仍然对应当前 PR，再打标签或评论。过期运行静默跳过。
+          # 产物缺失时先确认 PR 仍打开且 head 未变。过期运行静默跳过。
+          # 没有审核结论时 owner_safe 一定是 false，不能据此把主人的免标签 PR 当成“不在合并路径”。
           if artifact_missing and env.get("REVIEW_RESULT") == "success":
               if info["state"] != "open" or info["head"]["sha"] != sha:
                   print("PR closed or head moved; skip missing artifact")
                   sys.exit(0)
-              if author not in allowed or head_repo != repo or (label not in labels and not owner_safe):
+              owner_same_repo = author == "eachann1024" and head_repo == repo
+              if author not in allowed or head_repo != repo or not (label in labels or owner_same_repo):
                   print("missing artifact outside the merge path; skip")
                   sys.exit(0)
               parent = os.path.dirname(review_path)
