@@ -32,7 +32,8 @@ env:
   # 动到这些路径默认转人工（审核/CI 配置、部署配置）。规则：以 / 结尾=任意层级目录；以 * 开头=后缀；其他=文件名前缀
   # 仓库主人 eachann1024 的同仓库 PR（head.repo.full_name == github.repository），且审核结论为 safe_to_merge 时：
   # 不要求 bot-automerge，即使改到这些路径也 squash 自动合并。
-  # 密钥材料始终不自动合并，打 needs-human：.env、secrets、credentials、*.pem、*.key、*.p12、id_rsa。
+  # 密钥材料始终不自动合并，打 needs-human：.env*、路径段 secrets/credentials、*.pem、*.key、*.p12、id_rsa*。
+  # 删除也算。重命名同时看 filename 和 previous_filename，改入或改出密钥路径都拦截。
   # 其他作者或 fork 保持原行为（受保护路径 -> needs-human）。本工作流不检出、不执行 fork 代码，也不把 CODEX_AUTH_JSON 交给 fork PR。
   # 仓库有其他部署配置（如自定义 deploy 脚本目录）就追加到这里
   PROTECTED_PATHS: ".github/,.pr_agent.toml,.gemini/,.coderabbit.yaml,.greptile/,.env,secrets,credentials,*.pem,*.key,*.p12,id_rsa,deploy/,vercel.json,netlify.toml,fly.toml,wrangler.toml,render.yaml,Dockerfile,docker-compose,compose.yaml,compose.yml,Procfile,deploy.sh"
@@ -379,9 +380,12 @@ jobs:
               reasons.append("PR 带有安全疑虑标签")
 
           # 2) 敏感路径转人工。主人的 safe_to_merge 可越过非密钥受保护路径；密钥材料始终拦截。
+          # .env*、路径段 secrets/credentials、*.pem、*.key、*.p12、id_rsa*。
+          # 删除的 filename 也算。重命名必须同时看 previous_filename：改入或改出都拦截。
           SECRET_PATHS = [".env", "secrets", "credentials", "*.pem", "*.key", "*.p12", "id_rsa"]
           files = json.loads(gh("api", "--paginate", "--slurp", f"repos/{repo}/pulls/{pr}/files?per_page=100"))
-          names = [f["filename"] for page in files for f in page]
+          entries = [f for page in files for f in page]
+          names = [f.get("filename") or "" for f in entries]
           prot = [p.strip() for p in env["PROTECTED_PATHS"].split(",") if p.strip()]
           def protected(n, p):
               base = n.rsplit("/", 1)[-1]
@@ -391,6 +395,8 @@ jobs:
                   return n.endswith(p[1:])
               return base.startswith(p)
           def is_secret(n):
+              if not n:
+                  return False
               if any(protected(n, p) for p in SECRET_PATHS):
                   return True
               # 目录名同样算密钥材料，避免 .github/secrets/token.json 被主人豁免放行
@@ -398,7 +404,13 @@ jobs:
                   if any(protected(seg, p) for p in SECRET_PATHS):
                       return True
               return False
-          secret_hit = [n for n in names if is_secret(n)]
+          secret_hit = []
+          seen_secret = set()
+          for f in entries:
+              for n in (f.get("filename") or "", f.get("previous_filename") or ""):
+                  if n and n not in seen_secret and is_secret(n):
+                      seen_secret.add(n)
+                      secret_hit.append(n)
           hit = [n for n in names if any(protected(n, p) for p in prot)]
           other_hit = [n for n in hit if n not in set(secret_hit)]
           if secret_hit:
