@@ -267,28 +267,10 @@ jobs:
           review_path = os.path.join(env.get("RUNNER_TEMP", ""), "gate-review", "gate-review.json")
           review = {}
           parse_excerpt = None
-          if not os.path.isfile(review_path):
-              # 审核 job 成功却没有产物：这是传递失败，不能再说「没有结构化结果」。
-              if env.get("REVIEW_RESULT") == "success":
-                  parent = os.path.dirname(review_path)
-                  if os.path.isdir(parent):
-                      detail = "目录内容：" + ", ".join(sorted(os.listdir(parent))[:20])
-                  else:
-                      detail = "产物目录不存在"
-                  msg = (
-                      "AI 审核任务已成功，但闸门没有找到审核产物 gate-review/gate-review.json。"
-                      "审核 JSON 不再经过 job output 传递（Actions 会因疑似密钥丢弃 output）；"
-                      "产物缺失时无法判断，请检查 upload-artifact 与 download-artifact。"
-                      f"（{detail}）"
-                  )
-                  print(msg, file=sys.stderr)
-                  gh("label", "create", block, "-R", repo, "--color", "B60205",
-                     "--description", "AI 闸门判定需要人工处理", check=False)
-                  gh("api", "-X", "POST", f"repos/{repo}/issues/{pr}/labels",
-                     "-f", f"labels[]={block}", check=False)
-                  gh("pr", "comment", pr, "-R", repo, "--body",
-                     f"### 🤖 自动合并已拦截\n{msg}\n\n审核提交：`{sha[:7]}`", check=False)
-                  sys.exit(1)
+          artifact_missing = not os.path.isfile(review_path)
+          if artifact_missing:
+              # 先只记录。打标签和评论必须等确认 PR 仍打开且 head 未变。
+              review = {}
           else:
               text = open(review_path, encoding="utf-8").read()
               parsed = last_verdict_object(text)
@@ -317,13 +299,40 @@ jobs:
               rec_now = str(review.get("merge_recommendation", "")).strip()
           # 主人 + 同仓库 + safe_to_merge：不要求 bot-automerge，非密钥受保护路径也可合并。
           owner_safe = author == "eachann1024" and head_repo == repo and rec_now == "safe_to_merge"
+          allowed = {a.strip() for a in env["ALLOWED_AUTHORS"].split(",") if a.strip()}
+          # 产物缺失时先确认这条运行仍然对应当前 PR，再打标签或评论。过期运行静默跳过。
+          if artifact_missing and env.get("REVIEW_RESULT") == "success":
+              if info["state"] != "open" or info["head"]["sha"] != sha:
+                  print("PR closed or head moved; skip missing artifact")
+                  sys.exit(0)
+              if author not in allowed or head_repo != repo or (label not in labels and not owner_safe):
+                  print("missing artifact outside the merge path; skip")
+                  sys.exit(0)
+              parent = os.path.dirname(review_path)
+              if os.path.isdir(parent):
+                  detail = "目录内容：" + ", ".join(sorted(os.listdir(parent))[:20])
+              else:
+                  detail = "产物目录不存在"
+              msg = (
+                  "AI 审核任务已成功，但闸门没有找到审核产物 gate-review/gate-review.json。"
+                  "审核 JSON 不再经过 job output 传递（Actions 会因疑似密钥丢弃 output）；"
+                  "产物缺失时无法判断，请检查 upload-artifact 与 download-artifact。"
+                  f"（{detail}）"
+              )
+              print(msg, file=sys.stderr)
+              gh("label", "create", block, "-R", repo, "--color", "B60205",
+                 "--description", "AI 闸门判定需要人工处理", check=False)
+              gh("api", "-X", "POST", f"repos/{repo}/issues/{pr}/labels",
+                 "-f", f"labels[]={block}", check=False)
+              gh("pr", "comment", pr, "-R", repo, "--body",
+                 f"### 🤖 自动合并已拦截\n{msg}\n\n审核提交：`{sha[:7]}`", check=False)
+              sys.exit(1)
           if label not in labels and not owner_safe:
               print("no automerge label; review only"); sys.exit(0)
           if info["state"] != "open" or info["head"]["sha"] != sha:
               print("PR closed or head moved; a newer run will handle it"); sys.exit(0)
 
           reasons = []
-          allowed = {a.strip() for a in env["ALLOWED_AUTHORS"].split(",") if a.strip()}
           if author not in allowed or head_repo != repo:
               # 不是仓库主人的同仓库 PR：只审不合，也不发评论。fork 不会执行到合并。
               print("author or head repo not allowed; review only"); sys.exit(0)
