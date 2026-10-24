@@ -205,7 +205,18 @@ jobs:
                   r"(?i)\b(authorization|proxy-authorization)\b\s*[:=]\s*(?:bearer\s+)?\S+",
                   r"\1 [redacted]", text)
               text = re.sub(r"(?i)\bbearer\s+\S+", "bearer [redacted]", text)
-              text = re.sub(r"(?i)\b(token|api[_-]?key|password|secret)\b\s*[:=]\s*\S+", r"\1 [redacted]", text)
+              # JSON 会写成 "token":"值" 或 "access_token": "值"，字段名和值之间有引号
+              key = r"access_token|refresh_token|id_token|api[_-]?key|client[_-]?secret|password|passwd|secret|token|authorization|credential"
+              text = re.sub(
+                  rf'(?i)(?<![A-Za-z0-9_])["\']?(?:{key})["\']?\s*:\s*"(?:\\.|[^"\\])*"',
+                  '"[redacted]"', text)
+              text = re.sub(
+                  rf"(?i)(?<![A-Za-z0-9_])[\"']?(?:{key})[\"']?\s*:\s*'(?:\\.|[^'\\])*'",
+                  "'[redacted]'", text)
+              text = re.sub(
+                  rf"(?i)(?<![A-Za-z0-9_])(?:{key})\s*[:=]\s*\S+",
+                  "[redacted]", text)
+              text = re.sub(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}", "[redacted]", text)
               text = re.sub(r"\b(?:ghp_|github_pat_|sk-|AKIA)[A-Za-z0-9_\-]{6,}", "[redacted]", text)
               text = " ".join(text.split())
               if not text:
