@@ -81,40 +81,15 @@ env -u GH_TOKEN -u GITHUB_TOKEN -u CODEX_AUTH_JSON CODEX_HOME="$review_codex_hom
   - < "$prompt_file" >&2
 
 python3 - "$out" <<'PARSE'
-import json, re, sys
+import json, sys
 
-def safe_excerpt(text, n=180):
-    text = re.sub(
-        r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z ]*PRIVATE KEY-----",
-        "[redacted]", str(text))
-    # Authorization: Bearer <凭据> 必须整段去掉，不能只替换 Bearer 这个词
-    text = re.sub(
-        r"(?i)\b(authorization|proxy-authorization)\b\s*[:=]\s*(?:bearer\s+)?\S+",
-        r"\1 [redacted]", text)
-    text = re.sub(r"(?i)\bbearer\s+\S+", "bearer [redacted]", text)
-    # JSON 会写成 "token":"值" 或 "access_token": "值"，字段名和值之间有引号
-    key = r"access_token|refresh_token|id_token|api[_-]?key|client[_-]?secret|password|passwd|secret|token|authorization|credential"
-    text = re.sub(
-        rf'(?i)(?<![A-Za-z0-9_])["\']?(?:{key})["\']?\s*:\s*"(?:\\.|[^"\\])*"',
-        '"[redacted]"', text)
-    text = re.sub(
-        rf"(?i)(?<![A-Za-z0-9_])[\"']?(?:{key})[\"']?\s*:\s*'(?:\\.|[^'\\])*'",
-        "'[redacted]'", text)
-    text = re.sub(
-        rf"(?i)(?<![A-Za-z0-9_])(?:{key})\s*[:=]\s*\S+",
-        "[redacted]", text)
-    text = re.sub(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}", "[redacted]", text)
-    text = re.sub(r"\b(?:ghp_|github_pat_|sk-|AKIA)[A-Za-z0-9_\-]{6,}", "[redacted]", text)
-    text = " ".join(text.split())
-    if not text:
-        return "（空）"
-    return text if len(text) <= n else text[:n - 1] + "…"
+EXPECTED = ("merge_recommendation", "risk_level", "security_concerns", "key_issues_to_review")
 
-def last_verdict_object(text):
+def scan_review(text):
     # 输出里可能有多段 JSON 或尾部多余行；json.load 会报 Extra data: line 2 column 1。
-    # 取最后一个带 merge_recommendation 的完整对象。
+    # 取最后一个带 merge_recommendation 的完整对象。失败时只返回计数，不回显原文。
     decoder = json.JSONDecoder()
-    found = []
+    objects = []
     idx, n = 0, len(text)
     while idx < n:
         while idx < n and text[idx] not in "{[":
@@ -126,22 +101,36 @@ def last_verdict_object(text):
         except json.JSONDecodeError:
             idx += 1
             continue
-        if isinstance(obj, dict) and "merge_recommendation" in obj:
-            found.append(obj)
+        if isinstance(obj, dict):
+            objects.append(obj)
         idx = end
-    if len(found) > 1:
-        print(f"审核输出含 {len(found)} 个结论对象，采用最后一个", file=sys.stderr)
-    return found[-1] if found else None
+    chosen = None
+    for obj in objects:
+        if "merge_recommendation" in obj:
+            chosen = obj
+    return objects, chosen
+
+def parse_meta(text, objects, chosen):
+    if chosen is None:
+        missing = ["merge_recommendation"]
+    else:
+        missing = [field for field in EXPECTED if field not in chosen]
+    missing_text = "、".join(missing) if missing else "无"
+    return (
+        f"字节 {len(text.encode('utf-8'))}，行数 {len(text.splitlines())}，"
+        f"JSON 对象 {len(objects)}，缺少字段 {missing_text}"
+    )
 
 raw = open(sys.argv[1], encoding="utf-8").read()
-data = last_verdict_object(raw)
+objects, data = scan_review(raw)
+meta = parse_meta(raw, objects, data)
 if data is None:
-    raise SystemExit(
-        "审核结果里没有包含 merge_recommendation 的完整 JSON 对象。摘录："
-        + safe_excerpt(raw))
-needed = {"merge_recommendation", "risk_level", "security_concerns", "key_issues_to_review"}
+    raise SystemExit("审核结果里没有包含 merge_recommendation 的完整 JSON 对象。" + meta)
+if sum(1 for obj in objects if "merge_recommendation" in obj) > 1:
+    print("审核输出含多个结论对象，采用最后一个", file=sys.stderr)
+needed = set(EXPECTED)
 if not isinstance(data, dict) or set(data) != needed:
-    raise SystemExit("审核结果字段不合法")
+    raise SystemExit("审核结果字段不合法。" + meta)
 if data["merge_recommendation"] not in {"safe_to_merge", "merge_with_caution", "changes_required"}:
     raise SystemExit("审核建议不合法")
 if data["risk_level"] not in {"low", "medium", "high"} or not isinstance(data["security_concerns"], str):

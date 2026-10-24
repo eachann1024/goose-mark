@@ -196,38 +196,10 @@ jobs:
               s = " ".join(str(s).split())
               return s if len(s) <= n else s[:n - 1] + "…"
 
-          def safe_excerpt(text, n=180):
-              text = re.sub(
-                  r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z ]*PRIVATE KEY-----",
-                  "[redacted]", str(text))
-              # Authorization: Bearer <凭据> 必须整段去掉，不能只替换 Bearer 这个词
-              text = re.sub(
-                  r"(?i)\b(authorization|proxy-authorization)\b\s*[:=]\s*(?:bearer\s+)?\S+",
-                  r"\1 [redacted]", text)
-              text = re.sub(r"(?i)\bbearer\s+\S+", "bearer [redacted]", text)
-              # JSON 会写成 "token":"值" 或 "access_token": "值"，字段名和值之间有引号
-              key = r"access_token|refresh_token|id_token|api[_-]?key|client[_-]?secret|password|passwd|secret|token|authorization|credential"
-              text = re.sub(
-                  rf'(?i)(?<![A-Za-z0-9_])["\']?(?:{key})["\']?\s*:\s*"(?:\\.|[^"\\])*"',
-                  '"[redacted]"', text)
-              text = re.sub(
-                  rf"(?i)(?<![A-Za-z0-9_])[\"']?(?:{key})[\"']?\s*:\s*'(?:\\.|[^'\\])*'",
-                  "'[redacted]'", text)
-              text = re.sub(
-                  rf"(?i)(?<![A-Za-z0-9_])(?:{key})\s*[:=]\s*\S+",
-                  "[redacted]", text)
-              text = re.sub(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}", "[redacted]", text)
-              text = re.sub(r"\b(?:ghp_|github_pat_|sk-|AKIA)[A-Za-z0-9_\-]{6,}", "[redacted]", text)
-              text = " ".join(text.split())
-              if not text:
-                  return "（空）"
-              return text if len(text) <= n else text[:n - 1] + "…"
-
-          def last_verdict_object(text):
-              # Codex 有时会输出多个 JSON 或在对象后多写几行；json.loads 会报 Extra data。
-              # 取最后一个带 merge_recommendation 的完整对象。
+          def parse_review_text(text):
+              # 失败时只留计数。不把审核原文写进日志、摘要或评论。
               decoder = json.JSONDecoder()
-              found = []
+              objects = []
               idx, n = 0, len(text)
               while idx < n:
                   while idx < n and text[idx] not in "{[":
@@ -239,10 +211,23 @@ jobs:
                   except json.JSONDecodeError:
                       idx += 1
                       continue
-                  if isinstance(obj, dict) and "merge_recommendation" in obj:
-                      found.append(obj)
+                  if isinstance(obj, dict):
+                      objects.append(obj)
                   idx = end
-              return found[-1] if found else None
+              chosen = None
+              for obj in objects:
+                  if "merge_recommendation" in obj:
+                      chosen = obj
+              expected = ("merge_recommendation", "risk_level", "security_concerns", "key_issues_to_review")
+              if chosen is None:
+                  missing = ["merge_recommendation"]
+              else:
+                  missing = [field for field in expected if field not in chosen]
+              meta = (
+                  f"字节 {len(text.encode('utf-8'))}，行数 {len(text.splitlines())}，"
+                  f"JSON 对象 {len(objects)}，缺少字段 {'、'.join(missing) if missing else '无'}"
+              )
+              return chosen, meta
 
           def verdict(review):
               if not review:
@@ -266,26 +251,28 @@ jobs:
 
           review_path = os.path.join(env.get("RUNNER_TEMP", ""), "gate-review", "gate-review.json")
           review = {}
-          parse_excerpt = None
+          parse_meta = None
           artifact_missing = not os.path.isfile(review_path)
           if artifact_missing:
               # 先只记录。打标签和评论必须等确认 PR 仍打开且 head 未变。
               review = {}
           else:
               text = open(review_path, encoding="utf-8").read()
-              parsed = last_verdict_object(text)
-              if parsed is None:
-                  review = None
-                  parse_excerpt = safe_excerpt(text)
-              else:
-                  review = parsed
-          # 详细结论只写进 Actions 运行摘要，不发评论；解析失败只留脱敏摘录
+              parsed, parse_meta = parse_review_text(text)
+              review = parsed if parsed is not None else None
+          # 摘要和评论都不写审核原文。成功时只留结论枚举；解析失败只留计数。
           try:
               with open(env["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as fh:
                   if isinstance(review, dict):
-                      body = json.dumps(review, ensure_ascii=False, indent=2)[:60000]
+                      issues = review.get("key_issues_to_review") or []
+                      issue_count = len(issues) if isinstance(issues, list) else 0
+                      body = (
+                          f"merge_recommendation={review.get('merge_recommendation', '')}\n"
+                          f"risk_level={review.get('risk_level', '')}\n"
+                          f"key_issues={issue_count}"
+                      )
                   else:
-                      body = "无法解析审核产物。摘录：" + (parse_excerpt or "（空）")
+                      body = "无法解析审核产物。" + (parse_meta or "字节 0，行数 0，JSON 对象 0，缺少字段 merge_recommendation")
                   fh.write("## AI 审核结论\n\n```\n" + body + "\n```\n")
           except Exception:
               pass
@@ -342,9 +329,7 @@ jobs:
               reasons.append(f"AI 审核未成功完成（{env['REVIEW_RESULT']}），按规则不自动合并")
           if review is None:
               review = {}
-              reasons.append(
-                  "AI 审核输出无法解析，没有带 merge_recommendation 的完整 JSON："
-                  + (parse_excerpt or "（空）"))
+              reasons.append("AI 审核输出无法解析。" + (parse_meta or "字节 0，行数 0，JSON 对象 0，缺少字段 merge_recommendation"))
           elif not review:
               reasons.append("没有拿到 AI 审核的结构化结果")
           else:
