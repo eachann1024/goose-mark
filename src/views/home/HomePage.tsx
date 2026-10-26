@@ -43,6 +43,7 @@ import { HomeBookmarkPanels } from './HomeBookmarkPanels'
 import { HomeSettingsPage } from './SettingsContent'
 import { HomeContextMenu } from './HomeContextMenu'
 import { HomeToast } from './HomeToast'
+import { FeedbackSheet } from './FeedbackSheet'
 
 export default function HomePage() {
   const groups = useBookmarkStore((s) => s.groups)
@@ -554,6 +555,8 @@ export default function HomePage() {
     .filter(Boolean)
     .join(' ')
 
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
+
   return (
     <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface}>
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && (
@@ -609,6 +612,7 @@ export default function HomePage() {
             avatarRef={avatarRef}
             paOpen={paOpen}
             setPaOpen={setPaOpen}
+            onFeedback={() => setFeedbackOpen(true)}
           />
 
         {/* 一级 Tab 右键菜单 */}
@@ -693,7 +697,9 @@ export default function HomePage() {
             view={view}
             applyThemePref={applyThemePref}
             setScreen={setScreen}
+            onOpenFeedback={() => setFeedbackOpen(true)}
           />
+        {feedbackOpen ? <FeedbackSheet onClose={() => setFeedbackOpen(false)} onSuccess={() => fireToast('已收到')} /> : null}
 
         {/* ---------- Add/Edit wizard (沉浸式三步) ---------- */}
         {screen === 'add' && <AddBookmarkWizard key={`wiz-${formKey}`} editItem={formEditItem} onBack={backToList} />}

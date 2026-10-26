@@ -42,7 +42,8 @@ export function HomeHeader({
   openNewBookmarkForm,
   avatarRef,
   paOpen,
-  setPaOpen
+  setPaOpen,
+  onFeedback
 }: Pick<HomeSearchBindings, 'isSearching' | 'clearSearch' | 'searchVal' | 'applySearchVal'> & {
   tabSensors: SensorDescriptor<SensorOptions>[]
   handleTabDragEnd: (event: DragEndEvent) => void
@@ -71,6 +72,7 @@ export function HomeHeader({
   avatarRef: React.RefObject<HTMLButtonElement | null>
   paOpen: boolean
   setPaOpen: React.Dispatch<React.SetStateAction<boolean>>
+  onFeedback: () => void
 }) {
   return (
     <header className="app-header">
@@ -160,6 +162,17 @@ export function HomeHeader({
               >
                 <Ico name="plus" />
                 收集
+              </button>
+            </InstantTooltip>
+            <InstantTooltip label="反馈">
+              <button
+                type="button"
+                className="header-icon-btn"
+                aria-label="反馈"
+                data-feedback-entry
+                onClick={onFeedback}
+              >
+                <Ico name="message-square" />
               </button>
             </InstantTooltip>
             <InstantTooltip label="设置">

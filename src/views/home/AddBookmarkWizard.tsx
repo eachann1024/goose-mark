@@ -9,6 +9,7 @@ import {
 } from '@/hooks/useBookmarkForm'
 import { CategoryMultiSelect } from '@/components/CategoryMultiSelect'
 import { iconToDisplayUrl } from '@/services/iconCache'
+import { GripTextarea, gripPaint } from './grip-textarea'
 import { Ico } from './icon'
 import { Image } from '@/components/ui/image'
 import type { HomeItem } from './viewModel'
@@ -409,8 +410,11 @@ function ConfirmStep({
             </button>
           )}
           <div className={`gm-id-orbit${descFetching ? ' is-orbiting' : ''}`}>
-            <textarea
+            <GripTextarea
               className="gm-id-textarea"
+              paint={gripPaint.accent}
+              gripLabel="简介 / 笔记"
+              minHeight={110}
               value={draft.desc}
               placeholder={descFetching ? '正在获取描述…' : '简介 / 笔记'}
               readOnly={descFetching}
