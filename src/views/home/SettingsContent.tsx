@@ -28,7 +28,8 @@ export function HomeSettingsPage({
   themePref,
   view,
   applyThemePref,
-  setScreen
+  setScreen,
+  onOpenFeedback
 }: Pick<HomeNavigationBindings, 'view' | 'setScreen'> & {
   setNavIdx: number
   setSetNavIdx: (idx: number) => void
@@ -37,6 +38,7 @@ export function HomeSettingsPage({
   theme: Theme
   themePref: ThemePref
   applyThemePref: (pref: ThemePref) => void
+  onOpenFeedback: () => void
 }) {
   const sectionId = SET_NAV[setNavIdx]?.[2] ?? SET_NAV[0][2]
   return (
@@ -56,7 +58,7 @@ export function HomeSettingsPage({
                 {label}
               </button>
             ))}
-            <button className="feedback" onClick={() => fireToast('反馈邮箱：each1026@gmail.com · 已复制')}>
+            <button className="feedback" data-feedback-entry onClick={onOpenFeedback}>
               <Ico name="message-square" />
               快速反馈
             </button>
