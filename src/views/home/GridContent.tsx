@@ -199,7 +199,7 @@ export function GridContent({
               view="grid"
             >
               {s.items.length === 0 ? (
-                gap ? <DropGap height={gap.height} view="grid" /> : <div className="sec-empty">暂无书签</div>
+                gap ? <DropGap height={gap.height} view="grid" targetId={gap.targetId} /> : <div className="sec-empty">暂无书签</div>
               ) : (
                 <GridCells
                   items={s.items}
@@ -211,7 +211,7 @@ export function GridContent({
                   groupId={g.id}
                   subId={s.id}
                   gapAt={gap?.index ?? null}
-                  gapNode={gap ? <DropGap height={gap.height} view="grid" /> : null}
+                  gapNode={gap ? <DropGap height={gap.height} view="grid" targetId={gap.targetId} /> : null}
                 />
               )}
             </SecBlock>

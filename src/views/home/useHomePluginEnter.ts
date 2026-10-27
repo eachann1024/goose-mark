@@ -7,7 +7,7 @@ import { useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookm
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { AI_SAVE_FEATURE_CODE } from '@/hooks/useUTools'
 import { type Screen, type ViewMode } from './homeTypes'
-import { UTOOLS_PLUGIN_ENTER_EVENT, RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS, BROWSER_URL_READ_TIMEOUT_MS, withFallbackTimeout, DETACH_TOGGLE_FOCUS_GRACE_MS, isDetachedUToolsWindow, type UToolsPluginEnterPayload } from './homeRuntime'
+import { UTOOLS_PLUGIN_ENTER_EVENT, RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS, BROWSER_URL_READ_TIMEOUT_MS, withFallbackTimeout, isDetachedUToolsWindow, type UToolsPluginEnterPayload } from './homeRuntime'
 import { type HomeToastHandler, type HomeScrollBindings, type HomeSearchBindings } from './homeInteractionTypes'
 
 export function useHomePluginEnter({
@@ -22,8 +22,6 @@ export function useHomePluginEnter({
   openUrl,
   exitTemplateModeRef,
   findUniversalBookmarkMatch,
-  lastWindowFocusAtRef,
-  saveDetachedWindowPosition,
   searchValRef,
   suppressScrollIntoViewRef,
   applySearchValRef,
@@ -45,8 +43,6 @@ export function useHomePluginEnter({
   openUrl: (url: string) => void
   exitTemplateModeRef: React.RefObject<() => void>
   findUniversalBookmarkMatch: (payloadText: string) => { bookmark: Bookmark; query: string; exact: boolean; } | null
-  lastWindowFocusAtRef: React.RefObject<number>
-  saveDetachedWindowPosition: () => void
   searchValRef: React.RefObject<string>
   setScreenRef: React.RefObject<React.Dispatch<React.SetStateAction<Screen>>>
   view: ViewMode
@@ -224,19 +220,7 @@ export function useHomePluginEnter({
         recentDynamicTemplateEnterAtRef.current = 0
         return
       }
-      // 窗口模式 toggle：分离窗口在按下快捷键前就处于激活状态 → 再次唤起视为「收起」，关闭窗口。
-      // lastWindowFocusAtRef 距今足够久才算「原本就激活」，刚被唤起聚焦（间隔极短）不触发
-      if (
-        isDetachedUToolsWindow() &&
-        document.hasFocus() &&
-        lastWindowFocusAtRef.current > 0 &&
-        Date.now() - lastWindowFocusAtRef.current > DETACH_TOGGLE_FOCUS_GRACE_MS
-      ) {
-        if (activeTemplateBookmarkRef.current) exitTemplateModeRef.current()
-        saveDetachedWindowPosition()
-        try { window.utools?.outPlugin?.() } catch { /* ignore */ }
-        return
-      }
+      // 再次进入只恢复并聚焦书签窗口；outPlugin 会退出插件并露出 uTools 主搜索界面。
       if (activeTemplateBookmarkRef.current) exitTemplateModeRef.current()
       // bookmarks 主入口：universal 书签未命中后根据连贯模式决定是否重置视图。
       // 不能因为 payloadText 非空就进搜索——uTools 用命令词（"书签"/"bookmark"）触发主入口时，

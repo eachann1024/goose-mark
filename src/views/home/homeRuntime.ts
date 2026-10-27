@@ -63,11 +63,6 @@ export const withFallbackTimeout = async <T,>(promise: Promise<T>, fallback: T, 
 
 
 
-// 窗口模式 toggle：plugin-enter 距最近一次窗口聚焦小于该间隔时，视为本次唤起带来的聚焦（不隐藏）。
-export const DETACH_TOGGLE_FOCUS_GRACE_MS = 400
-
-
-
 // 分离窗口（detach/browser）不隐藏主窗口，对齐 App.tsx 的窗口保留策略
 export const isDetachedUToolsWindow = () => {
   try {

@@ -22,21 +22,6 @@ export function useHomeLifecycle({
 
 export function useHomeDetachedWindow() {
 
-  // 窗口模式 toggle 所需：记录窗口最近一次获得焦点的时间（blur 清零）。
-  // uTools 唤起分离窗口时会先聚焦再发 plugin-enter，document.hasFocus() 彼时必为 true，
-  // 单看它无法区分「快捷键唤起聚焦」与「窗口原本就激活时再次按下」，需配合该时间戳判断。
-  const lastWindowFocusAtRef = useRef(document.hasFocus() ? Date.now() : 0)
-  useEffect(() => {
-    const onFocus = () => { lastWindowFocusAtRef.current = Date.now() }
-    const onBlur = () => { lastWindowFocusAtRef.current = 0 }
-    window.addEventListener('focus', onFocus)
-    window.addEventListener('blur', onBlur)
-    return () => {
-      window.removeEventListener('focus', onFocus)
-      window.removeEventListener('blur', onBlur)
-    }
-  }, [])
-
   const lastDetachedWindowPositionKeyRef = useRef('')
   const saveDetachedWindowPosition = useCallback(() => {
     if (!isDetachedUToolsWindow()) return
@@ -79,7 +64,6 @@ export function useHomeDetachedWindow() {
     }
   }, [saveDetachedWindowPosition])
 
-  return { lastWindowFocusAtRef, saveDetachedWindowPosition }
 }
 
 export function useHomeStorageSync() {

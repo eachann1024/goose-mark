@@ -57,6 +57,20 @@ export const bookmarkCollision: CollisionDetection = (args) => {
     return true
   })
   const visibleArgs = { ...args, droppableContainers }
+  // 跨段占位会把原卡片推离指针；占位本身必须继续代表原落点，
+  // 否则命中段落空白后占位被移到段尾，卡片回弹，又重新命中卡片。
+  if (args.active.data.current?.type === 'bookmark' && args.pointerCoordinates) {
+    const { x, y } = args.pointerCoordinates
+    for (const container of droppableContainers) {
+      if (container.data.current?.type !== 'sub-area') continue
+      const gap = container.node.current?.querySelector<HTMLElement>('[data-drop-target]')
+      if (!gap) continue
+      const rect = gap.getBoundingClientRect()
+      if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue
+      const target = droppableContainers.find((entry) => String(entry.id) === gap.dataset.dropTarget)
+      if (target) return [{ id: target.id, data: { droppableContainer: target, value: 0 } }]
+    }
+  }
   const pointerHits = pointerWithin(visibleArgs)
   return pointerHits.length ? pointerHits : closestCenter(visibleArgs)
 }
@@ -64,8 +78,8 @@ export const bookmarkCollision: CollisionDetection = (args) => {
 
 
 // ── DropGap：跨子分组拖拽的落点占位（真实占位元素，靠布局让后面的卡片/格子让开）──
-export function DropGap({ height, view }: { height: number; view: 'list' | 'grid' }) {
-  return <div className={`drop-gap is-${view}`} style={height > 0 ? { height } : undefined} aria-hidden />
+export function DropGap({ height, view, targetId }: { height: number; view: 'list' | 'grid'; targetId: string }) {
+  return <div className={`drop-gap is-${view}`} data-drop-target={targetId} style={height > 0 ? { height } : undefined} aria-hidden />
 }
 
 /** 当前拖拽落点是否落在别的子分组（同段由 dnd-kit 自身让位） */
@@ -80,7 +94,7 @@ export function insertDropGap(nodes: ReactElement[], gap: DropGapInfo | null): R
   const at = Math.max(0, Math.min(gap.index, nodes.length))
   return [
     ...nodes.slice(0, at),
-    <DropGap key="__drop-gap__" height={gap.height} view={gap.view} />,
+    <DropGap key="__drop-gap__" height={gap.height} view={gap.view} targetId={gap.targetId} />,
     ...nodes.slice(at)
   ]
 }
