@@ -4,6 +4,8 @@ import { type HomeGroup } from './viewModel'
 /** 拖拽落点占位：跨子分组拖拽时在目标段插入它，让后续卡片/格子真正让位 */
 export interface DropGapInfo {
   subId: string
+  /** 占位对应的真实落点，用于指针停留时保持碰撞目标 */
+  targetId: string
   /** 目标子分组内的插入下标 */
   index: number
   /** 占位高度（被拖卡片实测高度） */
@@ -68,6 +70,7 @@ export function resolveDropGap(
   const height = o.type === 'bookmark' ? (over?.rect.height ?? 0) : (active?.rect.current.initial?.height ?? 0)
   return {
     subId: targetSubId,
+    targetId: String(over!.id),
     index,
     height,
     view

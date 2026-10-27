@@ -491,7 +491,7 @@ export default function HomePage() {
 
   const { findUniversalBookmarkMatch } = useHomeUniversalMatch()
 
-  const { lastWindowFocusAtRef, saveDetachedWindowPosition } = useHomeDetachedWindow()
+  useHomeDetachedWindow()
 
   useHomePluginEnter({
     getEnterText,
@@ -505,8 +505,6 @@ export default function HomePage() {
     openUrl,
     exitTemplateModeRef,
     findUniversalBookmarkMatch,
-    lastWindowFocusAtRef,
-    saveDetachedWindowPosition,
     searchValRef,
     suppressScrollIntoViewRef,
     applySearchValRef,

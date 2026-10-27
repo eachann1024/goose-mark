@@ -59,7 +59,7 @@ export function ListContent({
               view="list"
             >
               {s.items.length === 0 ? (
-                gap ? <DropGap height={gap.height} view="list" /> : <div className="sec-empty">暂无书签</div>
+                gap ? <DropGap height={gap.height} view="list" targetId={gap.targetId} /> : <div className="sec-empty">暂无书签</div>
               ) : searching ? (
                 s.items.map((b) => (
                   <div key={`${g.id}-${s.id}-${b.id}`} onClick={() => { onSelect(b.id); onOpen?.(b) }}>
