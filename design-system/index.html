@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light" data-density="regular">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Goose Design System</title>
+<link rel="stylesheet" href="./tokens.css">
+<style>
+@font-face { font-family:"DM Sans"; src:url("../src/assets/fonts/dm-sans-latin-400-normal.woff2") format("woff2"); font-weight:400; font-display:swap; }
+@font-face { font-family:"DM Sans"; src:url("../src/assets/fonts/dm-sans-latin-500-normal.woff2") format("woff2"); font-weight:500; font-display:swap; }
+@font-face { font-family:"DM Sans"; src:url("../src/assets/fonts/dm-sans-latin-700-normal.woff2") format("woff2"); font-weight:700; font-display:swap; }
+@font-face { font-family:"Newsreader"; src:url("../src/assets/fonts/newsreader-variable.woff2") format("woff2"); font-weight:400 700; font-display:swap; }
+
+* { box-sizing:border-box; margin:0; padding:0; }
+html { background:var(--bg); }
+body { font-family:var(--font-sans); background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased; transition:background-color var(--dur-slow), color var(--dur-slow); }
+button { font:inherit; color:inherit; background:none; border:none; cursor:pointer; }
+input, textarea { font:inherit; }
+::selection { background:var(--accent-subtle); }
+svg.i { width:1em; height:1em; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; flex-shrink:0; }
+.serif { font-family:var(--font-serif); }
+.mono { font-family:var(--font-mono); }
+
+/* ---------- page shell ---------- */
+.top { position:sticky; top:0; z-index:10; display:flex; align-items:center; gap:12px; height:52px; padding:0 28px; background:var(--bg); border-bottom:1px solid var(--border-soft); }
+.brand { display:flex; align-items:center; gap:9px; font-family:var(--font-serif); font-size:17px; font-weight:600; }
+.brand-mark { width:22px; height:22px; border-radius:6px; background:var(--accent); box-shadow:var(--shadow-sm); }
+.top .ver { font-size:11px; color:var(--fg-faint); }
+.top .sp { flex:1; }
+.layout { display:grid; grid-template-columns:184px minmax(0,1fr); max-width:1180px; margin:0 auto; }
+.toc { position:sticky; top:52px; align-self:start; height:calc(100vh - 52px); padding:22px 12px; border-right:1px solid var(--border-muted); display:flex; flex-direction:column; gap:2px; }
+.toc .lbl { padding:4px 8px 8px; font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--fg-faint); }
+main { padding:40px 48px 120px; min-width:0; }
+section { padding:8px 0 52px; }
+section + section { border-top:1px solid var(--border-muted); padding-top:40px; }
+.eyebrow { font-size:10.5px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--accent); margin-bottom:8px; }
+h1 { font-family:var(--font-serif); font-weight:500; font-size:44px; line-height:1.08; letter-spacing:-.015em; }
+h2 { font-family:var(--font-serif); font-weight:600; font-size:26px; line-height:1.2; letter-spacing:-.01em; }
+h3 { font-size:13px; font-weight:600; color:var(--fg); margin:28px 0 12px; }
+.lead { font-size:15px; line-height:1.65; color:var(--fg-muted); max-width:60ch; margin-top:14px; }
+.sub { font-size:13px; line-height:1.6; color:var(--fg-muted); max-width:62ch; margin-top:8px; }
+.note { font-size:11.5px; color:var(--fg-faint); margin-top:10px; }
+.row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.stage { border:1px solid var(--border); border-radius:var(--radius); background:var(--bg); padding:22px; }
+.stage.surface { background:var(--surface-blend); }
+code.t { font-family:var(--font-mono); font-size:11px; color:var(--fg-muted); background:var(--surface); padding:1px 5px; border-radius:var(--radius-xs); }
+
+/* ---------- principles ---------- */
+.principles { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:1px; background:var(--border); border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; margin-top:28px; }
+.principles > div { background:var(--bg); padding:18px 18px 20px; }
+.principles .n { font-family:var(--font-serif); font-size:13px; color:var(--accent); }
+.principles .h { font-family:var(--font-serif); font-size:17px; font-weight:600; margin:6px 0 6px; }
+.principles p { font-size:12.5px; line-height:1.6; color:var(--fg-muted); }
+
+/* ---------- colors ---------- */
+.swatches { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+.sw { border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden; background:var(--input); }
+.sw .chip-c { height:64px; border-bottom:1px solid var(--border-muted); }
+.sw .meta { padding:9px 11px 10px; }
+.sw .nm { font-size:12.5px; font-weight:600; }
+.sw .var { font-family:var(--font-mono); font-size:10.5px; color:var(--fg-muted); margin-top:2px; }
+.sw .hex { font-family:var(--font-mono); font-size:10.5px; color:var(--fg-faint); }
+.ramp { display:flex; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--border); height:54px; }
+.ramp > div { flex:1; display:flex; align-items:flex-end; padding:6px 8px; font-family:var(--font-mono); font-size:10px; }
+
+/* ---------- type ---------- */
+.type-row { display:grid; grid-template-columns:150px minmax(0,1fr); gap:20px; align-items:baseline; padding:14px 0; border-bottom:1px solid var(--border-muted); }
+.type-row:last-child { border-bottom:none; }
+.type-row .spec { font-family:var(--font-mono); font-size:10.5px; color:var(--fg-faint); line-height:1.6; }
+.type-row .spec b { display:block; font-family:var(--font-sans); font-size:12px; color:var(--fg-muted); font-weight:600; }
+
+/* ---------- scale ---------- */
+.scale { display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap; }
+.scale .box { background:var(--accent-subtle); border:1px solid var(--accent-border); }
+.scale figure { display:flex; flex-direction:column; align-items:center; gap:8px; font-family:var(--font-mono); font-size:10.5px; color:var(--fg-muted); }
+.radius-demo { width:88px; height:64px; background:var(--surface); border:1px solid var(--border); }
+.elev { width:180px; height:96px; border-radius:var(--radius); background:var(--input); border:1px solid var(--border); display:flex; align-items:flex-end; padding:10px 12px; font-size:11.5px; color:var(--fg-muted); }
+
+/* ---------- motion ---------- */
+.motion-demo { display:flex; gap:14px; flex-wrap:wrap; }
+.mbox { width:200px; padding:14px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--input); cursor:pointer; }
+.mbox .dot { width:28px; height:28px; border-radius:8px; background:var(--accent); transition:transform var(--dur-slow) var(--ease-out); }
+.mbox.spring .dot { transition-timing-function:var(--ease-spring); background:var(--ai); }
+.mbox:hover .dot { transform:translateX(130px); }
+.mbox .t { font-size:12.5px; font-weight:600; margin-top:12px; }
+.mbox .d { font-family:var(--font-mono); font-size:10.5px; color:var(--fg-faint); margin-top:2px; }
+
+/* ============================================================
+   Components (canonical — copy these)
+   ============================================================ */
+.btn { height:40px; border-radius:var(--radius-md); font-size:13.5px; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:0 18px; transition:all var(--dur); }
+.btn svg.i { font-size:15px; }
+.btn-primary { background:var(--accent); color:var(--accent-fg); box-shadow:var(--shadow-sm); }
+.btn-primary:hover { background:var(--accent-hover); }
+.btn-outline { border:1px solid var(--border); background:var(--surface); color:var(--fg); }
+.btn-outline:hover { background:var(--surface-hover); }
+.btn-ghost { color:var(--fg-muted); }
+.btn-ghost:hover { background:var(--surface-hover); color:var(--fg); }
+.btn-ghost.danger { color:var(--danger); }
+.btn-ghost.danger:hover { background:var(--danger-subtle); }
+.btn-ai { color:var(--ai); background:var(--ai-subtle); border:1px solid var(--ai-border); }
+.btn-ai:hover { background:var(--ai-hover); }
+.btn-sm { height:32px; padding:0 12px; font-size:12.5px; border-radius:var(--radius-sm); }
+.btn:focus-visible { outline:none; box-shadow:0 0 0 3px var(--accent-ring-strong); }
+.icon-btn { width:32px; height:32px; border-radius:var(--radius-sm); display:inline-flex; align-items:center; justify-content:center; color:var(--fg-muted); font-size:16px; transition:all var(--dur-fast); }
+.icon-btn:hover { background:var(--surface); color:var(--fg); }
+
+.field { display:flex; flex-direction:column; gap:6px; min-width:0; }
+.field label { font-size:12px; font-weight:500; color:var(--fg-muted); }
+.input, .textarea { width:100%; height:40px; padding:0 12px; font-size:14px; color:var(--fg); background:var(--input); border:1px solid var(--border); border-radius:var(--radius-md); outline:none; transition:border-color var(--dur), box-shadow var(--dur); }
+.input::placeholder, .textarea::placeholder { color:var(--fg-faint); }
+.input:focus, .textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-ring); }
+.input.title { height:50px; font-family:var(--font-serif); font-size:15px; font-weight:600; padding:0 16px; }
+.input.url { height:50px; font-family:var(--font-mono); font-size:13px; padding:0 16px; }
+.textarea { height:auto; min-height:92px; padding:12px 14px; font-size:13.5px; line-height:1.65; resize:none; }
+.input.error { border-color:var(--danger-border); box-shadow:0 0 0 3px var(--danger-subtle); }
+.field .err { font-size:11.5px; color:var(--danger); }
+.search { display:flex; align-items:center; gap:6px; width:220px; height:32px; padding:0 10px; background:var(--input); border:1px solid var(--border); border-radius:var(--radius-md); color:var(--fg-muted); transition:border-color var(--dur), box-shadow var(--dur); }
+.search:focus-within { border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-ring); }
+.search input { flex:1; min-width:0; border:none; outline:none; background:transparent; color:var(--fg); font-size:13px; }
+.kbd { font-family:var(--font-mono); font-size:10px; color:var(--fg-faint); border:1px solid var(--border); border-bottom-width:2px; border-radius:5px; padding:0 5px; line-height:16px; background:var(--bg); }
+
+.seg { display:inline-flex; gap:2px; padding:3px; border-radius:var(--radius-md); border:1px solid var(--border); background:var(--surface); }
+.seg button { display:flex; align-items:center; gap:6px; padding:7px 13px; border-radius:var(--radius-sm); font-size:12.5px; color:var(--fg-muted); white-space:nowrap; transition:all var(--dur); }
+.seg button:hover { color:var(--fg); }
+.seg button.on { background:var(--bg); color:var(--fg); font-weight:500; box-shadow:var(--shadow-sm); }
+[data-theme="dark"] .seg button.on { background:var(--surface-hover); }
+
+.tabs { display:flex; gap:3px; }
+.tab { height:25px; padding:0 12px; display:flex; align-items:center; gap:6px; font-size:13px; font-weight:500; color:var(--fg-muted); border-radius:var(--radius-md); transition:color var(--dur), background-color var(--dur); }
+.tab:hover { color:var(--fg); background:var(--surface); }
+.tab.on { color:var(--accent); background:var(--accent-subtle); font-weight:600; }
+
+.chip { padding:7px 14px; border-radius:var(--radius-full); font-size:12.5px; border:1px solid var(--border); background:var(--bg); color:var(--fg-muted); transition:all var(--dur-fast); }
+.chip:hover { border-color:var(--accent-border); color:var(--fg); }
+.chip.on { background:var(--accent); border-color:var(--accent); color:var(--accent-fg); }
+.tag { display:inline-block; font-size:10px; line-height:1.4; padding:0 5px; border-radius:var(--radius-xs); color:var(--accent); background:var(--accent-tint); }
+.badge { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 8px; border-radius:var(--radius-full); font-size:11px; font-weight:500; }
+.badge.ok { color:var(--success); background:var(--success-subtle); }
+.badge.err { color:var(--danger); background:var(--danger-subtle); }
+.badge.ai { color:var(--ai); background:var(--ai-subtle); }
+.badge.neutral { color:var(--fg-muted); background:var(--surface); }
+
+.g-switch { width:42px; height:24px; border-radius:var(--radius-full); position:relative; flex-shrink:0; background:var(--surface-hover); transition:background var(--dur); }
+.g-switch::after { content:""; position:absolute; left:3px; top:50%; width:18px; height:18px; border-radius:50%; background:var(--accent-fg); box-shadow:var(--shadow-sm); transform:translateY(-50%); transition:transform 180ms var(--ease-out); }
+.g-switch:hover::after { box-shadow:var(--shadow-sm), 0 0 0 4px var(--accent-ring); }
+.g-switch.on { background:var(--accent); }
+.g-switch.on::after { transform:translateY(-50%) translateX(18px); }
+
+/* list row */
+.list { display:flex; flex-direction:column; gap:4px; max-width:520px; }
+.card { display:flex; align-items:flex-start; gap:12px; padding:calc(var(--pad) * .7) calc(var(--pad) * .875); border-radius:var(--radius); border:1px solid transparent; cursor:pointer; transition:all var(--dur); position:relative; }
+.card:hover { background:var(--surface); }
+.card.sel { background:var(--surface-hover); }
+.card.sel::before { content:""; position:absolute; left:0; top:50%; transform:translateY(-50%); width:3px; height:18px; background:var(--accent); border-radius:0 3px 3px 0; }
+.fav { width:40px; height:40px; border-radius:var(--radius-md); flex-shrink:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-serif); font-weight:600; font-size:16px; color:#fff; box-shadow:var(--shadow-sm); }
+[data-density="compact"] .fav { width:34px; height:34px; font-size:14px; }
+.card .meta { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.card .ttl { font-size:var(--title-size); font-weight:600; line-height:1.25; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card .dsc { font-size:var(--desc-size); font-weight:500; color:var(--fg-muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card .url { font-size:var(--meta-size); color:var(--fg-faint); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.card .tags { display:flex; gap:4px; margin-top:1px; }
+.card .pin { color:var(--accent); font-size:12px; }
+
+/* grid card */
+.grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; max-width:520px; }
+.gcard { display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px; padding:18px 14px; border-radius:var(--radius); border:1px solid var(--border); background:var(--surface); cursor:pointer; transition:all var(--dur); }
+.gcard:hover { transform:scale(1.02); border-color:var(--accent-border); box-shadow:var(--shadow-sm); }
+.gcard.sel { border-color:var(--accent); background:var(--accent-subtle); }
+.gcard .fav { width:46px; height:46px; border-radius:var(--radius); font-size:18px; }
+.gcard .ttl { font-size:15px; font-weight:600; max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.gcard .dsc { font-size:12.5px; font-weight:500; color:var(--fg-muted); max-width:100%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+/* sidebar nav */
+.sidebar { width:168px; display:flex; flex-direction:column; gap:2px; }
+.grp-label { display:flex; align-items:center; gap:6px; padding:4px 8px; font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--fg-faint); }
+.grp-label .dot { width:5px; height:5px; border-radius:50%; background:var(--accent); opacity:.55; }
+.nav-item { position:relative; display:flex; align-items:center; gap:8px; width:100%; padding:6px 8px 6px 18px; border-radius:var(--radius-sm); font-size:12.5px; line-height:18px; color:var(--fg-muted); text-align:left; transition:all var(--dur-fast); }
+.nav-item .count { margin-left:auto; font-size:10.5px; color:var(--fg-faint); font-variant-numeric:tabular-nums; }
+.nav-item:hover { color:var(--fg); background:var(--surface); }
+.nav-item.on { color:var(--fg); background:var(--surface-hover); font-weight:500; }
+.nav-item.on .count { color:var(--accent); }
+.nav-item.on::before { content:""; position:absolute; left:4px; top:50%; transform:translateY(-50%); width:3px; height:15px; background:var(--accent); border-radius:0 3px 3px 0; }
+.toc .nav-item { padding-left:18px; }
+
+/* menu */
+.menu { display:flex; flex-direction:column; min-width:200px; padding:6px; background:var(--input); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:var(--shadow-pop); }
+.menu button { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:var(--radius-sm); font-size:13px; color:var(--fg); text-align:left; }
+.menu button svg.i { font-size:15px; color:var(--fg-muted); }
+.menu button:hover { background:var(--surface-hover); }
+.menu button .kbd { margin-left:auto; }
+.menu button.danger, .menu button.danger svg.i { color:var(--danger); }
+.menu button.danger:hover { background:var(--danger-subtle); }
+.menu hr { border:none; height:1px; background:var(--border-soft); margin:4px 6px; }
+
+/* toast */
+.toast { display:flex; align-items:center; gap:11px; padding:11px 16px 11px 13px; width:max-content; max-width:360px; background:var(--input); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:var(--shadow-pop); }
+.toast .tic { width:26px; height:26px; border-radius:8px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:15px; background:var(--success-subtle); color:var(--success); }
+.toast .tt { font-size:13px; font-weight:600; }
+.toast .td { font-size:11.5px; color:var(--fg-muted); margin-top:1px; }
+.toast.is-error { border-color:var(--danger-border); }
+.toast.is-error .tic { background:var(--danger-panel); color:var(--danger); }
+.toast.is-error .tt { color:var(--danger); }
+.toast.is-loading .tic { background:var(--ai-subtle); color:var(--ai); }
+.toast.is-loading .tic svg { animation:spin 1s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+@keyframes toast-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+.toast.animate { animation:toast-in var(--dur-slow) var(--ease-out) both; }
+
+/* settings card */
+.set-section h4 { display:flex; align-items:center; gap:8px; font-family:var(--font-serif); font-size:17px; font-weight:600; margin-bottom:12px; }
+.set-section h4 svg.i { color:var(--fg-faint); }
+.set-card { border:1px solid var(--border); border-radius:var(--radius); background:var(--surface); overflow:hidden; max-width:560px; }
+[data-theme="dark"] .set-card { border-color:transparent; }
+.set-row { display:flex; align-items:center; justify-content:space-between; gap:14px; padding:14px 16px; }
+.set-row + .set-row { border-top:1px solid var(--border-soft); }
+.set-row .rt { font-size:13.5px; }
+.set-row .rd { font-size:11.5px; color:var(--fg-muted); margin-top:2px; }
+
+/* empty + dialog */
+.empty { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; height:180px; color:var(--fg-faint); font-size:13px; }
+.empty svg.i { font-size:30px; opacity:.6; }
+.dialog { width:380px; background:var(--input); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow-pop); overflow:hidden; }
+.dialog .db { padding:20px 22px 6px; }
+.dialog .dt { font-family:var(--font-serif); font-size:18px; font-weight:600; }
+.dialog .dd { font-size:13px; line-height:1.6; color:var(--fg-muted); margin-top:6px; }
+.dialog .df { display:flex; justify-content:flex-end; gap:8px; padding:16px 22px 18px; }
+
+/* app frame preview */
+.frame { border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; background:var(--bg); box-shadow:var(--shadow-pop); }
+.frame .hdr { display:flex; align-items:center; gap:8px; height:46px; padding:0 16px; border-bottom:1px solid var(--border-soft); }
+.frame .body { display:flex; height:360px; }
+.frame .side { width:160px; padding:12px 10px; border-right:1px solid var(--border-muted); display:flex; flex-direction:column; gap:2px; }
+.frame .content { flex:1; padding:12px 18px; overflow:hidden; min-width:0; }
+.sec-head { display:flex; align-items:baseline; gap:8px; padding:4px 4px 8px; }
+.sec-head .g { font-family:var(--font-serif); font-weight:600; font-size:15px; }
+.sec-head .s { font-size:11px; color:var(--fg-faint); }
+
+/* do / don't */
+.dd-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.dd-card { border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; }
+.dd-card .hd { display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; margin-bottom:10px; }
+.dd-card.do .hd { color:var(--success); }
+.dd-card.dont .hd { color:var(--danger); }
+.dd-card ul { list-style:none; display:flex; flex-direction:column; gap:7px; }
+.dd-card li { font-size:12.5px; line-height:1.55; color:var(--fg-muted); padding-left:14px; position:relative; }
+.dd-card li::before { content:""; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:50%; background:var(--border); }
+
+@media (max-width:860px) {
+  .layout { grid-template-columns:1fr; }
+  .toc { display:none; }
+  main { padding:28px 20px 80px; }
+  .dd-grid { grid-template-columns:1fr; }
+  .principles { grid-template-columns:1fr 1fr; }
+  h1 { font-size:34px; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3l4 4L8 20H4v-4z"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="13.5" cy="6.5" r="1"/><circle cx="17.5" cy="10.5" r="1"/><circle cx="8.5" cy="7.5" r="1"/><circle cx="6.5" cy="12.5" r="1"/><path d="M12 2a10 10 0 0 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.3 0-1.1.9-2 2-2h2.3A5.6 5.6 0 0 0 22 9.8C22 5.5 17.5 2 12 2z"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="brand"><span class="brand-mark"></span>Goose Design System</div>
+  <span class="ver">v1 · 源自 goose-mark</span>
+  <span class="sp"></span>
+  <div class="seg" id="density">
+    <button data-v="compact">紧凑</button>
+    <button data-v="regular" class="on">标准</button>
+    <button data-v="comfy">宽松</button>
+  </div>
+  <div class="seg" id="theme">
+    <button data-v="light" class="on"><svg class="i"><use href="#i-sun"/></svg>浅色</button>
+    <button data-v="dark"><svg class="i"><use href="#i-moon"/></svg>深色</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc">
+    <div class="lbl">目录</div>
+    <a class="nav-item on" href="#intro">原则</a>
+    <a class="nav-item" href="#color">颜色</a>
+    <a class="nav-item" href="#type">字体</a>
+    <a class="nav-item" href="#shape">间距 · 圆角 · 层级</a>
+    <a class="nav-item" href="#motion">动效</a>
+    <a class="nav-item" href="#components">组件</a>
+    <a class="nav-item" href="#patterns">组合样例</a>
+    <a class="nav-item" href="#rules">规范与禁忌</a>
+  </nav>
+
+  <main>
+    <!-- ================= Intro ================= -->
+    <section id="intro">
+      <div class="eyebrow">Foundations</div>
+      <h1>暖纸、珊瑚与一点衬线。</h1>
+      <p class="lead">所有新项目的默认风格。暖象牙底色、珊瑚强调、AI 专用紫、Newsreader 衬线标题 + DM Sans 正文。克制但不冷淡：界面干净，每个交互都有明确反馈。</p>
+      <p class="sub">使用方式：复制 <code class="t">design-system/tokens.css</code> 到新项目，在 <code class="t">&lt;html&gt;</code> 上设置 <code class="t">data-theme</code> 和 <code class="t">data-density</code>，组件样式从本页 <code class="t">&lt;style&gt;</code> 的 Components 段直接取用。</p>
+
+      <div class="principles">
+        <div><div class="n">01</div><div class="h">内容即界面</div><p>去掉不直接服务任务的装饰，让内容本身成为视觉主体。</p></div>
+        <div><div class="n">02</div><div class="h">键盘即主人</div><p>高频操作都有键盘路径，焦点状态清晰可见。</p></div>
+        <div><div class="n">03</div><div class="h">密度可调</div><p>紧凑 / 标准 / 宽松三档，默认偏紧凑高效。</p></div>
+        <div><div class="n">04</div><div class="h">瞬态反馈</div><p>反馈在 150ms 内出现，不打断主任务流。</p></div>
+        <div><div class="n">05</div><div class="h">排版即层级</div><p>用字号、字重、字体区分层级，不依赖颜色或边框。</p></div>
+      </div>
+    </section>
+
+    <!-- ================= Color ================= -->
+    <section id="color">
+      <div class="eyebrow">Color</div>
+      <h2>颜色</h2>
+      <p class="sub">三种角色色，各有单一职责：<b>珊瑚</b>用于主操作、选中、链接；<b>紫</b>只用于 AI 触点；<b>绿 / 红</b>只表达状态。其余全部是暖中性色。</p>
+
+      <h3>表面与文字</h3>
+      <div class="swatches" data-swatches="bg,surface,surface-hover,input,border,fg,fg-muted,fg-faint"></div>
+
+      <h3>强调 · 珊瑚</h3>
+      <div class="swatches" data-swatches="accent,accent-hover,accent-subtle,accent-tint,accent-border"></div>
+
+      <h3>AI · 紫</h3>
+      <div class="swatches" data-swatches="ai,ai-subtle,ai-border,ai-bright"></div>
+
+      <h3>状态</h3>
+      <div class="swatches" data-swatches="success,success-subtle,danger,danger-subtle,danger-border"></div>
+
+      <h3>中性色阶</h3>
+      <div class="ramp">
+        <div style="background:var(--bg);color:var(--fg-muted)">bg</div>
+        <div style="background:var(--surface-blend);color:var(--fg-muted)">blend</div>
+        <div style="background:var(--surface);color:var(--fg-muted)">surface</div>
+        <div style="background:var(--surface-hover);color:var(--fg-muted)">hover</div>
+        <div style="background:var(--border);color:var(--fg-muted)">border</div>
+        <div style="background:var(--fg-faint);color:var(--bg)">faint</div>
+        <div style="background:var(--fg-muted);color:var(--bg)">muted</div>
+        <div style="background:var(--fg);color:var(--bg)">fg</div>
+      </div>
+      <p class="note">深色模式正文用 #eae8e1 而非纯白；深色下卡片去掉描边，靠更亮的 surface 自然浮起。</p>
+    </section>
+
+    <!-- ================= Type ================= -->
+    <section id="type">
+      <div class="eyebrow">Typography</div>
+      <h2>字体</h2>
+      <p class="sub">衬线只给标题、分组名、对话框标题和占位首字母；正文、按钮、列表一律无衬线。网址、快捷键用等宽。</p>
+      <div style="margin-top:20px">
+        <div class="type-row"><div class="spec"><b>Display</b>Newsreader 500 · 44/1.08</div><div class="serif" style="font-size:44px;font-weight:500;line-height:1.08;letter-spacing:-.015em">从呼出到打开</div></div>
+        <div class="type-row"><div class="spec"><b>H2 · Section</b>Newsreader 600 · 26/1.2</div><div class="serif" style="font-size:26px;font-weight:600">常用工具</div></div>
+        <div class="type-row"><div class="spec"><b>H3 · Card title</b>Newsreader 600 · 17</div><div class="serif" style="font-size:17px;font-weight:600">外观与主题</div></div>
+        <div class="type-row"><div class="spec"><b>Group</b>Newsreader 600 · 15</div><div class="serif" style="font-size:15px;font-weight:600">开发文档 <span style="font-family:var(--font-sans);font-size:11px;font-weight:400;color:var(--fg-faint)">12 个书签</span></div></div>
+        <div class="type-row"><div class="spec"><b>Item title</b>DM Sans 600 · 16/1.25</div><div style="font-size:16px;font-weight:600">GitHub — Let's build from here</div></div>
+        <div class="type-row"><div class="spec"><b>Body</b>DM Sans 400 · 13.5/1.65</div><div style="font-size:13.5px;line-height:1.65;color:var(--fg-muted);max-width:56ch">排版和间距服务于信息的快速扫描与理解，而非装饰。正文使用 muted 色，标题使用 fg 色，形成两级对比。</div></div>
+        <div class="type-row"><div class="spec"><b>Label · UI</b>DM Sans 500 · 12.5</div><div style="font-size:12.5px;font-weight:500">新增书签 · 编辑 · 移动到</div></div>
+        <div class="type-row"><div class="spec"><b>Overline</b>DM Sans 600 · 10 · .09em</div><div style="font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--fg-faint)">Collections</div></div>
+        <div class="type-row"><div class="spec"><b>Mono</b>ui-monospace · 10.5–13</div><div class="mono" style="font-size:12px;color:var(--fg-faint)">github.com/goose/mark</div></div>
+      </div>
+    </section>
+
+    <!-- ================= Shape ================= -->
+    <section id="shape">
+      <div class="eyebrow">Space · Radius · Elevation</div>
+      <h2>间距、圆角与层级</h2>
+
+      <h3>间距（4px 基准，常用节点）</h3>
+      <div class="scale">
+        <figure><div class="box" style="width:4px;height:4px"></div>4</figure>
+        <figure><div class="box" style="width:6px;height:6px"></div>6</figure>
+        <figure><div class="box" style="width:8px;height:8px"></div>8</figure>
+        <figure><div class="box" style="width:10px;height:10px"></div>10</figure>
+        <figure><div class="box" style="width:12px;height:12px"></div>12</figure>
+        <figure><div class="box" style="width:14px;height:14px"></div>14</figure>
+        <figure><div class="box" style="width:16px;height:16px"></div>16</figure>
+        <figure><div class="box" style="width:24px;height:24px"></div>24</figure>
+        <figure><div class="box" style="width:32px;height:32px"></div>32</figure>
+        <figure><div class="box" style="width:48px;height:48px"></div>48</figure>
+      </div>
+      <p class="note">密度变量：<code class="t">--row-h</code> 36 / 40 / 46 · <code class="t">--gap</code> 8 / 10 / 14 · <code class="t">--pad</code> 13 / 16 / 20。切换右上角密度查看列表变化。</p>
+
+      <h3>圆角</h3>
+      <div class="scale">
+        <figure><div class="radius-demo" style="border-radius:var(--radius-xs)"></div>xs · 4 · 标签</figure>
+        <figure><div class="radius-demo" style="border-radius:var(--radius-sm)"></div>sm · 8 · 导航项</figure>
+        <figure><div class="radius-demo" style="border-radius:var(--radius-md)"></div>md · 11 · 按钮/输入</figure>
+        <figure><div class="radius-demo" style="border-radius:var(--radius)"></div>base · 14 · 卡片</figure>
+        <figure><div class="radius-demo" style="border-radius:var(--radius-full);width:88px"></div>full · 胶囊</figure>
+      </div>
+
+      <h3>层级（只有两档阴影）</h3>
+      <div class="row" style="gap:20px">
+        <div class="elev" style="box-shadow:none">flat · 默认，靠底色区分</div>
+        <div class="elev" style="box-shadow:var(--shadow-sm)">shadow-sm · 按钮、选中段、悬停卡</div>
+        <div class="elev" style="box-shadow:var(--shadow-pop)">shadow-pop · 菜单、Toast、对话框</div>
+      </div>
+    </section>
+
+    <!-- ================= Motion ================= -->
+    <section id="motion">
+      <div class="eyebrow">Motion</div>
+      <h2>动效</h2>
+      <p class="sub">颜色/背景 120–150ms 线性过渡；浮层出现 160–300ms ease-out；成功反馈允许一次轻微回弹。悬停放大用 <code class="t">scale(1.02)</code> 而不是位移，避免命中区抖动。全部尊重 <code class="t">prefers-reduced-motion</code>。</p>
+      <div class="motion-demo" style="margin-top:18px">
+        <div class="mbox"><div class="dot"></div><div class="t">ease-out</div><div class="d">cubic-bezier(.16,1,.3,1) · 300ms</div></div>
+        <div class="mbox spring"><div class="dot"></div><div class="t">spring（仅成功反馈）</div><div class="d">cubic-bezier(.34,1.56,.64,1)</div></div>
+      </div>
+      <p class="note">悬停卡片查看曲线。</p>
+    </section>
+
+    <!-- ================= Components ================= -->
+    <section id="components">
+      <div class="eyebrow">Components</div>
+      <h2>组件</h2>
+
+      <h3>按钮</h3>
+      <div class="stage">
+        <div class="row">
+          <button class="btn btn-primary"><svg class="i"><use href="#i-plus"/></svg>新增书签</button>
+          <button class="btn btn-outline">取消</button>
+          <button class="btn btn-ghost">稍后</button>
+          <button class="btn btn-ai"><svg class="i"><use href="#i-sparkles"/></svg>AI 整理</button>
+          <button class="btn btn-ghost danger"><svg class="i"><use href="#i-trash"/></svg>删除</button>
+        </div>
+        <div class="row" style="margin-top:14px">
+          <button class="btn btn-primary btn-sm">保存</button>
+          <button class="btn btn-outline btn-sm">导入</button>
+          <button class="icon-btn" aria-label="设置"><svg class="i"><use href="#i-settings"/></svg></button>
+          <button class="icon-btn" aria-label="编辑"><svg class="i"><use href="#i-pencil"/></svg></button>
+        </div>
+      </div>
+      <p class="note">每屏只有一个 primary。AI 操作永远用紫色 btn-ai，不与珊瑚混用。</p>
+
+      <h3>输入</h3>
+      <div class="stage" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px">
+        <div class="field"><label>网址</label><input class="input url" value="https://github.com"></div>
+        <div class="field"><label>标题</label><input class="input title" placeholder="书签标题"></div>
+        <div class="field"><label>默认</label><input class="input" placeholder="输入关键词"></div>
+        <div class="field"><label>错误</label><input class="input error" value="not-a-url"><span class="err">请输入有效的网址</span></div>
+        <div class="field" style="grid-column:1/-1"><label>描述</label><textarea class="textarea" placeholder="可选，一句话说明用途"></textarea></div>
+        <div class="field"><label>搜索</label><div class="search"><svg class="i"><use href="#i-search"/></svg><input placeholder="搜索书签"><span class="kbd">⌘K</span></div></div>
+      </div>
+      <p class="note">标题输入用衬线、网址输入用等宽，让字段类型一眼可辨。聚焦 = 珊瑚描边 + 3px 柔光环。</p>
+
+      <h3>分段控件 · 标签页 · 筛选</h3>
+      <div class="stage">
+        <div class="row" style="gap:18px">
+          <div class="seg"><button class="on"><svg class="i"><use href="#i-list"/></svg>列表</button><button><svg class="i"><use href="#i-grid"/></svg>宫格</button></div>
+          <div class="tabs"><button class="tab on">全部</button><button class="tab">工作</button><button class="tab">学习</button><button class="tab">娱乐</button></div>
+        </div>
+        <div class="row" style="margin-top:16px">
+          <button class="chip on">设计</button><button class="chip">开发</button><button class="chip">AI</button><button class="chip">阅读</button>
+        </div>
+      </div>
+
+      <h3>标签 · 徽标 · 开关 · 快捷键</h3>
+      <div class="stage">
+        <div class="row" style="gap:14px">
+          <span class="tag">设计</span><span class="tag">工具</span>
+          <span class="badge ok"><svg class="i"><use href="#i-check"/></svg>已同步</span>
+          <span class="badge err">链接失效</span>
+          <span class="badge ai"><svg class="i"><use href="#i-sparkles"/></svg>AI 推荐</span>
+          <span class="badge neutral">草稿</span>
+          <button class="g-switch on" aria-label="开关" data-toggle></button>
+          <button class="g-switch" aria-label="开关" data-toggle></button>
+          <span class="kbd">↵</span><span class="kbd">⌘</span><span class="kbd">Esc</span>
+        </div>
+      </div>
+
+      <h3>列表行（受密度控制）</h3>
+      <div class="stage">
+        <div class="list">
+          <div class="card sel"><div class="fav" style="background:#24292f">G</div><div class="meta"><div class="ttl">GitHub</div><div class="dsc">代码托管与协作</div><div class="url">github.com</div><div class="tags"><span class="tag">开发</span><span class="tag">常用</span></div></div><svg class="i pin"><use href="#i-pin"/></svg></div>
+          <div class="card"><div class="fav" style="background:#d97757">F</div><div class="meta"><div class="ttl">Figma</div><div class="dsc">界面设计与原型</div><div class="url">figma.com</div></div></div>
+          <div class="card"><div class="fav" style="background:#3b7d6e">M</div><div class="meta"><div class="ttl">MDN Web Docs</div><div class="dsc">Web 技术文档</div><div class="url">developer.mozilla.org</div></div></div>
+        </div>
+      </div>
+      <p class="note">行默认无边框无底色；悬停 surface、选中 surface-hover + 左侧 3px 珊瑚指示条。拿不到图标时用衬线首字母 + 稳定分配的实色底。</p>
+
+      <h3>宫格卡</h3>
+      <div class="stage">
+        <div class="grid">
+          <div class="gcard sel"><div class="fav" style="background:#24292f">G</div><div class="ttl">GitHub</div><div class="dsc">代码托管</div></div>
+          <div class="gcard"><div class="fav" style="background:#d97757">F</div><div class="ttl">Figma</div><div class="dsc">设计工具</div></div>
+          <div class="gcard"><div class="fav" style="background:#7c52e0">C</div><div class="ttl">Claude</div><div class="dsc">AI 助手</div></div>
+        </div>
+      </div>
+
+      <h3>侧栏导航 · 菜单 · Toast</h3>
+      <div class="stage surface">
+        <div class="row" style="align-items:flex-start;gap:32px">
+          <div class="sidebar">
+            <div class="grp-label"><span class="dot"></span>Collections</div>
+            <button class="nav-item on">全部书签<span class="count">128</span></button>
+            <button class="nav-item">开发<span class="count">42</span></button>
+            <button class="nav-item">设计<span class="count">17</span></button>
+            <button class="nav-item">阅读<span class="count">9</span></button>
+          </div>
+          <div class="menu">
+            <button><svg class="i"><use href="#i-pencil"/></svg>编辑<span class="kbd">E</span></button>
+            <button><svg class="i"><use href="#i-copy"/></svg>复制链接<span class="kbd">⌘C</span></button>
+            <button><svg class="i"><use href="#i-pin"/></svg>置顶</button>
+            <hr>
+            <button class="danger"><svg class="i"><use href="#i-trash"/></svg>移到回收站</button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="toast animate"><div class="tic"><svg class="i"><use href="#i-check"/></svg></div><div><div class="tt">已添加书签</div><div class="td">GitHub 已保存到「开发」</div></div></div>
+            <div class="toast is-error animate"><div class="tic"><svg class="i"><use href="#i-x"/></svg></div><div><div class="tt">无法获取网页信息</div><div class="td">请检查网址或稍后重试</div></div></div>
+            <div class="toast is-loading animate"><div class="tic"><svg class="i"><use href="#i-loader"/></svg></div><div><div class="tt">AI 正在整理</div><div class="td">分析 128 个书签…</div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <h3>设置卡 · 对话框 · 空状态</h3>
+      <div class="stage">
+        <div class="row" style="align-items:flex-start;gap:28px">
+          <div class="set-section" style="flex:1;min-width:300px">
+            <h4><svg class="i"><use href="#i-palette"/></svg>外观</h4>
+            <div class="set-card">
+              <div class="set-row"><div><div class="rt">跟随系统主题</div><div class="rd">根据系统自动切换浅色与深色</div></div><button class="g-switch on" data-toggle aria-label="跟随系统主题"></button></div>
+              <div class="set-row"><div><div class="rt">显示网址</div><div class="rd">在列表中显示书签域名</div></div><button class="g-switch" data-toggle aria-label="显示网址"></button></div>
+              <div class="set-row"><div><div class="rt">密度</div></div><div class="seg"><button>紧凑</button><button class="on">标准</button><button>宽松</button></div></div>
+            </div>
+          </div>
+          <div class="dialog">
+            <div class="db"><div class="dt">删除这个分组？</div><div class="dd">分组内的 12 个书签会移到回收站，30 天内可恢复。</div></div>
+            <div class="df"><button class="btn btn-ghost btn-sm">取消</button><button class="btn btn-primary btn-sm" style="background:var(--danger)">删除</button></div>
+          </div>
+        </div>
+        <div class="empty"><svg class="i"><use href="#i-inbox"/></svg>这个分组还没有书签</div>
+      </div>
+    </section>
+
+    <!-- ================= Patterns ================= -->
+    <section id="patterns">
+      <div class="eyebrow">Patterns</div>
+      <h2>组合样例：应用窗口</h2>
+      <p class="sub">顶栏 46px + 左侧栏 150–160px + 内容区。分区用 1px 半透明细线，不用色块或阴影。</p>
+      <div class="frame" style="margin-top:20px">
+        <div class="hdr">
+          <div class="tabs" style="flex:1"><button class="tab on">全部</button><button class="tab">工作</button><button class="tab">学习</button></div>
+          <div class="search" style="width:180px"><svg class="i"><use href="#i-search"/></svg><input placeholder="搜索"></div>
+          <div class="seg"><button class="on" aria-label="列表"><svg class="i"><use href="#i-list"/></svg></button><button aria-label="宫格"><svg class="i"><use href="#i-grid"/></svg></button></div>
+          <button class="btn btn-primary btn-sm"><svg class="i"><use href="#i-plus"/></svg>新增</button>
+        </div>
+        <div class="body">
+          <div class="side">
+            <div class="grp-label"><span class="dot"></span>分组</div>
+            <button class="nav-item on">开发<span class="count">42</span></button>
+            <button class="nav-item">设计<span class="count">17</span></button>
+            <button class="nav-item">阅读<span class="count">9</span></button>
+          </div>
+          <div class="content">
+            <div class="sec-head"><span class="g">开发</span><span class="s">42 个书签</span></div>
+            <div class="list" style="max-width:none">
+              <div class="card sel"><div class="fav" style="background:#24292f">G</div><div class="meta"><div class="ttl">GitHub</div><div class="dsc">代码托管与协作</div></div></div>
+              <div class="card"><div class="fav" style="background:#3b7d6e">M</div><div class="meta"><div class="ttl">MDN Web Docs</div><div class="dsc">Web 技术文档</div></div></div>
+              <div class="card"><div class="fav" style="background:#b8862e">V</div><div class="meta"><div class="ttl">Vite</div><div class="dsc">前端构建工具</div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Rules ================= -->
+    <section id="rules">
+      <div class="eyebrow">Rules</div>
+      <h2>规范与禁忌</h2>
+      <div class="dd-grid" style="margin-top:20px">
+        <div class="dd-card do">
+          <div class="hd"><svg class="i"><use href="#i-check"/></svg>这样做</div>
+          <ul>
+            <li>层级先靠字号、字重和衬线/无衬线区分，再考虑颜色。</li>
+            <li>珊瑚只出现在主操作、选中态、链接与焦点环上。</li>
+            <li>AI 相关入口、状态、加载统一用紫色。</li>
+            <li>默认扁平；只有浮层（菜单、Toast、对话框）用 shadow-pop。</li>
+            <li>颜色写成 hex / rgba，兼容旧 Chromium（uTools、Electron）。</li>
+            <li>文字对比度 ≥ 4.5:1，关键交互保留可见焦点。</li>
+          </ul>
+        </div>
+        <div class="dd-card dont">
+          <div class="hd"><svg class="i"><use href="#i-x"/></svg>不要做</div>
+          <ul>
+            <li>渐变文字、玻璃拟态作为默认装饰。</li>
+            <li>Material 式厚重阴影和浮起卡片。</li>
+            <li>SaaS 仪表板式的大数字 metric 卡片和 hero 区。</li>
+            <li>密集树状列表、过小点击区、多层嵌套缩进。</li>
+            <li>纯白正文配纯黑底；深色模式用 #eae8e1 / #090a0c。</li>
+            <li>悬停用位移抬升（会让命中区抖动），改用 scale。</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const root = document.documentElement;
+  function bindSeg(id, attr) {
+    const seg = document.getElementById(id);
+    seg.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b) return;
+      seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      root.setAttribute(attr, b.dataset.v);
+    });
+  }
+  bindSeg('theme', 'data-theme');
+  bindSeg('density', 'data-density');
+  if (matchMedia('(prefers-color-scheme: dark)').matches) document.querySelector('#theme [data-v="dark"]').click();
+
+  document.querySelectorAll('[data-toggle]').forEach(b => b.addEventListener('click', () => b.classList.toggle('on')));
+  document.querySelectorAll('.seg:not(#theme):not(#density), .tabs').forEach(g => g.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  }));
+  document.querySelectorAll('.chip').forEach(c => c.addEventListener('click', () => c.classList.toggle('on')));
+
+  const NAMES = { bg:'背景', surface:'表面', 'surface-hover':'表面悬停', input:'输入底', border:'描边', fg:'正文', 'fg-muted':'次要文字', 'fg-faint':'弱化文字',
+    accent:'珊瑚', 'accent-hover':'珊瑚悬停', 'accent-subtle':'珊瑚浅底', 'accent-tint':'珊瑚淡染', 'accent-border':'珊瑚描边',
+    ai:'AI 紫', 'ai-subtle':'AI 浅底', 'ai-border':'AI 描边', 'ai-bright':'AI 亮紫',
+    success:'成功', 'success-subtle':'成功浅底', danger:'危险', 'danger-subtle':'危险浅底', 'danger-border':'危险描边' };
+  function renderSwatches() {
+    const cs = getComputedStyle(root);
+    document.querySelectorAll('[data-swatches]').forEach(el => {
+      el.innerHTML = el.dataset.swatches.split(',').map(k =>
+        `<div class="sw"><div class="chip-c" style="background:var(--${k})"></div><div class="meta"><div class="nm">${NAMES[k] || k}</div><div class="var">--${k}</div><div class="hex">${cs.getPropertyValue('--' + k).trim()}</div></div></div>`
+      ).join('');
+    });
+  }
+  renderSwatches();
+  new MutationObserver(renderSwatches).observe(root, { attributes:true, attributeFilter:['data-theme'] });
+
+  const links = [...document.querySelectorAll('.toc a')];
+  const io = new IntersectionObserver(es => es.forEach(e => {
+    if (e.isIntersecting) links.forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#' + e.target.id));
+  }), { rootMargin:'-30% 0px -60% 0px' });
+  document.querySelectorAll('main section').forEach(s => io.observe(s));
+</script>
+</body>
+</html>
