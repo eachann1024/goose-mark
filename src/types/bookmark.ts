@@ -40,24 +40,32 @@ export interface SubGroup {
   id: string
   name: string
   bookmarkIds: string[]
-  lastSyncedAt?: number   // 最后同步时间
-  
+  lastSyncedAt?: number   // 已废弃：旧同步时间，读到时忽略，写入时原样保留
+
   // 元数据字段
   createdAt: number
   updatedAt: number
   serverUpdatedAt?: number
   isDeleted?: boolean
+  /** 已废弃：旧分享标识。只为兼容本地存量，不参与任何请求。 */
+  shareId?: string
+  /** 已废弃：旧来源分享标识。只为兼容本地存量，不参与任何请求。 */
+  sourceShareId?: string
 }
 
 export interface Group {
   id: string
   name: string
   children: SubGroup[]
-  lastSyncedAt?: number   // 最后同步时间
-  
+  lastSyncedAt?: number   // 已废弃：旧同步时间，读到时忽略，写入时原样保留
+
   // 元数据字段
   createdAt: number
   updatedAt: number
   serverUpdatedAt?: number
   isDeleted?: boolean
+  /** 已废弃：旧分享标识。只为兼容本地存量，不参与任何请求。 */
+  shareId?: string
+  /** 已废弃：旧来源分享标识。只为兼容本地存量，不参与任何请求。 */
+  sourceShareId?: string
 }

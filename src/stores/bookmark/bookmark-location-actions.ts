@@ -31,8 +31,6 @@ export function createBookmarkLocationActions(get: BookmarkGet, commit: Bookmark
       sub.updatedAt = now
       group.updatedAt = now
       commit(groups, get().bookmarks)
-      get().scheduleSubGroupSync(groupId, subId, { updatedAt: now })
-      get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
     },
 
     moveBookmarkToSubGroup: (bookmarkId, fromGroupId, fromSubId, toGroupId, toSubId, insertIndex) => {
@@ -46,8 +44,6 @@ export function createBookmarkLocationActions(get: BookmarkGet, commit: Bookmark
       if (!fromSub || !toSub || !fromGroup || !toGroup) return false
       if (!fromSub.bookmarkIds.includes(bookmarkId)) return false
       const bookmark = bookmarks.find((b) => b.id === bookmarkId)
-      const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bookmarkId)
-      const previousShareIds = get().getShareIdsFromLocations(previousLocations)
       const now = Date.now()
       fromSub.bookmarkIds = fromSub.bookmarkIds.filter((id) => id !== bookmarkId)
       fromSub.updatedAt = now
@@ -74,13 +70,6 @@ export function createBookmarkLocationActions(get: BookmarkGet, commit: Bookmark
         bookmark.updatedAt = now
       }
       commit(groups, bookmarks)
-      if (bookmark) get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
-      get().scheduleSubGroupSync(fromGroupId, fromSubId, { updatedAt: now })
-      get().scheduleSubGroupSync(toGroupId, toSubId, { updatedAt: now })
-      get().scheduleGroupSync(fromGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === fromGroupId) })
-      if (fromGroupId !== toGroupId) {
-        get().scheduleGroupSync(toGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === toGroupId) })
-      }
       return true
     }
   }

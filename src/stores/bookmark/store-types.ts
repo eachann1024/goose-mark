@@ -106,25 +106,6 @@ export interface BookmarkActions {
   }>
   backfillIconCache: () => Promise<void>
 
-  // 同步调度
-  getShareIdsFromLocations: (locations?: BookmarkLocation[]) => string[]
-  getShareIdsFromSubGroup: (groupId: string, subId: string) => string[]
-  getShareIdsFromGroup: (groupId: string) => string[]
-  scheduleBookmarkSync: (
-    bookmarkId: string,
-    options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; content?: Bookmark | null }
-  ) => void
-  scheduleGroupSync: (
-    groupId: string,
-    options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; orderIndex?: number }
-  ) => void
-  scheduleSubGroupSync: (
-    groupId: string,
-    subId: string,
-    options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[] }
-  ) => void
-  syncAllSharedEntities: (updatedAt?: number) => void
-
   // 快照 / 整体替换
   loadFromSnapshot: (data: { groups: Group[]; bookmarks: Bookmark[] }, readOnly?: boolean) => void
   setData: (state: SetDataPayload) => void
@@ -134,10 +115,6 @@ export interface BookmarkActions {
 }
 
 export type BookmarkStore = BookmarkState & BookmarkActions
-
-export type ShareAwareGroup = Group & { shareId?: string; sourceShareId?: string; orderIndex?: number }
-
-export type ShareAwareSubGroup = SubGroup & { shareId?: string; sourceShareId?: string; parentGroupId?: string }
 
 export interface BookmarkPersistJob {
   snapshot: BookmarkSnapshot

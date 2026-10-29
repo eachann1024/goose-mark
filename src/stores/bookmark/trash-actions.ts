@@ -1,7 +1,7 @@
 import type { BookmarkLocation } from '@/types/bookmark'
 import { TRASH_GROUP_ID, createSeedGroups } from '@/stores/bookmarkSeed'
 import type { BookmarkActions, BookmarkGet, BookmarkCommit } from './store-types'
-import { clone, resolveBookmarkLocations } from './common'
+import { clone } from './common'
 
 export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pick<BookmarkActions, 'autoCleanTrash' | 'removeBookmark' | 'restoreBookmark' | 'restoreBookmarkFromTrash' | 'emptyTrash'> {
   return {
@@ -44,10 +44,6 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
       if (inTrash) {
         const groups = clone(get().groups)
         let bookmarks = clone(get().bookmarks)
-        const bookmark = bookmarks.find((b) => b.id === id)
-        const previousLocations = bookmark && Array.isArray(bookmark.locations) && bookmark.locations.length > 0 ? clone(bookmark.locations) : locations
-        const previousShareIds = get().getShareIdsFromLocations(previousLocations)
-
         groups.forEach((g) => {
           let groupChanged = false
           g.children.forEach((sub) => {
@@ -62,7 +58,6 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
         })
         bookmarks = bookmarks.filter((b) => b.id !== id)
         commit(groups, bookmarks)
-        get().scheduleBookmarkSync(id, { isDeleted: true, updatedAt: now, previousShareIds, content: null })
       } else {
         const bookmarks = clone(get().bookmarks)
         const bookmark = bookmarks.find((b) => b.id === id)
@@ -87,9 +82,6 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
       const now = Date.now()
       const trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
       const trashSubs = trashGroup?.children ?? []
-      const previousLocations = resolveBookmarkLocations(bookmark, get().getBookmarkLocations)
-      const previousShareIds = get().getShareIdsFromLocations(previousLocations)
-
       let targetLocations: BookmarkLocation[] = []
       if (bookmark.prevLocations && bookmark.prevLocations.length > 0) {
         targetLocations = bookmark.prevLocations.filter((loc) => {
@@ -123,14 +115,6 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
       commit(groups, bookmarks)
       get().updateBookmarkLocations(id, targetLocations)
       get().selectGroup(targetLocations[0].groupId, targetLocations[0].subGroupId)
-      get().scheduleBookmarkSync(id, { updatedAt: now, previousShareIds })
-      targetLocations.forEach((loc) => {
-        get().scheduleSubGroupSync(loc.groupId, loc.subGroupId, { updatedAt: now })
-        get().scheduleGroupSync(loc.groupId, {
-          updatedAt: now,
-          orderIndex: get().groups.findIndex((g) => g.id === loc.groupId)
-        })
-      })
       return true
     },
 
@@ -144,12 +128,6 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
         .flatMap(group => group.children.flatMap(sub => sub.bookmarkIds)))
       const idsToRemove = [...new Set(trashGroup.children.flatMap(sub => sub.bookmarkIds))]
         .filter(id => !activeIds.has(id))
-      const previousShareIdsMap = new Map<string, string[]>()
-      idsToRemove.forEach((id) => {
-        const bookmark = bookmarks.find((b) => b.id === id)
-        const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(id)
-        previousShareIdsMap.set(id, get().getShareIdsFromLocations(previousLocations))
-      })
       idsToRemove.forEach((id) => {
         bookmarks = bookmarks.filter((b) => b.id !== id)
       })
@@ -163,14 +141,6 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
       })
       trashGroup.updatedAt = now
       commit(groups, bookmarks)
-      idsToRemove.forEach((id) => {
-        get().scheduleBookmarkSync(id, {
-          isDeleted: true,
-          updatedAt: now,
-          previousShareIds: previousShareIdsMap.get(id) || [],
-          content: null
-        })
-      })
     }
   }
 }

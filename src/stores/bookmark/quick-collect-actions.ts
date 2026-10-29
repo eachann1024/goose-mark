@@ -71,7 +71,6 @@ export function createQuickCollectActions(get: BookmarkGet, commit: BookmarkComm
         if (!alreadyInQuickCollect) {
           // 用 resolveBookmarkLocations 取真实位置（兼容旧数据 locations=[]）
           const previousLocations = resolveBookmarkLocations(existingBookmark, get().getBookmarkLocations)
-          const previousShareIds = get().getShareIdsFromLocations(previousLocations)
           liveSub.bookmarkIds.unshift(existingBookmark.id)
           liveSub.updatedAt = now
           liveGroup.updatedAt = now
@@ -79,9 +78,6 @@ export function createQuickCollectActions(get: BookmarkGet, commit: BookmarkComm
           existingBookmark.locations = [...previousLocations, { groupId: liveGroup.id, subGroupId: liveSub.id }]
           existingBookmark.updatedAt = now
           commit(groups, bookmarks)
-          get().scheduleBookmarkSync(existingBookmark.id, { updatedAt: now, previousShareIds })
-          get().scheduleSubGroupSync(liveGroup.id, liveSub.id, { updatedAt: now })
-          get().scheduleGroupSync(liveGroup.id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === liveGroup.id) })
         }
         return existingBookmark
       }
@@ -108,9 +104,6 @@ export function createQuickCollectActions(get: BookmarkGet, commit: BookmarkComm
         if (icon) get().assignIcon(bookmark.id, icon)
       })
 
-      get().scheduleBookmarkSync(bookmark.id, { updatedAt: now })
-      get().scheduleSubGroupSync(liveGroup.id, liveSub.id, { updatedAt: now })
-      get().scheduleGroupSync(liveGroup.id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === liveGroup.id) })
       return bookmark
     }
   }

@@ -72,8 +72,8 @@ type Group = {
   updatedAt: number
   serverUpdatedAt?: number
   isDeleted?: boolean
-  shareId?: string
-  sourceShareId?: string
+  shareId?: string // 已废弃。旧本地数据可能带此字段；读取时忽略，不要删除或改写存储格式
+  sourceShareId?: string // 已废弃。旧本地数据可能带此字段；读取时忽略，不要删除或改写存储格式
 }
 ```
 
@@ -89,8 +89,8 @@ type SubGroup = {
   updatedAt: number
   serverUpdatedAt?: number
   isDeleted?: boolean
-  shareId?: string
-  sourceShareId?: string
+  shareId?: string // 已废弃。旧本地数据可能带此字段；读取时忽略，不要删除或改写存储格式
+  sourceShareId?: string // 已废弃。旧本地数据可能带此字段；读取时忽略，不要删除或改写存储格式
 }
 ```
 
