@@ -30,8 +30,7 @@ export function createSelectionActions(set: BookmarkSet, get: BookmarkGet): Pick
 
     selectSubGroup: (subId) => set({ activeSubGroupId: subId, activeView: 'group' }),
 
-    // 记录书签使用：lastUsed = now、visits++。本地排序数据。
-    // 不走 scheduleBookmarkSync（避免把高频本地使用记录推送到同步通道）。
+    // 记录书签使用：lastUsed = now、visits++。只写本地排序数据。
     recordBookmarkUse: (id) => {
       const bookmarks = [...get().bookmarks]
       const idx = bookmarks.findIndex((b) => b.id === id)

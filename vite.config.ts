@@ -24,14 +24,7 @@ export default defineConfig({
   ],
   server: {
     port: 7001,
-    strictPort: true,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        secure: false
-      }
-    }
+    strictPort: true
   },
   build: {
     // uTools 7.8.0 内核为 Chromium 108；显式锁定 JS/CSS 转译目标，避免 Vite 8 默认 Chrome 111 产物。

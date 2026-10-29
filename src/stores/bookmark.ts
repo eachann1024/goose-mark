@@ -10,7 +10,6 @@ import { createInitialState } from './bookmark/common'
 import { createBookmarkPersistence } from './bookmark/persistence'
 import { createSelectionActions } from './bookmark/selection-actions'
 import { createSnapshotActions } from './bookmark/snapshot-actions'
-import { createShareActions } from './bookmark/share-actions'
 import { createGroupActions } from './bookmark/group-actions'
 import { createSubgroupActions } from './bookmark/subgroup-actions'
 import { createSubgroupMoveActions } from './bookmark/subgroup-move-actions'
@@ -39,7 +38,6 @@ export const useBookmarkStore = create<BookmarkStore>()((rawSet, get) => {
 
   const createSelectionActionsInstance = createSelectionActions(set, get)
   const createSnapshotActionsInstance = createSnapshotActions(set, get)
-  const createShareActionsInstance = createShareActions(get)
   const createGroupActionsInstance = createGroupActions(get, commit)
   const createSubgroupActionsInstance = createSubgroupActions(get, commit)
   const createSubgroupMoveActionsInstance = createSubgroupMoveActions(get, commit)
@@ -64,12 +62,6 @@ export const useBookmarkStore = create<BookmarkStore>()((rawSet, get) => {
     migrateFromLegacy: createSnapshotActionsInstance.migrateFromLegacy,
     getBookmarkLocations: createSelectionActionsInstance.getBookmarkLocations,
     isBookmarkInTrash: createSelectionActionsInstance.isBookmarkInTrash,
-    getShareIdsFromLocations: createShareActionsInstance.getShareIdsFromLocations,
-    getShareIdsFromSubGroup: createShareActionsInstance.getShareIdsFromSubGroup,
-    getShareIdsFromGroup: createShareActionsInstance.getShareIdsFromGroup,
-    scheduleBookmarkSync: createShareActionsInstance.scheduleBookmarkSync,
-    scheduleGroupSync: createShareActionsInstance.scheduleGroupSync,
-    scheduleSubGroupSync: createShareActionsInstance.scheduleSubGroupSync,
     addGroup: createGroupActionsInstance.addGroup,
     updateGroup: createGroupActionsInstance.updateGroup,
     addSubGroup: createSubgroupActionsInstance.addSubGroup,
@@ -99,7 +91,6 @@ export const useBookmarkStore = create<BookmarkStore>()((rawSet, get) => {
     countMissingIconCandidates: createIconActionsInstance.countMissingIconCandidates,
     refreshMissingIcons: createIconActionsInstance.refreshMissingIcons,
     backfillIconCache: createIconActionsInstance.backfillIconCache,
-    syncAllSharedEntities: createShareActionsInstance.syncAllSharedEntities,
     loadFromSnapshot: createSnapshotActionsInstance.loadFromSnapshot,
     setData: createSnapshotActionsInstance.setData,
     clearAllBookmarks: createSnapshotActionsInstance.clearAllBookmarks,

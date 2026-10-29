@@ -1,7 +1,7 @@
 import type { Bookmark, SubGroup } from '@/types/bookmark'
 import { uid } from '@/stores/bookmarkSeed'
 import type { BookmarkActions, BookmarkGet, BookmarkCommit } from './store-types'
-import { clone, resolveBookmarkLocations } from './common'
+import { clone } from './common'
 
 export function createBookmarkActions(get: BookmarkGet, commit: BookmarkCommit): Pick<BookmarkActions, 'addBookmark' | 'updateBookmark' | 'updateBookmarkLocations'> {
   return {
@@ -29,19 +29,6 @@ export function createBookmarkActions(get: BookmarkGet, commit: BookmarkCommit):
       })
 
       commit(groups, bookmarks)
-
-      get().scheduleBookmarkSync(bookmark.id, { updatedAt: now })
-      const affectedSubKeys = new Set<string>()
-      locations.forEach((loc) => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
-      affectedSubKeys.forEach((key) => {
-        const [groupId, subId] = key.split(':')
-        if (groupId && subId) get().scheduleSubGroupSync(groupId, subId, { updatedAt: now })
-      })
-      const affectedGroupIds = new Set<string>()
-      locations.forEach((loc) => affectedGroupIds.add(loc.groupId))
-      affectedGroupIds.forEach((groupId) => {
-        get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
-      })
       return bookmark
     },
 
@@ -59,7 +46,6 @@ export function createBookmarkActions(get: BookmarkGet, commit: BookmarkCommit):
       if (updater.url && updater.url !== originalUrl && (!originalIcon || originalIcon.type === 'text')) {
         void get().refreshSingleIcon(bookmark)
       }
-      get().scheduleBookmarkSync(bookmark.id, { updatedAt: now })
     },
 
     updateBookmarkLocations: (bookmarkId, newLocations) => {
@@ -67,8 +53,6 @@ export function createBookmarkActions(get: BookmarkGet, commit: BookmarkCommit):
       const bookmarks = clone(get().bookmarks)
       const now = Date.now()
       const bookmark = bookmarks.find((b) => b.id === bookmarkId)
-      const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bookmarkId)
-      const previousShareIds = get().getShareIdsFromLocations(previousLocations)
       const newLocSet = new Set(newLocations.map((loc) => `${loc.groupId}:${loc.subGroupId}`))
 
       groups.forEach((g) => {
@@ -104,21 +88,6 @@ export function createBookmarkActions(get: BookmarkGet, commit: BookmarkCommit):
       }
 
       commit(groups, bookmarks)
-
-      const affectedSubKeys = new Set<string>()
-      previousLocations.forEach((loc) => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
-      newLocations.forEach((loc) => affectedSubKeys.add(`${loc.groupId}:${loc.subGroupId}`))
-      affectedSubKeys.forEach((key) => {
-        const [groupId, subId] = key.split(':')
-        if (groupId && subId) get().scheduleSubGroupSync(groupId, subId, { updatedAt: now })
-      })
-      const affectedGroupIds = new Set<string>()
-      previousLocations.forEach((loc) => affectedGroupIds.add(loc.groupId))
-      newLocations.forEach((loc) => affectedGroupIds.add(loc.groupId))
-      affectedGroupIds.forEach((groupId) => {
-        get().scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === groupId) })
-      })
-      get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
     }
   }
 }
