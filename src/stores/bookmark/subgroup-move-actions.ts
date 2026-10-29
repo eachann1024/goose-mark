@@ -13,16 +13,8 @@ export function createSubgroupMoveActions(get: BookmarkGet, commit: BookmarkComm
       if (!sourceGroup || !targetGroup) return false
       const subIdx = sourceGroup.children.findIndex((c) => c.id === subId)
       if (subIdx === -1) return false
-      const previousSubShareIds = get().getShareIdsFromSubGroup(sourceGroupId, subId)
       const [sub] = sourceGroup.children.splice(subIdx, 1)
       const now = Date.now()
-
-      const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
-      sub.bookmarkIds.forEach((bid) => {
-        const bookmark = bookmarks.find((b) => b.id === bid)
-        const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bid)
-        bookmarkPreviousShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
-      })
 
       targetGroup.children.push(sub)
       sourceGroup.updatedAt = now
@@ -43,13 +35,6 @@ export function createSubgroupMoveActions(get: BookmarkGet, commit: BookmarkComm
       }
 
       commit(groups, bookmarks)
-
-      bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
-        get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
-      })
-      get().scheduleSubGroupSync(targetGroupId, subId, { updatedAt: now, previousShareIds: previousSubShareIds })
-      get().scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === sourceGroupId) })
-      get().scheduleGroupSync(targetGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === targetGroupId) })
       return true
     },
 
@@ -60,23 +45,15 @@ export function createSubgroupMoveActions(get: BookmarkGet, commit: BookmarkComm
       if (!sourceGroup) return null
       const subIdx = sourceGroup.children.findIndex((c) => c.id === subId)
       if (subIdx === -1) return null
-      const previousSubShareIds = get().getShareIdsFromSubGroup(sourceGroupId, subId)
       const [sub] = sourceGroup.children.splice(subIdx, 1)
       const now = Date.now()
-
-      const bookmarkPreviousShareIdsMap = new Map<string, string[]>()
-      sub.bookmarkIds.forEach((bid) => {
-        const bookmark = bookmarks.find((b) => b.id === bid)
-        const previousLocations = bookmark ? resolveBookmarkLocations(bookmark, get().getBookmarkLocations) : get().getBookmarkLocations(bid)
-        bookmarkPreviousShareIdsMap.set(bid, get().getShareIdsFromLocations(previousLocations))
-      })
 
       const newGroup: Group = {
         id: uid(),
         name: sub.name,
         createdAt: now,
         updatedAt: now,
-        children: [{ id: sub.id, name: '默认', bookmarkIds: sub.bookmarkIds, createdAt: sub.createdAt, updatedAt: now }]
+        children: [{ ...sub, name: '默认', updatedAt: now }]
       }
       const trashIdx = groups.findIndex((g) => g.id === TRASH_GROUP_ID)
       if (trashIdx !== -1) groups.splice(trashIdx, 0, newGroup)
@@ -99,13 +76,6 @@ export function createSubgroupMoveActions(get: BookmarkGet, commit: BookmarkComm
       }
 
       commit(groups, bookmarks, { activeGroupId: newGroup.id, activeSubGroupId: sub.id })
-
-      bookmarkPreviousShareIdsMap.forEach((previousShareIds, bookmarkId) => {
-        get().scheduleBookmarkSync(bookmarkId, { updatedAt: now, previousShareIds })
-      })
-      get().scheduleSubGroupSync(newGroup.id, sub.id, { updatedAt: now, previousShareIds: previousSubShareIds })
-      get().scheduleGroupSync(sourceGroupId, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === sourceGroupId) })
-      get().scheduleGroupSync(newGroup.id, { updatedAt: now, orderIndex: groups.findIndex((g) => g.id === newGroup.id) })
       return newGroup
     }
   }
