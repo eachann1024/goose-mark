@@ -3,7 +3,9 @@ import confetti, { type Options } from 'canvas-confetti'
 import { AnimatePresence, LayoutGroup, motion, useAnimate, useReducedMotion, type Transition } from 'motion/react'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { AI_SAVE_STEPS, startAISave, useAISaveSession, type AISaveStep } from '@/stores/aiSaveSession'
+import { TRASH_GROUP_ID, useBookmarkStore } from '@/stores/bookmark'
 import type { BookmarkLocation, IconSource } from '@/types/bookmark'
+import { AISaveMovePicker, type MoveGroup } from './AISaveMovePicker'
 import { Ico } from './icon'
 import './ai-save.css'
 
@@ -12,7 +14,6 @@ const EASE_MOVE = [0.22, 1, 0.36, 1] as const
 const EASE_FADE = [0.4, 0, 1, 1] as const
 /** 弹簧：阻尼比 ζ = damping / (2·√stiffness) ≈ 0.8，无明显回弹 */
 const SPRING_SETTLE: Transition = { type: 'spring', stiffness: 380, damping: 31 }
-const SPRING_CHIP: Transition = { type: 'spring', stiffness: 500, damping: 36 }
 const SPRING_PIXEL: Transition = { type: 'spring', stiffness: 260, damping: 26 }
 const MORPH: Transition = { duration: 0.36, ease: EASE_MOVE }
 const FADE_OUT: Transition = { duration: 0.2, ease: EASE_FADE }
@@ -162,48 +163,46 @@ function DescReveal({ text, reduced }: { text: string; reduced: boolean }) {
   )
 }
 
-function PathReveal({ path, reduced }: { path: { groupName: string; subGroupName: string; createdGroup: boolean; createdSub: boolean }; reduced: boolean }) {
-  const chips = [
-    { name: path.groupName, created: path.createdGroup, icon: true },
-    { name: path.subGroupName, created: path.createdSub, icon: false }
-  ]
-  return (
-    <div className="ais-path">
-      {chips.map((chip, i) => (
-        <span key={i} className="ais-path-item">
-          {i > 0 && (
-            <motion.span
-              className="ais-path-sep"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.16, delay: reduced ? 0 : MORPH_LEAD + i * 0.14 }}
-            >
-              <Ico name="chevron-right" />
-            </motion.span>
-          )}
-          <motion.span
-            className={`ais-chip${chip.created ? ' is-new' : ''}`}
-            initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.88 }}
-            animate={reduced ? { opacity: 1 } : { opacity: 1, scale: 1 }}
-            transition={reduced ? { duration: 0.2 } : { ...SPRING_CHIP, delay: MORPH_LEAD + i * 0.14 }}
-          >
-            {chip.icon && <Ico name="folder" />}
-            {chip.name}
-          </motion.span>
-        </span>
-      ))}
-    </div>
-  )
+interface SavePlace {
+  groupId: string
+  subGroupId: string
+  groupName: string
+  subGroupName: string
+}
+
+/** 与拖拽跨分组同一条 moveBookmarkToSubGroup。 */
+function moveSavedBookmark(
+  bookmarkId: string,
+  from: { groupId: string; subGroupId: string },
+  to: { groupId: string; subGroupId: string }
+): SavePlace | null {
+  if (from.groupId === to.groupId && from.subGroupId === to.subGroupId) return null
+  const ok = useBookmarkStore.getState().moveBookmarkToSubGroup(bookmarkId, from.groupId, from.subGroupId, to.groupId, to.subGroupId)
+  if (!ok) return null
+  const group = useBookmarkStore.getState().groups.find((g) => g.id === to.groupId)
+  const sub = group?.children.find((s) => s.id === to.subGroupId)
+  if (!group || !sub) return null
+  return { groupId: group.id, subGroupId: sub.id, groupName: group.name, subGroupName: sub.name }
+}
+
+function inkOn(bg: string) {
+  const m = /^#([0-9a-f]{6})$/i.exec(bg.trim())
+  if (!m) return '#fff'
+  const n = parseInt(m[1], 16)
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return (r * 299 + g * 587 + b * 114) / 1000 > 160 ? '#1f1e1d' : '#fff'
 }
 
 // ---- 图标揭示 ----
-const AVATAR = 56
+const AVATAR = 60
 const PIXEL_GRID = 7
 
 function Monogram({ letter, bg, reduced }: { letter: string; bg?: string; reduced: boolean }) {
-  const size = letter.length > 2 ? 15 : letter.length > 1 ? 19 : 24
+  const size = letter.length > 2 ? 15 : letter.length > 1 ? 19 : 28
   return (
-    <span className="ais-mono" style={bg ? { background: bg } : undefined}>
+    <span className="ais-mono" style={bg ? { background: bg, color: inkOn(bg) } : undefined}>
       <span className="ais-mono-mask">
         <motion.span
           className="ais-mono-letter"
@@ -413,6 +412,16 @@ const LAYER_COUNT = 5
 function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: BookmarkLocation) => void }) {
   const reduced = !!useReducedMotion()
   const s = useAISaveSession()
+  const stageRef = useRef<HTMLDivElement>(null)
+  const pathRef = useRef<HTMLButtonElement>(null)
+  const groups = useBookmarkStore((st) => st.groups)
+  const moveGroups = useMemo<MoveGroup[]>(() => groups
+    .filter((g) => g.id !== TRASH_GROUP_ID)
+    .map((g) => ({
+      id: g.id,
+      name: g.name,
+      children: g.children.map((c) => ({ id: c.id, name: c.name, count: c.bookmarkIds.length }))
+    })), [groups])
   const variant = useMemo(() => ICON_VARIANTS[Math.floor(Math.random() * ICON_VARIANTS.length)], [])
   const iconSrc = useIconSource(s.icon)
   const letter = useMemo(() => {
@@ -447,6 +456,86 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
 
   const settled = finished && revealed >= LAYER_COUNT && !busy
   const failed = s.phase === 'error'
+  const basePlace: SavePlace | null = s.path && s.location
+    ? { groupId: s.location.groupId, subGroupId: s.location.subGroupId, groupName: s.path.groupName, subGroupName: s.path.subGroupName }
+    : null
+  const [place, setPlace] = useState<SavePlace | null>(null)
+  const shown = place ?? basePlace
+  const aiPick = useRef<{ groupId: string; subGroupId: string } | null>(null)
+  if (shown && !aiPick.current) aiPick.current = { groupId: shown.groupId, subGroupId: shown.subGroupId }
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [undoPlace, setUndoPlace] = useState<SavePlace | null>(null)
+  const [swapKey, setSwapKey] = useState(0)
+  const [moveTick, setMoveTick] = useState(0)
+  const [pulsing, setPulsing] = useState(false)
+  const [movedOn, setMovedOn] = useState(false)
+  const [toastOn, setToastOn] = useState(false)
+  const [toastText, setToastText] = useState('')
+  const movedTimer = useRef<number | null>(null)
+  const toastTimer = useRef<number | null>(null)
+  const interactive = settled && !!s.bookmarkId && !!shown
+
+  useEffect(() => () => {
+    if (movedTimer.current) window.clearTimeout(movedTimer.current)
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+  }, [])
+  useEffect(() => {
+    if (!moveTick || reduced) return
+    setPulsing(true)
+    const timer = window.setTimeout(() => setPulsing(false), 900)
+    return () => window.clearTimeout(timer)
+  }, [moveTick, reduced])
+
+  const flashMoved = () => {
+    setMovedOn(false)
+    requestAnimationFrame(() => setMovedOn(true))
+    if (movedTimer.current) window.clearTimeout(movedTimer.current)
+    movedTimer.current = window.setTimeout(() => setMovedOn(false), 1800)
+  }
+  const showToast = (text: string) => {
+    setToastText(text)
+    setToastOn(false)
+    requestAnimationFrame(() => setToastOn(true))
+    if (toastTimer.current) window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToastOn(false), 3200)
+  }
+  const createSub = (groupId: string, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) return null
+    const store = useBookmarkStore.getState()
+    const keep = { activeGroupId: store.activeGroupId, activeSubGroupId: store.activeSubGroupId }
+    const sub = store.addSubGroup(trimmed, groupId)
+    useBookmarkStore.setState(keep)
+    return sub ? { id: sub.id } : null
+  }
+  const commitMove = (groupId: string, subGroupId: string) => {
+    if (!shown || !s.bookmarkId) return
+    if (shown.groupId === groupId && shown.subGroupId === subGroupId) {
+      setPickerOpen(false)
+      return
+    }
+    const next = moveSavedBookmark(s.bookmarkId, shown, { groupId, subGroupId })
+    if (!next) return
+    setUndoPlace(shown)
+    setPlace(next)
+    setSwapKey((k) => k + 1)
+    setMoveTick((k) => k + 1)
+    setPickerOpen(false)
+    flashMoved()
+    showToast(`已移到 ${next.groupName} › ${next.subGroupName}`)
+  }
+  const undoMove = () => {
+    if (!undoPlace || !shown || !s.bookmarkId) return
+    const next = moveSavedBookmark(s.bookmarkId, shown, undoPlace)
+    if (!next) return
+    setPlace(next)
+    setUndoPlace(null)
+    setToastOn(false)
+    setMovedOn(false)
+    if (movedTimer.current) window.clearTimeout(movedTimer.current)
+    setSwapKey((k) => k + 1)
+    setMoveTick((k) => k + 1)
+  }
 
   // 完成：卡片轻微落定
   const [cardScope, animateCard] = useAnimate<HTMLDivElement>()
@@ -482,7 +571,7 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
   }, [showActions])
 
   return (
-    <div className="ais-stage">
+    <div className="ais-stage" ref={stageRef}>
       {settled && s.phase === 'done' && !reduced && <SaveConfetti />}
       <div className="ais-heading-row">
         <AnimatePresence mode="wait" initial={false}>
@@ -501,7 +590,7 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
 
       <div ref={cardScope} className="ais-card-shell">
         <LayoutGroup>
-          <motion.div layout={!reduced} transition={MORPH} className={`ais-card${failed ? ' is-failed' : ''}`}>
+          <motion.div layout={!reduced} transition={MORPH} className={`ais-card${failed ? ' is-failed' : ''}${pulsing ? ' is-pulse' : ''}`}>
             <Slot ready={isShown(0)} pending={pendingLayer === 0} width="58%" height={14} reduced={reduced} className="ais-url-slot">
               {s.url && <UrlReveal url={s.url} reduced={reduced} />}
             </Slot>
@@ -535,10 +624,39 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
               </div>
             </div>
 
-            {!(isShown(4) && !s.path) && (
+            {!(isShown(4) && !shown) && (
               <div className="ais-foot">
-                <Slot ready={isShown(4)} pending={pendingLayer === 4} width={150} height={24} reduced={reduced} className="ais-path-slot">
-                  {s.path && <PathReveal path={s.path} reduced={reduced} />}
+                <Slot ready={isShown(4)} pending={pendingLayer === 4} width={230} height={36} reduced={reduced} className="ais-path-slot">
+                  {shown && (
+                    <div className="ais-path-row">
+                      <span className="ais-path-lbl">存到</span>
+                      <button
+                        ref={pathRef}
+                        type="button"
+                        className={`ais-path${pickerOpen ? ' is-open' : ''}`}
+                        disabled={!interactive}
+                        aria-haspopup={interactive ? 'dialog' : undefined}
+                        aria-expanded={interactive ? pickerOpen : undefined}
+                        aria-controls={interactive ? 'ais-picker' : undefined}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (!interactive) return
+                          setPickerOpen((open) => !open)
+                        }}
+                      >
+                        <span key={`${swapKey}-g`} className={`ais-seg${swapKey && !reduced ? ' is-swap' : ''}`}>
+                          <Ico name="folder" />
+                          <span className="ais-seg-name">{shown.groupName}</span>
+                        </span>
+                        <span className="ais-path-sep"><Ico name="chevron-right" /></span>
+                        <span key={`${swapKey}-s`} className={`ais-seg${swapKey && !reduced ? ' is-swap' : ''}`}>
+                          <span className="ais-seg-name">{shown.subGroupName}</span>
+                        </span>
+                        <span className="ais-caret"><Ico name="chevron-down" /></span>
+                      </button>
+                      <span className={`ais-moved${movedOn ? ' is-show' : ''}`}><Ico name="check" />已移动</span>
+                    </div>
+                  )}
                 </Slot>
               </div>
             )}
@@ -565,16 +683,35 @@ function SessionView({ onBack, onJump }: { onBack: () => void; onJump: (loc: Boo
                   <button ref={primaryRef} type="button" className="ais-btn is-primary" onClick={() => startAISave(s.input)}>
                     <Ico name="rotate-ccw" />重试
                   </button>
-                ) : !failed && s.location ? (
-                  <button ref={primaryRef} type="button" className="ais-btn is-primary" onClick={() => onJump(s.location!)}>
+                ) : !failed && shown ? (
+                  <button type="button" className="ais-btn" onClick={() => onJump({ groupId: shown.groupId, subGroupId: shown.subGroupId })}>
                     <Ico name="folder-open" />查看位置
                   </button>
                 ) : null}
-                <button ref={failed && s.rejected ? primaryRef : undefined} type="button" className={failed && s.rejected ? 'ais-btn is-primary' : 'ais-btn'} onClick={onBack}>返回</button>
+                <button ref={failed && !s.rejected ? undefined : primaryRef} type="button" className={!failed || s.rejected ? 'ais-btn is-primary' : 'ais-btn'} onClick={onBack}>{failed ? '返回' : '完成'}</button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
+      </div>
+      {interactive && shown && aiPick.current && (
+        <AISaveMovePicker
+          open={pickerOpen}
+          groups={moveGroups}
+          currentGroupId={shown.groupId}
+          currentSubId={shown.subGroupId}
+          aiGroupId={aiPick.current.groupId}
+          aiSubId={aiPick.current.subGroupId}
+          anchorRef={pathRef}
+          stageRef={stageRef}
+          onClose={() => setPickerOpen(false)}
+          onConfirm={commitMove}
+          onCreateSub={createSub}
+        />
+      )}
+      <div className={`ais-toast${toastOn ? ' is-show' : ''}`} role="status" aria-hidden={!toastOn} inert={!toastOn}>
+        <span className="ais-toast-msg">{toastText}</span>
+        <button type="button" onClick={undoMove}>撤销</button>
       </div>
     </div>
   )
