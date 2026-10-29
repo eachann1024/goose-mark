@@ -42,6 +42,7 @@ import { HomeTemplatePage } from './HomeTemplatePage'
 import { HomeBookmarkPanels } from './HomeBookmarkPanels'
 import { HomeSettingsPage } from './SettingsContent'
 import { HomeContextMenu } from './HomeContextMenu'
+import { BookmarkDetailDrawer } from './BookmarkDetailDrawer'
 import { HomeToast } from './HomeToast'
 
 export default function HomePage() {
@@ -126,6 +127,7 @@ export default function HomePage() {
     homeViewMode
   })
   const [selectedId, setSelectedId] = useState<string | null>(() => initialContinuityRef.current?.selectedId ?? null)
+  const [detailId, setDetailId] = useState<string | null>(null)
   // 搜索词仅跟当前会话的搜索框同步；退出插件后 subInput 会被清空，再次唤出不得残留搜索态
   // 书签拖拽中的项（用于 DragOverlay 跟手预览）
   const [activeDragItem, setActiveDragItem] = useState<HomeItem | null>(null)
@@ -222,7 +224,7 @@ export default function HomePage() {
     headerSearchRef
   })
 
-  const { keptGroups, searchResultItems, universalFallbackItems, aiCreateItem, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef } = useHomeSearchResults({
+  const { keptGroups, filteredGroups, searchResultItems, universalFallbackItems, aiCreateItem, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef } = useHomeSearchResults({
     activeGroupId,
     homeGroups,
     searchVal,
@@ -544,6 +546,20 @@ export default function HomePage() {
     return null
   }, [homeGroups, selectedId])
 
+  const detail = useMemo(() => {
+    if (!detailId) return null
+    for (const g of homeGroups) for (const s of g.subs) {
+      const item = s.items.find((b) => b.id === detailId)
+      if (item) return { item, groupName: g.name, subName: s.name }
+    }
+    return null
+  }, [homeGroups, detailId])
+
+  const inspectHomeItem = useCallback((item: HomeItem) => {
+    setSelectedId(item.id)
+    setDetailId(item.id)
+  }, [])
+
   const rootCls = [
     'goose-home',
     toastOpen ? 'toast-open' : '',
@@ -609,6 +625,10 @@ export default function HomePage() {
             avatarRef={avatarRef}
             paOpen={paOpen}
             setPaOpen={setPaOpen}
+            onFeedback={() => {
+              void navigator.clipboard?.writeText('each1026@gmail.com')
+              fireToast('反馈邮箱：each1026@gmail.com · 已复制')
+            }}
           />
 
         {/* 一级 Tab 右键菜单 */}
@@ -670,6 +690,7 @@ export default function HomePage() {
             openCtx={openCtx}
             searchVal={searchVal}
             searchResultItems={searchResultItems}
+            searchGroups={isSearching ? filteredGroups : []}
             gridColumns={gridColumns}
             selectedId={selectedId}
             universalFallbackItems={universalFallbackItems}
@@ -680,6 +701,8 @@ export default function HomePage() {
             clearSearch={clearSearch}
             keptGroups={keptGroups}
             activeDragItem={activeDragItem}
+            onViewChange={changeView}
+            onInspect={inspectHomeItem}
           />
 
         {/* ---------- Settings ---------- */}
@@ -703,6 +726,29 @@ export default function HomePage() {
 
         {/* ---------- Group manage page ---------- */}
         {screen === 'groups' && <GroupManagePage onBack={() => setScreen('settings')} />}
+
+        <BookmarkDetailDrawer
+          item={screen === 'list' || screen === 'grid' ? detail?.item ?? null : null}
+          groupName={detail?.groupName || ''}
+          subName={detail?.subName || ''}
+          onClose={() => setDetailId(null)}
+          onEdit={() => {
+            if (!detail) return
+            setFormEditItem(detail.item)
+            setDetailId(null)
+            setScreen('add')
+          }}
+          onOpen={() => {
+            if (!detail) return
+            setDetailId(null)
+            openHomeItem(detail.item)
+          }}
+          onCopy={() => {
+            if (!detail) return
+            const real = bookmarks.find((b) => b.id === detail.item.id)
+            if (real) void copyBookmarkUrl(real)
+          }}
+        />
 
         {/* ---------- Context menu ---------- */}
         <HomeContextMenu

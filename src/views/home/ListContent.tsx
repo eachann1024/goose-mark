@@ -1,5 +1,5 @@
+import type * as React from 'react'
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable'
-import { Ico } from './icon'
 import { type HomeGroup, type HomeItem } from './viewModel'
 import { BookmarkCard } from './BookmarkCard'
 import { SecBlock, SortableCard, DropGap, useDragDropGap, insertDropGap } from './BookmarkDragParts'
@@ -13,7 +13,9 @@ export function ListContent({
   onOpen,
   searching,
   universalItems,
-  searchQuery
+  searchQuery,
+  onInspect,
+  onMore,
 }: {
   groups: HomeGroup[]
   selectedId: string | null
@@ -22,6 +24,8 @@ export function ListContent({
   searching?: boolean
   universalItems?: HomeItem[]
   searchQuery?: string
+  onInspect?: (item: HomeItem) => void
+  onMore?: (e: React.MouseEvent, item: HomeItem) => void
 }) {
   const dropGap = useDragDropGap(groups, 'list')
 
@@ -39,8 +43,8 @@ export function ListContent({
     }
     return (
       <div className="empty">
-        <Ico name={searching ? 'search-x' : 'inbox'} />
-        <span>{searching ? '没有找到匹配的书签' : '还没有书签，点右上角 + 新增第一个'}</span>
+        <b>{searching ? '没有找到匹配的书签' : '还没有书签'}</b>
+        <span>{searching ? '换个关键词试试，或者直接粘贴网址让 AI 收藏' : '点右上角收集，新增第一个'}</span>
       </div>
     )
   }
@@ -62,9 +66,18 @@ export function ListContent({
                 gap ? <DropGap height={gap.height} view="list" /> : <div className="sec-empty">暂无书签</div>
               ) : searching ? (
                 s.items.map((b) => (
-                  <div key={`${g.id}-${s.id}-${b.id}`} onClick={() => { onSelect(b.id); onOpen?.(b) }}>
-                    <BookmarkCard item={b} selected={b.id === selectedId} groupId={g.id} subId={s.id} />
-                  </div>
+                  <BookmarkCard
+                    key={`${g.id}-${s.id}-${b.id}`}
+                    item={b}
+                    selected={b.id === selectedId}
+                    groupId={g.id}
+                    subId={s.id}
+                    query={searchQuery}
+                    showHost
+                    onMore={onMore ? (e) => onMore(e, b) : undefined}
+                    onClick={() => { onSelect(b.id); onInspect?.(b) }}
+                    onDoubleClick={() => onOpen?.(b)}
+                  />
                 ))
               ) : (
                 <SortableContext items={s.items.map((b) => bookmarkDragId(g.id, s.id, b.id))} strategy={verticalListSortingStrategy}>
@@ -78,6 +91,9 @@ export function ListContent({
                         selected={b.id === selectedId}
                         onSelect={onSelect}
                         onOpen={onOpen}
+                        onInspect={onInspect}
+                        onMore={onMore}
+                        query={searchQuery}
                       />
                     )),
                     gap

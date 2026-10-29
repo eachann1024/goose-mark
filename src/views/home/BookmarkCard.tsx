@@ -5,9 +5,19 @@ import { useSettingsStore } from '@/stores/settings'
 import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { Ico } from './icon'
 import { Image } from '@/components/ui/image'
+import { HighlightText } from './highlight'
 import { type HomeItem } from './viewModel'
 
 /* ============================== 子组件 ============================== */
+
+function hostLabel(url: string): string {
+  try {
+    const parsed = new URL(url.includes('://') ? url : `https://${url}`)
+    return parsed.hostname
+  } catch {
+    return url.replace(/^https?:\/\//, '').split('/')[0]
+  }
+}
 
 export function Fav({ item, cls = 'fav' }: { item: HomeItem; cls?: string }) {
   // 真实图标加载失败（如 favicon 服务 404）时优雅回退到文字首字母
@@ -50,22 +60,30 @@ export function BookmarkCard({
   trailing,
   style,
   onClick,
+  onDoubleClick,
   groupId,
   subId,
   anchorRef,
   disabled,
   dndProps,
+  query,
+  showHost,
+  onMore,
 }: {
   item: HomeItem
   selected?: boolean
   trailing?: React.ReactNode
   style?: React.CSSProperties
   onClick?: () => void
+  onDoubleClick?: () => void
   groupId?: string
   subId?: string
   anchorRef?: React.Ref<HTMLDivElement>
   disabled?: boolean
   dndProps?: Record<string, unknown>
+  query?: string
+  showHost?: boolean
+  onMore?: (e: React.MouseEvent) => void
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
   const fullDescription = useSettingsStore((s) => s.listFullDescription)
@@ -79,15 +97,17 @@ export function BookmarkCard({
       data-group-id={groupId}
       data-sub-id={subId}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       anchorRef={anchorRef}
       disabled={disabled}
       {...(dndProps || {})}
     >
       <Fav item={item} />
       <div className="meta">
-        <div className="ttl">{item.ttl}</div>
-        {showDescription && item.dsc && <div className={`dsc${fullDescription ? ' full' : ''}`}>{item.dsc}</div>}
+        <div className="ttl"><HighlightText text={item.ttl} query={query} /></div>
+        {showDescription && item.dsc && <div className={`dsc${fullDescription ? ' full' : ''}`}><HighlightText text={item.dsc} query={query} /></div>}
         {showDescription && !item.dsc && item.regDomain && <div className="url">{item.regDomain}</div>}
+        {showHost && <div className="dom">{hostLabel(item.url)}</div>}
         {item.tags.length > 0 && (
           <div className="tags">
             {item.tags.map((tag) => (
@@ -97,6 +117,18 @@ export function BookmarkCard({
         )}
       </div>
       {item.pin && <Ico name="pin" className="pin" />}
+      {onMore && (
+        <button
+          type="button"
+          data-more
+          className="more"
+          aria-label="更多"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onMore(e) }}
+        >
+          <Ico name="more-horizontal" />
+        </button>
+      )}
       {trailing}
     </OverflowHoverTooltip>
   )
@@ -107,6 +139,6 @@ export function BookmarkCard({
 /** 宫格图标尺寸映射 */
 export const GRID_ICON_SIZE_PX: Record<string, string> = {
   small: '38px',
-  medium: '46px',
-  large: '56px'
+  medium: '42px',
+  large: '48px'
 }

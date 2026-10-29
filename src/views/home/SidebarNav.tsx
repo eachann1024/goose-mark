@@ -34,6 +34,8 @@ export interface SidebarNavProps {
   activeGroupId: string | null
   activeSubId: string | null
   screen: string
+  onOpenGroups: () => void
+  onOpenTrash: () => void
   onSubClick: (groupId: string, subId: string) => void
   fireToast: (title?: string) => void
   onActiveSubIdFix: (subId: string, groupId: string) => void
@@ -46,6 +48,9 @@ export default function SidebarNav({
   homeGroups,
   activeGroupId,
   activeSubId,
+  screen,
+  onOpenGroups,
+  onOpenTrash,
   onSubClick,
   fireToast,
   onActiveSubIdFix,
@@ -493,6 +498,16 @@ export default function SidebarNav({
           )
         })}
 
+        <div className="side-foot">
+          <button type="button" className={`nav-item${screen === 'groups' ? ' on' : ''}`} onClick={onOpenGroups}>
+            <Ico name="folder" />
+            管理分组
+          </button>
+          <button type="button" className={`nav-item trash${screen === 'trash' ? ' on' : ''}`} onClick={onOpenTrash}>
+            <Ico name="trash-2" />
+            回收站
+          </button>
+        </div>
       </aside>
 
       {/* 侧栏菜单（fixed 定位，逃出 sidebar overflow） */}

@@ -1,10 +1,12 @@
-import { useMemo, type ReactElement } from 'react'
+import { useMemo, type MouseEvent, type ReactElement } from 'react'
 import { useDndContext, useDroppable, closestCenter, pointerWithin, type CollisionDetection } from '@dnd-kit/core'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { type HomeGroup, type HomeItem } from './viewModel'
 import { Fav, BookmarkCard } from './BookmarkCard'
+import { HighlightText } from './highlight'
+import { Ico } from './icon'
 import { resolveDropGap, type DropGapInfo } from './dropGap'
 import { bookmarkDragId } from './bookmarkDragId'
 
@@ -117,7 +119,7 @@ export function SecBlock({
     >
       <div className="sec-head">
         <span className="g">{subName}</span>
-        <span className="s">· {count}</span>
+        <span className="s">{count} 个</span>
       </div>
       {children}
     </div>
@@ -134,6 +136,9 @@ export function SortableCard({
   selected,
   onSelect,
   onOpen,
+  onInspect,
+  onMore,
+  query,
 }: {
   item: HomeItem
   groupId: string
@@ -141,6 +146,9 @@ export function SortableCard({
   selected: boolean
   onSelect: (id: string) => void
   onOpen?: (item: HomeItem) => void
+  onInspect?: (item: HomeItem) => void
+  onMore?: (e: MouseEvent, item: HomeItem) => void
+  query?: string
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: bookmarkDragId(groupId, subId, item.id),
@@ -161,7 +169,11 @@ export function SortableCard({
       anchorRef={setNodeRef}
       disabled={isDragging}
       dndProps={{ ...attributes, ...listeners }}
-      onClick={() => { onSelect(item.id); onOpen?.(item) }}
+      query={query}
+      showHost
+      onMore={onMore ? (e) => onMore(e, item) : undefined}
+      onClick={() => { onSelect(item.id); onInspect?.(item) }}
+      onDoubleClick={() => onOpen?.(item)}
     />
   )
 }
@@ -178,6 +190,9 @@ export function SortableGridCell({
   subClass,
   onSelect,
   onOpen,
+  onInspect,
+  onMore,
+  query,
 }: {
   item: HomeItem
   groupId: string
@@ -187,6 +202,9 @@ export function SortableGridCell({
   subClass: string
   onSelect: (id: string) => void
   onOpen?: (item: HomeItem) => void
+  onInspect?: (item: HomeItem) => void
+  onMore?: (e: MouseEvent, item: HomeItem) => void
+  query?: string
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: bookmarkDragId(groupId, subId, item.id),
@@ -208,13 +226,29 @@ export function SortableGridCell({
       data-item-id={item.id}
       data-group-id={groupId}
       data-sub-id={subId}
-      onClick={() => { onSelect(item.id); onOpen?.(item) }}
       {...attributes}
       {...listeners}
+      onClick={() => { onSelect(item.id); onInspect?.(item) }}
+      onDoubleClick={() => onOpen?.(item)}
     >
       <Fav item={item} />
-      <div className="ttl">{item.ttl}</div>
-      {subText && <div className={subClass}>{subText}</div>}
+      <div className="meta">
+        <div className="ttl"><HighlightText text={item.ttl} query={query} /></div>
+        {subText && <div className={subClass}><HighlightText text={subText} query={query} /></div>}
+      </div>
+      {item.pin && <Ico name="pin" className="pin" />}
+      {onMore && (
+        <button
+          type="button"
+          data-more
+          className="more"
+          aria-label="更多"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => { e.stopPropagation(); onMore(e, item) }}
+        >
+          <Ico name="more-horizontal" />
+        </button>
+      )}
     </OverflowHoverTooltip>
   )
 }
