@@ -31,7 +31,7 @@ export type AICreateEvent =
   | { type: 'site'; icon: IconSource | null; pageTitle: string; pageDesc: string }
   | { type: 'draft'; title: string; description: string }
   | ({ type: 'placement' } & AICreatePath & BookmarkLocation)
-  | { type: 'done'; title: string; placement: Placement }
+  | { type: 'done'; title: string; placement: Placement; bookmarkId: string }
   | {
       type: 'exists'
       title: string
@@ -39,6 +39,7 @@ export type AICreateEvent =
       icon: IconSource | null
       location: BookmarkLocation | null
       path: AICreatePath | null
+      bookmarkId: string | null
     }
   | { type: 'error'; message: string; rejected?: boolean }
 
@@ -202,7 +203,8 @@ async function runSteps(input: string, emit: (event: AICreateEvent) => void): Pr
       description: existing.desc || '',
       icon: existing.icon ?? null,
       location,
-      path: existingPath(location)
+      path: existingPath(location),
+      bookmarkId: existing.id
     })
     return { status: 'exists', title, location }
   }
@@ -248,10 +250,10 @@ async function runSteps(input: string, emit: (event: AICreateEvent) => void): Pr
     permissions
   )
   emit({ type: 'placement', ...placement })
-  useBookmarkStore.getState().addBookmark(
+  const bookmark = useBookmarkStore.getState().addBookmark(
     { title, url, desc, tags: [], icon: siteIcon ?? undefined },
     [{ groupId: placement.groupId, subGroupId: placement.subGroupId }]
   )
-  emit({ type: 'done', title, placement })
+  emit({ type: 'done', title, placement, bookmarkId: bookmark.id })
   return { status: 'created', title, placement }
 }

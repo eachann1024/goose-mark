@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { runAICreate, type AICreateEvent, type AICreatePath } from '@/services/aiCreate'
+import { TRASH_GROUP_ID, useBookmarkStore } from '@/stores/bookmark'
 import type { BookmarkLocation, IconSource } from '@/types/bookmark'
 
 export type AISaveStep = 'judge' | 'detect' | 'fetch' | 'organize' | 'save'
@@ -19,6 +20,8 @@ interface AISaveData {
   description: string | null
   path: AICreatePath | null
   location: BookmarkLocation | null
+  /** 刚保存或已存在的书签，供完成后改分组 */
+  bookmarkId: string | null
   error: string | null
 }
 
@@ -42,6 +45,7 @@ const EMPTY: AISaveData = {
   description: null,
   path: null,
   location: null,
+  bookmarkId: null,
   error: null
 }
 
@@ -80,7 +84,7 @@ export const useAISaveSession = create<AISaveSessionState>((set, get) => ({
         break
       }
       case 'done':
-        set({ phase: 'done' })
+        set({ phase: 'done', bookmarkId: event.bookmarkId })
         break
       case 'exists':
         set({
@@ -89,7 +93,8 @@ export const useAISaveSession = create<AISaveSessionState>((set, get) => ({
           title: event.title,
           description: event.description,
           path: event.path,
-          location: event.location
+          location: event.location,
+          bookmarkId: event.bookmarkId
         })
         break
       case 'error':
@@ -114,53 +119,80 @@ export function startAISave(input: string) {
 }
 
 // ---- 仅开发环境：模拟事件序列，走完各阶段（mock:ok / mock:new / mock:noicon / mock:exists / mock:error）----
+const MOCK_URL = 'https://kimi.moonshot.cn/chat'
+const MOCK_TITLE = 'Kimi 智能助手'
+const MOCK_DESC = '月之暗面出品的对话助手，擅长超长文本阅读、联网搜索与文件解析。'
+
+/** 把模拟书签放进真实分组，完成后的「存到」才能沿用同一条移动逻辑。 */
+function mockPlace(icon: IconSource | null) {
+  const store = useBookmarkStore.getState()
+  const groups = store.groups.filter((g) => g.id !== TRASH_GROUP_ID && g.children.length > 0)
+  const group = groups.find((g) => g.name === 'AI') ?? groups[0]
+  const sub = group?.children[0]
+  if (!group || !sub) return null
+  const bookmark = store.addBookmark(
+    { title: MOCK_TITLE, url: MOCK_URL, desc: MOCK_DESC, tags: [], icon: icon ?? undefined },
+    [{ groupId: group.id, subGroupId: sub.id }]
+  )
+  return {
+    bookmarkId: bookmark.id,
+    groupId: group.id,
+    subGroupId: sub.id,
+    groupName: group.name,
+    subGroupName: sub.name
+  }
+}
+
 async function runMock(variant: string, emit: (event: AICreateEvent) => void) {
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
-  const url = 'https://github.com/pmndrs/zustand'
   await wait(400)
   if (variant === 'reject') {
     emit({ type: 'error', message: '检测不到书签', rejected: true })
     return
   }
   if (variant === 'error') {
-    emit({ type: 'url', url })
+    emit({ type: 'url', url: MOCK_URL })
     await wait(900)
     emit({ type: 'error', message: '请求超时' })
     return
   }
-  emit({ type: 'url', url })
+  const icon: IconSource | null = variant === 'noicon' ? null : { type: 'text', value: 'K', bgColor: '#16171b' }
+  emit({ type: 'url', url: MOCK_URL })
   if (variant === 'exists') {
     await wait(300)
+    const placed = mockPlace(icon)
     emit({
       type: 'exists',
-      title: 'Zustand',
-      description: '轻量的 React 状态管理库',
-      icon: { type: 'remote', src: 'https://github.githubassets.com/favicons/favicon.svg' },
-      location: null,
-      path: { groupName: '开发', subGroupName: '前端', createdGroup: false, createdSub: false }
+      title: MOCK_TITLE,
+      description: MOCK_DESC,
+      icon,
+      location: placed ? { groupId: placed.groupId, subGroupId: placed.subGroupId } : null,
+      path: placed
+        ? { groupName: placed.groupName, subGroupName: placed.subGroupName, createdGroup: false, createdSub: false }
+        : null,
+      bookmarkId: placed?.bookmarkId ?? null
     })
     return
   }
   await wait(1200)
-  emit({
-    type: 'site',
-    icon: variant === 'noicon' ? null : { type: 'remote', src: 'https://github.githubassets.com/favicons/favicon.svg' },
-    pageTitle: 'GitHub - pmndrs/zustand',
-    pageDesc: 'Bear necessities for state management in React'
-  })
+  emit({ type: 'site', icon, pageTitle: MOCK_TITLE, pageDesc: MOCK_DESC })
   await wait(1600)
-  emit({ type: 'draft', title: 'Zustand 状态管理', description: '小巧、快速、可扩展的 React 状态管理方案，基于 hooks 的极简 API，无需 Provider 包裹。' })
+  emit({ type: 'draft', title: MOCK_TITLE, description: MOCK_DESC })
   await wait(400)
-  const created = variant === 'new'
+  const placed = mockPlace(icon)
+  if (!placed) {
+    emit({ type: 'error', message: '没有可用分组' })
+    return
+  }
   const placement = {
-    groupId: 'mock-g',
-    subGroupId: 'mock-s',
-    groupName: '开发',
-    subGroupName: created ? '状态管理' : '前端',
+    groupId: placed.groupId,
+    subGroupId: placed.subGroupId,
+    groupName: placed.groupName,
+    subGroupName: placed.subGroupName,
     createdGroup: false,
-    createdSub: created
+    createdSub: variant === 'new'
   }
   emit({ type: 'placement', ...placement })
   await wait(200)
-  emit({ type: 'done', title: 'Zustand 状态管理', placement })
+  emit({ type: 'done', title: MOCK_TITLE, placement, bookmarkId: placed.bookmarkId })
 }
