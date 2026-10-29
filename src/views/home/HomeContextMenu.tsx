@@ -1,5 +1,6 @@
 import type * as React from 'react'
 import type { Bookmark } from '@/types/bookmark'
+import { useBookmarkStore } from '@/stores/bookmark'
 import { Ico } from './icon'
 import { type HomeItem } from './viewModel'
 import { type Screen, type CtxMode, type CtxState } from './homeTypes'
@@ -69,9 +70,15 @@ export function HomeContextMenu({
                   if (realBookmark) void copyBookmarkUrl(realBookmark) // 成功/失败反馈由 useUIManager toast 桥统一转发
                 }
               }}><Ico name="copy" />复制链接</button>
+              <button onClick={() => {
+                closeCtx()
+                if (!ctxItem) return
+                const real = bookmarks.find((b) => b.id === ctxItem.id)
+                if (real) useBookmarkStore.getState().updateBookmark(real.id, { pinned: !real.pinned })
+              }}><Ico name="pin" />{ctxItem?.pin ? '取消置顶' : '置顶'}</button>
               <button onClick={() => { closeCtx(); setFormEditItem(ctxItem); setScreen('add') }}><Ico name="pencil" />编辑</button>
               <div className="ctx-sep" />
-              <button className="danger" onClick={requestCtxDelete}><Ico name="trash-2" />删除</button>
+              <button className="danger" onClick={requestCtxDelete}><Ico name="trash-2" />移到回收站</button>
             </>
           )}
         </div>

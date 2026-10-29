@@ -5,6 +5,7 @@ import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { Ico } from './icon'
 import { type HomeGroup, type HomeItem } from './viewModel'
 import { Fav, GRID_ICON_SIZE_PX } from './BookmarkCard'
+import { HighlightText } from './highlight'
 import { SecBlock, SortableGridCell, DropGap, useDragDropGap } from './BookmarkDragParts'
 import { SearchEmptyUniversal } from './SearchEmptyUniversal'
 import { bookmarkDragId } from './bookmarkDragId'
@@ -29,6 +30,9 @@ export function GridCells({
   subtitleMode = 'default',
   gapAt,
   gapNode,
+  onInspect,
+  onMore,
+  searchQuery,
 }: {
   items: HomeItem[]
   columns: number
@@ -43,6 +47,9 @@ export function GridCells({
   /** 跨子分组拖拽：落点占位插入到该下标处，让后面的格子真正让位 */
   gapAt?: number | null
   gapNode?: React.ReactNode
+  onInspect?: (item: HomeItem) => void
+  onMore?: (e: React.MouseEvent, item: HomeItem) => void
+  searchQuery?: string
 }) {
   const showDescription = useSettingsStore((s) => s.listShowDescription)
   // 非搜索态（有归属分组）才可拖拽；搜索扁平宫格无 groupId，保持普通渲染
@@ -72,6 +79,9 @@ export function GridCells({
           subClass={subClass}
           onSelect={onSelect}
           onOpen={onOpen}
+          onInspect={onInspect}
+          onMore={onMore}
+          query={searchQuery}
         />
       )
     }
@@ -84,21 +94,34 @@ export function GridCells({
         data-item-id={b.id}
         data-group-id={groupId}
         data-sub-id={subId}
-        onClick={() => { onSelect(b.id); onOpen?.(b) }}
+        onClick={() => { onSelect(b.id); onInspect?.(b) }}
+        onDoubleClick={() => onOpen?.(b)}
       >
         <Fav item={b} />
-        <div className="ttl">{b.ttl}</div>
-        {subText && <div className={subClass}>{subText}</div>}
+        <div className="meta">
+          <div className="ttl"><HighlightText text={b.ttl} query={searchQuery} /></div>
+          {subText && <div className={subClass}><HighlightText text={subText} query={searchQuery} /></div>}
+        </div>
+        {b.pin && <Ico name="pin" className="pin" />}
+        {onMore && (
+          <button
+            type="button"
+            data-more
+            className="more"
+            aria-label="更多"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onMore(e, b) }}
+          >
+            <Ico name="more-horizontal" />
+          </button>
+        )}
       </OverflowHoverTooltip>
     )
   })
   return (
     <div
       className="grid"
-      style={{
-        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
-        '--grid-icon-size': iconSize
-      } as React.CSSProperties}
+      style={{ '--grid-icon-size': iconSize } as React.CSSProperties}
     >
       {canDrag ? (
         <SortableContext items={items.map((b) => bookmarkDragId(groupId!, subId!, b.id))} strategy={rectSortingStrategy}>
@@ -125,7 +148,9 @@ export function GridContent({
   searching,
   searchItems,
   universalItems,
-  searchQuery
+  searchQuery,
+  onInspect,
+  onMore,
 }: {
   groups: HomeGroup[]
   columns: number
@@ -136,6 +161,8 @@ export function GridContent({
   searchItems?: HomeItem[]
   universalItems?: HomeItem[]
   searchQuery?: string
+  onInspect?: (item: HomeItem) => void
+  onMore?: (e: React.MouseEvent, item: HomeItem) => void
 }) {
   const gridIconSize = useSettingsStore((s) => s.gridIconSize)
   const iconSize = GRID_ICON_SIZE_PX[gridIconSize] ?? '46px'
@@ -158,8 +185,8 @@ export function GridContent({
       }
       return (
         <div className="empty">
-          <Ico name="search-x" />
-          <span>没有找到匹配的书签</span>
+          <b>没有找到匹配的书签</b>
+          <span>换个关键词试试，或者直接粘贴网址让 AI 收藏</span>
         </div>
       )
     }
@@ -171,6 +198,9 @@ export function GridContent({
         iconSize={iconSize}
         onSelect={onSelect}
         onOpen={onOpen}
+        onInspect={onInspect}
+        onMore={onMore}
+        searchQuery={searchQuery}
       />
     )
   }
@@ -178,8 +208,8 @@ export function GridContent({
   if (!groups.length) {
     return (
       <div className="empty">
-        <Ico name="inbox" />
-        <span>还没有书签，点右上角 + 新增第一个</span>
+        <b>还没有书签</b>
+        <span>点右上角收集，新增第一个</span>
       </div>
     )
   }
@@ -208,6 +238,8 @@ export function GridContent({
                   iconSize={iconSize}
                   onSelect={onSelect}
                   onOpen={onOpen}
+                  onInspect={onInspect}
+                  onMore={onMore}
                   groupId={g.id}
                   subId={s.id}
                   gapAt={gap?.index ?? null}

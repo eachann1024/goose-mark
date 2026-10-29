@@ -13,6 +13,8 @@ import { TrashContent } from './TrashContent'
 import { type HomeNavigationBindings, type HomeSearchBindings, type HomeBookmarkBindings } from './homeInteractionTypes'
 import type { SearchViewMode } from '@/stores/settings'
 import type { SensorDescriptor, SensorOptions } from '@dnd-kit/core'
+import type { ViewMode } from './homeTypes'
+import { Ico } from './icon'
 
 export function HomeBookmarkPanels({
   isSearching,
@@ -37,6 +39,7 @@ export function HomeBookmarkPanels({
   openCtx,
   searchVal,
   searchResultItems,
+  searchGroups,
   gridColumns,
   selectedId,
   universalFallbackItems,
@@ -46,7 +49,9 @@ export function HomeBookmarkPanels({
   openHomeItem,
   clearSearch,
   keptGroups,
-  activeDragItem
+  activeDragItem,
+  onViewChange,
+  onInspect,
 }: Pick<HomeNavigationBindings, 'activeGroupId' | 'activeSubId' | 'screen' | 'setActiveSubId' | 'setScreen' | 'view' | 'selectedId' | 'setSelectedId'> &
   Pick<HomeSearchBindings, 'isSearching' | 'searchViewMode' | 'searchVal' | 'clearSearch'> &
   Pick<HomeBookmarkBindings, 'homeGroups' | 'fireToast' | 'openHomeItem'> & {
@@ -61,13 +66,23 @@ export function HomeBookmarkPanels({
   contentRef: React.RefObject<HTMLDivElement | null>
   openCtx: (e: React.MouseEvent) => void
   searchResultItems: HomeItem[]
+  searchGroups: HomeGroup[]
   gridColumns: number
   universalFallbackItems: HomeItem[]
   aiCreateItem: HomeItem | null
   setSearchViewMode: (mode: SearchViewMode) => void
   keptGroups: HomeGroup[]
   activeDragItem: HomeItem | null
+  onViewChange: (view: ViewMode) => void
+  onInspect: (item: HomeItem) => void
 }) {
+  const activeGroup = homeGroups.find((g) => g.id === activeGroupId) ?? homeGroups[0]
+  const subCount = activeGroup?.subs.length ?? 0
+  const bookmarkCount = activeGroup?.subs.reduce((sum, sub) => sum + sub.items.length, 0) ?? 0
+  const openMore = (e: React.MouseEvent, item: HomeItem) => {
+    setSelectedId(item.id)
+    openCtx(e)
+  }
   return (
     <div className={`app-main${isSearching ? ' is-searching' : ''}`}>
           <DndContext
@@ -83,6 +98,8 @@ export function HomeBookmarkPanels({
               activeGroupId={activeGroupId}
               activeSubId={activeSubId}
               screen={screen}
+              onOpenGroups={() => setScreen('groups')}
+              onOpenTrash={() => setScreen('trash')}
               onSubClick={(groupId, subId) => {
                 setActiveSubId(subId)
                 centerSidebar() // 主动点击 → 侧栏高亮居中
@@ -101,6 +118,20 @@ export function HomeBookmarkPanels({
 
           {/* Center */}
           <div className="center">
+            {screen !== 'trash' && !isSearching && (
+              <div className="content-bar">
+                <h1>{activeGroup?.name || '书签'}</h1>
+                <span className="sum">{subCount} 个子分组 · {bookmarkCount} 个书签</span>
+                <div className="seg" role="group" aria-label="视图">
+                  <button type="button" className={view === 'grid' ? 'on' : ''} onClick={() => onViewChange('grid')}>
+                    <Ico name="layout-grid" />宫格
+                  </button>
+                  <button type="button" className={view === 'list' ? 'on' : ''} onClick={() => onViewChange('list')}>
+                    <Ico name="list" />列表
+                  </button>
+                </div>
+              </div>
+            )}
             {screen === 'trash' ? (
               <TrashContent
                 groups={groups}
@@ -118,6 +149,7 @@ export function HomeBookmarkPanels({
                 <SearchResultsSurface
                   query={searchVal.trim()}
                   items={searchResultItems}
+                  groups={searchGroups}
                   viewMode={searchViewMode}
                   columns={gridColumns}
                   selectedId={selectedId}
@@ -126,6 +158,8 @@ export function HomeBookmarkPanels({
                   onViewModeChange={setSearchViewMode}
                   onSelect={setSelectedId}
                   onOpen={openHomeItem}
+                  onInspect={onInspect}
+                  onMore={openMore}
                   onClear={clearSearch}
                 />
               </div>
@@ -153,6 +187,8 @@ export function HomeBookmarkPanels({
                           selectedId={selectedId}
                           onSelect={setSelectedId}
                           onOpen={openHomeItem}
+                          onInspect={onInspect}
+                          onMore={openMore}
                         />
                       ) : (
                         <ListContent
@@ -160,6 +196,8 @@ export function HomeBookmarkPanels({
                           selectedId={selectedId}
                           onSelect={setSelectedId}
                           onOpen={openHomeItem}
+                          onInspect={onInspect}
+                          onMore={openMore}
                         />
                       )}
                     </div>
@@ -173,8 +211,10 @@ export function HomeBookmarkPanels({
               (isSearching ? searchViewMode === 'grid' : view === 'grid') ? (
                 <div className="gcard drag-overlay">
                   <Fav item={activeDragItem} />
-                  <div className="ttl">{activeDragItem.ttl}</div>
-                  <div className="url">{activeDragItem.host}</div>
+                  <div className="meta">
+                    <div className="ttl">{activeDragItem.ttl}</div>
+                    <div className="dsc">{activeDragItem.dsc || activeDragItem.host}</div>
+                  </div>
                 </div>
               ) : (
                 <div className="drag-overlay">
