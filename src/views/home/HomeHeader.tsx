@@ -42,7 +42,8 @@ export function HomeHeader({
   openNewBookmarkForm,
   avatarRef,
   paOpen,
-  setPaOpen
+  setPaOpen,
+  onFeedback,
 }: Pick<HomeSearchBindings, 'isSearching' | 'clearSearch' | 'searchVal' | 'applySearchVal'> & {
   tabSensors: SensorDescriptor<SensorOptions>[]
   handleTabDragEnd: (event: DragEndEvent) => void
@@ -71,9 +72,11 @@ export function HomeHeader({
   avatarRef: React.RefObject<HTMLButtonElement | null>
   paOpen: boolean
   setPaOpen: React.Dispatch<React.SetStateAction<boolean>>
+  onFeedback: () => void
 }) {
   return (
     <header className="app-header">
+          <div className="brand-mark" aria-hidden>鹅</div>
           {/* 一级分组 Tab 栏（可拖拽排序 + 右键管理） */}
           <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
             <SortableContext items={homeGroups.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
@@ -140,10 +143,11 @@ export function HomeHeader({
               <input
                 ref={headerSearchRef}
                 type="text"
-                placeholder="搜索书签…"
+                placeholder="搜索书签，或粘贴网址"
                 value={searchVal}
                 onChange={(e) => applySearchVal(e.target.value)}
               />
+              <span className="search-kbd">{navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl K'}</span>
               {isSearching && (
                 <button className="search-clear" title="清空搜索 (Esc)" onClick={clearSearch}>
                   <Ico name="x" />
@@ -160,6 +164,11 @@ export function HomeHeader({
               >
                 <Ico name="plus" />
                 收集
+              </button>
+            </InstantTooltip>
+            <InstantTooltip label="反馈">
+              <button type="button" className="header-icon-btn" aria-label="反馈" onClick={onFeedback}>
+                <Ico name="message-square" />
               </button>
             </InstantTooltip>
             <InstantTooltip label="设置">

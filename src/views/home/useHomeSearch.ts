@@ -210,7 +210,7 @@ export function useHomeSearchResults({
     setSelectedId(navigableItemsRef.current[0]?.id ?? null)
   }, [searchVal])
 
-  return { keptGroups, searchResultItems, universalFallbackItems, aiCreateItem, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef }
+  return { keptGroups, filteredGroups, searchResultItems, universalFallbackItems, aiCreateItem, isUniversalFallback, navigableItems, openHomeItem, suppressScrollIntoViewRef }
 }
 
 export function useHomeSearchActions({

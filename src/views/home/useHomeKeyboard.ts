@@ -7,6 +7,17 @@ import { type CtxState } from './homeTypes'
 import { getSearchSurface } from './homeRuntime'
 import { type HomeNavigationBindings, type HomeSearchBindings } from './homeInteractionTypes'
 
+function visibleGridColumnCount(fallback: number): number {
+  const grids = document.querySelectorAll('.goose-home .grid')
+  for (const node of grids) {
+    const el = node as HTMLElement
+    if (el.offsetParent === null) continue
+    const cols = getComputedStyle(el).gridTemplateColumns.split(' ').filter(Boolean).length
+    if (cols > 0) return cols
+  }
+  return fallback
+}
+
 export function useHomeKeyboard({
   screen,
   setScreen,
@@ -151,16 +162,17 @@ export function useHomeKeyboard({
       const total = items.length
       // 全局搜索命令条始终按竖条上下导航；搜索格子 / 首页网格才用列跨步
       const isGrid = (isSearching ? searchViewMode === 'grid' : view === 'grid') && !isUniversalFallback
+      const gridCols = isGrid ? visibleGridColumnCount(GRID_COLS) : GRID_COLS
       let newIdx = idx
 
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault()
-          newIdx = Math.min(idx + (isGrid ? GRID_COLS : 1), total - 1)
+          newIdx = Math.min(idx + (isGrid ? gridCols : 1), total - 1)
           break
         case 'ArrowUp':
           e.preventDefault()
-          newIdx = Math.max(idx - (isGrid ? GRID_COLS : 1), 0)
+          newIdx = Math.max(idx - (isGrid ? gridCols : 1), 0)
           break
         case 'ArrowRight':
           if (!isGrid) return
