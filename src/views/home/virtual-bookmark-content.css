@@ -1,0 +1,9 @@
+.goose-home .virtual-bookmark-content { min-width: 0; }
+.goose-home .virtual-bookmark-content.is-headerless .sec-head { display: none; }
+.goose-home .virtual-bookmark-custom-item { min-width: 0; }
+.goose-home .virtual-bookmark-content .sec-block + .sec-block { margin-top: var(--sec-block-gap); }
+.goose-home .content[data-view="grid"] .virtual-bookmark-content .sec-block + .sec-block { margin-top: calc(var(--sec-block-gap) + 12px); }
+.goose-home .virtual-bookmark-body { min-width: 0; }
+.goose-home .virtual-bookmark-spacer { pointer-events: none; }
+.goose-home .virtual-bookmark-row.is-list { padding-bottom: 4px; }
+.goose-home .virtual-bookmark-row.grid { padding-top: 0; padding-bottom: var(--grid-card-gap); }
