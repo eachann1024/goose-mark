@@ -1,0 +1,46 @@
+{
+  "bookmarks": [
+    {
+      "id": "keep",
+      "title": "首条正常书签"
+    },
+    {
+      "id": "recent",
+      "title": "近期垃圾"
+    }
+  ],
+  "groups": [
+    {
+      "id": "normal",
+      "subs": [
+        {
+          "id": "n",
+          "ids": [
+            "keep"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "g-trash",
+      "subs": [
+        {
+          "id": "t",
+          "ids": [
+            "keep",
+            "recent"
+          ]
+        },
+        {
+          "id": "t2",
+          "ids": [
+            "recent"
+          ]
+        }
+      ]
+    }
+  ],
+  "contentCommits": 2,
+  "sourceUnchanged": true,
+  "body": "迁移正常组\n收集\n子分组\n正常子组\n1\n正常子组\n· 1\n首\n首条正常书签\nexample.com"
+}

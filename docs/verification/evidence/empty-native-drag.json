@@ -1,0 +1,69 @@
+{
+  "orig": [
+    [
+      "ui-0"
+    ],
+    [
+      "ui-1",
+      "ui-3",
+      "ui-4",
+      "ui-2"
+    ],
+    []
+  ],
+  "motion": [
+    {
+      "over": [
+        "ui-c"
+      ],
+      "gap": "area:ui-g:ui-c"
+    },
+    {
+      "over": [
+        "ui-c"
+      ],
+      "gap": "area:ui-g:ui-c"
+    },
+    {
+      "over": [
+        "ui-c"
+      ],
+      "gap": "area:ui-g:ui-c"
+    },
+    {
+      "over": [
+        "ui-c"
+      ],
+      "gap": "area:ui-g:ui-c"
+    },
+    {
+      "over": [
+        "ui-c"
+      ],
+      "gap": "area:ui-g:ui-c"
+    },
+    {
+      "over": [
+        "ui-c"
+      ],
+      "gap": "area:ui-g:ui-c"
+    }
+  ],
+  "after": [
+    [
+      "ui-0"
+    ],
+    [
+      "ui-1",
+      "ui-3",
+      "ui-4"
+    ],
+    [
+      "ui-2"
+    ]
+  ],
+  "events": {
+    "visibility": 0,
+    "blur": 0
+  }
+}

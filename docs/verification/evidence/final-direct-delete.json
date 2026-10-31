@@ -1,0 +1,35 @@
+[
+  {
+    "action": "delete-bookmark",
+    "exists": true,
+    "trash": [
+      "del-b"
+    ],
+    "confirmCalls": 0
+  },
+  {
+    "action": "restored",
+    "visible": true
+  },
+  {
+    "action": "delete-group",
+    "id": "del-g1",
+    "activeGroupId": "del-g2",
+    "activeSubGroupId": "del-s2",
+    "remaining": [
+      "g-trash",
+      "del-g2"
+    ],
+    "confirmCalls": 0
+  },
+  {
+    "action": "delete-group",
+    "id": "del-g2",
+    "activeGroupId": "",
+    "activeSubGroupId": "",
+    "remaining": [
+      "g-trash"
+    ],
+    "confirmCalls": 0
+  }
+]

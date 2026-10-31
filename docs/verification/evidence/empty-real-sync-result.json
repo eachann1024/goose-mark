@@ -1,0 +1,106 @@
+{
+  "reports": [
+    {
+      "trashCount": 10000,
+      "normalCount": 10000,
+      "ms": 5.822167,
+      "findCalls": 0,
+      "transportCalls": 10000,
+      "commitCount": 1,
+      "normalGroupIdentity": true,
+      "normalBookIdentity": true,
+      "remaining": 10000,
+      "trashLength": 0
+    },
+    {
+      "trashCount": 100000,
+      "normalCount": 100000,
+      "ms": 29.042040999999998,
+      "findCalls": 0,
+      "transportCalls": 100000,
+      "commitCount": 1,
+      "normalGroupIdentity": true,
+      "normalBookIdentity": true,
+      "remaining": 100000,
+      "trashLength": 0
+    },
+    {
+      "trashCount": 1000000,
+      "normalCount": 1,
+      "ms": 296.98920899999996,
+      "findCalls": 0,
+      "transportCalls": 1000000,
+      "commitCount": 1,
+      "normalGroupIdentity": true,
+      "normalBookIdentity": true,
+      "remaining": 1,
+      "trashLength": 0
+    }
+  ],
+  "shared": [
+    {
+      "item": {
+        "itemId": "gone",
+        "itemType": "bookmark",
+        "content": null,
+        "isDeleted": true,
+        "updatedAt": 1793457285715
+      },
+      "options": {
+        "previousShareIds": [
+          "shared-parent",
+          "shared-sub"
+        ]
+      }
+    }
+  ],
+  "boundary": {
+    "lookupCalls": 3,
+    "events": [
+      {
+        "item": {
+          "itemId": "live",
+          "itemType": "bookmark",
+          "content": {
+            "id": "live",
+            "title": "payload",
+            "locations": []
+          },
+          "isDeleted": true,
+          "updatedAt": 1793457285715
+        },
+        "options": {
+          "previousShareIds": [
+            "former"
+          ]
+        }
+      },
+      {
+        "item": {
+          "itemId": "live",
+          "itemType": "bookmark",
+          "content": {
+            "id": "explicit"
+          },
+          "isDeleted": false,
+          "updatedAt": 1793457285715
+        },
+        "options": {}
+      },
+      {
+        "item": {
+          "itemId": "live",
+          "itemType": "bookmark",
+          "content": {
+            "id": "live",
+            "title": "payload",
+            "locations": []
+          },
+          "isDeleted": false,
+          "updatedAt": 1793457285715
+        },
+        "options": {}
+      }
+    ]
+  }
+}

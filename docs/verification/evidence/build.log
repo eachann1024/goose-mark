@@ -1,0 +1,40 @@
+$ vite build && node scripts/utools-build.js
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - `__dirname` (vite.config.ts:18:25). Use `import.meta.dirname` instead
+  - import "./vite.debug" without a file extension (vite.config.ts:6:45). Add the file extension
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+vite v8.3.4 building client environment for production...
+transforming...
+✓ 2992 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                        2.38 kB │ gzip:   1.12 kB
+dist/assets/dm-sans-latin-400-normal-COuZ-m7D.woff2   14.13 kB
+dist/assets/dm-sans-latin-500-normal-DywE8Ylw.woff2   14.27 kB
+dist/assets/dm-sans-latin-700-normal-BsB_LQj-.woff2   14.31 kB
+dist/assets/logo-DIXuNoit.png                         71.92 kB
+dist/assets/newsreader-variable-BAidxSZT.woff2       208.13 kB
+dist/assets/index-DLzpmAd2.css                       169.57 kB │ gzip:  25.62 kB
+dist/assets/rolldown-runtime-CXHxssQy.js               0.71 kB │ gzip:   0.42 kB
+dist/assets/vendor-state-BfLUv0iP.js                   1.53 kB │ gzip:   0.77 kB │ map:     7.00 kB
+dist/assets/vendor-icons-BYusFLgv.js                  17.81 kB │ gzip:   6.45 kB │ map:    81.78 kB
+dist/assets/vendor-ai-openai-compatible-D4EcDE3A.js   25.02 kB │ gzip:   6.85 kB │ map:    94.87 kB
+dist/assets/vendor-ai-anthropic-Bb7G2qh3.js           98.32 kB │ gzip:  21.35 kB │ map:   380.67 kB
+dist/assets/vendor-ai-openai-BX5UYtxt.js             105.86 kB │ gzip:  24.98 kB │ map:   418.74 kB
+dist/assets/vendor-ai-shared-DsWYc-Ox.js             120.66 kB │ gzip:  37.12 kB │ map:   503.24 kB
+dist/assets/vendor-ai-sdk-D_-rqQ6N.js                132.43 kB │ gzip:  34.99 kB │ map:   838.27 kB
+dist/assets/vendor-ai-validation-iT5RgHvC.js         160.05 kB │ gzip:  42.15 kB │ map:   782.12 kB
+dist/assets/vendor-react-4VCKnIhL.js                 220.45 kB │ gzip:  69.50 kB │ map: 1,053.53 kB
+dist/assets/vendor-DQLReVCJ.js                       356.19 kB │ gzip: 132.51 kB │ map: 2,120.96 kB
+dist/assets/index-DlHTSoYr.js                        505.73 kB │ gzip: 165.77 kB │ map: 1,547.38 kB
+
+✓ built in 878ms
+✅ preload.js 已复制
+✅ web-fetch.cjs 已复制
+✅ error-reporting.cjs 已复制
+✅ dist/package.json 已创建（type: commonjs）
+✅ browser.html 已复制
+✅ plugin.json 已生成并配置为生产路径
+✅ 已删除 11 个 .map 文件（正式构建不外泄源码）
+🎉 uTools 发布文件准备就绪！请直接打包 dist 目录。
+[utools-build] app/ synced for ZTools

@@ -1,0 +1,184 @@
+{
+  "frames": [
+    {
+      "at": 1293.5,
+      "delta": 767.4000000003725
+    },
+    {
+      "at": 1323.7999999988824,
+      "delta": 30.299999998882413
+    },
+    {
+      "at": 1358,
+      "delta": 34.20000000111759
+    },
+    {
+      "at": 1390.699999999255,
+      "delta": 32.69999999925494
+    },
+    {
+      "at": 1424.7999999988824,
+      "delta": 34.09999999962747
+    },
+    {
+      "at": 1457.2999999988824,
+      "delta": 32.5
+    },
+    {
+      "at": 1491.3999999985099,
+      "delta": 34.09999999962747
+    },
+    {
+      "at": 1523.7999999988824,
+      "delta": 32.40000000037253
+    },
+    {
+      "at": 1558.199999999255,
+      "delta": 34.40000000037253
+    },
+    {
+      "at": 1591.5,
+      "delta": 33.30000000074506
+    },
+    {
+      "at": 1633.5,
+      "delta": 42
+    },
+    {
+      "at": 1665.699999999255,
+      "delta": 32.19999999925494
+    }
+  ],
+  "data": {
+    "seedStart": 399.09999999962747,
+    "longTasks": [
+      {
+        "start": 398.8999999985099,
+        "duration": 123
+      }
+    ],
+    "seedEnd": 522.1999999992549
+  },
+  "top": [
+    {
+      "functionName": "(idle)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1,
+      "ms": 1053.436
+    },
+    {
+      "functionName": "(program)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1,
+      "ms": 220.71
+    },
+    {
+      "functionName": "URL",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1,
+      "ms": 30.803
+    },
+    {
+      "functionName": "",
+      "scriptId": "447",
+      "url": "http://127.0.0.1:7003/assets/rolldown-runtime-CXHxssQy.js",
+      "lineNumber": 0,
+      "columnNumber": 493,
+      "ms": 24.921
+    },
+    {
+      "functionName": "rh",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 59,
+      "columnNumber": 32575,
+      "ms": 17.344
+    },
+    {
+      "functionName": "(garbage collector)",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1,
+      "ms": 12.68
+    },
+    {
+      "functionName": "fA",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 59,
+      "columnNumber": 33273,
+      "ms": 8.783
+    },
+    {
+      "functionName": "sh",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 59,
+      "columnNumber": 34227,
+      "ms": 8.332
+    },
+    {
+      "functionName": "th",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 59,
+      "columnNumber": 32298,
+      "ms": 7.533
+    },
+    {
+      "functionName": "Ri",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 59,
+      "columnNumber": 32856,
+      "ms": 7.372
+    },
+    {
+      "functionName": "Oe",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 59,
+      "columnNumber": 33451,
+      "ms": 3.857
+    },
+    {
+      "functionName": "",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 349,
+      "columnNumber": 126922,
+      "ms": 3.769
+    },
+    {
+      "functionName": "nh",
+      "scriptId": "415",
+      "url": "http://127.0.0.1:7003/assets/perf-eval-CKG-xRC2.js",
+      "lineNumber": 59,
+      "columnNumber": 32742,
+      "ms": 2.265
+    },
+    {
+      "functionName": "getBoundingClientRect",
+      "scriptId": "0",
+      "url": "",
+      "lineNumber": -1,
+      "columnNumber": -1,
+      "ms": 1.744
+    },
+    {
+      "functionName": "",
+      "scriptId": "514",
+      "url": "",
+      "lineNumber": 1,
+      "columnNumber": 296,
+      "ms": 1.731
+    }
+  ]
+}

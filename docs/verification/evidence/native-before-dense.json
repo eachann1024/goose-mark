@@ -1,0 +1,184 @@
+[
+  {
+    "seed": {
+      "size": 100000,
+      "n": 10000,
+      "seedMs": 1019.7999999988824,
+      "cards": 10000
+    },
+    "samples": [
+      {
+        "id": 1,
+        "kind": "switch",
+        "expected": "perf-g1",
+        "commit": 1757.800000000745,
+        "frame": 2029.300000000745,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 2,
+        "kind": "switch",
+        "expected": "perf-g0",
+        "commit": 1469.6000000014901,
+        "frame": 2831.300000000745,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 3,
+        "kind": "switch",
+        "expected": "perf-g1",
+        "commit": 1457.2999999988824,
+        "frame": 2666.5999999996275,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 4,
+        "kind": "menu",
+        "commit": 1361.199999999255,
+        "frame": 1375.0999999996275,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 5,
+        "kind": "menu",
+        "commit": 1374.5999999996275,
+        "frame": 1405.5,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 6,
+        "kind": "menu",
+        "commit": 1161.5999999996275,
+        "frame": 1173.699999999255,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      }
+    ]
+  },
+  {
+    "seed": {
+      "size": 1000000,
+      "n": 10000,
+      "seedMs": 2273.2999999988824,
+      "cards": 10000
+    },
+    "samples": [
+      {
+        "id": 1,
+        "kind": "switch",
+        "expected": "perf-g1",
+        "commit": 2168.5,
+        "frame": 2437.7999999988824,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 2,
+        "kind": "switch",
+        "expected": "perf-g0",
+        "commit": 1692.7000000011176,
+        "frame": 3537.800000000745,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 3,
+        "kind": "switch",
+        "expected": "perf-g1",
+        "commit": 2729.800000000745,
+        "frame": 4002.4000000003725,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 4,
+        "kind": "menu",
+        "commit": 2326.699999999255,
+        "frame": 2336.300000000745,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 5,
+        "kind": "menu",
+        "commit": 1667.5,
+        "frame": 1676.7000000011176,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      },
+      {
+        "id": 6,
+        "kind": "menu",
+        "commit": 1692.800000000745,
+        "frame": 1702.300000000745,
+        "trusted": true,
+        "visible": "visible",
+        "focus": true,
+        "frameVisible": "visible",
+        "frameFocus": true,
+        "cards": 20000,
+        "panels": 2
+      }
+    ]
+  }
+]

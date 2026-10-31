@@ -1,0 +1,78 @@
+[
+  {
+    "action": "same-sub",
+    "order": [
+      [
+        "ui-1",
+        "ui-2",
+        "ui-0"
+      ],
+      [
+        "ui-3",
+        "ui-4"
+      ],
+      []
+    ]
+  },
+  {
+    "action": "cross-sub",
+    "order": [
+      [
+        "ui-2",
+        "ui-0"
+      ],
+      [
+        "ui-1",
+        "ui-3",
+        "ui-4"
+      ],
+      []
+    ]
+  },
+  {
+    "action": "empty-sub",
+    "order": [
+      [
+        "ui-0"
+      ],
+      [
+        "ui-1",
+        "ui-3",
+        "ui-4",
+        "ui-2"
+      ],
+      []
+    ]
+  },
+  {
+    "action": "cancel",
+    "before": [
+      [
+        "ui-0"
+      ],
+      [
+        "ui-1",
+        "ui-3",
+        "ui-4",
+        "ui-2"
+      ],
+      []
+    ],
+    "order": [
+      [
+        "ui-0"
+      ],
+      [
+        "ui-1",
+        "ui-3",
+        "ui-4",
+        "ui-2"
+      ],
+      []
+    ],
+    "events": {
+      "visibility": 0,
+      "blur": 0
+    }
+  }
+]
