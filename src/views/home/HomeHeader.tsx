@@ -1,4 +1,5 @@
 import type * as React from 'react'
+import { memo } from 'react'
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { InstantTooltip } from '@/components/ui/overflow-tooltip'
@@ -11,7 +12,7 @@ import { SortableTab } from './BookmarkDragParts'
 import { type HomeSearchBindings } from './homeInteractionTypes'
 import type { SensorDescriptor, SensorOptions } from '@dnd-kit/core'
 
-export function HomeHeader({
+export const HomeHeader = memo(function HomeHeader({
   tabSensors,
   handleTabDragEnd,
   homeGroups,
@@ -75,7 +76,18 @@ export function HomeHeader({
   onFeedback: () => void
 }) {
   return (
-    <header className="app-header">
+    <header className="app-header" onKeyDown={(e) => {
+      const target = e.target as HTMLElement
+      if (target.closest('button') && e.key === 'Enter') e.stopPropagation()
+      const tab = target.closest<HTMLButtonElement>('.group-tab')
+      if (tab && (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10'))) {
+        e.preventDefault()
+        e.stopPropagation()
+        const rect = tab.getBoundingClientRect()
+        tab.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left, clientY: rect.bottom }))
+        requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.tab-ctx-menu button')?.focus())
+      }
+    }}>
           {/* 一级分组 Tab 栏（可拖拽排序 + 右键管理） */}
           <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
             <SortableContext items={homeGroups.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
@@ -128,7 +140,7 @@ export function HomeHeader({
                     onBlur={() => deferInlineRenameCommit(commitTabAdd)}
                   />
                 ) : (
-                  <button className="tab-add" title="新建分组" onClick={startTabAdd}>
+                  <button className="tab-add" title="新建分组" aria-label="新建分组" onClick={startTabAdd}>
                     <Ico name="plus" />
                   </button>
                 )}
@@ -180,6 +192,7 @@ export function HomeHeader({
                 type="button"
                 ref={avatarRef}
                 className={`header-icon-btn${paOpen ? ' on' : ''}`}
+                aria-label="设置"
                 aria-expanded={paOpen}
                 onClick={() => setPaOpen((o) => !o)}
               >
@@ -189,4 +202,4 @@ export function HomeHeader({
           </div>
         </header>
   )
-}
+})

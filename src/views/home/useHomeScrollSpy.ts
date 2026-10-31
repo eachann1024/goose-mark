@@ -7,9 +7,11 @@ export function useHomeScrollSpy({
   view,
   screen,
   contentRef,
-  isAnchorScrollingRef
+  isAnchorScrollingRef,
+  activeGroupId,
+  isSearching
 }: Pick<HomeNavigationBindings, 'setActiveSubId' | 'view' | 'screen'> &
-  Pick<HomeScrollBindings, 'contentRef' | 'isAnchorScrollingRef'>) {
+  Pick<HomeScrollBindings, 'contentRef' | 'isAnchorScrollingRef'> & { activeGroupId: string; isSearching: boolean }) {
 
   // ---- SidebarNav：activeSubId 修复回调（删除/移动/提升后回退到首个子分组） ----
   const handleActiveSubIdFix = useCallback(
@@ -22,7 +24,7 @@ export function useHomeScrollSpy({
 
   // ---- scroll-spy：列表 / 网格视图滚动时按视口位置反向高亮侧栏分组 ----
   useEffect(() => {
-    if ((view !== 'list' && view !== 'grid') || screen === 'trash') return
+    if ((view !== 'list' && view !== 'grid') || screen === 'trash' || isSearching) return
     const root = contentRef.current
     if (!root) return
     let raf = 0
@@ -52,7 +54,7 @@ export function useHomeScrollSpy({
       cancelAnimationFrame(raf)
       root.removeEventListener('scroll', onScroll)
     }
-  }, [view, screen])
+  }, [view, screen, activeGroupId, isSearching])
 
   return { handleActiveSubIdFix }
 }

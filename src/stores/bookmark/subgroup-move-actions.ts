@@ -6,6 +6,7 @@ import { clone, resolveBookmarkLocations } from './common'
 export function createSubgroupMoveActions(get: BookmarkGet, commit: BookmarkCommit): Pick<BookmarkActions, 'moveSubToGroup' | 'promoteSubToGroup'> {
   return {
     moveSubToGroup: (sourceGroupId, subId, targetGroupId) => {
+      if (get().isReadOnly) return false
       const groups = clone(get().groups)
       const bookmarks = clone(get().bookmarks)
       const sourceGroup = groups.find((g) => g.id === sourceGroupId)
@@ -54,6 +55,7 @@ export function createSubgroupMoveActions(get: BookmarkGet, commit: BookmarkComm
     },
 
     promoteSubToGroup: (sourceGroupId, subId) => {
+      if (get().isReadOnly) return null
       const groups = clone(get().groups)
       const bookmarks = clone(get().bookmarks)
       const sourceGroup = groups.find((g) => g.id === sourceGroupId)

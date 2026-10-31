@@ -7,6 +7,7 @@ export function createGroupActions(get: BookmarkGet, commit: BookmarkCommit): Pi
   return {
     // ---- 分组 ----
     addGroup: (name) => {
+      if (get().isReadOnly) return null
       const groups = clone(get().groups)
       const now = Date.now()
       const group: Group = {
@@ -26,6 +27,7 @@ export function createGroupActions(get: BookmarkGet, commit: BookmarkCommit): Pi
     },
 
     updateGroup: (id, name) => {
+      if (get().isReadOnly) return
       const groups = clone(get().groups)
       const group = groups.find((g) => g.id === id)
       if (!group) return
@@ -37,6 +39,7 @@ export function createGroupActions(get: BookmarkGet, commit: BookmarkCommit): Pi
     },
 
     reorderGroups: (newOrder) => {
+      if (get().isReadOnly) return
       const now = Date.now()
       const current = get().groups
       const trash = current.find((g) => g.id === TRASH_GROUP_ID)
@@ -54,6 +57,7 @@ export function createGroupActions(get: BookmarkGet, commit: BookmarkCommit): Pi
     findGroupByName: (name) => get().groups.find((g) => g.name === name && g.id !== TRASH_GROUP_ID) || null,
 
     removeGroup: (id) => {
+      if (get().isReadOnly || id === TRASH_GROUP_ID) return false
       const groups = clone(get().groups)
       const bookmarks = clone(get().bookmarks)
       const idx = groups.findIndex((g) => g.id === id)
@@ -126,8 +130,9 @@ export function createGroupActions(get: BookmarkGet, commit: BookmarkCommit): Pi
       let nextActiveGroupId = get().activeGroupId
       let nextActiveSubGroupId = get().activeSubGroupId
       if (nextActiveGroupId === id) {
-        nextActiveGroupId = groups[0]?.id ?? ''
-        nextActiveSubGroupId = groups[0]?.children[0]?.id ?? ''
+        const fallbackGroup = groups.find((g) => g.id !== TRASH_GROUP_ID && !g.isDeleted && g.children.some((sub) => !sub.isDeleted))
+        nextActiveGroupId = fallbackGroup?.id ?? ''
+        nextActiveSubGroupId = fallbackGroup?.children.find((sub) => !sub.isDeleted)?.id ?? ''
       }
 
       commit(groups, bookmarks, { activeGroupId: nextActiveGroupId, activeSubGroupId: nextActiveSubGroupId })

@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo } from 'react'
 import type { Group } from '@/types/bookmark'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { iconToDisplayUrl } from '@/services/iconCache'
 import { Ico } from './icon'
 import { Image } from '@/components/ui/image'
+import { useDeleteClickGuard } from './useDeleteClickGuard'
 
 /* ---------- 回收站视图 ---------- */
 export function TrashContent({
@@ -17,18 +18,13 @@ export function TrashContent({
   const readOnly = useBookmarkStore((s) => s.isReadOnly)
   const restoreBookmarkFromTrash = useBookmarkStore((s) => s.restoreBookmarkFromTrash)
   const emptyTrash = useBookmarkStore((s) => s.emptyTrash)
-  const [confirmEmpty, setConfirmEmpty] = useState(false)
-  // 二次确认超时定时器：组件卸载时清理，避免卸载后 setState
-  const confirmTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => {
-    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
-  }, [])
+  const allowRowClick = useDeleteClickGuard()
 
   const trashGroup = groups.find((g) => g.id === TRASH_GROUP_ID)
   const trashItems = useMemo(() => {
     if (!trashGroup) return []
-    const ids = trashGroup.children.flatMap((sub) => sub.bookmarkIds)
-    return bookmarks.filter((b) => ids.includes(b.id))
+    const ids = new Set(trashGroup.children.flatMap((sub) => sub.bookmarkIds))
+    return bookmarks.filter((b) => ids.has(b.id))
   }, [trashGroup, bookmarks])
 
   const handleRestore = (id: string) => {
@@ -37,18 +33,22 @@ export function TrashContent({
   }
 
   const handleEmptyTrash = () => {
-    if (!confirmEmpty) {
-      setConfirmEmpty(true)
-      if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
-      confirmTimerRef.current = setTimeout(() => setConfirmEmpty(false), 3000)
+    if (useBookmarkStore.getState().isReadOnly) return
+    emptyTrash()
+    onToast('回收站已清空')
+  }
+
+  const handlePermanentDelete = (id: string) => {
+    const store = useBookmarkStore.getState()
+    if (store.isReadOnly) return
+    const locations = store.getBookmarkLocations(id)
+    if (!locations.some((loc) => loc.groupId === TRASH_GROUP_ID)) return
+    if (locations.some((loc) => loc.groupId !== TRASH_GROUP_ID)) {
+      onToast('书签仍在其他分组，无法永久删除')
       return
     }
-    if (confirmTimerRef.current) clearTimeout(confirmTimerRef.current)
-    if (readOnly) return
-    if (!window.confirm('确定永久清空回收站？其他书签保留。')) return
-    emptyTrash()
-    setConfirmEmpty(false)
-    onToast('回收站已清空')
+    store.removeBookmarkPermanently(id)
+    onToast('书签已永久删除')
   }
 
   return (
@@ -61,13 +61,13 @@ export function TrashContent({
         </div>
         {trashItems.length > 0 && (
           <button
-            className={`btn btn-ghost${confirmEmpty ? ' danger' : ''}`}
+            className="btn btn-ghost danger"
             style={{ fontSize: 12.5, height: 32, padding: '0 12px' }}
             disabled={readOnly}
             onClick={handleEmptyTrash}
           >
             <Ico name="trash-2" />
-            {confirmEmpty ? '确认清空？' : '清空回收站'}
+            清空回收站
           </button>
         )}
       </div>
@@ -96,10 +96,20 @@ export function TrashContent({
               className="trash-restore-btn"
               title="恢复书签"
               disabled={readOnly}
-              onClick={() => handleRestore(b.id)}
+              onClick={(e) => { if (allowRowClick(e)) handleRestore(b.id) }}
             >
               <Ico name="rotate-ccw" />
               恢复
+            </button>
+            <button
+              className="trash-restore-btn"
+              style={{ color: 'var(--danger)' }}
+              title="永久删除书签"
+              disabled={readOnly}
+              onClick={(e) => { if (allowRowClick(e)) handlePermanentDelete(b.id) }}
+            >
+              <Ico name="trash-2" />
+              永久删除
             </button>
           </div>
         ))

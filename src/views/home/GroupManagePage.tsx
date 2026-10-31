@@ -8,16 +8,17 @@ import { useBookmarkStore, TRASH_GROUP_ID } from '../../stores/bookmark'
 import type { Group, SubGroup } from '../../types/bookmark'
 import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEditKeys'
 import { Ico } from './icon'
+import { useDeleteClickGuard } from './useDeleteClickGuard'
 
 interface GroupManagePageProps {
   onBack: () => void
 }
 
 type EditState = { kind: 'none' } | { kind: 'rename-group'; id: string; val: string } | { kind: 'rename-sub'; id: string; val: string } | { kind: 'new-group'; val: string } | { kind: 'new-sub'; val: string }
-type ConfirmState = { kind: 'none' } | { kind: 'del-group'; id: string } | { kind: 'del-sub'; id: string }
 type MoveState = { kind: 'none' } | { kind: 'move-sub'; id: string }
 
 export default function GroupManagePage({ onBack }: GroupManagePageProps) {
+  const allowDeleteClick = useDeleteClickGuard()
   const allGroups = useBookmarkStore((s) => s.groups)
   // 回收站是特殊分组，不参与管理（reorderGroups 内部会自动把它保留在末尾）
   const groups = allGroups.filter((g) => g.id !== TRASH_GROUP_ID)
@@ -34,7 +35,6 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
 
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
   const [editState, setEditState] = useState<EditState>({ kind: 'none' })
-  const [confirmState, setConfirmState] = useState<ConfirmState>({ kind: 'none' })
   const [moveState, setMoveState] = useState<MoveState>({ kind: 'none' })
 
   const inputRef = useRef<HTMLInputElement>(null)
@@ -66,12 +66,11 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (editState.kind !== 'none') { setEditState({ kind: 'none' }); return }
-        if (confirmState.kind !== 'none') { setConfirmState({ kind: 'none' }); return }
         if (moveState.kind !== 'none') { setMoveState({ kind: 'none' }); return }
         onBack()
       }
     },
-    [editState, confirmState, moveState, onBack]
+    [editState, moveState, onBack]
   )
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
@@ -86,7 +85,7 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
       updateGroup(id, name)
     } else {
       const g = addGroup(name)
-      setSelectedGroupId(g.id)
+      if (g) setSelectedGroupId(g.id)
     }
     setEditState({ kind: 'none' })
   }
@@ -107,7 +106,6 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
 
   const confirmDeleteGroup = (id: string) => {
     removeGroup(id)
-    setConfirmState({ kind: 'none' })
   }
 
   // ---- 子分组操作 ----
@@ -139,7 +137,6 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
   const confirmDeleteSub = (subId: string) => {
     if (!selectedGroupId) return
     removeSubGroup(selectedGroupId, subId)
-    setConfirmState({ kind: 'none' })
   }
 
   const handleMoveSubToGroup = (subId: string, targetGroupId: string) => {
@@ -184,19 +181,6 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
               groups.map((g, idx) => {
                 const isSelected = g.id === selectedGroupId
                 const isRenaming = editState.kind === 'rename-group' && editState.id === g.id
-                const isConfirming = confirmState.kind === 'del-group' && confirmState.id === g.id
-
-                if (isConfirming) {
-                  return (
-                    <div key={g.id} className="gm-item gm-item-confirm">
-                      <span>删除「{g.name}」？含 {g.children.length} 个子分组 · {groupBookmarkCount(g)} 条书签</span>
-                      <div className="gm-confirm-btns">
-                        <button className="gm-btn-danger" onClick={() => confirmDeleteGroup(g.id)}>确认</button>
-                        <button className="gm-btn-ghost" onClick={() => setConfirmState({ kind: 'none' })}>取消</button>
-                      </div>
-                    </div>
-                  )
-                }
 
                 if (isRenaming) {
                   return (
@@ -222,7 +206,6 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                     className={`gm-item${isSelected ? ' on' : ''}`}
                     onClick={() => {
                       setSelectedGroupId(g.id)
-                      setConfirmState({ kind: 'none' })
                       setMoveState({ kind: 'none' })
                     }}
                   >
@@ -246,7 +229,7 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                       <button
                         title="删除"
                         className="danger"
-                        onClick={(e) => { e.stopPropagation(); setConfirmState({ kind: 'del-group', id: g.id }) }}
+                        onClick={(e) => { e.stopPropagation(); if (allowDeleteClick(e)) confirmDeleteGroup(g.id) }}
                       ><Ico name="trash-2" /></button>
                     </div>
                   </div>
@@ -302,20 +285,7 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                 ) : (
                   subs.map((sub, idx) => {
                     const isRenaming = editState.kind === 'rename-sub' && editState.id === sub.id
-                    const isConfirming = confirmState.kind === 'del-sub' && confirmState.id === sub.id
                     const isMoving = moveState.kind === 'move-sub' && moveState.id === sub.id
-
-                    if (isConfirming) {
-                      return (
-                        <div key={sub.id} className="gm-item gm-item-confirm">
-                          <span>删除「{sub.name}」？含 {sub.bookmarkIds.length} 条书签</span>
-                          <div className="gm-confirm-btns">
-                            <button className="gm-btn-danger" onClick={() => confirmDeleteSub(sub.id)}>确认</button>
-                            <button className="gm-btn-ghost" onClick={() => setConfirmState({ kind: 'none' })}>取消</button>
-                          </div>
-                        </div>
-                      )
-                    }
 
                     if (isRenaming) {
                       return (
@@ -381,7 +351,7 @@ export default function GroupManagePage({ onBack }: GroupManagePageProps) {
                           <button
                             title="删除"
                             className="danger"
-                            onClick={() => setConfirmState({ kind: 'del-sub', id: sub.id })}
+                            onClick={(e) => { if (allowDeleteClick(e)) confirmDeleteSub(sub.id) }}
                           ><Ico name="trash-2" /></button>
                         </div>
                       </div>

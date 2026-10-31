@@ -6,7 +6,7 @@ import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { AI_CREATE_ID, AI_CREATE_ITEM } from './useHomeAICreate'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
-import { bookmarkToHomeItem, type HomeGroup, type HomeItem } from './viewModel'
+import { bookmarkToHomeItem, getBookmarkIndex, getHomeGroupIndex, getNavigationIndex, type HomeGroup, type HomeItem } from './viewModel'
 import { type Screen, type ViewMode } from './homeTypes'
 import { UTOOLS_INPUT_EVENT, UTOOLS_SYNC_EVENT, UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT, UNIVERSAL_BOOKMARK_PAYLOAD_SPLIT_RE, type SearchSurface } from './homeRuntime'
 import { type HomeNavigationBindings, type HomeSearchBindings, type HomeBookmarkBindings } from './homeInteractionTypes'
@@ -66,24 +66,6 @@ export function useHomeSearchResults({
   aiCreateFnRef: React.RefObject<(text: string) => void>
 }) {
 
-  // 已访问过的一级分组：保活内容面板，避免切 Tab 卸载卡片导致图标重新解码闪白
-  const [visitedGroupIds, setVisitedGroupIds] = useState<string[]>(() => {
-    const gid = useBookmarkStore.getState().activeGroupId
-    return gid ? [gid] : []
-  })
-  useEffect(() => {
-    if (!activeGroupId) return
-    setVisitedGroupIds((prev) => (prev.includes(activeGroupId) ? prev : [...prev, activeGroupId]))
-  }, [activeGroupId])
-  // 分组被删除时清掉已失效的 keep-alive 面板
-  useEffect(() => {
-    const valid = new Set(homeGroups.map((g) => g.id))
-    setVisitedGroupIds((prev) => {
-      const next = prev.filter((id) => valid.has(id))
-      return next.length === prev.length ? prev : next
-    })
-  }, [homeGroups])
-
   // 面板内联搜索：searchVal 非空时跨全部分组过滤，
   // 支持标题/链接/描述/标签 + 拼音匹配；UI 以扁平结果面展示。
   const filteredGroups = useMemo<HomeGroup[]>(() => {
@@ -111,15 +93,12 @@ export function useHomeSearchResults({
       .filter((g) => g.subs.length > 0)
   }, [homeGroups, searchVal, activeGroupId])
 
-  // keep-alive：已访问分组各自挂一份内容（隐藏非当前），图标/滚动都保留在 DOM 里
+  // 仅挂载当前分组；滚动/选择由按组内存恢复，避免历史面板积累 DOM 和拖拽订阅。
   const keptGroups = useMemo(() => {
     if (isSearching) return [] as HomeGroup[]
-    const byId = new Map(homeGroups.map((g) => [g.id, g]))
-    const ids = visitedGroupIds.length
-      ? visitedGroupIds
-      : (activeGroupId ? [activeGroupId] : homeGroups[0] ? [homeGroups[0].id] : [])
-    return ids.map((id) => byId.get(id)).filter(Boolean) as HomeGroup[]
-  }, [homeGroups, visitedGroupIds, activeGroupId, isSearching])
+    const group = homeGroups.find((g) => g.id === activeGroupId) ?? homeGroups[0]
+    return group ? [group] : []
+  }, [homeGroups, activeGroupId, isSearching])
 
   // 搜索态：全局匹配的扁平结果（按 id 去重），列表/格子共用，不再按分组分段展示。
   const searchResultItems = useMemo<HomeItem[]>(() => {
@@ -160,12 +139,11 @@ export function useHomeSearchResults({
   // 搜索无匹配且有全局搜索书签时，导航落到底部命令条。
   const navigableItems = useMemo<HomeItem[]>(() => {
     if (isUniversalFallback) return aiCreateItem ? [aiCreateItem, ...universalFallbackItems] : universalFallbackItems
-    const seen = new Set<string>()
-    const local = filteredGroups
-      .flatMap((g) => g.subs.flatMap((s) => s.items))
-      .filter((b) => (seen.has(b.id) ? false : (seen.add(b.id), true)))
+    const local = !isSearching && filteredGroups[0]
+      ? getHomeGroupIndex(filteredGroups[0]).navigableItems
+      : searchResultItems
     return aiCreateItem ? [...local, aiCreateItem] : local
-  }, [filteredGroups, isUniversalFallback, universalFallbackItems, aiCreateItem])
+  }, [filteredGroups, isSearching, searchResultItems, isUniversalFallback, universalFallbackItems, aiCreateItem])
 
   /** 打开列表项：全局搜索回退态用当前搜索词填模板并直跳；其余走常规 open（含模板输入页） */
   const openHomeItem = useCallback(
@@ -174,7 +152,7 @@ export function useHomeSearchResults({
         aiCreateFnRef.current(searchVal)
         return
       }
-      const realBookmark = bookmarks.find((b) => b.id === item.id)
+      const realBookmark = getBookmarkIndex(bookmarks).get(item.id)
       if (!realBookmark) return
       if (isUniversalFallback && realBookmark.allowUniversal) {
         const q = searchVal.trim()
@@ -196,7 +174,7 @@ export function useHomeSearchResults({
   // 切换视图后，若当前选中项不在可导航列表内则回退到首项
   useEffect(() => {
     if (!navigableItems.length) return
-    if (!navigableItems.some((i) => i.id === selectedId)) {
+    if ((!selectedId || !getNavigationIndex(navigableItems).has(selectedId))) {
       setSelectedId(navigableItems[0].id)
     }
   }, [navigableItems, selectedId])

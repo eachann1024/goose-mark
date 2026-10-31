@@ -34,10 +34,11 @@ export function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }
       {...listeners}
       className={`group-tab${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}`}
       data-group-id={id}
+      title={name}
       onClick={onTabClick}
       onContextMenu={onTabContextMenu}
     >
-      {name}
+      <span className="group-tab-name">{name}</span>
     </button>
   )
 }

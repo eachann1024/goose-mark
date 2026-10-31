@@ -38,6 +38,7 @@ function fallback(): Placement {
     if (sub) return build(existing, sub, false, true)
   }
   const group = store.addGroup('默认')
+  if (!group) throw new Error('当前数据为只读状态，无法创建分组')
   return build(group, group.children[0], true, true)
 }
 
@@ -67,6 +68,7 @@ export function resolvePlacement(req: PlacementRequest, permissions: AICreatePer
 
     if (groupName && permissions.allowCreateGroup) {
       const created = store.addGroup(groupName)
+      if (!created) throw new Error('当前数据为只读状态，无法创建分组')
       let sub = created.children[0]
       if (subName) {
         store.updateSubGroup(created.id, sub.id, subName)

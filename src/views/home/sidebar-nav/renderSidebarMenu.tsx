@@ -7,7 +7,6 @@ interface SidebarMenuProps {
   menu: NavMenuState
   homeGroups: HomeGroup[]
   menuRef: React.RefObject<HTMLDivElement | null>
-  menuTargetName: () => string
   startRenameGroup: (groupId: string) => void
   startNewSub: (groupId: string) => void
   startRenameSub: (groupId: string, subId: string) => void
@@ -18,9 +17,7 @@ interface SidebarMenuProps {
   switchToMoveMode: () => void
   doPromote: (groupId: string, subId: string) => void
   doMoveSubToGroup: (groupId: string, subId: string, targetGroupId: string) => void
-  confirmDelete: () => void
   doDelete: () => void
-  closeMenu: () => void
   backToMenu: () => void
 }
 
@@ -28,7 +25,6 @@ export function renderSidebarMenu({
   menu,
   homeGroups,
   menuRef,
-  menuTargetName,
   startRenameGroup,
   startNewSub,
   startRenameSub,
@@ -39,39 +35,11 @@ export function renderSidebarMenu({
   switchToMoveMode,
   doPromote,
   doMoveSubToGroup,
-  confirmDelete,
   doDelete,
-  closeMenu,
   backToMenu,
 }: SidebarMenuProps) {
     if (!menu.open || !menu.target) return null
     const target = menu.target
-
-    if (menu.mode === 'confirmDelete') {
-      const name = menuTargetName()
-      return (
-        <div
-          ref={menuRef}
-          className="ctx-menu sidebar-ctx-menu"
-          style={{ display: 'flex', position: 'fixed', left: menu.x, top: menu.y, zIndex: 200 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="sidebar-ctx-confirm-msg">
-            <span>删除「{name}」？</span>
-            <span className="sidebar-ctx-confirm-sub">书签将移入回收站</span>
-          </div>
-          <div className="ctx-sep" />
-          <button className="danger" onClick={doDelete}>
-            <Ico name="trash-2" />
-            确认删除
-          </button>
-          <button onClick={closeMenu}>
-            <Ico name="x" />
-            取消
-          </button>
-        </div>
-      )
-    }
 
     if (menu.mode === 'move' && target.type === 'sub') {
       const t = target as { type: 'sub'; groupId: string; subId: string }
@@ -133,7 +101,7 @@ export function renderSidebarMenu({
             </button>
           )}
           <div className="ctx-sep" />
-          <button className="danger" onClick={confirmDelete}>
+          <button className="danger" onClick={doDelete}>
             <Ico name="trash-2" />
             删除分组
           </button>
@@ -184,7 +152,7 @@ export function renderSidebarMenu({
           提升为一级分组
         </button>
         <div className="ctx-sep" />
-        <button className="danger" onClick={confirmDelete}>
+        <button className="danger" onClick={doDelete}>
           <Ico name="trash-2" />
           删除
         </button>

@@ -173,7 +173,9 @@
   background:transparent; border:none;
   /* 行高锁死：内联重命名输入框复用同一组尺寸，进出编辑态不产生任何位移 */
   height:25px;
+  max-width:200px;
 }
+.goose-home .group-tab-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .goose-home .group-tab:hover { @apply text-g-fg bg-g-surface; }
 .goose-home .group-tab.on {
   @apply text-g-accent bg-g-accent-subtle font-semibold;
@@ -188,7 +190,6 @@
   box-sizing:border-box;
   height:25px;
   width:96px;
-  max-width:160px;
   padding:0 11px;
   line-height:23px;
   border:1px solid var(--accent-border-strong);
@@ -1113,8 +1114,10 @@
 .goose-home .nav-item-hoverable .nav-item-more {
   @apply opacity-0 pointer-events-none;
 }
-.goose-home .nav-item-hoverable:hover .nav-item-count { @apply opacity-0; }
-.goose-home .nav-item-hoverable:hover .nav-item-more { @apply opacity-100 pointer-events-auto; }
+.goose-home .nav-item-hoverable:hover .nav-item-count,
+.goose-home .nav-item-trailing:focus-within .nav-item-count { @apply opacity-0; }
+.goose-home .nav-item-hoverable:hover .nav-item-more,
+.goose-home .nav-item-trailing:focus-within .nav-item-more { @apply opacity-100 pointer-events-auto; }
 
 /* 通用小图标按钮（⋯ / +）：18×18，默认 fg-faint，hover fg + surface-hover */
 .goose-home .nav-icon-btn {
@@ -1147,7 +1150,8 @@
   background:transparent; border:1px dashed var(--border);
   /* border-color 不能用 @apply border-g-border 因为需保持 dashed 样式 */
 }
-.goose-home .group-tabs:hover .tab-add { @apply opacity-100; }
+.goose-home .group-tabs:hover .tab-add,
+.goose-home .tab-add:focus-visible { @apply opacity-100; }
 .goose-home .tab-add:hover {
   @apply text-g-accent bg-g-accent-subtle border-g-accent;
 }
@@ -1164,7 +1168,8 @@
   @apply flex items-center justify-center size-5 p-0 rounded-g-sm text-g-fg-faint opacity-0 cursor-pointer transition-[opacity,color,background] duration-[120ms];
   background:transparent;
 }
-.goose-home .sub-sec-head:hover .sub-sec-add { @apply opacity-100; }
+.goose-home .sub-sec-head:hover .sub-sec-add,
+.goose-home .sub-sec-add:focus-visible { @apply opacity-100; }
 .goose-home .sub-sec-add:hover { @apply text-g-accent bg-g-accent-subtle; }
 .goose-home .sub-sec-add .lucide { @apply text-[13px]; }
 

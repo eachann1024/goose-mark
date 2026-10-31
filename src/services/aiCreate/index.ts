@@ -248,10 +248,11 @@ async function runSteps(input: string, emit: (event: AICreateEvent) => void): Pr
     permissions
   )
   emit({ type: 'placement', ...placement })
-  useBookmarkStore.getState().addBookmark(
+  const created = useBookmarkStore.getState().addBookmark(
     { title, url, desc, tags: [], icon: siteIcon ?? undefined },
     [{ groupId: placement.groupId, subGroupId: placement.subGroupId }]
   )
+  if (!created) throw new Error('无法创建书签：数据只读或所选分类已失效')
   emit({ type: 'done', title, placement })
   return { status: 'created', title, placement }
 }

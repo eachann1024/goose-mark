@@ -1,8 +1,8 @@
 import type * as React from 'react'
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import type { Bookmark } from '@/types/bookmark'
-import { type HomeItem } from './viewModel'
-import { type CtxMode, type CtxState } from './homeTypes'
+import { bookmarkToHomeItem, getBookmarkIndex, getHomeGroupIndex, type HomeItem } from './viewModel'
+import { type CtxState } from './homeTypes'
 import { type HomeBookmarkBindings } from './homeInteractionTypes'
 
 export function useHomeContextActions({
@@ -11,7 +11,6 @@ export function useHomeContextActions({
   setCtxItem,
   setCtxLocation,
   ctxMenuRef,
-  setCtxMode,
   setCtx,
   ctxItem,
   bookmarks,
@@ -22,12 +21,12 @@ export function useHomeContextActions({
   setCtxItem: React.Dispatch<React.SetStateAction<HomeItem | null>>
   setCtxLocation: React.Dispatch<React.SetStateAction<{ groupId: string; subGroupId: string; } | null>>
   ctxMenuRef: React.RefObject<HTMLDivElement | null>
-  setCtxMode: React.Dispatch<React.SetStateAction<CtxMode>>
   setCtx: React.Dispatch<React.SetStateAction<CtxState>>
   ctxItem: HomeItem | null
   handleRemove: (bookmark: Bookmark, location?: { groupId: string; subGroupId: string; }) => void
   ctxLocation: { groupId: string; subGroupId: string; } | null
 }) {
+  const ctxOpenRef = useRef(false)
 
   // ---- 交互：右键菜单（记录被右键的书签项及精确位置） ----
   const openCtx = useCallback((e: React.MouseEvent) => {
@@ -36,57 +35,36 @@ export function useHomeContextActions({
     e.preventDefault()
     const root = rootRef.current
     if (!root) return
-    // 从被右键的卡片中找 item id，反查 homeGroups 得到 HomeItem
     const itemId = card.dataset.itemId
-    if (itemId) {
-      let found: HomeItem | null = null
-      let foundGroupId: string | null = card.dataset.groupId ?? null
-      let foundSubId: string | null = card.dataset.subId ?? null
-      outer: for (const g of homeGroups) {
-        for (const s of g.subs) {
-          const hit = s.items.find((b) => b.id === itemId)
-          if (hit) {
-            found = hit
-            // 若 DOM 属性存在则优先使用，否则用遍历到的第一个位置
-            if (!foundGroupId) foundGroupId = g.id
-            if (!foundSubId) foundSubId = s.id
-            break outer
-          }
-        }
-      }
-      setCtxItem(found)
-      setCtxLocation(
-        foundGroupId && foundSubId
-          ? { groupId: foundGroupId, subGroupId: foundSubId }
-          : null
-      )
-    }
-    const r = root.getBoundingClientRect()
-    const menuW = ctxMenuRef.current?.offsetWidth || 200
-    let left = e.clientX - r.left
-    let top = e.clientY - r.top
-    left = Math.min(left, r.width - menuW - 12)
-    top = Math.min(top, r.height - 250)
-    setCtxMode('menu')
-    setCtx({ open: true, x: Math.max(8, left), y: Math.max(8, top) })
-  }, [homeGroups])
+    if (!itemId) return
+    const bookmark = getBookmarkIndex(bookmarks).get(itemId)
+    if (!bookmark || bookmark.isDeleted) return
+    const found = bookmarkToHomeItem(bookmark)
+    const groupId = card.dataset.groupId
+    const subGroupId = card.dataset.subId
+    // 搜索结果没有位置属性时才使用已建索引；卡片的精确位置优先，避免多分类误删。
+    const location = groupId && subGroupId
+      ? { groupId, subGroupId }
+      : homeGroups.reduce<{ groupId: string; subGroupId: string } | null>(
+          (hit, group) => hit ?? getHomeGroupIndex(group).locationByItemId.get(itemId) ?? null, null)
+    setCtxItem(found)
+    setCtxLocation(location)
+    ctxOpenRef.current = true
+    setCtx({ open: true, x: e.clientX, y: e.clientY })
+  }, [homeGroups, bookmarks])
   const closeCtx = useCallback(() => {
+    ctxOpenRef.current = false
     setCtx((c) => (c.open ? { ...c, open: false } : c))
-    setCtxMode('menu')
   }, [])
 
   const requestCtxDelete = useCallback(() => {
-    if (ctxItem) setCtxMode('confirmDelete')
-  }, [ctxItem])
-
-  const confirmCtxDelete = useCallback(() => {
-    if (!ctxItem) return
-    const realBookmark = bookmarks.find((b) => b.id === ctxItem.id)
+    if (!ctxOpenRef.current || !ctxItem) return
+    const realBookmark = getBookmarkIndex(bookmarks).get(ctxItem.id)
     closeCtx()
     if (realBookmark) handleRemove(realBookmark, ctxLocation ?? undefined)
   }, [bookmarks, closeCtx, ctxItem, ctxLocation, handleRemove])
 
-  return { openCtx, closeCtx, requestCtxDelete, confirmCtxDelete }
+  return { openCtx, closeCtx, requestCtxDelete }
 }
 
 export function useHomePointerInteractions({

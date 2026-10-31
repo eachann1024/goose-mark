@@ -1,6 +1,7 @@
 import type * as React from 'react'
-import { useCallback, useEffect } from 'react'
-import { type HomeGroup } from './viewModel'
+import { useCallback, useEffect, useRef } from 'react'
+import { useBookmarkStore } from '@/stores/bookmark'
+import { getHomeGroupIndex, type HomeGroup } from './viewModel'
 import { type HomeScrollBindings } from './homeInteractionTypes'
 
 export function useHomeSectionNavigation({
@@ -16,21 +17,18 @@ export function useHomeSectionNavigation({
   setActiveSubId: React.Dispatch<React.SetStateAction<string | null>>
   centerSidebar: () => void
 }) {
+  const pendingScrollRef = useRef<number | undefined>(undefined)
+  const requestRef = useRef(0)
 
   const syncSidebarForItem = useCallback(
     (itemId: string) => {
-      for (const g of homeGroups) {
-        for (const s of g.subs) {
-          if (s.items.some((b) => b.id === itemId)) {
-            // 键盘导航跨到新子分组时才居中（同一子分组内移动不触发，频率天然很低、不抖）
-            setActiveSubId((prev) => {
-              if (prev !== s.id) centerSidebar()
-              return s.id
-            })
-            return
-          }
-        }
-      }
+      const group = homeGroups.find((g) => g.id === useBookmarkStore.getState().activeGroupId)
+      const location = group && getHomeGroupIndex(group).locationByItemId.get(itemId)
+      if (!location) return
+      setActiveSubId((prev) => {
+        if (prev !== location.subGroupId) centerSidebar()
+        return location.subGroupId
+      })
     },
     [homeGroups, centerSidebar]
   )
@@ -39,9 +37,14 @@ export function useHomeSectionNavigation({
   // setTimeout(0) 等 React 提交完成（清空搜索 / 从回收站切回后段落才存在），再做平滑滚动；
   // 滚动期间抑制 scroll-spy，避免高亮闪过中间分组。
   const scrollToSection = useCallback((groupId: string, subId: string) => {
-    window.setTimeout(() => {
+    window.clearTimeout(pendingScrollRef.current)
+    if (anchorScrollTimer.current) clearTimeout(anchorScrollTimer.current)
+    anchorScrollTimer.current = null
+    cancelAnimationFrame(anchorRaf.current)
+    const request = ++requestRef.current
+    pendingScrollRef.current = window.setTimeout(() => {
       const root = contentRef.current
-      if (!root) return
+      if (!root || request !== requestRef.current || anchorScrollTimer.current !== null || useBookmarkStore.getState().activeGroupId !== groupId || root.dataset.groupId !== groupId) return
       const el = root.querySelector<HTMLElement>(`[data-sec-id="sec-${groupId}-${subId}"]`)
       if (!el) return
       isAnchorScrollingRef.current = true
@@ -53,8 +56,11 @@ export function useHomeSectionNavigation({
       // 固定超时会在动画末尾解除，恰好放过最后一次 scroll 事件 → 触底兜底逻辑误把高亮改成末段。
       let last = -1
       let still = 0
-      const release = () => { isAnchorScrollingRef.current = false }
+      const release = () => {
+        if (request === requestRef.current && useBookmarkStore.getState().activeGroupId === groupId) isAnchorScrollingRef.current = false
+      }
       const settle = () => {
+        if (request !== requestRef.current || contentRef.current !== root || useBookmarkStore.getState().activeGroupId !== groupId) return
         const cur = Math.round(root.scrollTop)
         if (cur === last) {
           if (++still >= 3) { release(); return }
@@ -71,6 +77,8 @@ export function useHomeSectionNavigation({
     }, 0)
   }, [])
   useEffect(() => () => {
+    ++requestRef.current
+    window.clearTimeout(pendingScrollRef.current)
     if (anchorScrollTimer.current) clearTimeout(anchorScrollTimer.current)
     cancelAnimationFrame(anchorRaf.current)
   }, [])

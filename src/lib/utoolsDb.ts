@@ -11,6 +11,7 @@ interface UToolsDbResult {
   rev?: string
   error?: unknown
   message?: string
+  name?: string
 }
 
 interface UToolsDbStorage {
@@ -81,15 +82,16 @@ export const getDoc = <T>(id: string): HostDoc<T> | null => {
   }
 }
 
-export const getDocAsync = async <T>(id: string): Promise<HostDoc<T> | null> => {
+export const getDocAsync = async <T>(id: string, strict = false): Promise<HostDoc<T> | null> => {
   const db = getUtoolsApi()?.db
   if (!db) return null
   try {
     if (db.promises?.get) {
       return (await db.promises.get<T>(id)) as HostDoc<T> | null
     }
-    return getDoc<T>(id)
-  } catch {
+    return (db.get<T>(id) as HostDoc<T> | null) ?? null
+  } catch (error) {
+    if (strict) throw error
     return null
   }
 }
@@ -102,15 +104,16 @@ export const allDocs = <T>(prefix = ''): Array<HostDoc<T>> => {
   }
 }
 
-export const allDocsAsync = async <T>(prefix = ''): Promise<Array<HostDoc<T>>> => {
+export const allDocsAsync = async <T>(prefix = '', strict = false): Promise<Array<HostDoc<T>>> => {
   const db = getUtoolsApi()?.db
   if (!db) return []
   try {
     if (db.promises?.allDocs) {
       return (await db.promises.allDocs<T>(prefix)) as Array<HostDoc<T>>
     }
-    return allDocs<T>(prefix)
-  } catch {
+    return db.allDocs<T>(prefix) as Array<HostDoc<T>>
+  } catch (error) {
+    if (strict) throw error
     return []
   }
 }
@@ -136,16 +139,17 @@ export const putDocWithRetry = <T>(id: string, data: T): UToolsDbResult => {
 }
 
 const isFailedResult = (result: UToolsDbResult | undefined): boolean =>
-  !result || result.ok === false || result.error === true
+  !result || result.ok !== true || Boolean(result.error)
 
 /**
  * 优先走 uTools 官方 promises.bulkDocs，把多次同步 host 调用合并为一次异步批量写。
- * 老版本没有 promises/bulkDocs 时保留逐条兼容路径；批量冲突仅重试失败文档。
+ * 老版本没有 promises/bulkDocs 时保留逐条兼容路径。
+ * 不替换调用方的 _rev 重试：冲突表示编辑基线已失效，必须交回上层处理。
  */
-export const bulkWriteDocs = async (docs: HostWriteDoc[]): Promise<{ ok: boolean; failedIds: string[] }> => {
-  if (docs.length === 0) return { ok: true, failedIds: [] }
+export const bulkWriteDocs = async (docs: HostWriteDoc[]): Promise<{ ok: boolean; failedIds: string[]; results: UToolsDbResult[] }> => {
+  if (docs.length === 0) return { ok: true, failedIds: [], results: [] }
   const db = getUtoolsApi()?.db
-  if (!db) return { ok: false, failedIds: docs.map((doc) => doc._id) }
+  if (!db) return { ok: false, failedIds: docs.map((doc) => doc._id), results: [] }
 
   let results: UToolsDbResult[]
   try {
@@ -154,9 +158,12 @@ export const bulkWriteDocs = async (docs: HostWriteDoc[]): Promise<{ ok: boolean
     } else if (db.bulkDocs) {
       results = db.bulkDocs(docs)
     } else {
-      results = docs.map((doc) =>
-        doc._deleted ? removeDoc(doc._id) : putDoc(doc._id, doc.data, doc._rev)
-      )
+      results = []
+      for (const doc of docs) {
+        try { results.push(db.put(doc)) }
+        catch (error) { results.push({ ok: false, id: doc._id, error }) }
+        if (isFailedResult(results.at(-1))) break
+      }
     }
   } catch {
     results = []
@@ -165,10 +172,9 @@ export const bulkWriteDocs = async (docs: HostWriteDoc[]): Promise<{ ok: boolean
   const failedIds: string[] = []
   docs.forEach((doc, index) => {
     if (!isFailedResult(results[index])) return
-    const retry = doc._deleted ? removeDoc(doc._id) : putDocWithRetry(doc._id, doc.data)
-    if (isFailedResult(retry)) failedIds.push(doc._id)
+    failedIds.push(doc._id)
   })
-  return { ok: failedIds.length === 0, failedIds }
+  return { ok: failedIds.length === 0, failedIds, results }
 }
 
 export const removeDoc = (id: string): UToolsDbResult => {

@@ -4,7 +4,9 @@ import { clone, resolveBookmarkLocations } from './common'
 export function createBookmarkLocationActions(get: BookmarkGet, commit: BookmarkCommit): Pick<BookmarkActions, 'removeBookmarkFromLocation' | 'reorderInSub' | 'moveBookmarkToSubGroup'> {
   return {
     removeBookmarkFromLocation: (id, groupId, subGroupId) => {
+      if (get().isReadOnly) return
       const locations = get().getBookmarkLocations(id)
+      if (!locations.some((loc) => loc.groupId === groupId && loc.subGroupId === subGroupId)) return
       const remainingLocations = locations.filter(
         (loc) => !(loc.groupId === groupId && loc.subGroupId === subGroupId)
       )
@@ -16,6 +18,7 @@ export function createBookmarkLocationActions(get: BookmarkGet, commit: Bookmark
     },
 
     reorderInSub: (groupId, subId, fromId, toId) => {
+      if (get().isReadOnly) return
       const groups = clone(get().groups)
       const group = groups.find((g) => g.id === groupId)
       const sub = group?.children.find((c) => c.id === subId)
@@ -36,6 +39,7 @@ export function createBookmarkLocationActions(get: BookmarkGet, commit: Bookmark
     },
 
     moveBookmarkToSubGroup: (bookmarkId, fromGroupId, fromSubId, toGroupId, toSubId, insertIndex) => {
+      if (get().isReadOnly) return false
       if (fromGroupId === toGroupId && fromSubId === toSubId) return false
       const groups = clone(get().groups)
       const bookmarks = clone(get().bookmarks)

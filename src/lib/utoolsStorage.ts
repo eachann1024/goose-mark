@@ -58,24 +58,25 @@ export const utoolsStorage = {
 
     if (isUToolsDbAvailable()) {
       const result = putDocWithRetry(storageDocId(key), { value: legacy, updatedAt: Date.now() } satisfies StorageDoc)
-      if (result.ok !== false) cleanupLegacyValue(key)
+      if (result.ok === true && !result.error) cleanupLegacyValue(key)
     }
 
     return legacy
   },
 
-  setItem(key: string, value: string): void {
+  setItem(key: string, value: string): boolean {
     if (!isUToolsDbAvailable()) {
       console.warn(`[utoolsStorage] 跳过写入，uTools db 不可用: ${key}`)
-      return
+      return false
     }
     const result = putDocWithRetry(storageDocId(key), { value, updatedAt: Date.now() } satisfies StorageDoc)
-    if (result.ok === false) {
+    if (result.ok !== true || result.error) {
       console.error(`[utoolsStorage] ${key} 写入失败`, result.error)
-      return
+      return false
     }
     cleanupLegacyValue(key)
     emitStorageSync(key, value)
+    return true
   },
 
   removeItem(key: string): void {
@@ -95,8 +96,7 @@ export const getPersistentItem = (key: string, legacyKeys: string[] = []): strin
     const legacyValue = readLegacyValue(legacyKey)
     if (legacyValue === null) continue
     if (isUToolsDbAvailable()) {
-      utoolsStorage.setItem(key, legacyValue)
-      cleanupLegacyValue(legacyKey)
+      if (utoolsStorage.setItem(key, legacyValue)) cleanupLegacyValue(legacyKey)
     }
     return legacyValue
   }

@@ -56,6 +56,7 @@ interface GooseMarksWindowControl {
 }
 
 interface UToolsApi {
+  onDbPull?(callback: (docs: Array<{ _id: string }>) => void): void
   isWindows?(): boolean
   dbStorage?: {
     getItem: (key: string) => unknown
@@ -71,6 +72,7 @@ interface UToolsApi {
     getAttachment?: (id: string) => Uint8Array | null
     getAttachmentType?: (id: string) => string | null
   }
+  getPluginLocalDataPath?(): string
   getPath(name: string): string
   setSubInput(onChange: (params: { text: string }) => void, placeholder?: string, isFocus?: boolean): boolean
   setSubInputValue?(text: string): boolean

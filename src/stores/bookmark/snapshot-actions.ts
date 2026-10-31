@@ -40,11 +40,13 @@ export function createSnapshotActions(set: BookmarkSet, get: BookmarkGet): Pick<
 
       const migratedBookmarks: Bookmark[] = []
       const migratedGroups: Group[] = []
+      const seenBookmarkIds = new Set<string>()
 
       legacyGroups.forEach((g) => {
         const newChildren: SubGroup[] = (g.children as Array<Record<string, any>>).map((sub) => {
           const bookmarkIds: string[] = (sub.bookmarks as Bookmark[]).map((b) => {
-            if (!migratedBookmarks.find((mb) => mb.id === b.id)) {
+            if (!seenBookmarkIds.has(b.id)) {
+              seenBookmarkIds.add(b.id)
               migratedBookmarks.push({
                 ...b,
                 createdAt: b.createdAt || now,

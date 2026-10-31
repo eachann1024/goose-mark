@@ -1,10 +1,8 @@
 import type * as React from 'react'
 import { useCallback, useEffect, useRef } from 'react'
-import type { Bookmark, Group } from '@/types/bookmark'
-import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { useUTools } from '@/hooks/useUTools'
-import { UTOOLS_PLUGIN_ENTER_EVENT, UTOOLS_PLUGIN_OUT_EVENT, isDetachedUToolsWindow, readCurrentWindowPosition, moveDetachedWindowTo, getLatestUpdatedAt } from './homeRuntime'
+import { UTOOLS_PLUGIN_ENTER_EVENT, UTOOLS_PLUGIN_OUT_EVENT, isDetachedUToolsWindow, readCurrentWindowPosition, moveDetachedWindowTo } from './homeRuntime'
 
 export function useHomeLifecycle({
   toastTimer,
@@ -86,25 +84,7 @@ export function useHomeStorageSync() {
           useSettingsStore.setState(nextSettings as Partial<typeof settingsStore>)
           settingsStore.setLocalMirrorDirectory(localMirrorDirectory)
         }
-        if (key === 'bookmark') {
-          const store = useBookmarkStore.getState()
-          const incomingStamp = getLatestUpdatedAt(data)
-          const localStamp = getLatestUpdatedAt({ groups: store.groups, bookmarks: store.bookmarks })
-          // 严格大于才应用：persist 序列化含本窗口 active 选择，两窗口选择不同时
-          // `>=` 会让等时间戳数据互相写回、BroadcastChannel 无限回弹
-          if (incomingStamp > localStamp) {
-            const preferredGroupId = store.activeGroupId
-            const preferredSubGroupId = store.activeSubGroupId
-            const nextGroups = Array.isArray((data as { groups?: unknown }).groups)
-              ? (data as { groups: Group[] }).groups
-              : store.groups
-            const nextBookmarks = Array.isArray((data as { bookmarks?: unknown }).bookmarks)
-              ? (data as { bookmarks: Bookmark[] }).bookmarks
-              : store.bookmarks
-            store.setData({ groups: nextGroups, bookmarks: nextBookmarks })
-            store.ensureValidSelection(preferredGroupId, preferredSubGroupId)
-          }
-        }
+        // 书签通知统一由持久化层重新读取数据库，不直接应用广播里的整库快照。
       } catch {
         // ignore
       }

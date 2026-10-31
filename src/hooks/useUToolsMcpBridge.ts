@@ -216,6 +216,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       const name = str(params.name)
       if (!name) throw new Error('分组名称不能为空')
       const group = store.addGroup(name)
+      if (!group) throw new Error('当前数据为只读状态，无法创建分组')
       const firstSubGroupName = str(params.firstSubGroupName)
       if (firstSubGroupName && group.children[0]) {
         store.updateSubGroup(group.id, group.children[0].id, firstSubGroupName)
@@ -227,6 +228,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       const id = str(params.id || params.groupId)
       const name = str(params.name)
       if (!id || !name) throw new Error('缺少分组 id 或名称')
+      if (store.isReadOnly) throw new Error('当前数据为只读状态，无法修改分组')
       store.updateGroup(id, name)
       return { ok: true }
     }
@@ -241,6 +243,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       const groupId = str(params.groupId)
       const name = str(params.name)
       if (!groupId || !name) throw new Error('缺少父分组 id 或子分组名称')
+      if (store.isReadOnly) throw new Error('当前数据为只读状态，无法新建子分组')
       const sub = store.addSubGroup(name, groupId)
       if (!sub) throw new Error(`未找到父分组：${groupId}`)
       return { subGroup: serializeSubGroup(sub) }
@@ -251,6 +254,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       const subId = str(params.subGroupId || params.subId)
       const name = str(params.name)
       if (!groupId || !subId || !name) throw new Error('缺少分组/子分组 id 或名称')
+      if (store.isReadOnly) throw new Error('当前数据为只读状态，无法修改子分组')
       store.updateSubGroup(groupId, subId, name)
       return { ok: true }
     }
@@ -281,6 +285,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
         },
         resolvedLocations
       )
+      if (!bookmark) throw new Error('无法创建书签：数据只读或所选分类已失效')
       return { bookmark: serializeBookmark(bookmark, getStore()) }
     }
 
@@ -304,14 +309,15 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
       if (!id || !findBookmark(id)) throw new Error(`未找到书签：${id}`)
       const locations = resolveLocations(params)
       if (locations.length === 0) throw new Error('locations 不能为空')
-      store.updateBookmarkLocations(id, locations)
+      if (!store.updateBookmarkLocations(id, locations)) throw new Error('无法修改分类：数据只读或所选分类已失效')
       return { ok: true }
     }
 
     case 'remove_bookmark': {
       const id = str(params.id || params.bookmarkId)
       if (!id || !findBookmark(id)) throw new Error(`未找到书签：${id}`)
-      store.removeBookmark(id)
+      if (store.isReadOnly) throw new Error('当前数据为只读状态，无法删除')
+      if (!store.removeBookmark(id)) throw new Error('无法删除：书签不存在或已在回收站')
       return { ok: true }
     }
 
