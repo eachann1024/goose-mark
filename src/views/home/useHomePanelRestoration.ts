@@ -5,6 +5,7 @@ import { utoolsStorage } from '@/lib/utoolsStorage'
 import { UTOOLS_PLUGIN_OUT_EVENT } from './homeRuntime'
 import { HOME_CONTINUITY_KEY, readHomeScrollTop } from './homeContinuity'
 import { type HomeNavigationBindings, type HomeScrollBindings } from './homeInteractionTypes'
+import { readVirtualBookmarkAnchor, restoreVirtualBookmarkAnchor } from './VirtualBookmarkContent'
 
 export function useHomePanelRestoration({
   homeContinuityLatestRef,
@@ -48,8 +49,8 @@ export function useHomePanelRestoration({
       homeScrollTopRef.current = 0
       if (gid) {
         const prev = groupPanelMapRef.current[gid] || { scrollTop: 0, activeSubId: null, selectedId: null }
-        if (prev.scrollTop !== 0 || !groupPanelMapRef.current[gid]) {
-          groupPanelMapRef.current = { ...groupPanelMapRef.current, [gid]: { ...prev, scrollTop: 0 } }
+        if (prev.scrollTop !== 0 || prev.logicalAnchor || !groupPanelMapRef.current[gid]) {
+          groupPanelMapRef.current = { ...groupPanelMapRef.current, [gid]: { ...prev, scrollTop: 0, logicalAnchor: null } }
           groupPanelDirtyRef.current = true
           scheduleFlushGroupPanelMap()
         }
@@ -70,6 +71,8 @@ export function useHomePanelRestoration({
       // 面板已切到别的分组时不要误写
       if (gid && root.dataset.groupId && root.dataset.groupId !== gid) return false
       if (Math.abs(root.scrollTop - target) > 1) root.scrollTop = target
+      const anchor = mode === 'keep' && gid ? groupPanelMapRef.current[gid]?.logicalAnchor : null
+      if (anchor) restoreVirtualBookmarkAnchor(root, anchor)
       return Math.abs(root.scrollTop - target) < 2 || root.scrollHeight <= root.clientHeight + 1
     }
     // 轻量重试：布局晚一拍时再钉，避免连写 storage
@@ -137,8 +140,9 @@ export function useHomePanelRestoration({
       root.scrollTop = homeScrollTopRef.current
     }
 
+    let anchorTimer: number | undefined
     const onScroll = () => {
-      if ((root.dataset.groupId || '') && root.dataset.groupId !== groupIdForEffect) return
+      if (root.dataset.groupId !== groupIdForEffect) return
       if (isAnchorScrollingRef.current) return
       const top = root.scrollTop
       homeScrollTopRef.current = top
@@ -147,9 +151,15 @@ export function useHomePanelRestoration({
         activeSubId: homeContinuityLatestRef.current.activeSubId,
         selectedId: homeContinuityLatestRef.current.selectedId,
       })
+      window.clearTimeout(anchorTimer)
+      anchorTimer = window.setTimeout(() => {
+        if (root.dataset.groupId !== groupIdForEffect) return
+        updateGroupPanelMemory(groupIdForEffect, { logicalAnchor: readVirtualBookmarkAnchor(root) })
+      }, 120)
     }
     root.addEventListener('scroll', onScroll, { passive: true })
     return () => {
+      window.clearTimeout(anchorTimer)
       root.removeEventListener('scroll', onScroll)
     }
   }, [updateGroupPanelMemory, screen, isSearching, activeGroupId])

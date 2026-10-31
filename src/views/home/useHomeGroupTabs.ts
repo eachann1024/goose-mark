@@ -22,7 +22,7 @@ export function useHomeGroupTabs({
   Pick<HomeSearchBindings, 'isSearching' | 'clearSearch'> & {
   homeGroups: HomeGroup[]
   reorderGroups: (newOrder: Group[]) => void
-  addGroup: (name: string) => Group
+  addGroup: (name: string) => Group | null
   updateGroup: (id: string, name: string) => void
   removeGroup: (id: string) => boolean
 }) {
@@ -75,9 +75,10 @@ export function useHomeGroupTabs({
     const name = tabAddVal.trim()
     if (name) {
       const g = addGroup(name) // addGroup 内部已切到新分组并选中首个子分组
-      if (screen === 'trash' || screen === 'settings') setScreen(view)
-      if (isSearching) clearSearch()
-      void g
+      if (g) {
+        if (screen === 'trash' || screen === 'settings') setScreen(view)
+        if (isSearching) clearSearch()
+      }
     }
     setTabAdding(false)
   }, [tabAdding, tabAddVal, addGroup, screen, view, isSearching, clearSearch])
@@ -118,7 +119,6 @@ export function useHomeGroupTabs({
   const deleteTabGroup = useCallback((groupId: string) => {
     const g = homeGroups.find((x) => x.id === groupId)
     if (!g) return
-    if (!window.confirm(`确定删除分组「${g.name}」？组内书签将移入回收站。`)) return
     removeGroup(groupId)
     closeTabCtx()
   }, [homeGroups, removeGroup, closeTabCtx])

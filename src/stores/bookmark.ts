@@ -85,6 +85,7 @@ export const useBookmarkStore = create<BookmarkStore>()((rawSet, get) => {
     updateBookmark: createBookmarkActionsInstance.updateBookmark,
     updateBookmarkLocations: createBookmarkActionsInstance.updateBookmarkLocations,
     removeBookmark: createTrashActionsInstance.removeBookmark,
+    removeBookmarkPermanently: createTrashActionsInstance.removeBookmarkPermanently,
     removeBookmarkFromLocation: createBookmarkLocationActionsInstance.removeBookmarkFromLocation,
     restoreBookmark: createTrashActionsInstance.restoreBookmark,
     restoreBookmarkFromTrash: createTrashActionsInstance.restoreBookmarkFromTrash,

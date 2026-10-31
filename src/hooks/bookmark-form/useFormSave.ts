@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import type { IconSource, BookmarkLocation } from '@/types/bookmark';
 import { useBookmarkFormStore } from './state';
 import { useBookmarkStore } from '@/stores/bookmark';
+import { TRASH_GROUP_ID } from '@/stores/bookmarkSeed';
 import type { FormSet, ShowToast, BuildTextIcon, ResolveLocationsForSave } from './controllerTypes';
 import { addBehaviorLog } from '@/lib/debugReport';
 import { isValidUrlInput } from './icons';
@@ -26,8 +27,9 @@ export function useFormSaveInputs() {
     } = useBookmarkFormStore.getState();
     if (draftLocations.length > 0) return [...draftLocations];
     const store = useBookmarkStore.getState();
-    const activeGroup = store.groups.find(group => group.id === store.activeGroupId) ?? store.groups[0];
-    const activeSubGroup = activeGroup?.children.find(child => child.id === store.activeSubGroupId) ?? activeGroup?.children[0];
+    const usable = (group: typeof store.groups[number]) => group.id !== TRASH_GROUP_ID && !group.isDeleted && group.children.some(child => !child.isDeleted);
+    const activeGroup = store.groups.find(group => group.id === store.activeGroupId && usable(group)) ?? store.groups.find(usable);
+    const activeSubGroup = activeGroup?.children.find(child => child.id === store.activeSubGroupId && !child.isDeleted) ?? activeGroup?.children.find(child => !child.isDeleted);
     if (!activeGroup || !activeSubGroup) return [];
     return [{
       groupId: activeGroup.id,
@@ -55,8 +57,10 @@ export function useFormSave({
       editingId
     } = useBookmarkFormStore.getState();
     if (!editingId) return;
+    const store = useBookmarkStore.getState();
+    if (store.isReadOnly) return set({ formError: '当前数据为只读状态，无法删除' });
+    if (!store.removeBookmark(editingId)) return set({ formError: '无法删除：书签不存在或已在回收站' });
     addBehaviorLog('delete-bookmark', `id: ${editingId}`);
-    useBookmarkStore.getState().removeBookmark(editingId);
     set({
       showAdd: false
     });
@@ -111,7 +115,9 @@ export function useFormSave({
         };
       }
       const store = useBookmarkStore.getState();
+      if (store.isReadOnly) return set({ formError: '当前数据为只读状态，无法保存' });
       if (editingId) {
+        if (!store.updateBookmarkLocations(editingId, locationsToSave)) return set({ formError: '所选分类已失效，请重新选择' });
         store.updateBookmark(editingId, {
           title: titleToSave,
           url: urlToSave,
@@ -120,7 +126,6 @@ export function useFormSave({
           tags: [...state.draftTags],
           icon: iconToSave
         });
-        store.updateBookmarkLocations(editingId, locationsToSave);
       } else {
         const created = store.addBookmark({
           title: titleToSave,
@@ -131,7 +136,8 @@ export function useFormSave({
           pinned: false,
           icon: iconToSave
         }, locationsToSave);
-        if (created && iconToSave?.type === 'text') void store.refreshSingleIcon(created);
+        if (!created) return set({ formError: '无法保存，请检查只读状态和所选分类' });
+        if (iconToSave?.type === 'text') void store.refreshSingleIcon(created);
         const shouldHydrateInBackground = !!options?.background || !titleToSave || !descToSave || !previewIcon || iconLoading;
         if (shouldHydrateInBackground) {
           enqueueMetadataHydration(created.id, {

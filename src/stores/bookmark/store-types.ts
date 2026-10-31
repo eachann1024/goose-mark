@@ -56,7 +56,7 @@ export interface BookmarkActions {
   isBookmarkInTrash: (bookmark: Bookmark) => boolean
 
   // 分组
-  addGroup: (name: string) => Group
+  addGroup: (name: string) => Group | null
   updateGroup: (id: string, name: string) => void
   removeGroup: (id: string) => boolean
   reorderGroups: (newOrder: Group[]) => void
@@ -71,10 +71,11 @@ export interface BookmarkActions {
   promoteSubToGroup: (sourceGroupId: string, subId: string) => Group | null
 
   // 书签
-  addBookmark: (payload: Omit<Bookmark, 'id' | 'createdAt' | 'updatedAt'>, locations: BookmarkLocation[]) => Bookmark
+  addBookmark: (payload: Omit<Bookmark, 'id' | 'createdAt' | 'updatedAt'>, locations: BookmarkLocation[]) => Bookmark | null
   updateBookmark: (id: string, updater: Partial<Bookmark>) => void
-  updateBookmarkLocations: (bookmarkId: string, newLocations: BookmarkLocation[]) => void
-  removeBookmark: (id: string) => void
+  updateBookmarkLocations: (bookmarkId: string, newLocations: BookmarkLocation[]) => boolean
+  removeBookmark: (id: string) => boolean
+  removeBookmarkPermanently: (id: string) => void
   removeBookmarkFromLocation: (id: string, groupId: string, subGroupId: string) => void
   restoreBookmark: (id: string) => boolean
   restoreBookmarkFromTrash: (id: string) => boolean
@@ -112,7 +113,14 @@ export interface BookmarkActions {
   getShareIdsFromGroup: (groupId: string) => string[]
   scheduleBookmarkSync: (
     bookmarkId: string,
-    options?: { isDeleted?: boolean; updatedAt?: number; previousShareIds?: string[]; content?: Bookmark | null }
+    options?: {
+      isDeleted?: boolean
+      updatedAt?: number
+      previousShareIds?: string[]
+      content?: Bookmark | null
+      /** Internal: the ID was removed before this call; previousShareIds is complete. */
+      removedFromStore?: boolean
+    }
   ) => void
   scheduleGroupSync: (
     groupId: string,

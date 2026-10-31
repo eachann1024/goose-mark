@@ -32,14 +32,14 @@ export function useFormEntry({
     subGroupId?: string | null;
   }): BookmarkLocation[] => {
     const store = useBookmarkStore.getState();
-    const validGroups = store.groups.filter(g => g.id !== TRASH_GROUP_ID && g.children.length > 0);
+    const validGroups = store.groups.filter(g => g.id !== TRASH_GROUP_ID && !g.isDeleted && g.children.some(c => !c.isDeleted));
     if (validGroups.length === 0) return [];
     const preferGroupId = (preferred?.groupId || store.activeGroupId || '').trim();
     const preferSubId = (preferred?.subGroupId || store.activeSubGroupId || '').trim();
     let group = preferGroupId && preferGroupId !== TRASH_GROUP_ID ? validGroups.find(g => g.id === preferGroupId) : undefined;
     if (!group) group = validGroups[0];
-    let sub = preferSubId ? group.children.find(c => c.id === preferSubId) : undefined;
-    if (!sub) sub = group.children[0];
+    let sub = preferSubId ? group.children.find(c => c.id === preferSubId && !c.isDeleted) : undefined;
+    if (!sub) sub = group.children.find(c => !c.isDeleted);
     if (!sub) return [];
     return [{
       groupId: group.id,

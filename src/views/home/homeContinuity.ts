@@ -26,6 +26,7 @@ export interface GroupPanelState {
   scrollTop: number
   activeSubId: string | null
   selectedId: string | null
+  logicalAnchor?: { itemId: string; offset: number; atEnd?: boolean; subId?: string; index?: number } | null
 }
 
 
@@ -73,6 +74,10 @@ export const readGroupPanelMap = (): GroupPanelMap => {
         scrollTop: sanitizeScrollTop(state.scrollTop),
         activeSubId: typeof state.activeSubId === 'string' ? state.activeSubId : null,
         selectedId: typeof state.selectedId === 'string' ? state.selectedId : null,
+        logicalAnchor: state.logicalAnchor && typeof state.logicalAnchor.itemId === 'string' && Number.isFinite(state.logicalAnchor.offset)
+          ? { itemId: state.logicalAnchor.itemId, offset: state.logicalAnchor.offset, atEnd: state.logicalAnchor.atEnd === true,
+              subId: typeof state.logicalAnchor.subId === 'string' ? state.logicalAnchor.subId : undefined,
+              index: Number.isSafeInteger(state.logicalAnchor.index) && (state.logicalAnchor.index ?? -1) >= 0 ? state.logicalAnchor.index : undefined } : null,
       }
     }
     return out
@@ -84,7 +89,7 @@ export const readGroupPanelMap = (): GroupPanelMap => {
 
 
 export const writeGroupPanelMap = (map: GroupPanelMap) => {
-  utoolsStorage.setItem(HOME_GROUP_PANEL_KEY, JSON.stringify(map))
+  return utoolsStorage.setItem(HOME_GROUP_PANEL_KEY, JSON.stringify(map))
 }
 
 

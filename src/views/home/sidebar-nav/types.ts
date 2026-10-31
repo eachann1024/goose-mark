@@ -2,7 +2,7 @@ export type MenuTarget =
   | { type: 'group'; groupId: string }
   | { type: 'sub'; groupId: string; subId: string }
 
-type MenuMode = 'menu' | 'move' | 'confirmDelete'
+type MenuMode = 'menu' | 'move'
 
 export interface NavMenuState {
   open: boolean

@@ -5,7 +5,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { useUToolsMcpBridge } from '@/hooks/useUToolsMcpBridge'
 import { useUTools } from '@/hooks/useUTools'
-import { buildHomeGroups, trashCount, type HomeGroup, type HomeItem } from './viewModel'
+import { buildHomeGroups, trashCount, getHomeGroupIndex, type HomeGroup, type HomeItem } from './viewModel'
 import AddBookmarkWizard from './AddBookmarkWizard'
 import GroupManagePage from './GroupManagePage'
 import AISavePage from './AISavePage'
@@ -15,7 +15,7 @@ import StarryBackground from '@/components/StarryBackground'
 import BlackHole from '@/components/BlackHole'
 import { useEasterEggPaused } from './useEasterEggPaused'
 import './home.css'
-import { type CtxMode, type CtxState, type ToastTone } from './homeTypes'
+import { type CtxState, type ToastTone } from './homeTypes'
 import { RUNTIME_PLATFORM, IS_WINDOWS_UTOOLS, getSearchSurface } from './homeRuntime'
 import { type HomeContinuityState, readHomeContinuityState } from './homeContinuity'
 import { useHomeThemeState, useHomeThemeEffects, useHomeViewPreferences } from './useHomeTheme'
@@ -119,9 +119,10 @@ export default function HomePage() {
     [groups, bookmarks]
   )
   const trashN = useMemo(() => trashCount(groups), [groups])
-  const initialContinuityRef = useRef<HomeContinuityState | null>(
+  const [initialContinuity] = useState<HomeContinuityState | null>(() =>
     useSettingsStore.getState().panelContinuous ? readHomeContinuityState() : null
   )
+  const initialContinuityRef = useRef(initialContinuity)
 
   const { themePref, setThemePref, theme, setTheme, view, setView, screen, setScreen } = useHomeThemeState({
     homeViewMode
@@ -130,6 +131,7 @@ export default function HomePage() {
   // 搜索词仅跟当前会话的搜索框同步；退出插件后 subInput 会被清空，再次唤出不得残留搜索态
   // 书签拖拽中的项（用于 DragOverlay 跟手预览）
   const [activeDragItem, setActiveDragItem] = useState<HomeItem | null>(null)
+  const handleDndDragCancel = useCallback(() => setActiveDragItem(null), [])
   // 标记本次 selectedId 变更来自键盘方向键（决定滚入时居中 vs 就近，避免鼠标点击触发跳动）
   const keyboardNavRef = useRef(false)
   // 方向键节流：长按时系统 keydown repeat 频率过高会导致滚动飞快，限制每步最小间隔放慢节奏
@@ -147,7 +149,6 @@ export default function HomePage() {
   const [setNavIdx, setSetNavIdx] = useState(0)
   const setMainRef = useRef<HTMLDivElement>(null)
   const [ctx, setCtx] = useState<CtxState>({ open: false, x: 0, y: 0 })
-  const [ctxMode, setCtxMode] = useState<CtxMode>('menu')
   // 当前被右键点击的书签项（用于右键菜单操作）
   const [ctxItem, setCtxItem] = useState<HomeItem | null>(null)
   // 右键点击处的精确位置（用于多分类书签删除正确分类）
@@ -276,7 +277,6 @@ export default function HomePage() {
 
   const { changeActiveGroup } = useHomeGroupNavigation({
     setCtx,
-    setCtxMode,
     screen,
     setScreen,
     view,
@@ -319,13 +319,12 @@ export default function HomePage() {
     focusSearchInput
   })
 
-  const { openCtx, closeCtx, requestCtxDelete, confirmCtxDelete } = useHomeContextActions({
+  const { openCtx, closeCtx, requestCtxDelete } = useHomeContextActions({
     rootRef,
     homeGroups,
     setCtxItem,
     setCtxLocation,
     ctxMenuRef,
-    setCtxMode,
     setCtx,
     ctxItem,
     bookmarks,
@@ -417,6 +416,8 @@ export default function HomePage() {
   }, [activeGroupId, activeSubId])
 
   const { handleActiveSubIdFix } = useHomeScrollSpy({
+    activeGroupId,
+    isSearching,
 
     setActiveSubId,
     view,
@@ -536,8 +537,8 @@ export default function HomePage() {
   // 当前选中书签（供右键「复制」Toast 副标题展示书签名，对齐设计稿）
   const selectedItem = useMemo<HomeItem | null>(() => {
     if (!selectedId) return null
-    for (const g of homeGroups) for (const s of g.subs) {
-      const hit = s.items.find((b) => b.id === selectedId)
+    for (const group of homeGroups) {
+      const hit = getHomeGroupIndex(group).byItemId.get(selectedId)
       if (hit) return hit
     }
     return null
@@ -554,6 +555,7 @@ export default function HomePage() {
     .join(' ')
 
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const openFeedback = useCallback(() => setFeedbackOpen(true), [])
 
   return (
     <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface}>
@@ -610,7 +612,7 @@ export default function HomePage() {
             avatarRef={avatarRef}
             paOpen={paOpen}
             setPaOpen={setPaOpen}
-            onFeedback={() => setFeedbackOpen(true)}
+            onFeedback={openFeedback}
           />
 
         {/* 一级 Tab 右键菜单 */}
@@ -682,6 +684,7 @@ export default function HomePage() {
             clearSearch={clearSearch}
             keptGroups={keptGroups}
             activeDragItem={activeDragItem}
+                  onDragCancel={handleDndDragCancel}
           />
 
         {/* ---------- Settings ---------- */}
@@ -712,9 +715,7 @@ export default function HomePage() {
         <HomeContextMenu
             ctxMenuRef={ctxMenuRef}
             ctx={ctx}
-            ctxMode={ctxMode}
             ctxItem={ctxItem}
-            confirmCtxDelete={confirmCtxDelete}
             closeCtx={closeCtx}
             bookmarks={bookmarks}
             openBookmarkLink={openBookmarkLink}

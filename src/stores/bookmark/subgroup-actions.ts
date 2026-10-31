@@ -6,6 +6,7 @@ import { clone, resolveBookmarkLocations } from './common'
 export function createSubgroupActions(get: BookmarkGet, commit: BookmarkCommit): Pick<BookmarkActions, 'addSubGroup' | 'updateSubGroup' | 'reorderSubGroups' | 'removeSubGroup'> {
   return {
     addSubGroup: (name, groupId) => {
+      if (get().isReadOnly) return null
       const groups = clone(get().groups)
       const group = groups.find((g) => g.id === groupId)
       if (!group) return null
@@ -20,6 +21,7 @@ export function createSubgroupActions(get: BookmarkGet, commit: BookmarkCommit):
     },
 
     updateSubGroup: (groupId, subId, name) => {
+      if (get().isReadOnly) return
       const groups = clone(get().groups)
       const group = groups.find((g) => g.id === groupId)
       const sub = group?.children.find((c) => c.id === subId)
@@ -34,6 +36,7 @@ export function createSubgroupActions(get: BookmarkGet, commit: BookmarkCommit):
     },
 
     reorderSubGroups: (groupId, newChildren) => {
+      if (get().isReadOnly) return
       const groups = clone(get().groups)
       const group = groups.find((g) => g.id === groupId)
       if (!group) return
@@ -52,6 +55,7 @@ export function createSubgroupActions(get: BookmarkGet, commit: BookmarkCommit):
     },
 
     removeSubGroup: (groupId, subId) => {
+      if (get().isReadOnly || groupId === TRASH_GROUP_ID) return false
       const groups = clone(get().groups)
       const bookmarks = clone(get().bookmarks)
       const group = groups.find((g) => g.id === groupId)

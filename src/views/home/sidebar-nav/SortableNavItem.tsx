@@ -14,7 +14,7 @@ interface SortableNavItemProps {
   inputRef: React.RefObject<HTMLInputElement | null>
   onSubClick: () => void
   onContextMenu: (e: React.MouseEvent) => void
-  onMoreClick: (e: React.MouseEvent) => void
+  onMoreClick: (e: Pick<React.MouseEvent, 'clientX' | 'clientY' | 'stopPropagation'>) => void
   onInputChange: (val: string) => void
   onInputKeyDown: (e: React.KeyboardEvent) => void
   onInputBlur: () => void
@@ -88,7 +88,13 @@ export function SortableNavItem({
         <button
           className="nav-icon-btn nav-item-more"
           title="更多操作"
-          onClick={onMoreClick}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation() }}
+          onClick={(e) => {
+            if (e.detail !== 0) { onMoreClick(e); return }
+            const rect = e.currentTarget.getBoundingClientRect()
+            onMoreClick({ clientX: rect.left, clientY: rect.bottom, stopPropagation: () => e.stopPropagation() })
+            requestAnimationFrame(() => document.querySelector<HTMLButtonElement>('.sidebar-ctx-menu button')?.focus())
+          }}
         >
           <Ico name="more-horizontal" />
         </button>

@@ -1,8 +1,8 @@
 import type * as React from 'react'
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useBookmarkFormStore } from '@/hooks/useBookmarkForm'
 import { shouldDeferListEnterShortcut } from '@/lib/inlineEditKeys'
-import { type HomeItem } from './viewModel'
+import { getNavigationIndex, type HomeItem } from './viewModel'
 import { type CtxState } from './homeTypes'
 import { getSearchSurface } from './homeRuntime'
 import { type HomeNavigationBindings, type HomeSearchBindings } from './homeInteractionTypes'
@@ -45,6 +45,7 @@ export function useHomeKeyboard({
   keyboardNavRef: React.RefObject<boolean>
   syncSidebarForItem: (itemId: string) => void
 }) {
+  const navigationIndex = useMemo(() => getNavigationIndex(navigableItems), [navigableItems])
 
   // ---- 全局键盘：Esc / ⌘K / 方向键导航 ----
   useEffect(() => {
@@ -109,11 +110,23 @@ export function useHomeKeyboard({
       if (ctx.open) return
 
       // Enter：打开当前选中书签。无论焦点在顶栏搜索框、列表区还是无焦点（鼠标点击 / 方向键
-      // 选中后焦点落在 body），都应直接打开；仅当焦点落在「搜索框以外」的其它输入控件时才放行给它。
+      // 选中后焦点落在 body），都应直接打开；其他交互控件自行处理 Enter。
       // 全局搜索回退：用当前搜索词填入模板 URL 直接跳转（不进模板输入页）。
       if (e.key === 'Enter') {
         if (shouldDeferListEnterShortcut(e, headerSearchRef.current)) return
-        const hit = navigableItems.find((i) => i.id === selectedId) ?? navigableItems[0]
+        if (eventTarget !== headerSearchRef.current) {
+          // 卡片是 div[role=button]，由点击处理打开；原生 Enter 不会触发点击。
+          const card = eventTarget?.closest<HTMLElement>('.gcard[role="button"]')
+          if (card && card === eventTarget && !e.defaultPrevented) {
+            e.preventDefault()
+            card.click()
+            return
+          }
+          const interactive = 'button, a[href], input, textarea, select, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="link"], [role="menu"], [role^="menuitem"], [role="textbox"], [role="combobox"]'
+          if (e.defaultPrevented || eventTarget?.closest(interactive) || active?.closest(interactive)) return
+        }
+        const index = selectedId == null ? undefined : navigationIndex.get(selectedId)
+        const hit = index === undefined ? navigableItems[0] : navigableItems[index]
         if (hit) {
           e.preventDefault()
           openHomeItem(hit)
@@ -145,8 +158,7 @@ export function useHomeKeyboard({
       const items = navigableItems
       if (!items.length) return
 
-      let idx = items.findIndex((i) => i.id === selectedId)
-      if (idx < 0) idx = 0
+      const idx = (selectedId == null ? undefined : navigationIndex.get(selectedId)) ?? 0
 
       const total = items.length
       // 全局搜索命令条始终按竖条上下导航；搜索格子 / 首页网格才用列跨步
@@ -202,6 +214,7 @@ export function useHomeKeyboard({
     ctx.open,
     closeCtx,
     navigableItems,
+    navigationIndex,
     selectedId,
     syncSidebarForItem,
     GRID_COLS,

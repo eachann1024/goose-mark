@@ -1,7 +1,7 @@
 import type * as React from 'react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useBookmarkStore } from '@/stores/bookmark'
-import { type HomeGroup } from './viewModel'
+import { getHomeGroupIndex, type HomeGroup } from './viewModel'
 import { type HomeContinuityState } from './homeContinuity'
 import { type HomeNavigationBindings, type HomeScrollBindings } from './homeInteractionTypes'
 
@@ -39,16 +39,23 @@ export function useHomeInitialSelection({
     [activeHomeGroup, activeSubGroupId]
   )
   useEffect(() => {
-    if (!defaultActiveSub) return
+    if (!defaultActiveSub) {
+      setActiveSubId(null)
+      return
+    }
     setActiveSubId((prev) => {
       const prevStillVisible = !!prev && !!activeHomeGroup?.subs.some((sub) => sub.id === prev)
       return prevStillVisible ? prev : defaultActiveSub.id
     })
   }, [activeHomeGroup, defaultActiveSub])
   useEffect(() => {
+    if (!isSearching && activeHomeGroup && getHomeGroupIndex(activeHomeGroup).navigableItems.length === 0) {
+      setSelectedId(null)
+      return
+    }
     const currentSub = activeHomeGroup?.subs.find((sub) => sub.id === activeSubId) ?? defaultActiveSub
     if (!selectedId && currentSub?.items[0]) setSelectedId(currentSub.items[0].id)
-  }, [activeHomeGroup, activeSubId, defaultActiveSub, selectedId])
+  }, [activeHomeGroup, activeSubId, defaultActiveSub, selectedId, isSearching])
 
   const continuityRestoredRef = useRef(false)
   const homeScrollRestoredOnMountRef = useRef(false)
@@ -66,11 +73,11 @@ export function useHomeInitialSelection({
       setActiveSubId(savedSub.id)
     }
 
-    if (saved.selectedId && homeGroups.some((group) => group.subs.some((sub) => sub.items.some((item) => item.id === saved.selectedId)))) {
+    if (savedGroup && savedSub && saved.selectedId && getHomeGroupIndex(savedGroup).byItemId.has(saved.selectedId)) {
       setSelectedId(saved.selectedId)
     }
 
-    if (Number.isFinite(saved.scrollTop) && saved.scrollTop > 0) {
+    if (savedGroup && savedSub && Number.isFinite(saved.scrollTop) && saved.scrollTop > 0) {
       homeScrollTopRef.current = saved.scrollTop
       if (saved.activeGroupId) {
         updateGroupPanelMemory(saved.activeGroupId, {

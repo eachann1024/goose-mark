@@ -1,3 +1,4 @@
+import { assertBookmarkIntegrity, BookmarkDataPendingError } from './bookmarkIntegrity'
 import type { Bookmark, Group, IconSource } from '@/types/bookmark'
 import type { SettingsState } from '@/stores/settings'
 import {
@@ -12,6 +13,7 @@ import {
   postAttachment,
   putDocWithRetry,
   removeDoc,
+  type HostDoc,
   type HostWriteDoc
 } from '@/lib/utoolsDb'
 
@@ -57,6 +59,53 @@ export interface BookmarkSnapshot {
   bookmarks: Bookmark[]
   activeGroupId: string
   activeSubGroupId: string
+}
+
+// 仅驻留本窗口内存；不增加文档字段，也不改变旧版可读的数据格式。
+let bookmarkBaseline: Map<string, HostDoc<unknown>> | null = null
+let bookmarkMigrationPending = false
+export const isBookmarkMigrationPending = (): boolean => bookmarkMigrationPending
+
+export class BookmarkAccountChangedError extends Error {
+  constructor() {
+    super('uTools 登录信息或个人资料已变化，已停止写入，请重新打开应用。')
+    this.name = 'BookmarkAccountChangedError'
+  }
+}
+let sessionIdentity: string | undefined
+const assertHostSession = () => {
+  const user = window.utools?.getUser?.()
+  const identity = JSON.stringify(user ? [user.nickname, user.avatar] : null)
+  if (sessionIdentity === undefined) sessionIdentity = identity
+  if (identity !== sessionIdentity) throw new BookmarkAccountChangedError()
+}
+
+export class BookmarkSyncConflictError extends Error {
+  constructor() {
+    super('检测到其他设备或窗口更新了书签，已暂停保存以避免覆盖。请先导出完整备份，再重新打开应用。')
+    this.name = 'BookmarkSyncConflictError'
+  }
+}
+
+const readBookmarkDocs = async (): Promise<Map<string, HostDoc<unknown>>> => {
+  const [bookmarks, groups, meta] = await Promise.all([
+    allDocsAsync<PersistedBookmark>(BOOKMARK_DOC_PREFIX, true),
+    allDocsAsync<PersistedGroup>(GROUP_DOC_PREFIX, true),
+    getDocAsync<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID, true)
+  ])
+  return new Map<string, HostDoc<unknown>>([
+    ...bookmarks.filter(isPersistedBookmarkDoc), ...groups, ...(meta ? [meta] : [])
+  ].map(doc => [doc._id, clone(doc)]))
+}
+
+const sameDoc = (left?: HostDoc<unknown>, right?: HostDoc<unknown>): boolean =>
+  left?._rev === right?._rev && JSON.stringify(left?.data) === JSON.stringify(right?.data)
+
+const assertBookmarkBaseline = (current: Map<string, HostDoc<unknown>>): void => {
+  if (!bookmarkBaseline || current.size !== bookmarkBaseline.size ||
+    [...bookmarkBaseline].some(([id, doc]) => !sameDoc(doc, current.get(id)))) {
+    throw new BookmarkSyncConflictError()
+  }
 }
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
@@ -132,9 +181,12 @@ const readLegacyJson = <T>(key: string): T | null => {
 }
 
 const readAttachmentAsDataUrl = async (attachmentId: string): Promise<string | null> => {
+  assertHostSession()
   const bytes = getAttachment(attachmentId)
+  assertHostSession()
   if (!bytes) return null
   const mimeType = getAttachmentType(attachmentId) || 'image/png'
+  assertHostSession()
   const arrayBuffer = new ArrayBuffer(bytes.byteLength)
   new Uint8Array(arrayBuffer).set(bytes)
   const blob = new Blob([arrayBuffer], { type: mimeType })
@@ -189,9 +241,13 @@ const persistDataUrlAsAttachment = async (dataUrl: string): Promise<string | nul
   const ext = getExtensionFromMimeType(blob.type || getMimeTypeFromDataUrl(dataUrl) || 'image/png')
   const attachmentId = `${ICON_ATTACHMENT_PREFIX}${hash}.${ext}`
 
-  if (!getAttachment(attachmentId)) {
+  assertHostSession()
+  const existingAttachment = getAttachment(attachmentId)
+  assertHostSession()
+  if (!existingAttachment) {
     const result = postAttachment(attachmentId, new Uint8Array(arrayBuffer), blob.type || 'image/png')
-    if (result.ok === false) {
+    assertHostSession()
+    if (result.ok !== true || result.error) {
       console.error('[stateRepository] 保存图标 attachment 失败:', attachmentId, result.error)
       return null
     }
@@ -200,25 +256,6 @@ const persistDataUrlAsAttachment = async (dataUrl: string): Promise<string | nul
   const ref = `${ATTACHMENT_REF_PREFIX}${attachmentId}`
   attachmentRefCache.set(dataUrl, ref)
   return ref
-}
-
-const extractAttachmentId = (ref: string | undefined): string | null => {
-  if (!ref?.startsWith(ATTACHMENT_REF_PREFIX)) return null
-  return ref.slice(ATTACHMENT_REF_PREFIX.length)
-}
-
-const collectAttachmentIdsFromPersistedIcon = (icon?: PersistedIconSource): string[] => {
-  if (!icon) return []
-  const refs: string[] = []
-  if (icon.type === 'remote') {
-    const id = extractAttachmentId(icon.cacheRef)
-    if (id) refs.push(id)
-  }
-  if (icon.type === 'custom') {
-    const id = extractAttachmentId(icon.dataRef)
-    if (id) refs.push(id)
-  }
-  return refs
 }
 
 const toPersistedIcon = async (icon?: IconSource): Promise<PersistedIconSource | undefined> => {
@@ -287,8 +324,7 @@ const isPersistedBookmarkDoc = (doc: { _id: string; data: PersistedBookmark }): 
   typeof doc.data?.url === 'string' &&
   typeof doc.data?.title === 'string'
 
-const loadPersistedBookmarks = async (): Promise<Bookmark[]> => {
-  const docs = (await allDocsAsync<PersistedBookmark>(BOOKMARK_DOC_PREFIX)).filter(isPersistedBookmarkDoc)
+const loadPersistedBookmarks = async (docs: HostDoc<PersistedBookmark>[]): Promise<Bookmark[]> => {
   const hydrated = new Array<Bookmark>(docs.length)
   let index = 0
   const worker = async () => {
@@ -305,8 +341,8 @@ const loadPersistedBookmarks = async (): Promise<Bookmark[]> => {
   return hydrated
 }
 
-const loadPersistedGroups = async (): Promise<Group[]> =>
-  (await allDocsAsync<PersistedGroup>(GROUP_DOC_PREFIX))
+const loadPersistedGroups = (docs: HostDoc<PersistedGroup>[]): Group[] =>
+  docs
     .map((doc, fallbackIndex) => ({ ...clone(doc.data), fallbackIndex }))
     .sort((a, b) => {
       const aOrder = typeof a.orderIndex === 'number' ? a.orderIndex : Number.POSITIVE_INFINITY
@@ -317,26 +353,32 @@ const loadPersistedGroups = async (): Promise<Group[]> =>
     })
     .map(({ fallbackIndex: _fallbackIndex, ...group }) => group)
 
-export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> => {
+export const loadBookmarkSnapshot = async (allowIncomplete = false): Promise<BookmarkSnapshot | null> => {
   if (!isUToolsDbAvailable()) return null
 
-  const [primaryMeta, legacyMeta, groups, bookmarks] = await Promise.all([
-    getDocAsync<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID),
-    getDocAsync<BookmarkMetaDoc>(LEGACY_BOOKMARK_META_DOC_ID),
-    loadPersistedGroups(),
-    loadPersistedBookmarks()
-  ])
+  assertHostSession()
+  const docs = await readBookmarkDocs()
+  const primaryMeta = docs.get(BOOKMARK_META_DOC_ID) as HostDoc<BookmarkMetaDoc> | undefined
+  const legacyMeta = primaryMeta ? null : await getDocAsync<BookmarkMetaDoc>(LEGACY_BOOKMARK_META_DOC_ID, true)
+  const groups = loadPersistedGroups([...docs.values()].filter(doc => doc._id.startsWith(GROUP_DOC_PREFIX)) as HostDoc<PersistedGroup>[])
+  const bookmarks = await loadPersistedBookmarks([...docs.values()].filter(doc => doc._id.startsWith(BOOKMARK_DOC_PREFIX)) as HostDoc<PersistedBookmark>[])
   const meta = primaryMeta?.data ?? legacyMeta?.data
 
-  if (groups.length || bookmarks.length) {
-    return {
-      groups,
-      bookmarks,
-      activeGroupId: meta?.activeGroupId || '',
-      activeSubGroupId: meta?.activeSubGroupId || ''
-    }
+  // 异步 hydration 期间同步可能继续到达，不能把混合版本认作编辑基线。
+  const latest = await readBookmarkDocs()
+  assertHostSession()
+  if (latest.size !== docs.size || [...docs].some(([id, doc]) => !sameDoc(doc, latest.get(id)))) {
+    throw new BookmarkDataPendingError()
+  }
+  if (groups.length || bookmarks.length || meta) {
+    bookmarkMigrationPending = false
+    const snapshot = { groups, bookmarks, activeGroupId: meta?.activeGroupId || '', activeSubGroupId: meta?.activeSubGroupId || '' }
+    if (!allowIncomplete) assertBookmarkIntegrity(snapshot)
+    bookmarkBaseline = docs
+    return snapshot
   }
 
+  bookmarkBaseline = docs
   const legacy = readLegacyJson<BookmarkSnapshot>(LEGACY_KEYS.bookmark)
   if (!legacy || !Array.isArray(legacy.groups) || !Array.isArray(legacy.bookmarks)) return null
 
@@ -347,8 +389,8 @@ export const loadBookmarkSnapshot = async (): Promise<BookmarkSnapshot | null> =
     activeSubGroupId: typeof legacy.activeSubGroupId === 'string' ? legacy.activeSubGroupId : ''
   }
 
-  await saveBookmarkSnapshot(snapshot)
-  cleanupLegacyKeySet(LEGACY_KEYS.bookmark)
+  // 等 store 完成旧嵌套分组迁移后再保存，不能把尚未规范化的旧结构写回再复读。
+  bookmarkMigrationPending = true
   return snapshot
 }
 
@@ -365,19 +407,18 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
     throw new Error('uTools db 不可用，无法保存书签')
   }
 
-  const [previousBookmarks, previousGroups, previousMeta] = await Promise.all([
-    allDocsAsync<PersistedBookmark>(BOOKMARK_DOC_PREFIX),
-    allDocsAsync<PersistedGroup>(GROUP_DOC_PREFIX),
-    getDocAsync<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
-  ])
+  assertHostSession()
+  assertBookmarkIntegrity(snapshot)
+  // 必须使用加载/上次成功保存时的版本。读取最新 _rev 再写旧快照会绕过冲突保护。
+  const currentDocs = await readBookmarkDocs()
+  assertHostSession()
+  assertBookmarkBaseline(currentDocs)
+  const baseline = bookmarkBaseline!
+  const previousBookmarks = [...baseline.values()].filter(doc => doc._id.startsWith(BOOKMARK_DOC_PREFIX)) as HostDoc<PersistedBookmark>[]
+  const previousGroups = [...baseline.values()].filter(doc => doc._id.startsWith(GROUP_DOC_PREFIX)) as HostDoc<PersistedGroup>[]
+  const previousMeta = baseline.get(BOOKMARK_META_DOC_ID) as HostDoc<BookmarkMetaDoc> | undefined
   const previousBookmarkMap = new Map(previousBookmarks.map((doc) => [doc._id, doc]))
   const previousGroupMap = new Map(previousGroups.map((doc) => [doc._id, doc]))
-  const previousAttachmentIds = new Set<string>()
-  previousBookmarks.forEach((doc) => {
-    collectAttachmentIdsFromPersistedIcon(doc.data.icon).forEach((id) => previousAttachmentIds.add(id))
-  })
-
-  const nextAttachmentIds = new Set<string>()
   const mutations: HostWriteDoc[] = []
   let dataChanged = false
 
@@ -393,7 +434,6 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
 
   for (const bookmark of snapshot.bookmarks) {
     const persistedIcon = await toPersistedIcon(bookmark.icon)
-    collectAttachmentIdsFromPersistedIcon(persistedIcon).forEach((id) => nextAttachmentIds.add(id))
     const persistedBookmark: PersistedBookmark = {
       ...clone(bookmark),
       ...(persistedIcon ? { icon: persistedIcon } : {})
@@ -441,15 +481,58 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
     }
   })
 
-  const writeResult = await bulkWriteDocs(mutations)
-  if (!writeResult.ok) {
-    throw new Error(`保存书签数据失败: ${writeResult.failedIds.join(', ')}`)
-  }
-  previousAttachmentIds.forEach((id) => {
-    if (!nextAttachmentIds.has(id)) {
-      removeDoc(id)
+  // 图标转换是异步操作，期间同步可能再次到达；提交前重新检查。
+  const checkedDocs = await readBookmarkDocs()
+  assertHostSession()
+  assertBookmarkBaseline(checkedDocs)
+  const stages = [
+    mutations.filter(doc => !doc._deleted && doc._id.startsWith(BOOKMARK_DOC_PREFIX)),
+    mutations.filter(doc => !doc._deleted && !doc._id.startsWith(BOOKMARK_DOC_PREFIX)),
+    mutations.filter(doc => doc._deleted)
+  ]
+  const completed: Array<{ doc: HostWriteDoc; rev: string }> = []
+  let exclusivelyConflicted = false
+  let failed: Awaited<ReturnType<typeof bulkWriteDocs>> | undefined
+  for (const stage of stages) {
+    if (!stage.length) continue
+    assertHostSession()
+    const result = await bulkWriteDocs(stage)
+    assertHostSession()
+    stage.forEach((doc, index) => {
+      const written = result.results[index]
+      if (written?.ok === true && !written.error && written.rev) completed.push({ doc, rev: written.rev })
+    })
+    if (!result.ok || stage.some((_, index) => !result.results[index]?.rev)) {
+      failed = result
+      exclusivelyConflicted = result.results.length === stage.length && result.results.every(written => written.ok !== true && (written.name === 'conflict' || written.error === 'conflict' || /conflict/i.test(written.message || '')))
+      break
     }
-  })
+  }
+  if (failed) {
+    // 只补偿已确认由本次操作写成的版本。其他设备的新版本不能被回滚覆盖。
+    let restored = true
+    for (const { doc, rev } of [...completed].reverse()) {
+      const previous = baseline.get(doc._id)
+      const undo: HostWriteDoc = previous
+        ? { _id: doc._id, _rev: rev, data: clone(previous.data) }
+        : { _id: doc._id, _rev: rev, _deleted: true }
+      assertHostSession()
+      const result = await bulkWriteDocs([undo])
+      if (!result.ok) restored = false
+    }
+    // 仅每项都明确冲突、没有成功/缺失结果时可重放，不能猜测未知写入是否成功。
+    if (!completed.length && exclusivelyConflicted) throw new BookmarkSyncConflictError()
+    throw new Error(restored ? '批量保存未完成，已补偿可确认的写入，未知结果需核对；本机编辑已保留。' : '批量保存未完成且存在后续修改，已停止写入并保留本机编辑，请通过恢复副本核对。')
+  }
+  for (const { doc, rev } of completed) {
+    if (doc._deleted) baseline.delete(doc._id)
+    else baseline.set(doc._id, { _id: doc._id, _rev: rev, data: clone(doc.data) })
+  }
+  // 附件按内容寻址，其他设备/尚未到齐的文档可能仍引用，保存快照时不做跨设备 GC。
+  if (bookmarkMigrationPending) {
+    bookmarkMigrationPending = false
+    cleanupLegacyKeySet(LEGACY_KEYS.bookmark)
+  }
 
   return { serialized: JSON.stringify(snapshot), dataChanged }
 }

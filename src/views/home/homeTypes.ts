@@ -22,7 +22,6 @@ export type Theme = 'light' | 'dark'
 export type ThemePref = 'light' | 'dark' | 'system'
 
 
-export type CtxMode = 'menu' | 'confirmDelete'
 
 
 

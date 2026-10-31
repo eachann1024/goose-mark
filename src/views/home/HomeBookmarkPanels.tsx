@@ -1,4 +1,6 @@
 import type * as React from 'react'
+import { memo } from 'react'
+import { VirtualBookmarkContent } from './VirtualBookmarkContent'
 import { DndContext, DragOverlay, type DragEndEvent, type DragStartEvent } from '@dnd-kit/core'
 import type { Group } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
@@ -7,14 +9,12 @@ import SidebarNav from './SidebarNav'
 import { Fav, BookmarkCard } from './BookmarkCard'
 import { bookmarkCollision } from './BookmarkDragParts'
 import { SearchResultsSurface } from './SearchResultsSurface'
-import { ListContent } from './ListContent'
-import { GridContent } from './GridContent'
 import { TrashContent } from './TrashContent'
 import { type HomeNavigationBindings, type HomeSearchBindings, type HomeBookmarkBindings } from './homeInteractionTypes'
 import type { SearchViewMode } from '@/stores/settings'
 import type { SensorDescriptor, SensorOptions } from '@dnd-kit/core'
 
-export function HomeBookmarkPanels({
+export const HomeBookmarkPanels = memo(function HomeBookmarkPanels({
   isSearching,
   dndSensors,
   handleDndDragStart,
@@ -46,7 +46,8 @@ export function HomeBookmarkPanels({
   openHomeItem,
   clearSearch,
   keptGroups,
-  activeDragItem
+  activeDragItem,
+  onDragCancel
 }: Pick<HomeNavigationBindings, 'activeGroupId' | 'activeSubId' | 'screen' | 'setActiveSubId' | 'setScreen' | 'view' | 'selectedId' | 'setSelectedId'> &
   Pick<HomeSearchBindings, 'isSearching' | 'searchViewMode' | 'searchVal' | 'clearSearch'> &
   Pick<HomeBookmarkBindings, 'homeGroups' | 'fireToast' | 'openHomeItem'> & {
@@ -67,6 +68,7 @@ export function HomeBookmarkPanels({
   setSearchViewMode: (mode: SearchViewMode) => void
   keptGroups: HomeGroup[]
   activeDragItem: HomeItem | null
+  onDragCancel: () => void
 }) {
   return (
     <div className={`app-main${isSearching ? ' is-searching' : ''}`}>
@@ -75,6 +77,7 @@ export function HomeBookmarkPanels({
             collisionDetection={bookmarkCollision}
             onDragStart={handleDndDragStart}
             onDragEnd={handleDndDragEnd}
+            onDragCancel={onDragCancel}
           >
           {/* Sidebar：搜索态隐藏，内容区占满全宽 */}
           {!isSearching && (
@@ -140,28 +143,20 @@ export function HomeBookmarkPanels({
                       className="content"
                       data-view={view}
                       data-group-id={group.id}
-                      // 非当前分组隐藏但保持挂载：图标不重载、滚动位置自然保留
+                      // 当前分组独占窗口；位置由按组记忆恢复。
                       hidden={!isActivePanel}
                       style={isActivePanel ? undefined : { display: 'none' }}
                       tabIndex={isActivePanel ? -1 : undefined}
                       onContextMenu={isActivePanel ? openCtx : undefined}
                     >
-                      {view === 'grid' ? (
-                        <GridContent
-                          groups={[group]}
-                          columns={gridColumns}
-                          selectedId={selectedId}
-                          onSelect={setSelectedId}
-                          onOpen={openHomeItem}
-                        />
-                      ) : (
-                        <ListContent
-                          groups={[group]}
-                          selectedId={selectedId}
-                          onSelect={setSelectedId}
-                          onOpen={openHomeItem}
-                        />
-                      )}
+                      <VirtualBookmarkContent
+                        groups={[group]}
+                        view={view}
+                        columns={gridColumns}
+                        selectedId={selectedId}
+                        onSelect={setSelectedId}
+                        onOpen={openHomeItem}
+                      />
                     </div>
                   )
                 })}
@@ -186,4 +181,4 @@ export function HomeBookmarkPanels({
           </DndContext>
         </div>
   )
-}
+})

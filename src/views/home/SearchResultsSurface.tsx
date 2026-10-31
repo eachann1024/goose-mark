@@ -1,9 +1,11 @@
+import { useCallback, useMemo } from 'react'
+import { VirtualBookmarkContent } from './VirtualBookmarkContent'
+import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { useSettingsStore } from '@/stores/settings'
 import { Ico } from './icon'
 import { type HomeItem } from './viewModel'
-import { Fav, GRID_ICON_SIZE_PX } from './BookmarkCard'
+import { Fav } from './BookmarkCard'
 import { AICreateCommand, SearchEmptyUniversal } from './SearchEmptyUniversal'
-import { GridCells } from './GridContent'
 
 /** 搜索结果行（列表布局）：密度按搜索场景收紧，扁平无分组段 */
 export function SearchResultRow({
@@ -75,8 +77,10 @@ export function SearchResultsSurface({
   onOpen?: (item: HomeItem) => void
   onClear: () => void
 }) {
-  const gridIconSize = useSettingsStore((s) => s.gridIconSize)
-  const iconSize = GRID_ICON_SIZE_PX[gridIconSize] ?? '46px'
+  const resultGroups = useMemo(() => [{ id: 'search-results', name: '', subs: [{ id: 'search-results-items', name: '', items }] }], [items])
+  const renderResult = useCallback((item: HomeItem, selected: boolean) => viewMode === 'list'
+    ? <SearchResultRow item={item} selected={selected} onSelect={onSelect} onOpen={onOpen} />
+    : <OverflowHoverTooltip className={`gcard${selected ? ' sel' : ''}`} title={item.ttl} data-item-id={item.id} onClick={() => { onSelect(item.id); onOpen?.(item) }}><Fav item={item} /><div className="ttl">{item.ttl}</div><div className="url">{item.host || item.regDomain}</div></OverflowHoverTooltip>, [viewMode, onSelect, onOpen])
   const count = items.length
   const hasUniversal = count === 0 && universalItems.length > 0
   const hasCommands = count === 0 && (hasUniversal || !!aiItem)
@@ -142,30 +146,9 @@ export function SearchResultsSurface({
             <span>没有找到匹配的书签</span>
           </div>
         )
-      ) : viewMode === 'grid' ? (
-        <div className="search-grid-wrap">
-          <GridCells
-            items={items}
-            columns={columns}
-            selectedId={selectedId}
-            iconSize={iconSize}
-            onSelect={onSelect}
-            onOpen={onOpen}
-            subtitleMode="host"
-          />
-          {aiFooter}
-        </div>
       ) : (
-        <div className="search-list">
-          {items.map((item) => (
-            <SearchResultRow
-              key={item.id}
-              item={item}
-              selected={item.id === selectedId}
-              onSelect={onSelect}
-              onOpen={onOpen}
-            />
-          ))}
+        <div className={viewMode === 'grid' ? 'search-grid-wrap' : 'search-list'}>
+          <VirtualBookmarkContent groups={resultGroups} view={viewMode} columns={columns} selectedId={selectedId} onSelect={onSelect} onOpen={onOpen} renderItem={renderResult} showHeaders={false} draggable={false} />
           {aiFooter}
         </div>
       )}

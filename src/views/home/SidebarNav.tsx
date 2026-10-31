@@ -3,7 +3,7 @@
  * 包含：
  *  - 右键菜单 / hover ⋯ 按钮（分组/子分组编辑操作）
  *  - 内联重命名 / 新建子分组（一级分组的新建已移至顶栏 Tab 栏）
- *  - 排序（上移/下移）、移动、提升为一级分组、删除（带二次确认）
+ *  - 排序（上移/下移）、移动、提升为一级分组、删除
  *
  * 警告：本文件对 TDZ 极度敏感。所有 const/useCallback 必须严格按使用顺序声明，
  * 禁止在声明前引用（见 vite-build-misses-hook-tdz.md）。
@@ -346,19 +346,20 @@ export default function SidebarNav({
     [closeMenu, promoteSubToGroup, fireToast, fixActiveSubIfNeeded]
   )
 
-  const confirmDelete = useCallback(() => {
-    setMenu((prev) => ({ ...prev, mode: 'confirmDelete' }))
-  }, [])
-
   const doDelete = useCallback(() => {
     if (!menu.target) return
+    if (useBookmarkStore.getState().isReadOnly) {
+      fireToast('只读模式下无法删除')
+      closeMenu()
+      return
+    }
     let ok = false
     if (menu.target.type === 'group') {
       ok = removeGroup(menu.target.groupId)
-      if (!ok) fireToast('至少保留一个分组')
+      if (!ok) fireToast('分组已不存在')
     } else {
       ok = removeSubGroup(menu.target.groupId, menu.target.subId)
-      if (!ok) fireToast('至少保留一个子分组')
+      if (!ok) fireToast('子分组已不存在')
     }
     if (ok) fixActiveSubIfNeeded()
     closeMenu()
@@ -372,23 +373,11 @@ export default function SidebarNav({
     setMenu((prev) => ({ ...prev, mode: 'menu' }))
   }, [])
 
-  // 用于显示"删除XX？"的名称
-  const menuTargetName = useCallback(() => {
-    if (!menu.target) return ''
-    if (menu.target.type === 'group') {
-      return homeGroups.find((g) => g.id === (menu.target as { type: 'group'; groupId: string }).groupId)?.name ?? ''
-    }
-    const t = menu.target as { type: 'sub'; groupId: string; subId: string }
-    const grp = homeGroups.find((g) => g.id === t.groupId)
-    return grp?.subs.find((s) => s.id === t.subId)?.name ?? ''
-  }, [menu.target, homeGroups])
-
   // ── 菜单内容渲染 ─────────────────────────────────────────────────────────
   const renderMenu = useCallback(() => renderSidebarMenu({
     menu,
     homeGroups,
     menuRef,
-    menuTargetName,
     startRenameGroup,
     startNewSub,
     startRenameSub,
@@ -399,14 +388,11 @@ export default function SidebarNav({
     switchToMoveMode,
     doPromote,
     doMoveSubToGroup,
-    confirmDelete,
     doDelete,
-    closeMenu,
     backToMenu,
   }), [
     menu,
     homeGroups,
-    menuTargetName,
     startRenameGroup,
     startNewSub,
     startRenameSub,
@@ -417,9 +403,7 @@ export default function SidebarNav({
     switchToMoveMode,
     doPromote,
     doMoveSubToGroup,
-    confirmDelete,
     doDelete,
-    closeMenu,
     backToMenu,
   ])
 

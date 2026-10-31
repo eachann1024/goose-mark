@@ -54,12 +54,16 @@ function favText(title: string, host: string): string {
   return /[a-zA-Z]/.test(first) ? first.toUpperCase() : first
 }
 
+const itemCache = new WeakMap<Bookmark, HomeItem>()
+
 function toItem(b: Bookmark): HomeItem {
+  const cached = itemCache.get(b)
+  if (cached) return cached
   const host = hostOf(b.url)
   const regDomain = registeredDomainOf(host)
   const userColor = b.icon?.bgColor || undefined
   const palette = siteColorOf(regDomain || host || b.title || b.url)
-  return {
+  const item: HomeItem = {
     id: b.id,
     ttl: b.title || host,
     url: b.url,
@@ -74,6 +78,8 @@ function toItem(b: Bookmark): HomeItem {
     pin: !!b.pinned,
     tags: b.tags || []
   }
+  itemCache.set(b, item)
+  return item
 }
 
 /** 单条书签 → HomeItem（搜索空态的全局搜索回退等场景复用） */
@@ -81,14 +87,74 @@ export function bookmarkToHomeItem(b: Bookmark): HomeItem {
   return toItem(b)
 }
 
-/** 组装：把 groups + bookmarks 转成三层视图模型（跳过回收站分组与空子分组）。 */
+export interface HomeGroupIndex {
+  byItemId: Map<string, HomeItem>
+  locationByItemId: Map<string, { groupId: string; subGroupId: string; index: number }>
+  duplicateSubIndexes: Map<string, Map<string, number>>
+  navigableItems: HomeItem[]
+  navigationIndex: Map<string, number>
+}
+const groupIndexes = new WeakMap<HomeGroup, HomeGroupIndex>()
+const navigationIndexes = new WeakMap<HomeItem[], Map<string, number>>()
+const bookmarkIndexes = new WeakMap<Bookmark[], Map<string, Bookmark>>()
+
+export function getBookmarkIndex(bookmarks: Bookmark[]): Map<string, Bookmark> {
+  let index = bookmarkIndexes.get(bookmarks)
+  if (!index) { index = new Map(bookmarks.map((b) => [b.id, b])); bookmarkIndexes.set(bookmarks, index) }
+  return index
+}
+
+export function getNavigationIndex(items: HomeItem[]): Map<string, number> {
+  let index = navigationIndexes.get(items)
+  if (!index) { index = new Map(items.map((item, i) => [item.id, i])); navigationIndexes.set(items, index) }
+  return index
+}
+
+export function getHomeGroupIndex(group: HomeGroup): HomeGroupIndex {
+  let index = groupIndexes.get(group)
+  if (index) return index
+  index = { byItemId: new Map(), locationByItemId: new Map(), duplicateSubIndexes: new Map(), navigableItems: [], navigationIndex: new Map() }
+  for (const sub of group.subs) {
+    for (let i = 0; i < sub.items.length; i++) {
+      const item = sub.items[i]
+      const firstLocation = index.locationByItemId.get(item.id)
+      if (firstLocation) {
+        let positions = index.duplicateSubIndexes.get(item.id)
+        if (!positions) {
+          positions = new Map([[firstLocation.subGroupId, firstLocation.index]])
+          index.duplicateSubIndexes.set(item.id, positions)
+        }
+        positions.set(sub.id, i)
+        continue
+      }
+      index.navigationIndex.set(item.id, index.navigableItems.length)
+      index.navigableItems.push(item)
+      index.byItemId.set(item.id, item)
+      index.locationByItemId.set(item.id, { groupId: group.id, subGroupId: sub.id, index: i })
+    }
+  }
+  navigationIndexes.set(index.navigableItems, index.navigationIndex)
+  groupIndexes.set(group, index)
+  return index
+}
+
+/** 恢复多分类书签的位置时也使用数据变更阶段构建的索引。 */
+export function getHomeSubItemIndex(group: HomeGroup, itemId: string, subId: string): number {
+  const index = getHomeGroupIndex(group)
+  const first = index.locationByItemId.get(itemId)
+  if (first?.subGroupId === subId) return first.index
+  return index.duplicateSubIndexes.get(itemId)?.get(subId) ?? -1
+}
+
+/** 数据变更时建立索引，切组、选中和打开菜单复用；不在交互热路径转换整库。 */
 export function buildHomeGroups(groups: Group[], bookmarks: Bookmark[]): HomeGroup[] {
-  const byId = new Map(bookmarks.map((b) => [b.id, b]))
+  const byId = getBookmarkIndex(bookmarks)
   const out: HomeGroup[] = []
   for (const g of groups) {
-    if (g.id === TRASH_GROUP_ID) continue
+    if (g.id === TRASH_GROUP_ID || g.isDeleted) continue
     const subs: HomeSub[] = []
     for (const sub of g.children || []) {
+      if (sub.isDeleted) continue
       const items: HomeItem[] = []
       for (const bid of sub.bookmarkIds || []) {
         const b = byId.get(bid)
@@ -96,7 +162,9 @@ export function buildHomeGroups(groups: Group[], bookmarks: Bookmark[]): HomeGro
       }
       subs.push({ id: sub.id, name: sub.name, items })
     }
-    out.push({ id: g.id, name: g.name, subs })
+    const group = { id: g.id, name: g.name, subs }
+    getHomeGroupIndex(group)
+    out.push(group)
   }
   return out
 }

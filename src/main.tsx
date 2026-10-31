@@ -7,7 +7,7 @@ import 'virtual:uno.css'
 import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
 import { initErrorReporting } from '@/lib/errorReporting'
-import { initializeBookmarkStorePersistence, useBookmarkStore } from '@/stores/bookmark'
+import { initializeBookmarkStorePersistence } from '@/stores/bookmark'
 import { initializeSettingsStorePersistence } from '@/stores/settings'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
 initErrorReporting()
@@ -37,10 +37,8 @@ const bootstrap = async () => {
     root.render(<div role="alert">书签加载失败，请重新打开应用。</div>)
     return
   }
-  if (!useBookmarkStore.getState().isReadOnly) {
-    void useBookmarkStore.getState().backfillIconCache()
-    void useBookmarkStore.getState().refreshMissingIcons()
-  }
+  // 启动只读取：自动补图标会修改旧设备文档的版本/时间，使旧内容参与云端覆盖。
+  // 新增、编辑书签时仍由原有表单流程获取图标。
 
   root.render(
     <StrictMode>

@@ -1,6 +1,7 @@
 import type * as React from 'react'
 import { useCallback, useEffect } from 'react'
 import { type HomeNavigationBindings, type HomeScrollBindings } from './homeInteractionTypes'
+import { scrollToVirtualBookmarkId } from './VirtualBookmarkContent'
 
 export function useHomeSmoothScrolling({
   smoothRafRef
@@ -60,8 +61,14 @@ export function useHomeSelectionScroll({
     }
     const root = contentRef.current
     if (!root) return
-    const sel = root.querySelector<HTMLElement>(`[data-item-id="${selectedId}"]`)
-    if (!sel) return
+    const sel = root.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(selectedId)}"]`)
+    if (!sel) {
+      if (keyboardNavRef.current) {
+        keyboardNavRef.current = false
+        scrollToVirtualBookmarkId(root, selectedId)
+      }
+      return
+    }
     // 全局搜索命令条：在条内滚动容器里就近露出，不要滚整个 content
     const stripList = sel.closest('.usearch-list') as HTMLElement | null
     if (stripList) {

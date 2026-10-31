@@ -1,10 +1,11 @@
 import type * as React from 'react'
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { utoolsStorage } from '@/lib/utoolsStorage'
 import { HOME_CONTINUITY_KEY, type HomeContinuityState, type GroupPanelState, type GroupPanelMap, sanitizeScrollTop, readGroupPanelMap, writeGroupPanelMap, readHomeScrollTop, writeHomeScrollTop } from './homeContinuity'
 import { type HomeNavigationBindings } from './homeInteractionTypes'
+import { readVirtualBookmarkAnchor } from './VirtualBookmarkContent'
 
 export function useHomePanelPersistence({
   initialContinuityRef,
@@ -19,12 +20,14 @@ export function useHomePanelPersistence({
   contentRef: React.RefObject<HTMLDivElement | null>
 }) {
   // 滚动默认持久化：按一级分组分别记住；兼容旧的全局 scroll key / 连贯快照
-  const groupPanelMapRef = useRef<GroupPanelMap>(readGroupPanelMap())
-  const homeScrollTopRef = useRef(
-    readHomeScrollTop(initialContinuityRef.current?.activeGroupId || useBookmarkStore.getState().activeGroupId)
-    || initialContinuityRef.current?.scrollTop
-    || 0
-  )
+  const [initialPanel] = useState(() => ({
+    map: readGroupPanelMap(),
+    scrollTop: readHomeScrollTop(initialContinuityRef.current?.activeGroupId || useBookmarkStore.getState().activeGroupId)
+      || initialContinuityRef.current?.scrollTop || 0,
+  }))
+  const groupPanelMapRef = useRef<GroupPanelMap>(initialPanel.map)
+  const savedPanelMapRef = useRef<GroupPanelMap>(initialPanel.map)
+  const homeScrollTopRef = useRef(initialPanel.scrollTop)
   const homeContinuityLatestRef = useRef({
     activeSubId,
     selectedId,
@@ -46,7 +49,19 @@ export function useHomePanelPersistence({
     if (!dirty && !alsoScrollKey) return
     groupPanelDirtyRef.current = false
     try {
-      if (dirty) writeGroupPanelMap(groupPanelMapRef.current)
+      if (dirty) {
+        // 只覆盖本窗口真正更新过的组，保留其他窗口刚保存的其他组。
+        const changed = Object.fromEntries(Object.entries(groupPanelMapRef.current)
+          .filter(([id, state]) => state !== savedPanelMapRef.current[id]))
+        // 无数据库的浏览器环境中读取为空，仍须保留本窗口先前记录的分组位置。
+        const merged = { ...groupPanelMapRef.current, ...readGroupPanelMap(), ...changed }
+        if (writeGroupPanelMap(merged) === false) {
+          groupPanelDirtyRef.current = true
+          return
+        }
+        groupPanelMapRef.current = merged
+        savedPanelMapRef.current = merged
+      }
       if (alsoScrollKey) {
         const gid = homeContinuityLatestRef.current.activeGroupId || useBookmarkStore.getState().activeGroupId
         const top = gid
@@ -55,7 +70,8 @@ export function useHomePanelPersistence({
         writeHomeScrollTop(top)
       }
     } catch {
-      // 持久化失败不阻塞 UI
+      if (dirty) groupPanelDirtyRef.current = true
+      // 持久化失败不阻塞 UI，保留脏状态供下一次保存重试。
     }
   }, [])
 
@@ -82,11 +98,17 @@ export function useHomePanelPersistence({
       scrollTop: patch.scrollTop !== undefined ? sanitizeScrollTop(patch.scrollTop) : prev.scrollTop,
       activeSubId: patch.activeSubId !== undefined ? patch.activeSubId : prev.activeSubId,
       selectedId: patch.selectedId !== undefined ? patch.selectedId : prev.selectedId,
+      logicalAnchor: patch.logicalAnchor !== undefined ? patch.logicalAnchor : prev.logicalAnchor,
     }
     if (
       next.scrollTop === prev.scrollTop &&
       next.activeSubId === prev.activeSubId &&
       next.selectedId === prev.selectedId &&
+      next.logicalAnchor?.itemId === prev.logicalAnchor?.itemId &&
+      next.logicalAnchor?.offset === prev.logicalAnchor?.offset &&
+      next.logicalAnchor?.atEnd === prev.logicalAnchor?.atEnd &&
+      next.logicalAnchor?.subId === prev.logicalAnchor?.subId &&
+      next.logicalAnchor?.index === prev.logicalAnchor?.index &&
       groupPanelMapRef.current[groupId]
     ) {
       return
@@ -100,17 +122,19 @@ export function useHomePanelPersistence({
     const groupId = forceGroupId || homeContinuityLatestRef.current.activeGroupId || useBookmarkStore.getState().activeGroupId
     if (!groupId) return
     // 只有内容面板仍挂着该分组时，才信任 DOM scrollTop
+    let logicalAnchor: GroupPanelState['logicalAnchor'] | undefined
     if (!isSearchingRef.current) {
       const root = contentRef.current
       const panelGroupId = root?.dataset.groupId || ''
-      if (root && (!panelGroupId || panelGroupId === groupId)) {
-        homeScrollTopRef.current = root.scrollTop
-      }
+      if (!root || panelGroupId !== groupId) return
+      homeScrollTopRef.current = root.scrollTop
+      logicalAnchor = readVirtualBookmarkAnchor(root)
     }
     updateGroupPanelMemory(groupId, {
       scrollTop: homeScrollTopRef.current,
       activeSubId: homeContinuityLatestRef.current.activeSubId,
       selectedId: homeContinuityLatestRef.current.selectedId,
+      logicalAnchor,
     })
   }, [updateGroupPanelMemory])
 

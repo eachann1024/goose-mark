@@ -1,6 +1,5 @@
 import type * as React from 'react'
 import { useEffect, useState } from 'react'
-import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { Ico } from './icon'
@@ -20,16 +19,8 @@ export function Fav({ item, cls = 'fav' }: { item: HomeItem; cls?: string }) {
   // 无图标 / 图标加载失败 → 文字占位：底色 + 文字色全部由 item.favColor/favFg 实色 hex 内联，
   // 不走 CSS 变量派生（Chromium 108 下 color-mix/oklch/hsl 变量语法会失效成透明）。
   // 用户自设 icon.bgColor 时 favColor 即该色；否则为按一级域名哈希分配的算法色，
-  // 并在下方 useEffect 里懒持久化到 icon.bgColor，之后不受调色板调整影响。
+  // 渲染不写回书签：否则仅打开旧设备就会把旧内容标记为最新修改。
   const placeholderStyle: React.CSSProperties = { background: item.favColor, color: item.favFg }
-
-  useEffect(() => {
-    if (showImg || item.color) return
-    const { bookmarks, updateBookmark } = useBookmarkStore.getState()
-    const b = bookmarks.find((x) => x.id === item.id)
-    if (!b || b.icon?.bgColor) return
-    updateBookmark(item.id, { icon: b.icon ? { ...b.icon, bgColor: item.favColor } : { type: 'text', value: item.fav, bgColor: item.favColor } })
-  }, [showImg, item.id, item.color, item.favColor, item.fav])
 
   return (
     <div className={showImg ? cls : `${cls} is-placeholder`} style={showImg ? undefined : placeholderStyle}>

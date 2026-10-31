@@ -3,6 +3,14 @@ import { TRASH_GROUP_ID } from '@/stores/bookmarkSeed'
 import type { BookmarkActions, BookmarkSet, BookmarkGet } from './store-types'
 
 export function createSelectionActions(set: BookmarkSet, get: BookmarkGet): Pick<BookmarkActions, 'setSearch' | 'setActiveView' | 'setActiveGroup' | 'setActiveSubGroup' | 'setReadOnly' | 'selectGroup' | 'selectSubGroup' | 'recordBookmarkUse' | 'ensureValidSelection' | 'getBookmarkLocations' | 'isBookmarkInTrash'> {
+  const select = (groupId: string, subId?: string) => {
+    const state = get()
+    const group = state.groups.find((g) => g.id === groupId && !g.isDeleted)
+    if (!group || (subId !== undefined && !group.children.some((sub) => sub.id === subId && !sub.isDeleted))) return
+    const nextSubId = subId ?? group.children.find((sub) => !sub.isDeleted)?.id ?? ''
+    if (state.activeGroupId === groupId && state.activeSubGroupId === nextSubId && state.activeView === 'group') return
+    set({ activeGroupId: groupId, activeSubGroupId: nextSubId, activeView: 'group' })
+  }
   return {
     setSearch: (value) => set({ search: typeof value === 'string' ? value : '' }),
 
@@ -12,23 +20,15 @@ export function createSelectionActions(set: BookmarkSet, get: BookmarkGet): Pick
 
     // 选中分组时，列表数据源自动跟随分组（activeView = 'group'），
     // 等价旧版只有分组列表时的默认行为。
-    setActiveGroup: (groupId) => {
-      const group = get().groups.find((g) => g.id === groupId)
-      if (!group) return
-      set({ activeGroupId: groupId, activeSubGroupId: group.children[0]?.id ?? '', activeView: 'group' })
-    },
+    setActiveGroup: (groupId) => select(groupId),
 
-    setActiveSubGroup: (subGroupId) => set({ activeSubGroupId: subGroupId, activeView: 'group' }),
+    setActiveSubGroup: (subGroupId) => select(get().activeGroupId, subGroupId),
 
     setReadOnly: (value) => set({ isReadOnly: !!value }),
 
-    selectGroup: (groupId, subId) => {
-      const group = get().groups.find((g) => g.id === groupId)
-      const firstSub = group?.children?.[0]
-      set({ activeGroupId: groupId, activeSubGroupId: subId ?? firstSub?.id ?? '', activeView: 'group' })
-    },
+    selectGroup: select,
 
-    selectSubGroup: (subId) => set({ activeSubGroupId: subId, activeView: 'group' }),
+    selectSubGroup: (subId) => select(get().activeGroupId, subId),
 
     // 记录书签使用：lastUsed = now、visits++。本地排序数据。
     // 不走 scheduleBookmarkSync（避免把高频本地使用记录推送到同步通道）。
@@ -50,18 +50,21 @@ export function createSelectionActions(set: BookmarkSet, get: BookmarkGet): Pick
       const wantGroupId = preferredGroupId ?? activeGroupId
       const wantSubGroupId = preferredSubGroupId ?? activeSubGroupId
       if (!groups.length) {
-        set({ activeGroupId: '', activeSubGroupId: '' })
+        if (activeGroupId || activeSubGroupId) set({ activeGroupId: '', activeSubGroupId: '' })
         return
       }
-      const preferredGroup = groups.find((g) => g.id === wantGroupId)
-      const fallbackGroup = preferredGroup || groups.find((g) => g.id !== TRASH_GROUP_ID) || groups[0]
+      const preferredGroup = groups.find((g) => g.id === wantGroupId && !g.isDeleted)
+      const fallbackGroup = preferredGroup || groups.find((g) => g.id !== TRASH_GROUP_ID && !g.isDeleted) || groups.find((g) => !g.isDeleted)
       if (!fallbackGroup) {
         set({ activeGroupId: '', activeSubGroupId: '' })
         return
       }
-      const preferredSub = fallbackGroup.children.find((c) => c.id === wantSubGroupId)
-      const fallbackSub = preferredSub || fallbackGroup.children[0]
-      set({ activeGroupId: fallbackGroup.id, activeSubGroupId: fallbackSub?.id ?? '' })
+      const preferredSub = fallbackGroup.children.find((c) => c.id === wantSubGroupId && !c.isDeleted)
+      const fallbackSub = preferredSub || fallbackGroup.children.find((c) => !c.isDeleted)
+      const nextSubId = fallbackSub?.id ?? ''
+      if (activeGroupId !== fallbackGroup.id || activeSubGroupId !== nextSubId) {
+        set({ activeGroupId: fallbackGroup.id, activeSubGroupId: nextSubId })
+      }
     },
 
     getBookmarkLocations: (id) => {

@@ -60,9 +60,12 @@ export function createShareActions(get: BookmarkGet): Pick<BookmarkActions, 'get
 
     scheduleBookmarkSync: (bookmarkId, options) => {
       const now = options?.updatedAt || Date.now()
-      const bookmark = get().bookmarks.find((b) => b.id === bookmarkId)
       const isDeleted = !!options?.isDeleted
-      const content = options?.content ?? bookmark ?? null
+      // Only the removal action can skip the lookup. Other deletion callers may
+      // still need the live bookmark to discover its current shared locations.
+      const content = isDeleted && options?.removedFromStore && options.content === null
+        ? null
+        : options?.content ?? get().bookmarks.find((b) => b.id === bookmarkId) ?? null
       if (!isDeleted && !content) return
       schedulePush(
         { itemId: bookmarkId, itemType: 'bookmark', content, isDeleted, updatedAt: now },
