@@ -1,0 +1,24 @@
+{
+  "noGroupSaveDisabled": true,
+  "bookmarksBefore": 1,
+  "result": {
+    "active": "f7accdc8-adf9-4bd1-a8ff-df6783cbdbbf",
+    "created": true,
+    "locations": [
+      {
+        "groupId": "f7accdc8-adf9-4bd1-a8ff-df6783cbdbbf",
+        "subGroupId": "ae41caba-abb8-4868-9786-702151980597"
+      }
+    ],
+    "groups": [
+      {
+        "id": "f7accdc8-adf9-4bd1-a8ff-df6783cbdbbf",
+        "name": "恢复分类😀",
+        "subIds": [
+          "ae41caba-abb8-4868-9786-702151980597"
+        ]
+      }
+    ],
+    "confirmCalls": 0
+  }
+}

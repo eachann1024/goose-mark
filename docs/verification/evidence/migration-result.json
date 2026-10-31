@@ -1,0 +1,73 @@
+{
+  "reports": [
+    {
+      "size": 10000,
+      "version": "before",
+      "ms": 255.058791,
+      "contentCommits": 2,
+      "remaining": 5001,
+      "normalIds": [
+        "m0",
+        "m1"
+      ],
+      "normalTitles": [
+        "first-0",
+        "duplicate-first"
+      ],
+      "trashIds": 5001,
+      "inputUnchanged": true
+    },
+    {
+      "size": 10000,
+      "version": "after",
+      "ms": 3.429708000000005,
+      "contentCommits": 2,
+      "remaining": 5001,
+      "normalIds": [
+        "m0",
+        "m1"
+      ],
+      "normalTitles": [
+        "first-0",
+        "duplicate-first"
+      ],
+      "trashIds": 5001,
+      "inputUnchanged": true
+    },
+    {
+      "size": 100000,
+      "version": "after",
+      "ms": 24.98750000000001,
+      "contentCommits": 2,
+      "remaining": 50001,
+      "normalIds": [
+        "m0",
+        "m1"
+      ],
+      "normalTitles": [
+        "first-0",
+        "duplicate-first"
+      ],
+      "trashIds": 50001,
+      "inputUnchanged": true
+    },
+    {
+      "size": 1000000,
+      "version": "after",
+      "ms": 602.2375410000001,
+      "contentCommits": 2,
+      "remaining": 500001,
+      "normalIds": [
+        "m0",
+        "m1"
+      ],
+      "normalTitles": [
+        "first-0",
+        "duplicate-first"
+      ],
+      "trashIds": 500001,
+      "inputUnchanged": true
+    }
+  ],
+  "scope": "Real snapshot+trash action factories; in-memory set/commit; ensureValidSelection callback replaced, no React/host/persistence. Real performance clock."
+}

@@ -1,0 +1,34 @@
+[
+  {
+    "size": 100000,
+    "trashCount": 10,
+    "version": "before",
+    "ms": 23.180625000000003,
+    "remaining": 99990,
+    "commits": 1
+  },
+  {
+    "size": 100000,
+    "trashCount": 10,
+    "version": "after",
+    "ms": 4.649208999999999,
+    "remaining": 99990,
+    "commits": 1
+  },
+  {
+    "size": 1000000,
+    "trashCount": 10,
+    "version": "before",
+    "ms": 306.73900000000003,
+    "remaining": 999990,
+    "commits": 1
+  },
+  {
+    "size": 1000000,
+    "trashCount": 10,
+    "version": "after",
+    "ms": 41.577042000000006,
+    "remaining": 999990,
+    "commits": 1
+  }
+]

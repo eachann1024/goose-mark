@@ -1,0 +1,52 @@
+{
+  "results": [
+    {
+      "name": "sparseMixed",
+      "equal": true,
+      "beforeCount": 1002,
+      "afterCount": 1002,
+      "sourceUnchanged": true,
+      "trashIndexes": [
+        "dup",
+        "active"
+      ],
+      "duplicateRemaining": [
+        {
+          "id": "dup",
+          "updatedAt": 1793371516393
+        }
+      ],
+      "commits": [
+        1,
+        1
+      ]
+    },
+    {
+      "name": "continuousMiddle",
+      "equal": true,
+      "beforeCount": 1000,
+      "afterCount": 1000,
+      "sourceUnchanged": true,
+      "trashIndexes": [],
+      "duplicateRemaining": [],
+      "commits": [
+        1,
+        1
+      ]
+    },
+    {
+      "name": "allRemoved",
+      "equal": true,
+      "beforeCount": 0,
+      "afterCount": 0,
+      "sourceUnchanged": true,
+      "trashIndexes": [],
+      "duplicateRemaining": [],
+      "commits": [
+        1,
+        1
+      ]
+    }
+  ],
+  "scope": "Real action factories; memory commit; fixed logical TTL time only, not a performance sample."
+}

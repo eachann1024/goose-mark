@@ -1,0 +1,85 @@
+{
+  "simultaneous": 8,
+  "requested": 10,
+  "pageBudget": 8,
+  "host": "browser without uTools; isolated in-memory state, not shared-host DB",
+  "records": [
+    {
+      "page": "p21",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "page": "p29",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "page": "p30",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "page": "p31",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "page": "p32",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "page": "p33",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "page": "p34",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "page": "p35",
+      "root": true,
+      "active": "tabs-b",
+      "rendered": "tabs-b",
+      "bookmarks": 100
+    },
+    {
+      "input": {
+        "query": "网址\t标题 https://example.com/\t电子表格😀",
+        "root": true,
+        "xss": 0
+      }
+    },
+    {
+      "input": {
+        "query": "<img src=x onerror=window.__gooseXss=1>",
+        "root": true,
+        "xss": 0
+      }
+    },
+    {
+      "input": {
+        "query": "[.*(?<=😀){5000}",
+        "root": true,
+        "xss": 0
+      }
+    }
+  ]
+}

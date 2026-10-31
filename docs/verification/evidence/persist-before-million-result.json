@@ -1,0 +1,1 @@
+{"restored":"s1","selection":{"iterations":3,"ms":3927.21,"fullSerializations":9,"recoveries":0,"writes":0,"afterIdleFlushAndExit":{"fullSerializations":15,"recoveries":0,"writes":1,"smallWrites":0,"smallValue":"{\"activeGroupId\":\"g\",\"activeSubGroupId\":\"s1\"}"}},"edit":{"recoveries":0,"fullSerializations":18,"writesBeforeDebounce":1},"writesAfterFlush":2,"readonly":false}

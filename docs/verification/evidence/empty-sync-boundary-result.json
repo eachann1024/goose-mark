@@ -1,0 +1,103 @@
+{
+  "finds": 4,
+  "currentShareIds": [
+    "current",
+    "current-sub"
+  ],
+  "events": [
+    {
+      "item": {
+        "itemId": "live",
+        "itemType": "bookmark",
+        "content": {
+          "id": "live",
+          "title": "live",
+          "locations": [
+            {
+              "groupId": "g",
+              "subGroupId": "s"
+            }
+          ]
+        },
+        "isDeleted": true,
+        "updatedAt": 1793457356368
+      },
+      "options": {}
+    },
+    {
+      "item": {
+        "itemId": "live",
+        "itemType": "bookmark",
+        "content": {
+          "id": "live",
+          "title": "live",
+          "locations": [
+            {
+              "groupId": "g",
+              "subGroupId": "s"
+            }
+          ]
+        },
+        "isDeleted": true,
+        "updatedAt": 1793457356368
+      },
+      "options": {
+        "previousShareIds": [
+          "previous"
+        ]
+      }
+    },
+    {
+      "item": {
+        "itemId": "removed",
+        "itemType": "bookmark",
+        "content": null,
+        "isDeleted": true,
+        "updatedAt": 1793457356368
+      },
+      "options": {
+        "previousShareIds": [
+          "previous"
+        ]
+      }
+    },
+    {
+      "item": {
+        "itemId": "live",
+        "itemType": "bookmark",
+        "content": {
+          "id": "live",
+          "title": "live",
+          "locations": [
+            {
+              "groupId": "g",
+              "subGroupId": "s"
+            }
+          ]
+        },
+        "isDeleted": false,
+        "updatedAt": 1793457356368
+      },
+      "options": {}
+    },
+    {
+      "item": {
+        "itemId": "live",
+        "itemType": "bookmark",
+        "content": {
+          "id": "live",
+          "title": "live",
+          "locations": [
+            {
+              "groupId": "g",
+              "subGroupId": "s"
+            }
+          ]
+        },
+        "isDeleted": false,
+        "updatedAt": 1793457356368
+      },
+      "options": {}
+    }
+  ]
+}
