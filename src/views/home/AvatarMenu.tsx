@@ -6,7 +6,8 @@
 import { useEffect, useRef } from 'react'
 import { Image } from '@/components/ui/image'
 import { Ico } from './icon'
-import logoUrl from '@/assets/logo.png'
+// 复用 public/logo.png（base './' 下相对路径），避免打包出重复副本
+const logoUrl = 'logo.png'
 
 type ThemePref = 'light' | 'dark' | 'system'
 type ViewMode = 'list' | 'grid'

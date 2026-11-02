@@ -1,4 +1,5 @@
 import type { BookmarkLocation } from '@/types/bookmark'
+import { recordBookmarkUsage } from '@/lib/bookmarkUsage'
 import { TRASH_GROUP_ID } from '@/stores/bookmarkSeed'
 import type { BookmarkActions, BookmarkSet, BookmarkGet } from './store-types'
 
@@ -37,11 +38,11 @@ export function createSelectionActions(set: BookmarkSet, get: BookmarkGet): Pick
       const idx = bookmarks.findIndex((b) => b.id === id)
       if (idx === -1) return
       const prev = bookmarks[idx]
-      bookmarks.splice(idx, 1, {
-        ...prev,
-        lastUsed: Date.now(),
-        visits: (prev.visits ?? 0) + 1
-      })
+      const lastUsed = Date.now()
+      const visits = (prev.visits ?? 0) + 1
+      bookmarks.splice(idx, 1, { ...prev, lastUsed, visits })
+      // 统计只写本机；持久化层不会把 visits/lastUsed 写入同步的书签文档。
+      recordBookmarkUsage(id, { visits, lastUsed })
       set({ bookmarks })
     },
 
