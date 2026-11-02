@@ -1,1 +1,0 @@
-{"unavailable":false,"failed":false,"success":true,"value":"three","migrationFailureValue":"four","retained":true,"migrationSuccessValue":"four","legacyCleaned":true,"emits":[{"k":"panel","v":"three"},{"k":"new-panel","v":"four"}]}
