@@ -1,6 +1,7 @@
 import { assertBookmarkIntegrity, BookmarkDataPendingError } from './bookmarkIntegrity'
 import type { Bookmark, Group, IconSource } from '@/types/bookmark'
 import type { SettingsState } from '@/stores/settings'
+import { overlayBookmarkUsage } from '@/lib/bookmarkUsage'
 import {
   allDocsAsync,
   bulkWriteDocs,
@@ -361,7 +362,8 @@ export const loadBookmarkSnapshot = async (allowIncomplete = false): Promise<Boo
   const primaryMeta = docs.get(BOOKMARK_META_DOC_ID) as HostDoc<BookmarkMetaDoc> | undefined
   const legacyMeta = primaryMeta ? null : await getDocAsync<BookmarkMetaDoc>(LEGACY_BOOKMARK_META_DOC_ID, true)
   const groups = loadPersistedGroups([...docs.values()].filter(doc => doc._id.startsWith(GROUP_DOC_PREFIX)) as HostDoc<PersistedGroup>[])
-  const bookmarks = await loadPersistedBookmarks([...docs.values()].filter(doc => doc._id.startsWith(BOOKMARK_DOC_PREFIX)) as HostDoc<PersistedBookmark>[])
+  // 使用统计只存在本机；本机没有记录时沿用文档里的旧值。
+  const bookmarks = overlayBookmarkUsage(await loadPersistedBookmarks([...docs.values()].filter(doc => doc._id.startsWith(BOOKMARK_DOC_PREFIX)) as HostDoc<PersistedBookmark>[]))
   const meta = primaryMeta?.data ?? legacyMeta?.data
 
   // 异步 hydration 期间同步可能继续到达，不能把混合版本认作编辑基线。
@@ -440,6 +442,14 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
     }
     const id = `${BOOKMARK_DOC_PREFIX}${bookmark.id}`
     const previous = previousBookmarkMap.get(id)
+    if (previous) {
+      // visits/lastUsed 是本机统计，不属于同步文档：逐字保留旧文档的值，
+      // 避免“仅打开书签”在旧 _rev 上写出整条（可能过期的）书签。
+      for (const key of ['visits', 'lastUsed'] as const) {
+        if (key in previous.data) (persistedBookmark as Record<string, unknown>)[key] = previous.data[key]
+        else delete persistedBookmark[key]
+      }
+    }
     if (!previous || !isSamePersistedData(previous.data, persistedBookmark)) {
       mutations.push({ _id: id, _rev: previous?._rev, data: persistedBookmark })
       dataChanged = true

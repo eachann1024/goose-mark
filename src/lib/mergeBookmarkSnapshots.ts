@@ -7,16 +7,11 @@ const object = (value: unknown): value is Record<string, unknown> =>
 // 三方比较只合并相对已读基线的实际编辑；缺席本身不代表删除。
 // 时间戳只用于同一实体的元信息，不能用整库最大值选一个快照覆盖另一个。
 function merge(base: unknown, local: unknown, remote: unknown, key = ''): unknown {
+  // visits/lastUsed 是本机统计（加载时已叠加本机值），不能相加或判冲突：本机有数值就用本机，否则用远端。
+  if (key === 'visits' || key === 'lastUsed') return typeof local === 'number' ? local : remote
   if (same(local, base)) return remote
   if (same(remote, base)) return local
-  if (key === 'visits' && typeof local === 'number' && typeof remote === 'number') {
-    const previous = typeof base === 'number' ? base : 0
-    if (local < previous || remote < previous || !Number.isSafeInteger(local) || !Number.isSafeInteger(remote)) throw new BookmarkSyncConflictError()
-    const combined = previous + (local - previous) + (remote - previous)
-    if (!Number.isSafeInteger(combined)) throw new BookmarkSyncConflictError()
-    return combined
-  }
-  if (['updatedAt', 'lastUsed', 'serverUpdatedAt'].includes(key) &&
+  if (['updatedAt', 'serverUpdatedAt'].includes(key) &&
     typeof local === 'number' && typeof remote === 'number') return Math.max(local, remote)
 
   if (Array.isArray(local) && Array.isArray(remote) && Array.isArray(base) &&
