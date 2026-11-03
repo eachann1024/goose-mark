@@ -23,6 +23,7 @@ const GROUP_DOC_PREFIX = 'gm:group:'
 const ICON_ATTACHMENT_PREFIX = 'gm:icon/'
 const LEGACY_BOOKMARK_META_DOC_ID = 'gm:bookmark:meta'
 const BOOKMARK_META_DOC_ID = 'gm:meta:bookmark'
+const BOOKMARK_SCHEMA_VERSION = 2
 const SETTINGS_DOC_ID = 'gm:settings'
 const STORAGE_DOC_PREFIX = 'gm:storage:'
 const LEGACY_FALLBACK_DOC_PREFIX = 'goose-marks:storage:'
@@ -65,6 +66,7 @@ export interface BookmarkSnapshot {
 // 仅驻留本窗口内存；不增加文档字段，也不改变旧版可读的数据格式。
 let bookmarkBaseline: Map<string, HostDoc<unknown>> | null = null
 let bookmarkMigrationPending = false
+let legacyBookmarkStoragePending = false
 export const isBookmarkMigrationPending = (): boolean => bookmarkMigrationPending
 
 export class BookmarkAccountChangedError extends Error {
@@ -373,7 +375,9 @@ export const loadBookmarkSnapshot = async (allowIncomplete = false): Promise<Boo
     throw new BookmarkDataPendingError()
   }
   if (groups.length || bookmarks.length || meta) {
-    bookmarkMigrationPending = false
+    // 仅启动时识别旧版；后续 refresh 必须严格校验，不能反复归一化同步中间态。
+    // 缺失 meta 也可能是新版同步尚未到达，不能据此推断为旧版。
+    if (allowIncomplete) bookmarkMigrationPending = meta?.schemaVersion === 1
     const snapshot = { groups, bookmarks, activeGroupId: meta?.activeGroupId || '', activeSubGroupId: meta?.activeSubGroupId || '' }
     if (!allowIncomplete) assertBookmarkIntegrity(snapshot)
     bookmarkBaseline = docs
@@ -393,6 +397,7 @@ export const loadBookmarkSnapshot = async (allowIncomplete = false): Promise<Boo
 
   // 等 store 完成旧嵌套分组迁移后再保存，不能把尚未规范化的旧结构写回再复读。
   bookmarkMigrationPending = true
+  legacyBookmarkStoragePending = true
   return snapshot
 }
 
@@ -461,7 +466,7 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
     !previousMetaData ||
     previousMetaData.activeGroupId !== snapshot.activeGroupId ||
     previousMetaData.activeSubGroupId !== snapshot.activeSubGroupId ||
-    previousMetaData.schemaVersion !== 1
+    previousMetaData.schemaVersion !== BOOKMARK_SCHEMA_VERSION
   if (metaChanged) {
     mutations.push({
       _id: BOOKMARK_META_DOC_ID,
@@ -470,7 +475,7 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
         activeGroupId: snapshot.activeGroupId,
         activeSubGroupId: snapshot.activeSubGroupId,
         updatedAt: Date.now(),
-        schemaVersion: 1
+        schemaVersion: BOOKMARK_SCHEMA_VERSION
       } satisfies BookmarkMetaDoc
     })
   }
@@ -541,7 +546,10 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
   // 附件按内容寻址，其他设备/尚未到齐的文档可能仍引用，保存快照时不做跨设备 GC。
   if (bookmarkMigrationPending) {
     bookmarkMigrationPending = false
-    cleanupLegacyKeySet(LEGACY_KEYS.bookmark)
+    if (legacyBookmarkStoragePending) {
+      legacyBookmarkStoragePending = false
+      cleanupLegacyKeySet(LEGACY_KEYS.bookmark)
+    }
   }
 
   return { serialized: JSON.stringify(snapshot), dataChanged }

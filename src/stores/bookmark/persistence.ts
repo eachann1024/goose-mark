@@ -1,7 +1,7 @@
 import { patchBookmarksWithBuiltinSeedIcons } from '@/stores/bookmarkSeed'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import { BookmarkAccountChangedError, BookmarkSyncConflictError, isBookmarkMigrationPending, loadBookmarkSnapshot, saveBookmarkSnapshot, type BookmarkSnapshot } from '@/lib/stateRepository'
-import { assertBookmarkIntegrity, BookmarkDataPendingError } from '@/lib/bookmarkIntegrity'
+import { assertBookmarkIntegrity, BookmarkDataPendingError, migrateLegacyBookmarkLocations } from '@/lib/bookmarkIntegrity'
 import { mergeBookmarkSnapshots } from '@/lib/mergeBookmarkSnapshots'
 import { clearSavedBookmarkRecovery, preserveBookmarkRecovery } from '@/lib/bookmarkRecovery'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
@@ -20,6 +20,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
   let acceptedSnapshot: BookmarkSnapshot | null = null
   let conflictPaused = false
   let refreshBlocked = false
+  let startupMigrationPending = false
   let refreshRetry: ReturnType<typeof setTimeout> | null = null
   let selectionTimer: ReturnType<typeof setTimeout> | null = null
   let contentDirty = false
@@ -225,12 +226,29 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     refreshing = (async () => {
       while (refreshRequested && !conflictPaused) {
         refreshRequested = false
-        const persisted = await loadStableSnapshot()
-        if (!persisted) return
+        const retryStartupMigration = startupMigrationPending
+        let persisted = await loadStableSnapshot(retryStartupMigration)
+        if (!persisted) {
+          if (retryStartupMigration) throw new BookmarkDataPendingError()
+          return
+        }
+        if (retryStartupMigration) {
+          if (isBookmarkMigrationPending()) {
+            preserveBookmarkRecovery(persisted, 'checkpoint')
+            persisted = migrateLegacyBookmarkLocations(persisted)
+            preserveBookmarkRecovery(persisted)
+            await saveBookmarkSnapshot(persisted)
+            clearSavedBookmarkRecovery()
+          } else {
+            // 等待期间其他窗口可能已升级；新版快照仍须通过严格校验。
+            assertBookmarkIntegrity(persisted)
+          }
+        }
         const current = pickBookmarkSnapshot(store.getState())
         let merged
         try {
-          merged = acceptedSnapshot ? mergeBookmarkSnapshots(acceptedSnapshot, current, persisted) : persisted
+          // 启动未齐时的内存内容从未允许编辑，不能合并回已完整/已迁移的快照。
+          merged = !retryStartupMigration && acceptedSnapshot ? mergeBookmarkSnapshots(acceptedSnapshot, current, persisted) : persisted
           assertBookmarkIntegrity(merged)
         } catch (error) {
           if (acceptedSnapshot) preserveBookmarkRecovery(acceptedSnapshot, 'conflict')
@@ -242,6 +260,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
         contentDirty = !sameContent(merged, persisted)
         if (contentDirty) preserveBookmarkRecovery(merged)
         refreshBlocked = false
+        startupMigrationPending = false
         acceptedSnapshot = clone(persisted)
         runtime.lastPersistedBookmarkState = JSON.stringify({ ...persisted, activeGroupId: current.activeGroupId, activeSubGroupId: current.activeSubGroupId })
         applyingRemote = true
@@ -308,6 +327,8 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     // 恢复文件可能属于旧账号、旧窗口或包含坏数据，绝不自动替换当前数据库。
     const persisted = await loadStableSnapshot(true)
     if (persisted) {
+      // 在任何迁移、默认字段补齐之前保留原始快照，数据库基线仍由 repository 保持。
+      if (isBookmarkMigrationPending()) preserveBookmarkRecovery(persisted, 'checkpoint')
       const patched = patchBookmarksWithBuiltinSeedIcons(persisted.bookmarks).bookmarks
       store.setState({
         groups: persisted.groups,
@@ -334,14 +355,20 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
 
     if (!isUToolsDbAvailable()) return
     preserveBookmarkRecovery(pickBookmarkSnapshot(store.getState()), 'checkpoint')
-    try { assertBookmarkIntegrity(pickBookmarkSnapshot(store.getState())) }
+    try {
+      if (isBookmarkMigrationPending()) {
+        store.setState(migrateLegacyBookmarkLocations(pickBookmarkSnapshot(store.getState())))
+      }
+      assertBookmarkIntegrity(pickBookmarkSnapshot(store.getState()))
+    }
     catch (error) {
       if (!(error instanceof BookmarkDataPendingError)) throw error
       refreshBlocked = true
+      startupMigrationPending = isBookmarkMigrationPending()
       store.setState({ isReadOnly: true })
     }
 
-    if (isBookmarkMigrationPending()) {
+    if (isBookmarkMigrationPending() && !refreshBlocked) {
       try {
         preserveBookmarkRecovery(pickBookmarkSnapshot(store.getState()))
         await saveBookmarkSnapshot(pickBookmarkSnapshot(store.getState()))
