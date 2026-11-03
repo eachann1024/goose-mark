@@ -44,3 +44,49 @@ export function assertBookmarkIntegrity(snapshot: BookmarkSnapshot): void {
     }
   }
 }
+
+// 仅供旧 schema 的启动迁移使用。旧版同时保存了索引和 locations，
+// 两者可能历史性地分离；无法判断哪边较新，因此保留双方关系，不猜测删除。
+export function migrateLegacyBookmarkLocations(snapshot: BookmarkSnapshot): BookmarkSnapshot {
+  // 先确认记录、索引完整且无重复，不能把缺失文档的同步中间态当作旧数据修复。
+  assertBookmarkIntegrity({
+    ...snapshot,
+    bookmarks: snapshot.bookmarks.map(bookmark => ({ ...bookmark, locations: undefined }))
+  })
+  const subgroups = new Map(snapshot.groups.flatMap(group => group.children.map(sub =>
+    [JSON.stringify([group.id, sub.id]), sub] as const)))
+  const indexed = new Map<string, NonNullable<BookmarkSnapshot['bookmarks'][number]['locations']>>()
+  snapshot.groups.forEach(group => group.children.forEach(sub => sub.bookmarkIds.forEach(id => {
+    const locations = indexed.get(id) ?? []
+    locations.push({ groupId: group.id, subGroupId: sub.id })
+    indexed.set(id, locations)
+  })))
+  const additions = new Map<string, string[]>()
+  const bookmarks = snapshot.bookmarks.map(bookmark => {
+    if (bookmark.locations == null || bookmark.locations.length === 0) return bookmark
+    if (!Array.isArray(bookmark.locations)) throw new BookmarkDataPendingError()
+    const declared = new Set<string>()
+    for (const location of bookmark.locations) {
+      const key = JSON.stringify([location?.groupId, location?.subGroupId])
+      if (!subgroups.has(key) || declared.has(key)) throw new BookmarkDataPendingError()
+      declared.add(key)
+      if (!subgroups.get(key)!.bookmarkIds.includes(bookmark.id)) {
+        const ids = additions.get(key) ?? []
+        ids.push(bookmark.id)
+        additions.set(key, ids)
+      }
+    }
+    const missing = indexed.get(bookmark.id)!.filter(location => !declared.has(JSON.stringify([location.groupId, location.subGroupId])))
+    return missing.length ? { ...bookmark, locations: [...bookmark.locations, ...missing] } : bookmark
+  })
+  const groups = snapshot.groups.map(group => ({
+    ...group,
+    children: group.children.map(sub => {
+      const ids = additions.get(JSON.stringify([group.id, sub.id]))
+      return ids ? { ...sub, bookmarkIds: [...sub.bookmarkIds, ...ids] } : sub
+    })
+  }))
+  const migrated = { ...snapshot, groups, bookmarks }
+  assertBookmarkIntegrity(migrated)
+  return migrated
+}
