@@ -574,7 +574,7 @@ export default function HomePage() {
   const openFeedback = useCallback(() => setFeedbackOpen(true), [])
 
   return (
-    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface}>
+    <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface} data-feedback-open={feedbackOpen ? '' : undefined}>
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && (
         <StarryBackground paused={easterEggPaused} />
       )}
