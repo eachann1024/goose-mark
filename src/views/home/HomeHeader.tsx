@@ -4,6 +4,7 @@ import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { InstantTooltip } from '@/components/ui/overflow-tooltip'
 import { deferInlineRenameCommit, handleInlineRenameEnter } from '@/lib/inlineEditKeys'
+import { useFeedbackUnread } from '@/lib/feedback'
 import { Ico } from './icon'
 import { type HomeGroup } from './viewModel'
 import { type SearchSurface } from './homeRuntime'
@@ -75,6 +76,7 @@ export const HomeHeader = memo(function HomeHeader({
   setPaOpen: React.Dispatch<React.SetStateAction<boolean>>
   onFeedback: () => void
 }) {
+  const unreadFeedback = useFeedbackUnread()
   return (
     <header className="app-header" onKeyDown={(e) => {
       const target = e.target as HTMLElement
@@ -176,15 +178,18 @@ export const HomeHeader = memo(function HomeHeader({
                 收集
               </button>
             </InstantTooltip>
-            <InstantTooltip label="反馈">
+            <InstantTooltip label={unreadFeedback ? '反馈（有新回复）' : '反馈'}>
               <button
                 type="button"
-                className="header-icon-btn"
-                aria-label="反馈"
+                className="header-icon-btn relative"
+                aria-label={unreadFeedback ? '反馈（有新回复）' : '反馈'}
                 data-feedback-entry
                 onClick={onFeedback}
               >
                 <Ico name="message-square" />
+                {unreadFeedback ? (
+                  <span className="feedback-unread-dot" aria-hidden />
+                ) : null}
               </button>
             </InstantTooltip>
             <InstantTooltip label="设置">

@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Bookmark, BookmarkLocation } from '@/types/bookmark'
+import { checkFeedbackUnread } from '@/lib/feedback'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
@@ -174,6 +175,21 @@ export default function HomePage() {
   const [paOpen, setPaOpen] = useState(false)
   const avatarRef = useRef<HTMLButtonElement>(null)
   const [helpOpen, setHelpOpen] = useState(false)
+
+  useEffect(() => {
+    const check = () => {
+      void checkFeedbackUnread('mark')
+    }
+    check()
+    const timer = setInterval(check, 60000)
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [])
 
   const { activeTemplateBookmark, setActiveTemplateBookmark, templateQuery, setTemplateQuery, templateQueryRef, recentDynamicTemplateEnterAtRef } = useHomeTemplateState({
     FEATURE_PREFIX,
