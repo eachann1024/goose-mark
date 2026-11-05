@@ -363,24 +363,14 @@ export function FeedbackSheet({
   }
 
   return (
-    <div
-      className="help-backdrop"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
-    >
-      <div className="help-panel gm-feedback-panel">
-        <div className="help-header">
-          <span className="help-title">反馈</span>
-          <button
-            type="button"
-            className="help-close"
-            onClick={onClose}
-            aria-label="关闭"
-          >
-            <Ico name="x" />
-          </button>
-        </div>
+    <div className="gm-page gm-feedback-page">
+      <div className="gm-header">
+        <button type="button" className="gm-back-btn" onClick={onClose} aria-label="返回">
+          <Ico name="chevron-left" />
+          <span>返回</span>
+        </button>
+        <h1 className="gm-title">反馈</h1>
+      </div>
 
         <div
           ref={viewport}
@@ -561,7 +551,6 @@ export function FeedbackSheet({
             </p>
           ) : null}
         </form>
-      </div>
     </div>
   )
 }
