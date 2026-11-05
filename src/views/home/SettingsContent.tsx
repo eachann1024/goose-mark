@@ -1,5 +1,6 @@
 import type * as React from 'react'
 import { Ico } from './icon'
+import { useFeedbackUnread } from '@/lib/feedback'
 import { type ViewMode, type Theme, type ThemePref } from './homeTypes'
 import { SettingsGeneral } from './SettingsGeneral'
 import { SettingsDisplay } from './SettingsDisplay'
@@ -40,6 +41,7 @@ export function HomeSettingsPage({
   applyThemePref: (pref: ThemePref) => void
   onOpenFeedback: () => void
 }) {
+  const unreadFeedback = useFeedbackUnread()
   const sectionId = SET_NAV[setNavIdx]?.[2] ?? SET_NAV[0][2]
   return (
     <div className="settings">
@@ -58,9 +60,18 @@ export function HomeSettingsPage({
                 {label}
               </button>
             ))}
-            <button className="feedback" data-feedback-entry onClick={onOpenFeedback}>
+            <button
+              type="button"
+              className="feedback relative"
+              data-feedback-entry
+              aria-label={unreadFeedback ? '反馈（有新回复）' : '快速反馈'}
+              onClick={onOpenFeedback}
+            >
               <Ico name="message-square" />
               快速反馈
+              {unreadFeedback ? (
+                <span className="feedback-unread-dot" aria-hidden />
+              ) : null}
             </button>
           </nav>
           <div className="set-main" ref={setMainRef}>
