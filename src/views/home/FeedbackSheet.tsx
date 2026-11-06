@@ -299,8 +299,8 @@ export function FeedbackSheet({
       setStatus('单张图片不能超过 20MB')
       return
     }
-    if (video && video.size > 200 * 1024 * 1024) {
-      setStatus('视频不能超过 200MB')
+    if (video && video.size > 95 * 1024 * 1024) {
+      setStatus('视频不能超过 95MB')
       return
     }
     sendingRef.current = true
@@ -537,7 +537,7 @@ export function FeedbackSheet({
             className="sr-only"
             type="file"
             accept="video/mp4,video/webm,video/quicktime"
-            aria-label="视频，1 个，最大 200MB"
+            aria-label="视频，1 个，最大 95MB"
             onChange={(event) => {
               changed()
               setVideo(event.target.files?.[0] || null)
