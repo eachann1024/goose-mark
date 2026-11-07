@@ -21,8 +21,9 @@ export interface SortableTabProps {
 
 export function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }: SortableTabProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const horizontalTransform = transform ? { ...transform, y: 0 } : null
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Transform.toString(horizontalTransform),
     transition,
     opacity: isDragging ? 0.5 : undefined,
   }

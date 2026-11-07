@@ -41,8 +41,9 @@ export function SortableNavItem({
     disabled: isEditing,
     data: { type: 'sub', groupId },
   })
+  const verticalTransform = transform ? { ...transform, x: 0 } : null
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Transform.toString(verticalTransform),
     transition,
     opacity: isDragging ? 0.5 : undefined,
   }

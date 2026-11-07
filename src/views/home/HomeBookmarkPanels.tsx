@@ -75,6 +75,7 @@ export const HomeBookmarkPanels = memo(function HomeBookmarkPanels({
           <DndContext
             sensors={dndSensors}
             collisionDetection={bookmarkCollision}
+            autoScroll={Boolean(activeDragItem)}
             onDragStart={handleDndDragStart}
             onDragEnd={handleDndDragEnd}
             onDragCancel={onDragCancel}

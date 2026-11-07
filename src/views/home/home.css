@@ -164,7 +164,7 @@
 
 /* 一级分组 Tab 栏 —— 胶囊填充式选中态（无下划线） */
 .goose-home .group-tabs {
-  @apply flex-1 flex items-center gap-[3px] overflow-x-auto min-w-0 h-full;
+  @apply flex-1 flex items-center gap-[3px] overflow-x-auto overflow-y-hidden min-w-0 h-full;
   scrollbar-width:none; -webkit-overflow-scrolling:touch;
 }
 .goose-home .group-tabs::-webkit-scrollbar { display:none; }
@@ -227,7 +227,7 @@
 /* ---------- Main layout ---------- */
 .goose-home .app-main { @apply flex-1 min-h-0 flex overflow-hidden; }
 .goose-home .sidebar {
-  @apply shrink-0 w-[152px] flex flex-col gap-[10px] py-3 px-[10px] overflow-y-auto;
+  @apply shrink-0 w-[152px] flex flex-col gap-[10px] py-3 px-[10px] overflow-y-auto overflow-x-hidden;
   border-right:1px solid var(--border-muted);
 }
 .goose-home .grp { @apply flex flex-col gap-0.5; }
