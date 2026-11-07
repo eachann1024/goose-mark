@@ -91,7 +91,7 @@ export const HomeHeader = memo(function HomeHeader({
       }
     }}>
           {/* 一级分组 Tab 栏（可拖拽排序 + 右键管理） */}
-          <DndContext sensors={tabSensors} collisionDetection={closestCenter} onDragEnd={handleTabDragEnd}>
+          <DndContext sensors={tabSensors} collisionDetection={closestCenter} autoScroll={false} onDragEnd={handleTabDragEnd}>
             <SortableContext items={homeGroups.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
               <div className="group-tabs">
                 {homeGroups.map((g) =>
