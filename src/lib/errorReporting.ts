@@ -1,9 +1,9 @@
-import * as Sentry from '@sentry/browser'
-import { createTransport } from '@sentry/browser'
+import type * as SentryTypes from '@sentry/browser'
 
-type TransportFactory = NonNullable<Sentry.BrowserOptions['transport']>
+type TransportFactory = NonNullable<SentryTypes.BrowserOptions['transport']>
 type Transport = ReturnType<TransportFactory>
 type BaseTransportOptions = Parameters<TransportFactory>[0]
+type CreateTransportFn = typeof import('@sentry/browser')['createTransport']
 
 export const ERROR_REPORT_PROJECT = 'goose-marks'
 export const ERROR_REPORT_FLUSH_MS = 2000
@@ -85,6 +85,7 @@ type QueuedRequest = {
 }
 
 export const makeQueuedNodeTransport = (
+  createTransport: CreateTransportFn,
   send: ErrorReportBridge['send'],
   flushMs = ERROR_REPORT_FLUSH_MS
 ) => {
@@ -155,16 +156,20 @@ export const initErrorReporting = () => {
 
     const version = typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : '0.0.0'
 
-    Sentry.init({
-      dsn: config.dsn,
-      release: `${ERROR_REPORT_PROJECT}@${version}`,
-      environment: window.utools ? 'utools' : 'standalone',
-      sendDefaultPii: false,
-      transport: makeQueuedNodeTransport(bridge.send),
-      initialScope: {
-        tags: { project: ERROR_REPORT_PROJECT },
-      },
-    })
+    void import('@sentry/browser')
+      .then((Sentry) => {
+        Sentry.init({
+          dsn: config.dsn,
+          release: `${ERROR_REPORT_PROJECT}@${version}`,
+          environment: window.utools ? 'utools' : 'standalone',
+          sendDefaultPii: false,
+          transport: makeQueuedNodeTransport(Sentry.createTransport, bridge.send),
+          initialScope: {
+            tags: { project: ERROR_REPORT_PROJECT },
+          },
+        })
+      })
+      .catch(() => {})
     return true
   } catch {
     return false

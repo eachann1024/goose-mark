@@ -103,6 +103,13 @@ export default defineConfig({
               minSize: 0
             },
             {
+              // 错误上报默认关闭；拆为独立按需分块，避免未开启时阻塞首屏解析。
+              name: 'vendor-sentry',
+              test: /[\\/]node_modules[\\/]@sentry[\\/]/,
+              priority: 36,
+              minSize: 0
+            },
+            {
               name: 'vendor-icons',
               test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
               priority: 30,
