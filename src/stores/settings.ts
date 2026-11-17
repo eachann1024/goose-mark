@@ -10,6 +10,7 @@ import {
   normalizeAIModelOptions
 } from '@/lib/aiProvider'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
+import { readSettingsBootCache, writeSettingsBootCache } from '@/lib/bootSnapshotCache'
 import { loadSettingsSnapshotAsync, saveSettingsSnapshot } from '@/lib/stateRepository'
 import { getPersistentItem } from '@/lib/utoolsStorage'
 
@@ -523,6 +524,7 @@ let settingsPersistenceFlushEventsStarted = false
 const enqueueSettingsPersist = (state: SettingsStore): void => {
   syncBootSettingsMirror(state.themePreference, state.windowHeight)
   const payload = pickPersistedSettings(state)
+  writeSettingsBootCache(payload)
   const serialized = JSON.stringify(payload)
   if (serialized === lastPersistedSettings) return
 
@@ -544,8 +546,9 @@ const enqueueSettingsPersist = (state: SettingsStore): void => {
 export const flushSettingsStorePersistence = (): void => {
   const state = useSettingsStore.getState()
   syncBootSettingsMirror(state.themePreference, state.windowHeight)
-  if (!isUToolsDbAvailable()) return
   const payload = pickPersistedSettings(state)
+  writeSettingsBootCache(payload)
+  if (!isUToolsDbAvailable()) return
   const serialized = JSON.stringify(payload)
   if (serialized === lastPersistedSettings) return
   try {
@@ -572,6 +575,22 @@ const bindSettingsPersistenceFlushEvents = (): void => {
   document.addEventListener('visibilitychange', flushWhenHidden)
 }
 
+let settingsBootCacheHydrated = false
+
+export const hydrateSettingsStoreFromBootCache = (): boolean => {
+  if (settingsBootCacheHydrated || settingsPersistenceStarted) return false
+  settingsBootCacheHydrated = true
+  const cached = readSettingsBootCache()
+  if (!cached) return false
+  const normalized = normalizePersistedSettings(cached)
+  if (Object.keys(normalized).length > 0) {
+    useSettingsStore.setState(normalized as Partial<SettingsStore>)
+  }
+  const state = useSettingsStore.getState()
+  syncBootSettingsMirror(state.themePreference, state.windowHeight)
+  return true
+}
+
 export const initializeSettingsStorePersistence = async (): Promise<void> => {
   if (settingsPersistenceStarted) return
   settingsPersistenceStarted = true
@@ -588,6 +607,7 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
 
   const initialState = useSettingsStore.getState()
   syncBootSettingsMirror(initialState.themePreference, initialState.windowHeight)
+  writeSettingsBootCache(pickPersistedSettings(initialState))
 
   if (!isUToolsDbAvailable()) return
 

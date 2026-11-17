@@ -7,8 +7,8 @@ import 'virtual:uno.css'
 import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
 import { initErrorReporting } from '@/lib/errorReporting'
-import { initializeBookmarkStorePersistence } from '@/stores/bookmark'
-import { initializeSettingsStorePersistence } from '@/stores/settings'
+import { hydrateBookmarkStoreFromBootCache, initializeBookmarkStorePersistence } from '@/stores/bookmark'
+import { hydrateSettingsStoreFromBootCache, initializeSettingsStorePersistence } from '@/stores/settings'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
 initErrorReporting()
 const platform = getRuntimePlatform()
@@ -28,23 +28,39 @@ type RootHolder = HTMLElement & { __gooseRoot?: ReturnType<typeof createRoot> }
 const holder = container as RootHolder
 const root = holder.__gooseRoot ?? (holder.__gooseRoot = createRoot(container))
 
-const bootstrap = async () => {
-  try {
-    await initializeSettingsStorePersistence()
-    await initializeBookmarkStorePersistence()
-  } catch (error) {
-    console.error('[Main] 读取已保存的数据失败:', error)
-    root.render(<div role="alert">书签加载失败，请重新打开应用。</div>)
-    return
-  }
-  // 启动只读取：自动补图标会修改旧设备文档的版本/时间，使旧内容参与云端覆盖。
-  // 新增、编辑书签时仍由原有表单流程获取图标。
-
+let appMounted = false
+const mountApp = () => {
+  if (appMounted) return
+  appMounted = true
   root.render(
     <StrictMode>
       <HomePage />
     </StrictMode>
   )
+}
+
+const bootstrap = async () => {
+  hydrateSettingsStoreFromBootCache()
+  const hasBookmarkBootCache = hydrateBookmarkStoreFromBootCache()
+  // 命中本机首屏缓存时同步挂载界面，实现零空白页直出；真实数据库随后在后台并行对账。
+  if (hasBookmarkBootCache) {
+    mountApp()
+  }
+
+  try {
+    await Promise.all([
+      initializeSettingsStorePersistence(),
+      initializeBookmarkStorePersistence()
+    ])
+  } catch (error) {
+    console.error('[Main] 读取已保存的数据失败:', error)
+    if (!appMounted) {
+      root.render(<div role="alert">书签加载失败，请重新打开应用。</div>)
+    }
+    return
+  }
+
+  mountApp()
 }
 
 void bootstrap()

@@ -152,3 +152,6 @@ const persistence = createBookmarkPersistence(runtime, store)
 
 export const flushBookmarkStorePersistence = persistence.flushBookmarkStorePersistence
 export const initializeBookmarkStorePersistence = persistence.initializeBookmarkStorePersistence
+export const hydrateBookmarkStoreFromBootCache = persistence.hydrateBookmarkStoreFromBootCache
+export const isBookmarkStoreHydrated = persistence.isBookmarkStoreHydrated
+export const whenBookmarkStoreHydrated = persistence.whenBookmarkStoreHydrated

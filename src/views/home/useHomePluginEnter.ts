@@ -1,7 +1,7 @@
 import type * as React from 'react'
 import { useEffect, useRef } from 'react'
 import type { Bookmark } from '@/types/bookmark'
-import { flushBookmarkStorePersistence, useBookmarkStore } from '@/stores/bookmark'
+import { flushBookmarkStorePersistence, isBookmarkStoreHydrated, useBookmarkStore, whenBookmarkStoreHydrated } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookmarkForm'
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
@@ -133,17 +133,25 @@ export function useHomePluginEnter({
       }
       const finalUrl = normalizeQuickUrl(urlToSave)
       if (finalUrl) {
-        const bookmark = store.quickSaveBookmark(finalUrl)
-        // 快存先即时落库，随后后台抓取标题/简介；仅新建（标题为空）时触发
-        if (!bookmark.title) {
-          enqueueMetadataHydration(bookmark.id, {
-            url: finalUrl,
-            initialTitle: '',
-            initialDesc: ''
-          })
+        const executeQuickSave = () => {
+          const latestStore = useBookmarkStore.getState()
+          const bookmark = latestStore.quickSaveBookmark(finalUrl)
+          // 快存先即时落库，随后后台抓取标题/简介；仅新建（标题为空）时触发
+          if (!bookmark.title) {
+            enqueueMetadataHydration(bookmark.id, {
+              url: finalUrl,
+              initialTitle: '',
+              initialDesc: ''
+            })
+          }
+          fireToastRef.current(`已保存：${bookmark.title || urlToSave}`)
+          void flushBookmarkStorePersistence().finally(() => window.utools?.outPlugin())
         }
-        fireToastRef.current(`已保存：${bookmark.title || urlToSave}`)
-        void flushBookmarkStorePersistence().finally(() => window.utools?.outPlugin())
+        if (isBookmarkStoreHydrated()) {
+          executeQuickSave()
+        } else {
+          void whenBookmarkStoreHydrated().then(executeQuickSave)
+        }
       } else {
         openNewBookmarkForm()
         fireToastRef.current('未检测到有效链接，请手动填写')
@@ -156,6 +164,12 @@ export function useHomePluginEnter({
       const id = (code as string).slice(FEATURE_PREFIX.length)
       const bookmark = store.bookmarks.find((b) => b.id === id)
       if (!bookmark) {
+        if (!isBookmarkStoreHydrated()) {
+          void whenBookmarkStoreHydrated().then(() => {
+            pluginEnterHandlerRef.current(e)
+          })
+          return
+        }
         window.utools?.outPlugin()
         return
       }

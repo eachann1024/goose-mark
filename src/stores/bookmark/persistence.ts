@@ -1,6 +1,7 @@
 import { patchBookmarksWithBuiltinSeedIcons } from '@/stores/bookmarkSeed'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
-import { BookmarkAccountChangedError, BookmarkSyncConflictError, isBookmarkMigrationPending, loadBookmarkSnapshot, saveBookmarkSnapshot, type BookmarkSnapshot } from '@/lib/stateRepository'
+import { clearBookmarkBootCache, readBookmarkBootCache, scheduleBookmarkBootCacheWrite } from '@/lib/bootSnapshotCache'
+import { BookmarkAccountChangedError, BookmarkSyncConflictError, isBookmarkMigrationPending, loadBookmarkSnapshot, saveBookmarkSnapshot, warmAttachmentDataUrlCache, type BookmarkSnapshot } from '@/lib/stateRepository'
 import { assertBookmarkIntegrity, BookmarkDataPendingError, migrateLegacyBookmarkLocations } from '@/lib/bookmarkIntegrity'
 import { mergeBookmarkSnapshots } from '@/lib/mergeBookmarkSnapshots'
 import { clearSavedBookmarkRecovery, preserveBookmarkRecovery, scheduleBookmarkCheckpoint } from '@/lib/bookmarkRecovery'
@@ -34,6 +35,19 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
   let lastSelection = ''
   let lastSyncedContent = ''
   let lastSnapshotLoadedAt = 0
+  let bootCacheHydrated = false
+  let bootInitialActiveGroupId = ''
+  let bootInitialActiveSubGroupId = ''
+  let hydrated = false
+  let resolveHydrated: () => void = () => {}
+  const hydratedPromise = new Promise<void>((resolve) => {
+    resolveHydrated = resolve
+  })
+  const markHydrated = () => {
+    if (hydrated) return
+    hydrated = true
+    resolveHydrated()
+  }
   const persistSelection = () => {
     if (selectionTimer) clearTimeout(selectionTimer)
     selectionTimer = null
@@ -58,6 +72,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
 
   const pausePersistence = (error: unknown) => {
     conflictPaused = true
+    if (error instanceof BookmarkAccountChangedError) clearBookmarkBootCache()
     if (refreshRetry) clearTimeout(refreshRetry)
     refreshRetry = null
     runtime.pendingBookmarkPersistJob = null
@@ -139,6 +154,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
         }
         if (!written) throw new BookmarkSyncConflictError()
         scheduleBookmarkCheckpoint(snapshot)
+        scheduleBookmarkBootCacheWrite(snapshot)
         acceptedSnapshot = clone(snapshot)
         lastSyncedContent = serializeSyncedContent(snapshot)
         lastSnapshotLoadedAt = Date.now()
@@ -276,6 +292,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
           throw error
         }
         scheduleBookmarkCheckpoint(persisted)
+        scheduleBookmarkBootCacheWrite(merged)
         contentDirty = !sameContent(merged, persisted)
         if (contentDirty) preserveBookmarkRecovery(merged)
         refreshBlocked = false
@@ -344,96 +361,162 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     document.addEventListener('visibilitychange', flushWhenHidden)
   }
 
-  const initializeBookmarkStorePersistence = async (): Promise<void> => {
-    if (runtime.bookmarkPersistenceStarted) return
-    // 恢复文件可能属于旧账号、旧窗口或包含坏数据，绝不自动替换当前数据库。
-    const persisted = await loadStableSnapshot(true)
-    if (persisted) {
-      // 在任何迁移、默认字段补齐之前保留原始快照，数据库基线仍由 repository 保持。
-      if (isBookmarkMigrationPending()) preserveBookmarkRecovery(persisted, 'checkpoint')
-      const patched = patchBookmarksWithBuiltinSeedIcons(persisted.bookmarks).bookmarks
-      store.setState({
-        groups: persisted.groups,
-        bookmarks: patched,
-        activeGroupId: persisted.activeGroupId,
-        activeSubGroupId: persisted.activeSubGroupId
-      })
-    }
+  const hydrateBookmarkStoreFromBootCache = (): boolean => {
+    if (bootCacheHydrated || runtime.bookmarkPersistenceStarted) return false
+    bootCacheHydrated = true
+    const cached = readBookmarkBootCache()
+    if (!cached) return false
 
-    store.getState().migrateFromLegacy()
-    store.getState().patchBookmarksWithBuiltinSeedIcons()
+    warmAttachmentDataUrlCache(cached.bookmarks)
+    const patched = patchBookmarksWithBuiltinSeedIcons(cached.bookmarks).bookmarks
+    store.setState({
+      groups: cached.groups,
+      bookmarks: patched,
+      activeGroupId: cached.activeGroupId,
+      activeSubGroupId: cached.activeSubGroupId
+    })
     try {
-      const raw = getPersistentItem(BOOKMARK_SELECTION_KEY)
+      const raw = typeof window !== 'undefined' ? window.localStorage?.getItem?.(BOOKMARK_SELECTION_KEY) : null
       if (raw) {
         const saved = JSON.parse(raw)
         const group = store.getState().groups.find(g => g.id === saved?.activeGroupId)
         if (group?.children.some(sub => sub.id === saved?.activeSubGroupId)) {
           store.setState({ activeGroupId: saved.activeGroupId, activeSubGroupId: saved.activeSubGroupId })
-          lastSelection = raw
         }
       }
-    } catch { /* 损坏的选择记录回退到快照选择。 */ }
+    } catch {}
     store.getState().ensureValidSelection()
+    bootInitialActiveGroupId = store.getState().activeGroupId
+    bootInitialActiveSubGroupId = store.getState().activeSubGroupId
+    return true
+  }
 
-    if (!isUToolsDbAvailable()) return
-    const initialSnapshot = pickBookmarkSnapshot(store.getState())
-    scheduleBookmarkCheckpoint(initialSnapshot)
+  const initializeBookmarkStorePersistence = async (): Promise<void> => {
+    if (runtime.bookmarkPersistenceStarted) {
+      markHydrated()
+      return
+    }
     try {
-      if (isBookmarkMigrationPending()) {
-        preserveBookmarkRecovery(initialSnapshot, 'checkpoint')
-        store.setState(migrateLegacyBookmarkLocations(initialSnapshot))
-      }
-      assertBookmarkIntegrity(pickBookmarkSnapshot(store.getState()))
-    }
-    catch (error) {
-      if (!(error instanceof BookmarkDataPendingError)) throw error
-      refreshBlocked = true
-      startupMigrationPending = isBookmarkMigrationPending()
-      store.setState({ isReadOnly: true })
-    }
+      const userSelectedBeforeReady =
+        bootCacheHydrated &&
+        (store.getState().activeGroupId !== bootInitialActiveGroupId ||
+          store.getState().activeSubGroupId !== bootInitialActiveSubGroupId)
+          ? {
+              activeGroupId: store.getState().activeGroupId,
+              activeSubGroupId: store.getState().activeSubGroupId
+            }
+          : null
 
-    if (isBookmarkMigrationPending() && !refreshBlocked) {
+      // 恢复文件可能属于旧账号、旧窗口或包含坏数据，绝不自动替换当前数据库。
+      const persisted = await loadStableSnapshot(true)
+      if (persisted) {
+        // 在任何迁移、默认字段补齐之前保留原始快照，数据库基线仍由 repository 保持。
+        if (isBookmarkMigrationPending()) preserveBookmarkRecovery(persisted, 'checkpoint')
+        const patched = patchBookmarksWithBuiltinSeedIcons(persisted.bookmarks).bookmarks
+        store.setState({
+          groups: persisted.groups,
+          bookmarks: patched,
+          activeGroupId: persisted.activeGroupId,
+          activeSubGroupId: persisted.activeSubGroupId
+        })
+      }
+
+      store.getState().migrateFromLegacy()
+      store.getState().patchBookmarksWithBuiltinSeedIcons()
+      if (userSelectedBeforeReady) {
+        store.getState().ensureValidSelection(
+          userSelectedBeforeReady.activeGroupId,
+          userSelectedBeforeReady.activeSubGroupId
+        )
+      } else {
+        try {
+          const raw = getPersistentItem(BOOKMARK_SELECTION_KEY)
+          if (raw) {
+            const saved = JSON.parse(raw)
+            const group = store.getState().groups.find(g => g.id === saved?.activeGroupId)
+            if (group?.children.some(sub => sub.id === saved?.activeSubGroupId)) {
+              store.setState({ activeGroupId: saved.activeGroupId, activeSubGroupId: saved.activeSubGroupId })
+              lastSelection = raw
+            }
+          }
+        } catch { /* 损坏的选择记录回退到快照选择。 */ }
+        store.getState().ensureValidSelection()
+      }
+
+      const postInitSnapshot = pickBookmarkSnapshot(store.getState())
+      if (!isUToolsDbAvailable()) {
+        scheduleBookmarkBootCacheWrite(postInitSnapshot)
+        return
+      }
+      scheduleBookmarkCheckpoint(postInitSnapshot)
       try {
-        preserveBookmarkRecovery(pickBookmarkSnapshot(store.getState()))
-        await saveBookmarkSnapshot(pickBookmarkSnapshot(store.getState()))
-        clearSavedBookmarkRecovery()
+        if (isBookmarkMigrationPending()) {
+          preserveBookmarkRecovery(postInitSnapshot, 'checkpoint')
+          store.setState(migrateLegacyBookmarkLocations(postInitSnapshot))
+        }
+        assertBookmarkIntegrity(pickBookmarkSnapshot(store.getState()))
       }
-      catch (error) { pausePersistence(error) }
-    }
+      catch (error) {
+        if (!(error instanceof BookmarkDataPendingError)) throw error
+        refreshBlocked = true
+        startupMigrationPending = isBookmarkMigrationPending()
+        store.setState({ isReadOnly: true })
+      }
 
-    runtime.bookmarkPersistenceStarted = true
-    const readySnapshot = pickBookmarkSnapshot(store.getState())
-    // 初始化、补默认字段和选择修正不构成用户编辑；打开旧设备不能触发整库写回。
-    runtime.lastPersistedBookmarkState = JSON.stringify(readySnapshot)
-    acceptedSnapshot = readySnapshot
-    lastSyncedContent = serializeSyncedContent(readySnapshot)
-    lastSnapshotLoadedAt = Date.now()
-    runtime.lastQueuedGroups = store.getState().groups
-    runtime.lastQueuedBookmarks = store.getState().bookmarks
-    runtime.lastQueuedActiveGroupId = store.getState().activeGroupId
-    runtime.lastQueuedActiveSubGroupId = store.getState().activeSubGroupId
+      if (isBookmarkMigrationPending() && !refreshBlocked) {
+        try {
+          preserveBookmarkRecovery(pickBookmarkSnapshot(store.getState()))
+          await saveBookmarkSnapshot(pickBookmarkSnapshot(store.getState()))
+          clearSavedBookmarkRecovery()
+        }
+        catch (error) { pausePersistence(error) }
+      }
 
-    store.subscribe((state) => {
-      enqueueBookmarkPersist(state)
-    })
-    bindBookmarkPersistenceFlushEvents()
-    window.utools?.onDbPull?.((docs) => {
-      if (docs.some(doc => doc._id?.startsWith('gm:bookmark:') || doc._id?.startsWith('gm:group:') || doc._id?.startsWith('gm:icon/') || doc._id === 'gm:meta:bookmark')) {
+      runtime.bookmarkPersistenceStarted = true
+      const readySnapshot = pickBookmarkSnapshot(store.getState())
+      if (!refreshBlocked && !store.getState().isReadOnly) {
+        scheduleBookmarkBootCacheWrite(readySnapshot)
+      }
+      // 初始化、补默认字段和选择修正不构成用户编辑；打开旧设备不能触发整库写回。
+      runtime.lastPersistedBookmarkState = JSON.stringify(readySnapshot)
+      acceptedSnapshot = readySnapshot
+      lastSyncedContent = serializeSyncedContent(readySnapshot)
+      lastSnapshotLoadedAt = Date.now()
+      runtime.lastQueuedGroups = store.getState().groups
+      runtime.lastQueuedBookmarks = store.getState().bookmarks
+      runtime.lastQueuedActiveGroupId = store.getState().activeGroupId
+      runtime.lastQueuedActiveSubGroupId = store.getState().activeSubGroupId
+
+      store.subscribe((state) => {
+        enqueueBookmarkPersist(state)
+      })
+      bindBookmarkPersistenceFlushEvents()
+      window.utools?.onDbPull?.((docs) => {
+        if (docs.some(doc => doc._id?.startsWith('gm:bookmark:') || doc._id?.startsWith('gm:group:') || doc._id?.startsWith('gm:icon/') || doc._id === 'gm:meta:bookmark')) {
+          void refreshBookmarkSnapshot()
+        }
+      })
+      window.addEventListener('storage-sync', (event) => {
+        if ((event as CustomEvent<{ key: string }>).detail?.key === 'bookmark') void refreshBookmarkSnapshot()
+      })
+      window.addEventListener('goose-marks:plugin-enter', () => {
+        // 冷启动刚读完最新快照时，避免 preload 回放的同一次 plugin-enter 立即重复扫描整库。
+        if (!refreshBlocked && !refreshRequested && Date.now() - lastSnapshotLoadedAt < FRESH_LOAD_ENTER_SKIP_MS) return
         void refreshBookmarkSnapshot()
+      })
+      if (refreshBlocked) {
+        refreshRetry = setTimeout(() => { void refreshBookmarkSnapshot() }, 1000)
       }
-    })
-    window.addEventListener('storage-sync', (event) => {
-      if ((event as CustomEvent<{ key: string }>).detail?.key === 'bookmark') void refreshBookmarkSnapshot()
-    })
-    window.addEventListener('goose-marks:plugin-enter', () => {
-      // 冷启动刚读完最新快照时，避免 preload 回放的同一次 plugin-enter 立即重复扫描整库。
-      if (!refreshBlocked && !refreshRequested && Date.now() - lastSnapshotLoadedAt < FRESH_LOAD_ENTER_SKIP_MS) return
-      void refreshBookmarkSnapshot()
-    })
-    if (refreshBlocked) {
-      refreshRetry = setTimeout(() => { void refreshBookmarkSnapshot() }, 1000)
+    } finally {
+      markHydrated()
     }
   }
 
-  return { initializeBookmarkStorePersistence, flushBookmarkStorePersistence }
+  return {
+    initializeBookmarkStorePersistence,
+    flushBookmarkStorePersistence,
+    hydrateBookmarkStoreFromBootCache,
+    isBookmarkStoreHydrated: () => hydrated,
+    whenBookmarkStoreHydrated: () => hydratedPromise
+  }
 }

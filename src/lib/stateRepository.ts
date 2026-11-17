@@ -34,10 +34,31 @@ const LEGACY_KEYS = {
 } as const
 
 const ATTACHMENT_REF_PREFIX = 'att:'
-const ICON_HYDRATE_CONCURRENCY = 8
+const ICON_HYDRATE_CONCURRENCY = 16
 const attachmentRefCache = new Map<string, string>()
 const attachmentDataUrlCache = new Map<string, string>()
 const attachmentReadInFlight = new Map<string, Promise<string | null>>()
+
+/** 用首屏缓存中已有的内容寻址图标预热内存表，避免后台对账时对同一哈希附件重复走 IPC。 */
+export const warmAttachmentDataUrlCache = (bookmarks: Bookmark[]): void => {
+  for (const bookmark of bookmarks) {
+    const icon = bookmark?.icon as (PersistedBookmark['icon'] & { cache?: string; data?: string }) | undefined
+    if (!icon) continue
+    if (icon.type === 'remote' && typeof icon.cacheRef === 'string' && icon.cacheRef.startsWith(ATTACHMENT_REF_PREFIX) && typeof icon.cache === 'string' && icon.cache.startsWith('data:image/')) {
+      const attachmentId = icon.cacheRef.slice(ATTACHMENT_REF_PREFIX.length)
+      if (/^gm:icon\/[a-f0-9]{64}\./.test(attachmentId)) {
+        attachmentDataUrlCache.set(attachmentId, icon.cache)
+        attachmentRefCache.set(icon.cache, icon.cacheRef)
+      }
+    } else if (icon.type === 'custom' && typeof icon.dataRef === 'string' && icon.dataRef.startsWith(ATTACHMENT_REF_PREFIX) && typeof icon.data === 'string' && icon.data.startsWith('data:image/')) {
+      const attachmentId = icon.dataRef.slice(ATTACHMENT_REF_PREFIX.length)
+      if (/^gm:icon\/[a-f0-9]{64}\./.test(attachmentId)) {
+        attachmentDataUrlCache.set(attachmentId, icon.data)
+        attachmentRefCache.set(icon.data, icon.dataRef)
+      }
+    }
+  }
+}
 
 type BookmarkIconRef = Extract<IconSource, { type: 'remote' }> & { cacheRef?: string }
 type BookmarkCustomIconRef = Omit<Extract<IconSource, { type: 'custom' }>, 'data'> & { data?: string; dataRef?: string }

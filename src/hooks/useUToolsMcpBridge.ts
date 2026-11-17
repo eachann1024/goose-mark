@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
-import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
+import { useBookmarkStore, TRASH_GROUP_ID, whenBookmarkStoreHydrated } from '@/stores/bookmark'
 
 /**
  * uTools MCP 工具桥接（React 端）
@@ -359,11 +359,16 @@ export function useUToolsMcpBridge() {
     }
 
     window.addEventListener(MCP_TOOL_REQUEST_EVENT, handleRequest)
-    // 标记桥接就绪，唤醒 preload 中等待 ready 的工具调用
-    ;(window as unknown as { __gooseMarksMcpReady?: boolean }).__gooseMarksMcpReady = true
-    window.dispatchEvent(new CustomEvent(MCP_TOOL_READY_EVENT))
+    let cancelled = false
+    // 等待数据库完成权威对账后再标记 MCP 桥接就绪，确保首帧快显期间收到工具请求仍读写最新真实数据。
+    void whenBookmarkStoreHydrated().then(() => {
+      if (cancelled) return
+      ;(window as unknown as { __gooseMarksMcpReady?: boolean }).__gooseMarksMcpReady = true
+      window.dispatchEvent(new CustomEvent(MCP_TOOL_READY_EVENT))
+    })
 
     return () => {
+      cancelled = true
       window.removeEventListener(MCP_TOOL_REQUEST_EVENT, handleRequest)
     }
   }, [])
