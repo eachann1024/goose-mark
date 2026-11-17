@@ -132,9 +132,8 @@ export function VirtualBookmarkContent({ groups, view, columns, selectedId, onSe
   }, [scrollElement])
   useEffect(() => {
     if (!root) return
-    let frame = 0
-    const update = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; setViewport((n) => n + 1) }) }
-    // 滚动事件本身已由浏览器按帧分发；直接提交范围更新，避免后台 rAF 被暂停时窗口停在旧位置。
+    const update = () => setViewport((n) => n + 1)
+    // 滚动事件与 ResizeObserver 本身已按浏览器帧周期触发；直接更新范围，消除多等一帧导致的空白闪烁。
     const onScroll = () => {
       atBottom.current = root.scrollTop + root.clientHeight >= root.scrollHeight - 2
       setViewport((n) => n + 1)
@@ -143,7 +142,7 @@ export function VirtualBookmarkContent({ groups, view, columns, selectedId, onSe
     const observer = new ResizeObserver(update)
     observer.observe(root)
     update()
-    return () => { root.removeEventListener('scroll', onScroll); observer.disconnect(); cancelAnimationFrame(frame) }
+    return () => { root.removeEventListener('scroll', onScroll); observer.disconnect() }
   }, [root])
   useEffect(() => {
     if (!root) return
@@ -173,15 +172,22 @@ export function VirtualBookmarkContent({ groups, view, columns, selectedId, onSe
     root.addEventListener(SELECT_EVENT, locate)
     return () => root.removeEventListener(SELECT_EVENT, locate)
   }, [groups, root])
+  const safeColumns = Math.max(1, columns)
+  let remainingInitialRows = view === 'grid' ? 8 : 16
   return <div ref={marker} className={`virtual-bookmark-content${showHeaders ? '' : ' is-headerless'}`}>
-    {groups.map((group) => group.subs.map((sub) => <VirtualSection key={`${group.id}-${sub.id}`} groupId={group.id} sub={sub} view={view} columns={Math.max(1, columns)} selectedId={selectedId} onSelect={onSelect} onOpen={onOpen} root={root} viewport={viewport} overscan={Math.max(0, overscan)} totalRows={totalRows} gap={draggable && dropGap?.subId === sub.id ? dropGap : null} renderItem={renderItem} draggable={draggable} atBottom={atBottom} />))}
+    {groups.map((group) => group.subs.map((sub) => {
+      const subRows = Math.ceil(sub.items.length / (view === 'grid' ? safeColumns : 1))
+      const initialRows = Math.min(subRows, remainingInitialRows)
+      remainingInitialRows = Math.max(0, remainingInitialRows - initialRows)
+      return <VirtualSection key={`${group.id}-${sub.id}`} groupId={group.id} sub={sub} view={view} columns={safeColumns} selectedId={selectedId} onSelect={onSelect} onOpen={onOpen} root={root} viewport={viewport} overscan={Math.max(0, overscan)} totalRows={totalRows} initialRows={initialRows} gap={draggable && dropGap?.subId === sub.id ? dropGap : null} renderItem={renderItem} draggable={draggable} atBottom={atBottom} />
+    }))}
   </div>
 }
 
-function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onOpen, root, viewport, overscan, totalRows, gap, renderItem, draggable, atBottom }: {
+function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onOpen, root, viewport, overscan, totalRows, initialRows, gap, renderItem, draggable, atBottom }: {
   groupId: string; sub: HomeSub; view: View; columns: number; selectedId: string | null
   onSelect: (id: string) => void; onOpen?: (item: HomeItem) => void; root: HTMLElement | null
-  viewport: number; overscan: number; totalRows: number; gap: ReturnType<typeof useDragDropGap>
+  viewport: number; overscan: number; totalRows: number; initialRows: number; gap: ReturnType<typeof useDragDropGap>
   renderItem?: (item: HomeItem, selected: boolean) => React.ReactNode; draggable: boolean
   atBottom: React.RefObject<boolean>
 }) {
@@ -197,7 +203,10 @@ function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onO
   const saved = sectionMemory.get(memoryKey)
   const reusable = saved?.itemsToken === token && saved.layoutKey === layoutKey ? saved : undefined
   const measurements = useRef(reusable?.model ?? new RowMeasurements(view === 'grid' ? 150 : 72))
-  const [range, setRange] = useState(() => reusable?.range ?? { start: 0, end: 0 })
+  const rowColumns = view === 'grid' ? columns : 1
+  const count = sub.items.length + (gap ? 1 : 0)
+  const rowCount = Math.ceil(count / rowColumns)
+  const [range, setRange] = useState(() => reusable?.range ?? { start: 0, end: Math.min(rowCount, initialRows) })
   const latestMemory = useRef({ itemsToken: token, layoutKey, model: measurements.current, range })
   latestMemory.current = { itemsToken: token, layoutKey, model: measurements.current, range }
   useLayoutEffect(() => () => {
@@ -205,9 +214,6 @@ function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onO
     sectionMemory.set(memoryKey, latestMemory.current)
     if (sectionMemory.size > 300) sectionMemory.delete(sectionMemory.keys().next().value!)
   }, [memoryKey])
-  const rowColumns = view === 'grid' ? columns : 1
-  const count = sub.items.length + (gap ? 1 : 0)
-  const rowCount = Math.ceil(count / rowColumns)
   const model = measurements.current
   const onMeasure = useCallback(() => setRevision((n) => n + 1), [])
   const lastLayout = useRef(layoutKey)
@@ -248,8 +254,8 @@ function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onO
   useLayoutEffect(() => {
     const el = body.current
     if (pendingLocation.current) return
-    // 隐藏面板保留窗口及测量：压缩映射依赖当前窗口，清空会改变相同 scrollTop 对应的行。
-    if (!root || !el || !root.getClientRects().length) return
+    // 隐藏面板或宿主尚未展开高度时保留初始窗口及测量，避免窗口展开首帧出现空列表。
+    if (!root || !el || !root.getClientRects().length || root.clientHeight <= 0) return
     if (!rowCount) { setRange((r) => r.start === 0 && r.end === 0 ? r : { start: 0, end: 0 }); return }
     const rootRect = root.getBoundingClientRect()
     const bodyRect = el.getBoundingClientRect()
