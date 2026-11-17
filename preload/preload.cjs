@@ -13,18 +13,11 @@ if (typeof window !== 'undefined') {
     window.utools = utools
 
     const SETTINGS_DOC_ID = 'gm:settings'
+    const WINDOW_HEIGHT_MIRROR_KEY = 'goose-marks.window-height'
     const WINDOW_HEIGHT_STORAGE_KEY = 'settings'
-    const LEGACY_SETTINGS_DOC_ID = 'goose-marks:storage:settings'
     const MIN_WINDOW_HEIGHT = 600
     const MAX_WINDOW_HEIGHT = 1000
     const DEFAULT_WINDOW_HEIGHT = 800
-    const isWindowsRuntime = (() => {
-      try {
-        return typeof utools.isWindows === 'function' ? utools.isWindows() : process.platform === 'win32'
-      } catch {
-        return false
-      }
-    })()
 
     const clampWindowHeight = (height) => {
       const numericHeight = Number(height)
@@ -53,43 +46,20 @@ if (typeof window !== 'undefined') {
       }
     }
 
-    // 优先读 gm:settings（与 stateRepository 一致）；兼容旧 dbStorage / localStorage / 兜底 doc。
-    const readStoredWindowHeight = () => {
+    // 优先读进程内 localStorage 镜像，避免 preload / onPluginEnter 同步跨进程读取 PouchDB 造成启动阻塞。
+    const readFastLocalWindowHeight = () => {
       try {
-        if (utools?.db && typeof utools.db.get === 'function') {
-          const doc = utools.db.get(SETTINGS_DOC_ID)
-          const fromDoc = readWindowHeightFromObject(doc)
-          if (fromDoc != null) return fromDoc
+        const direct = window.localStorage?.getItem?.(WINDOW_HEIGHT_MIRROR_KEY)
+        if (direct != null && direct !== '') {
+          const clamped = clampWindowHeight(direct)
+          if (clamped != null) return clamped
         }
       } catch {}
 
-      let rawValue = null
-
       try {
-        if (utools?.dbStorage && typeof utools.dbStorage.getItem === 'function') {
-          rawValue = utools.dbStorage.getItem(WINDOW_HEIGHT_STORAGE_KEY)
-        }
-      } catch {}
-
-      if (rawValue == null) {
-        try {
-          rawValue = window.localStorage?.getItem?.(WINDOW_HEIGHT_STORAGE_KEY) ?? null
-        } catch {}
-      }
-
-      const fromLegacyStorage = readWindowHeightFromRawJson(rawValue)
-      if (fromLegacyStorage != null) return fromLegacyStorage
-
-      try {
-        if (utools?.db && typeof utools.db.get === 'function') {
-          const legacyDoc = utools.db.get(LEGACY_SETTINGS_DOC_ID)
-          const fromLegacyDoc = readWindowHeightFromObject(legacyDoc)
-          if (fromLegacyDoc != null) return fromLegacyDoc
-          if (typeof legacyDoc?.data === 'string') {
-            const fromLegacyDocRaw = readWindowHeightFromRawJson(legacyDoc.data)
-            if (fromLegacyDocRaw != null) return fromLegacyDocRaw
-          }
-        }
+        const legacyRaw = window.localStorage?.getItem?.(WINDOW_HEIGHT_STORAGE_KEY) ?? null
+        const fromLegacy = readWindowHeightFromRawJson(legacyRaw)
+        if (fromLegacy != null) return fromLegacy
       } catch {}
 
       return null
@@ -97,53 +67,34 @@ if (typeof window !== 'undefined') {
 
     const applyStoredWindowHeight = () => {
       if (typeof utools.setExpendHeight !== 'function') return
-      const storedHeight = readStoredWindowHeight()
-      const height = storedHeight ?? DEFAULT_WINDOW_HEIGHT
-      utools.setExpendHeight(height)
-    }
-    // 后台页加载时先应用一次；后续每次 onPluginEnter 再应用，
-    // 解决“首次有效、再次打开失效”的问题。
-    applyStoredWindowHeight()
-
-    let currentElectronWindowResolved = false
-    let currentElectronWindow = null
-    const getCurrentElectronWindow = () => {
-      // Windows 的 remote BrowserWindow 方法是同步跨进程 IPC；位置轮询/窗口退出阶段调用可能互锁。
-      // Electron 窗口本身支持 window.screenX/screenY + moveTo，Windows 直接走标准窗口 API。
-      if (isWindowsRuntime) return null
-      if (currentElectronWindowResolved) return currentElectronWindow
-      currentElectronWindowResolved = true
-      try {
-        const electron = typeof require === 'function' ? require('electron') : null
-        const fromRemote = electron?.remote?.getCurrentWindow?.()
-        if (fromRemote) {
-          currentElectronWindow = fromRemote
-          return currentElectronWindow
-        }
-      } catch {}
-
-      try {
-        const remote = typeof require === 'function' ? require('@electron/remote') : null
-        const fromRemotePackage = remote?.getCurrentWindow?.()
-        if (fromRemotePackage) {
-          currentElectronWindow = fromRemotePackage
-          return currentElectronWindow
-        }
-      } catch {}
-
-      return null
+      const fastHeight = readFastLocalWindowHeight()
+      if (fastHeight != null) {
+        utools.setExpendHeight(fastHeight)
+        return
+      }
+      // 首次运行尚无 localStorage 镜像时：先设默认高度，再走异步 db.promises 读取并缓存，不阻塞启动。
+      utools.setExpendHeight(DEFAULT_WINDOW_HEIGHT)
+      const asyncGet = utools?.db?.promises?.get
+      if (typeof asyncGet === 'function') {
+        Promise.resolve(asyncGet(SETTINGS_DOC_ID))
+          .then((doc) => {
+            const fromDoc = readWindowHeightFromObject(doc)
+            if (fromDoc == null) return
+            try {
+              window.localStorage?.setItem?.(WINDOW_HEIGHT_MIRROR_KEY, String(fromDoc))
+            } catch {}
+            try {
+              utools.setExpendHeight(fromDoc)
+            } catch {}
+          })
+          .catch(() => {})
+      }
     }
 
+    // Electron remote 的 BrowserWindow 代理走同步跨进程 IPC，在 macOS/Windows 窗口切换或轮询时可能阻塞甚至超时；
+    // 统一走标准窗口坐标与 moveTo API。
     window.__gooseMarksWindowControl = {
       getPosition() {
-        const currentWindow = getCurrentElectronWindow()
-        try {
-          const bounds = currentWindow?.getBounds?.()
-          if (bounds && Number.isFinite(bounds.x) && Number.isFinite(bounds.y)) {
-            return { x: Math.round(bounds.x), y: Math.round(bounds.y) }
-          }
-        } catch {}
-
         const x = Math.round(window.screenX)
         const y = Math.round(window.screenY)
         if (!Number.isFinite(x) || !Number.isFinite(y)) return null
@@ -155,22 +106,10 @@ if (typeof window !== 'undefined') {
         const y = Math.round(Number(position.y))
         if (!Number.isFinite(x) || !Number.isFinite(y)) return false
 
-        const currentWindow = getCurrentElectronWindow()
-        try {
-          if (typeof currentWindow?.setPosition === 'function') {
-            currentWindow.setPosition(x, y, false)
-            return true
-          }
-        } catch {}
-        try {
-          if (typeof currentWindow?.setBounds === 'function') {
-            currentWindow.setBounds({ x, y })
-            return true
-          }
-        } catch {}
         try {
           if (typeof window.moveTo === 'function') {
             window.moveTo(x, y)
+            return true
           }
         } catch {}
         return false

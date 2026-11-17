@@ -30,9 +30,14 @@ interface UToolsDbApi {
   getAttachment?: (id: string) => Uint8Array | null
   getAttachmentType?: (id: string) => string | null
   promises?: {
+    put?: <T>(doc: UToolsDbDoc<T>) => Promise<UToolsDbResult>
     get?: <T>(id: string) => Promise<UToolsDbDoc<T> | null>
+    remove?: (id: string) => Promise<UToolsDbResult>
     allDocs?: <T>(prefix?: string) => Promise<Array<UToolsDbDoc<T>>>
     bulkDocs?: (docs: Array<UToolsDbDoc<unknown>>) => Promise<UToolsDbResult[]>
+    postAttachment?: (id: string, data: Uint8Array, type: string) => Promise<UToolsDbResult>
+    getAttachment?: (id: string) => Promise<Uint8Array | null>
+    getAttachmentType?: (id: string) => Promise<string | null>
   }
 }
 
@@ -197,6 +202,22 @@ export const postAttachment = (id: string, data: Uint8Array, type: string): UToo
   }
 }
 
+export const postAttachmentAsync = async (id: string, data: Uint8Array, type: string): Promise<UToolsDbResult> => {
+  const db = getUtoolsApi()?.db
+  if (!db) return { ok: false, id, error: 'uTools attachment unavailable' }
+  try {
+    if (db.promises?.postAttachment) {
+      return await db.promises.postAttachment(id, data, type)
+    }
+    if (db.postAttachment) {
+      return db.postAttachment(id, data, type)
+    }
+    return { ok: false, id, error: 'uTools attachment unavailable' }
+  } catch (error) {
+    return { ok: false, id, error }
+  }
+}
+
 export const getAttachment = (id: string): Uint8Array | null => {
   try {
     return getUtoolsApi()?.db?.getAttachment?.(id) ?? null
@@ -205,9 +226,35 @@ export const getAttachment = (id: string): Uint8Array | null => {
   }
 }
 
+export const getAttachmentAsync = async (id: string): Promise<Uint8Array | null> => {
+  const db = getUtoolsApi()?.db
+  if (!db) return null
+  try {
+    if (db.promises?.getAttachment) {
+      return (await db.promises.getAttachment(id)) ?? null
+    }
+    return db.getAttachment?.(id) ?? null
+  } catch {
+    return null
+  }
+}
+
 export const getAttachmentType = (id: string): string | null => {
   try {
     return getUtoolsApi()?.db?.getAttachmentType?.(id) ?? null
+  } catch {
+    return null
+  }
+}
+
+export const getAttachmentTypeAsync = async (id: string): Promise<string | null> => {
+  const db = getUtoolsApi()?.db
+  if (!db) return null
+  try {
+    if (db.promises?.getAttachmentType) {
+      return (await db.promises.getAttachmentType(id)) ?? null
+    }
+    return db.getAttachmentType?.(id) ?? null
   } catch {
     return null
   }

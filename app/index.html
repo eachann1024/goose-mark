@@ -24,18 +24,21 @@
       ;(function () {
         var pref = null
         try {
-          var api = window.utools
-          var settingsDoc = api && api.db && api.db.get && api.db.get('gm:settings')
-          if (settingsDoc && settingsDoc.data && typeof settingsDoc.data.themePreference === 'string') {
-            pref = settingsDoc.data.themePreference
-          }
-          if (pref === null && api && api.dbStorage && api.dbStorage.getItem) {
-            pref = api.dbStorage.getItem('goose-marks.theme-mode')
-          }
+          pref =
+            window.localStorage.getItem('goose-marks.theme-mode') ||
+            window.localStorage.getItem('vueuse-color-scheme')
           if (pref === null) {
-            pref =
-              window.localStorage.getItem('goose-marks.theme-mode') ||
-              window.localStorage.getItem('vueuse-color-scheme')
+            var api = window.utools
+            var settingsDoc = api && api.db && api.db.get && api.db.get('gm:settings')
+            if (settingsDoc && settingsDoc.data && typeof settingsDoc.data.themePreference === 'string') {
+              pref = settingsDoc.data.themePreference
+            }
+            if (pref === null && api && api.dbStorage && api.dbStorage.getItem) {
+              pref = api.dbStorage.getItem('goose-marks.theme-mode')
+            }
+            if (typeof pref === 'string' && pref) {
+              window.localStorage.setItem('goose-marks.theme-mode', pref)
+            }
           }
         } catch (err) {}
         var dark =
@@ -48,7 +51,7 @@
         window.__bootTheme = dark ? 'dark' : 'light'
       })()
     </script>
-    <script type="module" crossorigin src="./assets/index-CePzgzJP.js"></script>
+    <script type="module" crossorigin src="./assets/index-so5oCRed.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-Dgdc_sIl.css">
   </head>
 

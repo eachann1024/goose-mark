@@ -3,7 +3,7 @@ import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
 import { BookmarkAccountChangedError, BookmarkSyncConflictError, isBookmarkMigrationPending, loadBookmarkSnapshot, saveBookmarkSnapshot, type BookmarkSnapshot } from '@/lib/stateRepository'
 import { assertBookmarkIntegrity, BookmarkDataPendingError, migrateLegacyBookmarkLocations } from '@/lib/bookmarkIntegrity'
 import { mergeBookmarkSnapshots } from '@/lib/mergeBookmarkSnapshots'
-import { clearSavedBookmarkRecovery, preserveBookmarkRecovery } from '@/lib/bookmarkRecovery'
+import { clearSavedBookmarkRecovery, preserveBookmarkRecovery, scheduleBookmarkCheckpoint } from '@/lib/bookmarkRecovery'
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import type { BookmarkStore, BookmarkPersistenceRuntime, BookmarkStoreAccess } from './store-types'
 import { clone } from './common'
@@ -12,6 +12,13 @@ const UTOOLS_PLUGIN_OUT_EVENT = 'goose-marks:plugin-out'
 const BOOKMARK_PERSIST_DEBOUNCE_MS = 120
 const BOOKMARK_SELECTION_DEBOUNCE_MS = 1000
 const BOOKMARK_SELECTION_KEY = 'goose-marks.bookmark-selection'
+const FRESH_LOAD_ENTER_SKIP_MS = 1500
+
+const stripLocalUsage = (bookmarks: BookmarkSnapshot['bookmarks']) =>
+  bookmarks.map(({ visits: _visits, lastUsed: _lastUsed, ...rest }) => rest)
+
+const serializeSyncedContent = (snapshot: Pick<BookmarkSnapshot, 'groups' | 'bookmarks'>): string =>
+  JSON.stringify([snapshot.groups, stripLocalUsage(snapshot.bookmarks)])
 
 export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, store: BookmarkStoreAccess) {
   let applyingRemote = false
@@ -25,6 +32,8 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
   let selectionTimer: ReturnType<typeof setTimeout> | null = null
   let contentDirty = false
   let lastSelection = ''
+  let lastSyncedContent = ''
+  let lastSnapshotLoadedAt = 0
   const persistSelection = () => {
     if (selectionTimer) clearTimeout(selectionTimer)
     selectionTimer = null
@@ -45,7 +54,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     }
   }
   const sameContent = (a: BookmarkSnapshot, b: BookmarkSnapshot) =>
-    JSON.stringify([a.groups, a.bookmarks]) === JSON.stringify([b.groups, b.bookmarks])
+    serializeSyncedContent(a) === serializeSyncedContent(b)
 
   const pausePersistence = (error: unknown) => {
     conflictPaused = true
@@ -124,13 +133,15 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
               preserveBookmarkRecovery(remote, 'conflict')
               throw conflict
             }
-            preserveBookmarkRecovery(remote, 'checkpoint')
+            scheduleBookmarkCheckpoint(remote)
             acceptedSnapshot = clone(remote)
           }
         }
         if (!written) throw new BookmarkSyncConflictError()
-        preserveBookmarkRecovery(snapshot, 'checkpoint')
+        scheduleBookmarkCheckpoint(snapshot)
         acceptedSnapshot = clone(snapshot)
+        lastSyncedContent = serializeSyncedContent(snapshot)
+        lastSnapshotLoadedAt = Date.now()
         runtime.lastPersistedBookmarkState = JSON.stringify(snapshot)
         // 保存期间仍可发生本机编辑，合并这些增量，不能直接用落盘快照覆盖当前界面。
         let current
@@ -152,6 +163,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
         else {
           runtime.lastQueuedGroups = latest.groups
           runtime.lastQueuedBookmarks = latest.bookmarks
+          lastSyncedContent = serializeSyncedContent(latest)
         }
         if (written.dataChanged) emitStorageSync('bookmark', written.serialized)
       }
@@ -180,7 +192,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
 
   const enqueueBookmarkPersist = (state: BookmarkStore): void => {
     if (!runtime.bookmarkPersistenceStarted || applyingRemote || !isUToolsDbAvailable()) return
-    const contentChanged = state.groups !== runtime.lastQueuedGroups || state.bookmarks !== runtime.lastQueuedBookmarks
+    const refChanged = state.groups !== runtime.lastQueuedGroups || state.bookmarks !== runtime.lastQueuedBookmarks
     if (state.activeGroupId !== runtime.lastQueuedActiveGroupId || state.activeSubGroupId !== runtime.lastQueuedActiveSubGroupId) {
       runtime.lastQueuedActiveGroupId = state.activeGroupId
       runtime.lastQueuedActiveSubGroupId = state.activeSubGroupId
@@ -188,7 +200,14 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
       selectionTimer = setTimeout(persistSelection, BOOKMARK_SELECTION_DEBOUNCE_MS)
     }
     if (state.isReadOnly) return
-    if (!contentChanged) {
+    if (!refChanged) {
+      return
+    }
+    // visits / lastUsed 由 bookmarkUsage 按设备独立落库；仅本地使用计数变化时不触发整库快照写与 3.7MB 恢复文件落盘。
+    const nextSyncedContent = serializeSyncedContent(state)
+    if (!contentDirty && nextSyncedContent === lastSyncedContent) {
+      runtime.lastQueuedGroups = state.groups
+      runtime.lastQueuedBookmarks = state.bookmarks
       return
     }
     contentDirty = true
@@ -256,12 +275,14 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
           preserveBookmarkRecovery(persisted, 'conflict')
           throw error
         }
-        preserveBookmarkRecovery(persisted, 'checkpoint')
+        scheduleBookmarkCheckpoint(persisted)
         contentDirty = !sameContent(merged, persisted)
         if (contentDirty) preserveBookmarkRecovery(merged)
         refreshBlocked = false
         startupMigrationPending = false
         acceptedSnapshot = clone(persisted)
+        lastSyncedContent = serializeSyncedContent(persisted)
+        lastSnapshotLoadedAt = Date.now()
         runtime.lastPersistedBookmarkState = JSON.stringify({ ...persisted, activeGroupId: current.activeGroupId, activeSubGroupId: current.activeSubGroupId })
         applyingRemote = true
         try {
@@ -287,6 +308,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
         else if (!contentDirty) {
           runtime.lastQueuedGroups = store.getState().groups
           runtime.lastQueuedBookmarks = store.getState().bookmarks
+          lastSyncedContent = serializeSyncedContent(store.getState())
         }
       }
     })
@@ -354,10 +376,12 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     store.getState().ensureValidSelection()
 
     if (!isUToolsDbAvailable()) return
-    preserveBookmarkRecovery(pickBookmarkSnapshot(store.getState()), 'checkpoint')
+    const initialSnapshot = pickBookmarkSnapshot(store.getState())
+    scheduleBookmarkCheckpoint(initialSnapshot)
     try {
       if (isBookmarkMigrationPending()) {
-        store.setState(migrateLegacyBookmarkLocations(pickBookmarkSnapshot(store.getState())))
+        preserveBookmarkRecovery(initialSnapshot, 'checkpoint')
+        store.setState(migrateLegacyBookmarkLocations(initialSnapshot))
       }
       assertBookmarkIntegrity(pickBookmarkSnapshot(store.getState()))
     }
@@ -378,9 +402,12 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     }
 
     runtime.bookmarkPersistenceStarted = true
+    const readySnapshot = pickBookmarkSnapshot(store.getState())
     // 初始化、补默认字段和选择修正不构成用户编辑；打开旧设备不能触发整库写回。
-    runtime.lastPersistedBookmarkState = JSON.stringify(pickBookmarkSnapshot(store.getState()))
-    acceptedSnapshot = pickBookmarkSnapshot(store.getState())
+    runtime.lastPersistedBookmarkState = JSON.stringify(readySnapshot)
+    acceptedSnapshot = readySnapshot
+    lastSyncedContent = serializeSyncedContent(readySnapshot)
+    lastSnapshotLoadedAt = Date.now()
     runtime.lastQueuedGroups = store.getState().groups
     runtime.lastQueuedBookmarks = store.getState().bookmarks
     runtime.lastQueuedActiveGroupId = store.getState().activeGroupId
@@ -398,9 +425,14 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     window.addEventListener('storage-sync', (event) => {
       if ((event as CustomEvent<{ key: string }>).detail?.key === 'bookmark') void refreshBookmarkSnapshot()
     })
-    window.addEventListener('goose-marks:plugin-enter', () => { void refreshBookmarkSnapshot() })
-    // 监听安装后再读一次，覆盖启动/图标加载期间到达但尚未监听的同步。
-    await refreshBookmarkSnapshot()
+    window.addEventListener('goose-marks:plugin-enter', () => {
+      // 冷启动刚读完最新快照时，避免 preload 回放的同一次 plugin-enter 立即重复扫描整库。
+      if (!refreshBlocked && !refreshRequested && Date.now() - lastSnapshotLoadedAt < FRESH_LOAD_ENTER_SKIP_MS) return
+      void refreshBookmarkSnapshot()
+    })
+    if (refreshBlocked) {
+      refreshRetry = setTimeout(() => { void refreshBookmarkSnapshot() }, 1000)
+    }
   }
 
   return { initializeBookmarkStorePersistence, flushBookmarkStorePersistence }

@@ -101,9 +101,12 @@ export function useHomeFeatures({
 }) {
 
   // 安装/升级后清理旧入口；AI 配置变化时同步「AI 保存到书签」全局入口。
+  // 首屏挂载后延后同步特性，避免同步 IPC 与冷启动首帧/onPluginEnter 抢占主线程。
   useEffect(() => {
-    void syncFeatures()
-    return useSettingsStore.subscribe((state, prev) => {
+    const initialTimer = window.setTimeout(() => {
+      void syncFeatures()
+    }, 250)
+    const unsubscribe = useSettingsStore.subscribe((state, prev) => {
       if (
         state.aiEnabled !== prev.aiEnabled ||
         state.aiSelectedModelId !== prev.aiSelectedModelId ||
@@ -113,5 +116,9 @@ export function useHomeFeatures({
         state.aiCustomModelOptions !== prev.aiCustomModelOptions
       ) void syncFeatures()
     })
+    return () => {
+      window.clearTimeout(initialTimer)
+      unsubscribe()
+    }
   }, [syncFeatures])
 }

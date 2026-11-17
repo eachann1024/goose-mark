@@ -5,13 +5,13 @@ import { overlayBookmarkUsage } from '@/lib/bookmarkUsage'
 import {
   allDocsAsync,
   bulkWriteDocs,
-  getAttachment,
-  getAttachmentType,
+  getAttachmentAsync,
+  getAttachmentTypeAsync,
   getDbStorage,
   getDoc,
   getDocAsync,
   isUToolsDbAvailable,
-  postAttachment,
+  postAttachmentAsync,
   putDocWithRetry,
   removeDoc,
   type HostDoc,
@@ -36,6 +36,8 @@ const LEGACY_KEYS = {
 const ATTACHMENT_REF_PREFIX = 'att:'
 const ICON_HYDRATE_CONCURRENCY = 8
 const attachmentRefCache = new Map<string, string>()
+const attachmentDataUrlCache = new Map<string, string>()
+const attachmentReadInFlight = new Map<string, Promise<string | null>>()
 
 type BookmarkIconRef = Extract<IconSource, { type: 'remote' }> & { cacheRef?: string }
 type BookmarkCustomIconRef = Omit<Extract<IconSource, { type: 'custom' }>, 'data'> & { data?: string; dataRef?: string }
@@ -183,22 +185,57 @@ const readLegacyJson = <T>(key: string): T | null => {
   return decodeLegacyPersistedJson<T>(raw)
 }
 
+const inferExactMimeTypeFromAttachmentId = (attachmentId: string): string | null => {
+  const lower = attachmentId.toLowerCase()
+  if (lower.endsWith('.png')) return 'image/png'
+  if (lower.endsWith('.jpg')) return 'image/jpeg'
+  if (lower.endsWith('.webp')) return 'image/webp'
+  if (lower.endsWith('.gif')) return 'image/gif'
+  if (lower.endsWith('.svg')) return 'image/svg+xml'
+  return null
+}
+
+const bytesToDataUrl = (bytes: Uint8Array, mimeType: string): string => {
+  let binary = ''
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+  }
+  return `data:${mimeType};base64,${btoa(binary)}`
+}
+
+const CONTENT_ADDRESSED_ICON_RE = /^gm:icon\/[a-f0-9]{64}\./
+
 const readAttachmentAsDataUrl = async (attachmentId: string): Promise<string | null> => {
-  assertHostSession()
-  const bytes = getAttachment(attachmentId)
-  assertHostSession()
-  if (!bytes) return null
-  const mimeType = getAttachmentType(attachmentId) || 'image/png'
-  assertHostSession()
-  const arrayBuffer = new ArrayBuffer(bytes.byteLength)
-  new Uint8Array(arrayBuffer).set(bytes)
-  const blob = new Blob([arrayBuffer], { type: mimeType })
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : null)
-    reader.onerror = () => resolve(null)
-    reader.readAsDataURL(blob)
-  })
+  const cacheable = CONTENT_ADDRESSED_ICON_RE.test(attachmentId)
+  if (cacheable) {
+    const cached = attachmentDataUrlCache.get(attachmentId)
+    if (cached) return cached
+    const inflight = attachmentReadInFlight.get(attachmentId)
+    if (inflight) return inflight
+  }
+
+  const task = (async () => {
+    const bytes = await getAttachmentAsync(attachmentId)
+    if (!bytes) return null
+    const mimeType =
+      inferExactMimeTypeFromAttachmentId(attachmentId) ||
+      (await getAttachmentTypeAsync(attachmentId)) ||
+      'image/png'
+    const dataUrl = bytesToDataUrl(bytes, mimeType)
+    if (cacheable) {
+      attachmentDataUrlCache.set(attachmentId, dataUrl)
+    }
+    return dataUrl
+  })()
+
+  if (!cacheable) return task
+  attachmentReadInFlight.set(attachmentId, task)
+  try {
+    return await task
+  } finally {
+    attachmentReadInFlight.delete(attachmentId)
+  }
 }
 
 const getMimeTypeFromDataUrl = (dataUrl: string): string | null => {
@@ -244,12 +281,9 @@ const persistDataUrlAsAttachment = async (dataUrl: string): Promise<string | nul
   const ext = getExtensionFromMimeType(blob.type || getMimeTypeFromDataUrl(dataUrl) || 'image/png')
   const attachmentId = `${ICON_ATTACHMENT_PREFIX}${hash}.${ext}`
 
-  assertHostSession()
-  const existingAttachment = getAttachment(attachmentId)
-  assertHostSession()
+  const existingAttachment = await getAttachmentAsync(attachmentId)
   if (!existingAttachment) {
-    const result = postAttachment(attachmentId, new Uint8Array(arrayBuffer), blob.type || 'image/png')
-    assertHostSession()
+    const result = await postAttachmentAsync(attachmentId, new Uint8Array(arrayBuffer), blob.type || 'image/png')
     if (result.ok !== true || result.error) {
       console.error('[stateRepository] 保存图标 attachment 失败:', attachmentId, result.error)
       return null
@@ -258,6 +292,7 @@ const persistDataUrlAsAttachment = async (dataUrl: string): Promise<string | nul
 
   const ref = `${ATTACHMENT_REF_PREFIX}${attachmentId}`
   attachmentRefCache.set(dataUrl, ref)
+  attachmentDataUrlCache.set(attachmentId, dataUrl)
   return ref
 }
 
@@ -559,6 +594,20 @@ export const loadSettingsSnapshot = (): Partial<SettingsState> | null => {
   if (!isUToolsDbAvailable()) return null
 
   const persisted = getDoc<Partial<SettingsState>>(SETTINGS_DOC_ID)?.data
+  if (persisted && typeof persisted === 'object') return clone(persisted)
+
+  const legacy = readLegacyJson<Partial<SettingsState>>(LEGACY_KEYS.settings)
+  if (!legacy || typeof legacy !== 'object') return null
+
+  saveSettingsSnapshot(legacy)
+  cleanupLegacyKeySet(LEGACY_KEYS.settings)
+  return clone(legacy)
+}
+
+export const loadSettingsSnapshotAsync = async (): Promise<Partial<SettingsState> | null> => {
+  if (!isUToolsDbAvailable()) return null
+
+  const persisted = (await getDocAsync<Partial<SettingsState>>(SETTINGS_DOC_ID))?.data
   if (persisted && typeof persisted === 'object') return clone(persisted)
 
   const legacy = readLegacyJson<Partial<SettingsState>>(LEGACY_KEYS.settings)

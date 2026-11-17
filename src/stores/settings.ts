@@ -10,8 +10,19 @@ import {
   normalizeAIModelOptions
 } from '@/lib/aiProvider'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
-import { loadSettingsSnapshot, saveSettingsSnapshot } from '@/lib/stateRepository'
+import { loadSettingsSnapshotAsync, saveSettingsSnapshot } from '@/lib/stateRepository'
 import { getPersistentItem } from '@/lib/utoolsStorage'
+
+const THEME_MIRROR_KEY = 'goose-marks.theme-mode'
+const WINDOW_HEIGHT_MIRROR_KEY = 'goose-marks.window-height'
+
+const syncBootSettingsMirror = (themePreference: SettingsState['themePreference'], windowHeight: number): void => {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage?.setItem?.(THEME_MIRROR_KEY, themePreference)
+    window.localStorage?.setItem?.(WINDOW_HEIGHT_MIRROR_KEY, String(Math.round(windowHeight)))
+  } catch {}
+}
 
 /** 设置 store：setter 只做业务赋值，持久化由 utools.db 仓储处理。 */
 
@@ -227,7 +238,10 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => {
   return {
   ...createDefaultSettingsState(),
 
-      setThemePreference: (value) => set({ themePreference: value }),
+      setThemePreference: (value) => {
+        set({ themePreference: value })
+        syncBootSettingsMirror(value, get().windowHeight)
+      },
 
       setGridColumns: (value) => set({ gridColumns: Math.min(5, Math.max(2, Math.round(value))) }),
       setPreferLocalSnapshotOnStartup: (value) => set({ preferLocalSnapshotOnStartup: !!value }),
@@ -318,6 +332,7 @@ export const useSettingsStore = create<SettingsStore>()((set, get) => {
       setWindowHeight: (value) => {
         const next = clampWindowHeight(value)
         set({ windowHeight: next })
+        syncBootSettingsMirror(get().themePreference, next)
         // 即时应用到 uTools 主窗口（preload 仅负责启动恢复，运行时调整由这里驱动）
         try {
           window.utools?.setExpendHeight?.(next)
@@ -506,6 +521,7 @@ let lastPersistedSettings = ''
 let settingsPersistenceFlushEventsStarted = false
 
 const enqueueSettingsPersist = (state: SettingsStore): void => {
+  syncBootSettingsMirror(state.themePreference, state.windowHeight)
   const payload = pickPersistedSettings(state)
   const serialized = JSON.stringify(payload)
   if (serialized === lastPersistedSettings) return
@@ -526,10 +542,12 @@ const enqueueSettingsPersist = (state: SettingsStore): void => {
  * 常规更新仍走串行队列；生命周期边界不能依赖下一轮微任务，否则输入框尚未失焦时可能丢设置。
  */
 export const flushSettingsStorePersistence = (): void => {
-  if (!isUToolsDbAvailable()) return
   const state = useSettingsStore.getState()
+  syncBootSettingsMirror(state.themePreference, state.windowHeight)
+  if (!isUToolsDbAvailable()) return
   const payload = pickPersistedSettings(state)
   const serialized = JSON.stringify(payload)
+  if (serialized === lastPersistedSettings) return
   try {
     saveSettingsSnapshot(payload)
     lastPersistedSettings = serialized
@@ -558,7 +576,7 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
   if (settingsPersistenceStarted) return
   settingsPersistenceStarted = true
 
-  const saved = loadSettingsSnapshot()
+  const saved = await loadSettingsSnapshotAsync()
   const persisted = normalizePersistedSettings(saved)
   if (!saved?.themePreference) {
     const legacyTheme = getPersistentItem('goose-marks.theme-mode', ['vueuse-color-scheme'])
@@ -568,14 +586,25 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
     useSettingsStore.setState(persisted as Partial<SettingsStore>)
   }
 
+  const initialState = useSettingsStore.getState()
+  syncBootSettingsMirror(initialState.themePreference, initialState.windowHeight)
+
   if (!isUToolsDbAvailable()) return
+
+  const currentSerialized = JSON.stringify(pickPersistedSettings(initialState))
+  const savedNormalizedMatches =
+    saved != null && JSON.stringify(pickPersistedSettings({ ...initialState, ...(saved as Partial<SettingsState>) })) === currentSerialized &&
+    Object.keys(saved).every((key) => key in pickPersistedSettings(initialState))
+
+  lastPersistedSettings = savedNormalizedMatches ? currentSerialized : ''
 
   useSettingsStore.subscribe((state) => {
     enqueueSettingsPersist(state)
   })
   bindSettingsPersistenceFlushEvents()
-  lastPersistedSettings = ''
-  enqueueSettingsPersist(useSettingsStore.getState())
+  if (!savedNormalizedMatches) {
+    enqueueSettingsPersist(useSettingsStore.getState())
+  }
 }
 
 // ---- 选择器（等价旧版 getters）----

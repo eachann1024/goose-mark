@@ -71,6 +71,15 @@ interface UToolsApi {
     postAttachment?: (id: string, data: Uint8Array, type: string) => { ok?: boolean; id?: string; rev?: string; error?: unknown; message?: string }
     getAttachment?: (id: string) => Uint8Array | null
     getAttachmentType?: (id: string) => string | null
+    promises?: {
+      put?: <T>(doc: { _id: string; _rev?: string; data: T }) => Promise<{ ok?: boolean; id?: string; rev?: string; error?: unknown; message?: string }>
+      get?: <T>(id: string) => Promise<{ _id: string; _rev?: string; data: T } | null>
+      remove?: (id: string) => Promise<{ ok?: boolean; id?: string; error?: unknown; message?: string }>
+      allDocs?: <T>(prefix?: string) => Promise<Array<{ _id: string; _rev?: string; data: T }>>
+      postAttachment?: (id: string, data: Uint8Array, type: string) => Promise<{ ok?: boolean; id?: string; rev?: string; error?: unknown; message?: string }>
+      getAttachment?: (id: string) => Promise<Uint8Array | null>
+      getAttachmentType?: (id: string) => Promise<string | null>
+    }
   }
   getPluginLocalDataPath?(): string
   getPath(name: string): string
