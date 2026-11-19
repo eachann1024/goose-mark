@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Build-gated, immutable GitHub stable releases; no registry or deployment writes."""
 import argparse
+import base64
 import datetime
 import hashlib
 import io
@@ -9,21 +10,21 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import sys
 import zipfile
 
 ROOT = Path.cwd()
 CONFIG = json.loads((ROOT / '.github/stable-release.json').read_text())
 STATE = ROOT / '.stable-release'
 REPO = os.environ.get('GH_REPO') or os.environ.get('GITHUB_REPOSITORY')
-MAX_RELEASE_SCAN_PAGES = 5
 
 
-def run(*args, binary=False):
-    return subprocess.check_output(args, text=not binary, stderr=subprocess.PIPE)
+def run(*args, binary=False, env=None):
+    return subprocess.check_output(args, text=not binary, stderr=subprocess.PIPE, env=env)
 
 
-def git(*args, binary=False):
-    return run('git', *args, binary=binary)
+def git(*args, binary=False, env=None):
+    return run('git', *args, binary=binary, env=env)
 
 
 def gh(*args):
@@ -109,15 +110,22 @@ def prepare(force, offline):
                 except subprocess.CalledProcessError:
                     try:
                         token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN') or ''
+                        fetch_env = None
                         if token:
-                            import base64
                             auth = base64.b64encode(f'x-access-token:{token}'.encode()).decode()
-                            git('-c', f'http.https://github.com/.extraheader=AUTHORIZATION: basic {auth}', 'fetch', '--depth=1', 'origin', 'tag', tag_name)
-                        else:
-                            git('fetch', '--depth=1', 'origin', 'tag', tag_name)
+                            fetch_env = os.environ.copy()
+                            fetch_env['GIT_CONFIG_COUNT'] = '1'
+                            fetch_env['GIT_CONFIG_KEY_0'] = 'http.https://github.com/.extraheader'
+                            fetch_env['GIT_CONFIG_VALUE_0'] = f'AUTHORIZATION: basic {auth}'
+                        git('fetch', '--depth=1', 'origin', 'tag', tag_name, env=fetch_env)
                         unchanged = fingerprint(tag_ref) == digest
-                    except subprocess.CalledProcessError:
-                        pass
+                    except subprocess.CalledProcessError as error:
+                        detail = (error.stderr or str(error)).strip()
+                        if token:
+                            detail = detail.replace(token, '[REDACTED]')
+                        lower = detail.lower()
+                        if "couldn't find remote ref" not in lower and 'returned error: 404' not in lower:
+                            print(f'::warning::Failed to fetch or fingerprint tag {tag_name}: {detail}', file=sys.stderr)
         existing = api(f'releases/tags/{tag}')
         if existing and not existing['draft']:
             if existing['prerelease']:
@@ -223,13 +231,21 @@ def find_release(tag, include_drafts=True):
     release = api(f'releases/tags/{tag}')
     if release or not include_drafts:
         return release
-    page = api('releases?per_page=100') or []
-    return next((r for r in page if r.get('tag_name') == tag), None)
+    page_num = 1
+    while True:
+        page = api(f'releases?per_page=100&page={page_num}') or []
+        match = next((r for r in page if r.get('tag_name') == tag), None)
+        if match:
+            return match
+        if len(page) < 100:
+            return None
+        page_num += 1
 
 
 def published_version(version):
     exact, prefix = f'v{version}', f'v{version}-'
-    for page_num in range(1, MAX_RELEASE_SCAN_PAGES + 1):
+    page_num = 1
+    while True:
         page = api(f'releases?per_page=100&page={page_num}')
         if not page:
             break
@@ -240,6 +256,7 @@ def published_version(version):
                 return release
         if len(page) < 100:
             break
+        page_num += 1
     return None
 
 
