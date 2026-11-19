@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,7 @@ ROOT = Path.cwd()
 CONFIG = json.loads((ROOT / '.github/stable-release.json').read_text())
 STATE = ROOT / '.stable-release'
 REPO = os.environ.get('GH_REPO') or os.environ.get('GITHUB_REPOSITORY')
+MAX_RELEASE_SCAN_PAGES = 5
 
 
 def run(*args, binary=False):
@@ -100,10 +102,16 @@ def prepare(force, offline):
                 payload = json.loads(gh('api', f'repos/{REPO}/releases/assets/{manifest["id"]}', '-H', 'Accept: application/octet-stream'))
                 unchanged = payload.get('fingerprint') == digest
             else:
+                tag_name = latest['tag_name']
+                tag_ref = f'refs/tags/{tag_name}'
                 try:
-                    unchanged = fingerprint(f"refs/tags/{latest['tag_name']}") == digest
+                    unchanged = fingerprint(tag_ref) == digest
                 except subprocess.CalledProcessError:
-                    pass
+                    try:
+                        git('fetch', '--depth=1', 'origin', 'tag', tag_name)
+                        unchanged = fingerprint(tag_ref) == digest
+                    except subprocess.CalledProcessError:
+                        pass
         existing = api(f'releases/tags/{tag}')
         if existing and not existing['draft']:
             if existing['prerelease']:
@@ -136,50 +144,64 @@ def package():
     target = STATE / 'assets'
     target.mkdir(exist_ok=True)
     records = []
-    for asset in CONFIG['assets']:
-        name = asset['name']
-        if Path(name).name != name or not name.endswith('.zip'):
-            raise ValueError('Each configured asset must be a plain .zip filename')
-        files = {}
-        for part in asset['parts']:
-            prefix = part.get('prefix', '').strip('/')
-            if prefix and ('..' in Path(prefix).parts or Path(prefix).is_absolute()):
-                raise ValueError('Invalid archive prefix')
-            if 'tracked' in part:
-                for metadata, relative in entries('HEAD'):
-                    if selected(relative, part['tracked']):
-                        if not metadata.startswith(('100644 ', '100755 ')):
-                            raise ValueError(f'Unsupported tracked file mode: {relative}')
-                        content = git('show', f'HEAD:{relative}', binary=True)
+    tracked_entries = None
+    tracked_archive = None
+    try:
+        for asset in CONFIG['assets']:
+            name = asset['name']
+            if Path(name).name != name or not name.endswith('.zip'):
+                raise ValueError('Each configured asset must be a plain .zip filename')
+            files = {}
+            for part in asset['parts']:
+                prefix = part.get('prefix', '').strip('/')
+                if prefix and ('..' in Path(prefix).parts or Path(prefix).is_absolute()):
+                    raise ValueError('Invalid archive prefix')
+                if 'tracked' in part:
+                    if tracked_entries is None:
+                        tracked_entries = entries('HEAD')
+                    matched = []
+                    for metadata, relative in tracked_entries:
+                        if selected(relative, part['tracked']):
+                            if not metadata.startswith(('100644 ', '100755 ')):
+                                raise ValueError(f'Unsupported tracked file mode: {relative}')
+                            name_in_zip = f'{prefix}/{relative}' if prefix else relative
+                            if name_in_zip in files:
+                                raise ValueError(f'Duplicate archive path: {name_in_zip}')
+                            matched.append((relative, name_in_zip, metadata.startswith('100755 ')))
+                    if matched:
+                        if tracked_archive is None:
+                            archive_bytes = git('archive', '--format=zip', '-0', 'HEAD', binary=True)
+                            tracked_archive = zipfile.ZipFile(io.BytesIO(archive_bytes))
+                        for relative, name_in_zip, executable in matched:
+                            files[name_in_zip] = (tracked_archive.read(relative), executable)
+                else:
+                    directory = (ROOT / part['path']).resolve()
+                    if not directory.is_relative_to(ROOT.resolve()) or not directory.is_dir():
+                        raise ValueError(f'Missing or unsafe build directory: {directory}')
+                    paths = [p for p in directory.rglob('*') if p.is_file()]
+                    if not paths:
+                        raise ValueError(f'Empty build directory: {directory}')
+                    for path in paths:
+                        if not path.resolve().is_relative_to(directory):
+                            raise ValueError(f'Archive symlink escapes build directory: {path}')
+                        relative = path.relative_to(directory).as_posix()
                         name_in_zip = f'{prefix}/{relative}' if prefix else relative
                         if name_in_zip in files:
                             raise ValueError(f'Duplicate archive path: {name_in_zip}')
-                        files[name_in_zip] = (content, metadata.startswith('100755 '))
-            else:
-                directory = (ROOT / part['path']).resolve()
-                if not directory.is_relative_to(ROOT.resolve()) or not directory.is_dir():
-                    raise ValueError(f'Missing or unsafe build directory: {directory}')
-                paths = [p for p in directory.rglob('*') if p.is_file()]
-                if not paths:
-                    raise ValueError(f'Empty build directory: {directory}')
-                for path in paths:
-                    if not path.resolve().is_relative_to(directory):
-                        raise ValueError(f'Archive symlink escapes build directory: {path}')
-                    relative = path.relative_to(directory).as_posix()
-                    name_in_zip = f'{prefix}/{relative}' if prefix else relative
-                    if name_in_zip in files:
-                        raise ValueError(f'Duplicate archive path: {name_in_zip}')
-                    files[name_in_zip] = (path.read_bytes(), bool(path.stat().st_mode & 0o111))
-        if not files:
-            raise ValueError(f'Empty release asset: {name}')
-        with zipfile.ZipFile(target / name, 'w', zipfile.ZIP_DEFLATED) as archive:
-            for relative, (content, executable) in sorted(files.items()):
-                info = zipfile.ZipInfo(relative)
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.external_attr = (0o100755 if executable else 0o100644) << 16
-                archive.writestr(info, content)
-        data = (target / name).read_bytes()
-        records.append({'name': name, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+                        files[name_in_zip] = (path.read_bytes(), bool(path.stat().st_mode & 0o111))
+            if not files:
+                raise ValueError(f'Empty release asset: {name}')
+            with zipfile.ZipFile(target / name, 'w', zipfile.ZIP_DEFLATED) as archive:
+                for relative, (content, executable) in sorted(files.items()):
+                    info = zipfile.ZipInfo(relative)
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = (0o100755 if executable else 0o100644) << 16
+                    archive.writestr(info, content)
+            data = (target / name).read_bytes()
+            records.append({'name': name, 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest()})
+    finally:
+        if tracked_archive is not None:
+            tracked_archive.close()
     manifest = {**plan, 'assets': records}
     (target / 'release-manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
     sums = [f'{r["sha256"]}  {r["name"]}' for r in records]
@@ -191,17 +213,28 @@ def package():
     print(json.dumps({'tag': plan['tag'], 'assets': records}))
 
 
-def find_release(tag):
-    pages = json.loads(gh('api', '--paginate', '--slurp', f'repos/{REPO}/releases?per_page=100'))
-    return next((r for page in pages for r in page if r['tag_name'] == tag), None)
+def find_release(tag, include_drafts=True):
+    release = api(f'releases/tags/{tag}')
+    if release or not include_drafts:
+        return release
+    page = api('releases?per_page=100') or []
+    return next((r for r in page if r.get('tag_name') == tag), None)
 
 
 def published_version(version):
     exact, prefix = f'v{version}', f'v{version}-'
-    pages = json.loads(gh('api', '--paginate', '--slurp', f'repos/{REPO}/releases?per_page=100'))
-    return next((r for page in pages for r in page
-                 if not r.get('draft') and not r.get('prerelease')
-                 and ((r.get('tag_name') or '') == exact or (r.get('tag_name') or '').startswith(prefix))), None)
+    for page_num in range(1, MAX_RELEASE_SCAN_PAGES + 1):
+        page = api(f'releases?per_page=100&page={page_num}')
+        if not page:
+            break
+        for release in page:
+            tag_name = release.get('tag_name') or ''
+            if (not release.get('draft') and not release.get('prerelease')
+                    and (tag_name == exact or tag_name.startswith(prefix))):
+                return release
+        if len(page) < 100:
+            break
+    return None
 
 
 def verify_tag(tag, commit):
