@@ -124,7 +124,7 @@ def prepare(force, offline):
                         if token:
                             detail = detail.replace(token, '[REDACTED]')
                         lower = detail.lower()
-                        if "couldn't find remote ref" not in lower and 'returned error: 404' not in lower:
+                        if "couldn't find remote ref" not in lower:
                             raise RuntimeError(f'Failed to fetch or fingerprint tag {tag_name}: {detail}') from None
         existing = api(f'releases/tags/{tag}')
         if existing and not existing['draft']:
