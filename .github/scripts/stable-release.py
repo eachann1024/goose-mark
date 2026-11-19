@@ -108,7 +108,13 @@ def prepare(force, offline):
                     unchanged = fingerprint(tag_ref) == digest
                 except subprocess.CalledProcessError:
                     try:
-                        git('fetch', '--depth=1', 'origin', 'tag', tag_name)
+                        token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN') or ''
+                        if token:
+                            import base64
+                            auth = base64.b64encode(f'x-access-token:{token}'.encode()).decode()
+                            git('-c', f'http.https://github.com/.extraheader=AUTHORIZATION: basic {auth}', 'fetch', '--depth=1', 'origin', 'tag', tag_name)
+                        else:
+                            git('fetch', '--depth=1', 'origin', 'tag', tag_name)
                         unchanged = fingerprint(tag_ref) == digest
                     except subprocess.CalledProcessError:
                         pass
