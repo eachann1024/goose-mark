@@ -53,8 +53,26 @@ jobs:
           else
             python3 .github/scripts/stable-release.py prepare
           fi
-      - uses: actions/setup-node@v4
+      - name: Use preinstalled Node 22
+        id: node
         if: steps.prepare.outputs.build == 'true'
+        shell: bash
+        run: |
+          cur="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+          if [ "$cur" -ge 22 ]; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            node_bin="$(ls -d "${RUNNER_TOOL_CACHE:-/opt/hostedtoolcache}"/node/22.*/*/bin 2>/dev/null | sort -V | tail -n 1 || true)"
+            if [ -n "$node_bin" ] && [ -x "$node_bin/node" ]; then
+              echo "$node_bin" >> "$GITHUB_PATH"
+              echo "found=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "found=false" >> "$GITHUB_OUTPUT"
+            fi
+          fi
+      - name: Setup Node 22 fallback
+        if: steps.prepare.outputs.build == 'true' && steps.node.outputs.found != 'true'
+        uses: actions/setup-node@v4
         with:
           node-version: '22'
       - uses: oven-sh/setup-bun@v2
