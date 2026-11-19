@@ -33,11 +33,11 @@ def gh(*args):
     return run('gh', *args)
 
 
-def api(path):
+def api(path, allow_404=True):
     try:
         return json.loads(gh('api', f'repos/{REPO}/{path}'))
     except subprocess.CalledProcessError as error:
-        if '(HTTP 404)' in error.stderr:
+        if allow_404 and '(HTTP 404)' in error.stderr:
             return None
         raise
 
@@ -125,7 +125,7 @@ def prepare(force, offline):
                             detail = detail.replace(token, '[REDACTED]')
                         lower = detail.lower()
                         if "couldn't find remote ref" not in lower and 'returned error: 404' not in lower:
-                            print(f'::warning::Failed to fetch or fingerprint tag {tag_name}: {detail}', file=sys.stderr)
+                            raise RuntimeError(f'Failed to fetch or fingerprint tag {tag_name}: {detail}') from None
         existing = api(f'releases/tags/{tag}')
         if existing and not existing['draft']:
             if existing['prerelease']:
@@ -233,7 +233,7 @@ def find_release(tag, include_drafts=True):
         return release
     page_num = 1
     while True:
-        page = api(f'releases?per_page=100&page={page_num}') or []
+        page = api(f'releases?per_page=100&page={page_num}', allow_404=False)
         match = next((r for r in page if r.get('tag_name') == tag), None)
         if match:
             return match
@@ -246,7 +246,7 @@ def published_version(version):
     exact, prefix = f'v{version}', f'v{version}-'
     page_num = 1
     while True:
-        page = api(f'releases?per_page=100&page={page_num}')
+        page = api(f'releases?per_page=100&page={page_num}', allow_404=False)
         if not page:
             break
         for release in page:
