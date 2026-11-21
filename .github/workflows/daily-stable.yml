@@ -22,7 +22,7 @@ permissions:
 
 concurrency:
   group: daily-stable-${{ github.repository }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
