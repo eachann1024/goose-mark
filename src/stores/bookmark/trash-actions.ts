@@ -1,4 +1,5 @@
 import type { BookmarkLocation } from '@/types/bookmark'
+import { trackBookmarkDelete } from '@/lib/appTelemetry'
 import { TRASH_GROUP_ID, createSeedGroups, uid } from '@/stores/bookmarkSeed'
 import type { BookmarkActions, BookmarkGet, BookmarkCommit } from './store-types'
 import { clone, resolveBookmarkLocations } from './common'
@@ -123,6 +124,7 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
       affected.forEach((loc) => state.scheduleSubGroupSync(loc.groupId, loc.subGroupId, { updatedAt: now }))
       new Set(affected.map((loc) => loc.groupId)).forEach((groupId) => state.scheduleGroupSync(groupId, { updatedAt: now, orderIndex: groups.findIndex((group) => group.id === groupId) }))
       state.scheduleBookmarkSync(id, { updatedAt: now, previousShareIds })
+      trackBookmarkDelete()
       return true
     },
 
@@ -149,8 +151,10 @@ export function createTrashActions(get: BookmarkGet, commit: BookmarkCommit): Pi
           })
           if (groupChanged) g.updatedAt = now
         })
+        const beforeCount = bookmarks.length
         bookmarks = bookmarks.filter((b) => b.id !== id)
         commit(groups, bookmarks)
+        if (bookmarks.length < beforeCount) trackBookmarkDelete()
         get().scheduleBookmarkSync(id, { isDeleted: true, updatedAt: now, previousShareIds, content: null, removedFromStore: true })
       }
     },

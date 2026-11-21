@@ -5,6 +5,7 @@ import { useBookmarkStore } from '@/stores/bookmark';
 import { TRASH_GROUP_ID } from '@/stores/bookmarkSeed';
 import type { FormSet, ShowToast, BuildTextIcon, ResolveLocationsForSave } from './controllerTypes';
 import { addBehaviorLog } from '@/lib/debugReport';
+import { trackBookmarkCreate } from '@/lib/appTelemetry';
 import { isValidUrlInput } from './icons';
 import { fetchAsDataUrl } from '@/services/iconCache';
 import { enqueueMetadataHydration } from './hydration';
@@ -137,6 +138,7 @@ export function useFormSave({
           icon: iconToSave
         }, locationsToSave);
         if (!created) return set({ formError: '无法保存，请检查只读状态和所选分类' });
+        trackBookmarkCreate('ui');
         if (iconToSave?.type === 'text') void store.refreshSingleIcon(created);
         const shouldHydrateInBackground = !!options?.background || !titleToSave || !descToSave || !previewIcon || iconLoading;
         if (shouldHydrateInBackground) {

@@ -183,6 +183,7 @@ declare global {
       getProxy: () => string | null
     }
     __gooseMarksWindowControl?: GooseMarksWindowControl
+    __gooseSystemInfo?: { osVersion?: string; arch?: string }
     require?: NodeRequire
     __gooseMarksPluginEnterSerial?: number
     __gooseMarksLastPluginEnterSerial?: number

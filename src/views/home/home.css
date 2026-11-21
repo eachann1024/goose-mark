@@ -880,7 +880,7 @@
 .goose-home .g-switch:hover::after { box-shadow:var(--shadow-sm),0 0 0 4px var(--accent-ring); }
 .goose-home .g-switch:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
 .goose-home .g-switch:disabled { cursor:not-allowed; opacity:.5; }
-.goose-home .g-switch.on { @apply bg-g-accent; }
+.goose-home .g-switch.on { @apply bg-g-accent; background:var(--accent); }
 .goose-home .g-switch.on::after { transform:translateY(-50%) translateX(18px); }
 /* AI toggle 特例已移除，统一使用 accent 橙色 */
 /* 步进控件（窗口高度等数值调整）：−/值/+，视觉对齐 .select */
@@ -1875,6 +1875,11 @@
 }
 .goose-home .help-body .set-card { padding:0; }
 .goose-home .set-row-sep { @apply h-px mx-[14px]; background:var(--border-soft); }
+.goose-home .telemetry-preview-panel { @apply w-[560px]; }
+.goose-home .telemetry-preview-pre {
+  @apply m-0 p-3 rounded-g-md border border-g-border bg-g-input text-g-fg text-[12px] leading-[1.55] overflow-auto max-h-[55vh] whitespace-pre-wrap break-all select-text;
+  font-family:var(--font-mono);
+}
 
 /* ---------- 反馈全屏页（FeedbackSheet） ---------- */
 .goose-home .gm-feedback-page {

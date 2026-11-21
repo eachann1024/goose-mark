@@ -7,10 +7,12 @@ import 'virtual:uno.css'
 import './assets/fonts.css'
 import { getRuntimePlatform } from '@/lib/platform'
 import { initErrorReporting } from '@/lib/errorReporting'
-import { hydrateBookmarkStoreFromBootCache, initializeBookmarkStorePersistence } from '@/stores/bookmark'
+import { initAppTelemetry, resolveInitialEntry, trackAppOpen, trackStartupLibraryCounts } from '@/lib/appTelemetry'
+import { hydrateBookmarkStoreFromBootCache, initializeBookmarkStorePersistence, TRASH_GROUP_ID, useBookmarkStore } from '@/stores/bookmark'
 import { hydrateSettingsStoreFromBootCache, initializeSettingsStorePersistence } from '@/stores/settings'
 // 平台检测：window.utools 存在 → uTools 模式，否则独立浏览器调试模式。
 initErrorReporting()
+initAppTelemetry()
 const platform = getRuntimePlatform()
 if (import.meta.env.DEV) {
   console.log(`[Main] 运行模式: ${platform}`)
@@ -37,6 +39,7 @@ const mountApp = () => {
       <HomePage />
     </StrictMode>
   )
+  trackAppOpen(resolveInitialEntry(), performance.now())
 }
 
 const bootstrap = async () => {
@@ -59,6 +62,11 @@ const bootstrap = async () => {
     }
     return
   }
+
+  const { bookmarks, groups, isBookmarkInTrash } = useBookmarkStore.getState()
+  const activeBookmarks = bookmarks.filter((b) => !b.isDeleted && !isBookmarkInTrash(b)).length
+  const activeGroups = groups.filter((g) => g.id !== TRASH_GROUP_ID && !g.isDeleted).length
+  trackStartupLibraryCounts(activeBookmarks, activeGroups)
 
   mountApp()
 }

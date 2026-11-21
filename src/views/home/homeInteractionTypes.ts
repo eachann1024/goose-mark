@@ -2,6 +2,7 @@ import type * as React from 'react'
 import type { Bookmark, BookmarkLocation } from '@/types/bookmark'
 import type { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import type { HomeGroup, HomeItem } from './viewModel'
+import type { BookmarkOpenVia } from '@/lib/appTelemetry'
 import { type Screen, type ViewMode, type ToastTone } from './homeTypes'
 import { type GroupPanelState, type GroupPanelMap } from './homeContinuity'
 import type { SearchViewMode } from '@/stores/settings'
@@ -56,5 +57,5 @@ export interface HomeBookmarkBindings {
   fireToast: HomeToastHandler
   setFormEditItem: React.Dispatch<React.SetStateAction<HomeItem | null>>
   setFormKey: React.Dispatch<React.SetStateAction<number>>
-  openHomeItem: (item: HomeItem) => void
+  openHomeItem: (item: HomeItem, via?: Extract<BookmarkOpenVia, 'click' | 'enter'>) => void
 }

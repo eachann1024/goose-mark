@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import PinyinMatch from 'pinyin-match'
 import type { Bookmark, BookmarkLocation, Group } from '@/types/bookmark'
+import { trackBookmarkCreate, trackBookmarkOpen, trackMcpCall } from '@/lib/appTelemetry'
 import { useBookmarkStore, TRASH_GROUP_ID, whenBookmarkStoreHydrated } from '@/stores/bookmark'
 
 /**
@@ -47,6 +48,8 @@ const MCP_TOOL_CAPABILITIES = {
   ],
   writeSafety: '写入工具直接修改本地书签库；调用方应在执行前取得用户确认。'
 } as const
+
+const KNOWN_MCP_TOOLS = new Set<string>(MCP_TOOL_CAPABILITIES.tools)
 
 type ToolParams = Record<string, unknown>
 
@@ -209,6 +212,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
         return { ok: false, error: '当前环境不支持打开链接' }
       }
       utoolsApi.shellOpenExternal(url)
+      trackBookmarkOpen('mcp', /{[^}]+}/.test(bookmark.url))
       return { ok: true, url }
     }
 
@@ -286,6 +290,7 @@ const executeTool = async (tool: string, params: ToolParams): Promise<unknown> =
         resolvedLocations
       )
       if (!bookmark) throw new Error('无法创建书签：数据只读或所选分类已失效')
+      trackBookmarkCreate('mcp')
       return { bookmark: serializeBookmark(bookmark, getStore()) }
     }
 
@@ -345,10 +350,12 @@ export function useUToolsMcpBridge() {
       void (async () => {
         try {
           const result = await executeTool(tool, detail?.params || {})
+          if (KNOWN_MCP_TOOLS.has(tool)) trackMcpCall(tool, true)
           window.dispatchEvent(
             new CustomEvent(MCP_TOOL_RESPONSE_EVENT, { detail: { requestId, ok: true, result } })
           )
         } catch (error) {
+          if (KNOWN_MCP_TOOLS.has(tool)) trackMcpCall(tool, false)
           window.dispatchEvent(
             new CustomEvent(MCP_TOOL_RESPONSE_EVENT, {
               detail: { requestId, ok: false, error: error instanceof Error ? error.message : String(error) }

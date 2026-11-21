@@ -7,7 +7,7 @@ import {
   Upload, Download, Cpu, ChevronDown, ChevronRight, Inbox, Loader, AlertCircle,
   RotateCcw, CheckCircle, SearchX, MoreHorizontal, ChevronUp, ArrowRight,
   ArrowUpToLine, Link2, ClipboardPaste, GitMerge, Layers, Bookmark, Eye, EyeOff,
-  RotateCw, ArrowUpRight, ArrowUp, Square, Minus, Monitor, ChevronLeft, ArrowRightLeft, FolderOpen, Zap
+  RotateCw, ArrowUpRight, ArrowUp, Square, Minus, Monitor, ChevronLeft, ArrowRightLeft, FolderOpen, Zap, Shield
 } from 'lucide-react'
 
 /**
@@ -75,6 +75,7 @@ const MAP: Record<string, LucideIcon> = {
   square: Square,
   message: MessageSquare,
   monitor: Monitor,
+  shield: Shield,
 }
 
 export interface IcoProps {

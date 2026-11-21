@@ -6,6 +6,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkFormStore, enqueueMetadataHydration } from '@/hooks/useBookmarkForm'
 import { resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { AI_SAVE_FEATURE_CODE } from '@/hooks/useUTools'
+import { trackAppOpen, trackBookmarkOpen } from '@/lib/appTelemetry'
 import { type Screen, type ViewMode } from './homeTypes'
 import { UTOOLS_PLUGIN_ENTER_EVENT, RECENT_DYNAMIC_TEMPLATE_ENTER_WINDOW_MS, BROWSER_URL_READ_TIMEOUT_MS, withFallbackTimeout, isDetachedUToolsWindow, type UToolsPluginEnterPayload } from './homeRuntime'
 import { type HomeToastHandler, type HomeScrollBindings, type HomeSearchBindings } from './homeInteractionTypes'
@@ -199,6 +200,7 @@ export function useHomePluginEnter({
       let url = hasTemplate ? bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query)) : bookmark.url
       if (!/^https?:\/\//i.test(url)) url = 'https://' + url
       fireToastRef.current('正在打开…')
+      trackBookmarkOpen('shortcut', hasTemplate)
       openUrl(url)
       if (!isDetachedUToolsWindow()) { try { window.utools?.hideMainWindow?.() } catch { /* ignore */ } }
       if (activeTemplateBookmarkRef.current) exitTemplateModeRef.current()
@@ -220,6 +222,7 @@ export function useHomePluginEnter({
           const resolvedUrl = resolveBookmarkLaunchUrl(match.bookmark.url, match.query)
           if (resolvedUrl) {
             fireToastRef.current('正在打开…')
+            trackBookmarkOpen('universal', /{[^}]+}/.test(match.bookmark.url))
             openUrl(resolvedUrl)
             if (!isDetachedUToolsWindow()) { try { window.utools?.hideMainWindow?.() } catch { /* ignore */ } }
             return
@@ -263,6 +266,14 @@ export function useHomePluginEnter({
     if (!window.utools) return
     // 绑定稳定的 wrapper，内部走 ref 取最新 handler
     const wrapper = (e: Event) => {
+      if (e instanceof Event) {
+        const detail = (e as CustomEvent<UToolsPluginEnterPayload & { params?: unknown }>).detail
+        const rawCode =
+          detail && typeof detail === 'object' && detail.params && typeof detail.params === 'object'
+            ? (detail.params as UToolsPluginEnterPayload).code
+            : detail?.code
+        trackAppOpen(rawCode)
+      }
       // preload 在 onPluginEnter 也会设高度，但可能读到旧存储；页面已挂载时在此用 store 纠正。
       if (typeof window.utools?.setExpendHeight === 'function') {
         try {

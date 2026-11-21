@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Bookmark } from '@/types/bookmark'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { useBookmarkFormStore } from '@/hooks/useBookmarkForm'
+import { trackBookmarkOpen } from '@/lib/appTelemetry'
 import { UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT, isDetachedUToolsWindow, type UToolsPluginEnterPayload } from './homeRuntime'
 import { type HomeToastHandler, type HomeNavigationBindings } from './homeInteractionTypes'
 
@@ -108,6 +109,7 @@ export function useHomeTemplates({
     let url = bookmark.url.replace(/{[^}]+}/g, encodeURIComponent(query))
     if (!/^https?:\/\//i.test(url)) url = 'https://' + url
     fireToastRef.current('正在打开…')
+    trackBookmarkOpen('enter', true)
     openUrl(url)
     // 打开后收起主窗口并退出模板态（不退出插件进程）
     if (!isDetachedUToolsWindow()) { try { window.utools?.hideMainWindow?.() } catch { /* ignore */ } }

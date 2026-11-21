@@ -9,12 +9,14 @@ import { importPreviewCounts, importTargetStamp } from '@/hooks/import-export/pr
 import type { ImportData, ImportMode } from '@/hooks/import-export/types'
 import { portableSnapshot, parse } from '@/lib/bookmark-backup/snapshot'
 import { exportBookmarkBackup } from '@/lib/bookmark-backup/export'
+import { trackBookmarkCreate, trackExport, trackImport } from '@/lib/appTelemetry'
 import type { HomeToastHandler } from './homeInteractionTypes'
 
 export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
 
-  const [preview, setPreview] = useState<{ data: ImportData; stamp: string } | null>(null)
-  const showPreview = (data: ImportData) => setPreview({ data, stamp: importTargetStamp(useBookmarkStore.getState()) })
+  const [preview, setPreview] = useState<{ data: ImportData; stamp: string; format: 'html' | 'json' } | null>(null)
+  const showPreview = (data: ImportData, format: 'html' | 'json') =>
+    setPreview({ data, stamp: importTargetStamp(useBookmarkStore.getState()), format })
   const confirmImport = (mode: ImportMode) => {
     if (!preview) return
     const store = useBookmarkStore.getState()
@@ -25,6 +27,8 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
     }
     const summary = applyImportDataToStore(store, preview.data, mode)
     store.ensureValidSelection()
+    trackImport(preview.format)
+    if (preview.data.bookmarks.length > 0) trackBookmarkCreate('import')
     setPreview(null)
     onToast?.(`导入完成：当前共 ${summary.after.bookmarks} 条书签`)
   }
@@ -51,7 +55,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
         // HTML 书签导入
         const parsed = parseHtmlBookmarks(text)
         const importData = importHtmlBookmarks(parsed)
-        showPreview(importData)
+        showPreview(importData, 'html')
       } else {
         // JSON 导入
         const result = parseJsonImportText(text)
@@ -60,7 +64,7 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
           return
         }
         showPreview(file.name.toLowerCase().endsWith('.json') && result.source === 'goose-marks'
-          ? JSON.parse(await portableSnapshot(parse(text))) as ImportData : result.data)
+          ? JSON.parse(await portableSnapshot(parse(text))) as ImportData : result.data, 'json')
       }
     } catch (err) {
       console.error('[Import] 导入失败', err)
@@ -87,7 +91,10 @@ export function SettingsData({ onToast }: { onToast?: HomeToastHandler }) {
   const handleExport = async () => {
     try {
       const message = await exportBookmarkBackup()
-      if (message) onToast?.(message)
+      if (message) {
+        trackExport('json')
+        onToast?.(message)
+      }
     } catch (error) { onToast?.(`导出失败：${error instanceof Error ? error.message : '无法完整读取图片'}`) }
   }
 

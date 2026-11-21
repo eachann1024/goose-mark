@@ -1,4 +1,5 @@
 import type { IconSource, Bookmark } from '@/types/bookmark'
+import { trackIconCache } from '@/lib/appTelemetry'
 import { normalizeInlineIcon } from '@/lib/inlineIcon'
 
 const isDataUrl = (value: string) => value.startsWith('data:image/')
@@ -657,9 +658,10 @@ export const fetchPageMeta = async (url: string): Promise<{ title: string | null
 
 type FetchIconOptions = {
   allowBrowserAutomation?: boolean
+  skipTelemetry?: boolean
 }
 
-export const fetchAndCacheIcon = async (
+const fetchAndCacheIconCore = async (
   url: string,
   _force = false,
   options: FetchIconOptions = {}
@@ -775,6 +777,18 @@ export const fetchAndCacheIcon = async (
   }
 }
 
+export const fetchAndCacheIcon = async (
+  url: string,
+  force = false,
+  options: FetchIconOptions = {}
+): Promise<(IconSource & { title?: string | null; description?: string | null }) | null> => {
+  const result = await fetchAndCacheIconCore(url, force, options)
+  if (!options.skipTelemetry) {
+    trackIconCache(Boolean(result && result.type === 'remote' && result.cache))
+  }
+  return result
+}
+
 export const ensureIconForBookmark = async (bookmark: Bookmark, force = false): Promise<IconSource | undefined> => {
   if (bookmark.icon && bookmark.icon.type !== 'text' && !force) {
     return bookmark.icon
@@ -796,7 +810,7 @@ export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<strin
   const worker = async () => {
     while (index < missing.length) {
       const bookmark = missing[index++]
-      const icon = await fetchAndCacheIcon(bookmark.url, false, { allowBrowserAutomation: false })
+      const icon = await fetchAndCacheIcon(bookmark.url, false, { allowBrowserAutomation: false, skipTelemetry: true })
       if (icon) {
         result.set(bookmark.id, normalizeInlineIcon(icon))
       }
@@ -805,6 +819,8 @@ export const bulkMatchMissing = async (bookmarks: Bookmark[]): Promise<Map<strin
 
   const workers = Array.from({ length: Math.min(concurrency, missing.length) }, () => worker())
   await Promise.all(workers)
+
+  if (missing.length > 0) trackIconCache(result.size > 0)
 
   return result
 }

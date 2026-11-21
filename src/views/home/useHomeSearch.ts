@@ -6,6 +6,7 @@ import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { AI_CREATE_ID, AI_CREATE_ITEM } from './useHomeAICreate'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
+import { trackSearch } from '@/lib/appTelemetry'
 import { bookmarkToHomeItem, getBookmarkIndex, getHomeGroupIndex, getNavigationIndex, type HomeGroup, type HomeItem } from './viewModel'
 import { type Screen, type ViewMode } from './homeTypes'
 import { UTOOLS_INPUT_EVENT, UTOOLS_SYNC_EVENT, UTOOLS_RESTORE_DEFAULT_SEARCH_EVENT, UNIVERSAL_BOOKMARK_PAYLOAD_SPLIT_RE, type SearchSurface } from './homeRuntime'
@@ -147,7 +148,7 @@ export function useHomeSearchResults({
 
   /** 打开列表项：全局搜索回退态用当前搜索词填模板并直跳；其余走常规 open（含模板输入页） */
   const openHomeItem = useCallback(
-    (item: HomeItem) => {
+    (item: HomeItem, via: 'click' | 'enter' = 'click') => {
       if (item.id === AI_CREATE_ID) {
         aiCreateFnRef.current(searchVal)
         return
@@ -159,17 +160,30 @@ export function useHomeSearchResults({
         openBookmarkLinkBase(realBookmark, {
           query: q,
           useUiQuery: false,
-          source: 'template-universal-fallback'
+          source: 'template-universal-fallback',
+          via: 'universal'
         })
         // 点开后默认退出搜索态（搜索框与结果面板一并清空）
         clearSearchFnRef.current()
         return
       }
       // 模板入口由 enterTemplateMode 清搜索；直开由 openBookmarkLink 清搜索
-      openBookmarkLink(realBookmark)
+      openBookmarkLink(realBookmark, { via })
     },
     [bookmarks, isUniversalFallback, searchVal, openBookmarkLinkBase, openBookmarkLink]
   )
+
+  // 防抖记录搜索：停止输入后最多记一次，绝不带搜索词
+  const searchResultCountRef = useRef(0)
+  searchResultCountRef.current = searchResultItems.length
+  const trimmedSearch = searchVal.trim()
+  useEffect(() => {
+    if (!trimmedSearch) return
+    const timer = window.setTimeout(() => {
+      trackSearch(searchResultCountRef.current)
+    }, 450)
+    return () => window.clearTimeout(timer)
+  }, [trimmedSearch])
 
   // 切换视图后，若当前选中项不在可导航列表内则回退到首项
   useEffect(() => {

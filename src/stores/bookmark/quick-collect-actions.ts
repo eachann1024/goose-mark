@@ -1,5 +1,6 @@
 import type { Bookmark, Group } from '@/types/bookmark'
 import { TRASH_GROUP_ID, uid } from '@/stores/bookmarkSeed'
+import { trackBookmarkCreate } from '@/lib/appTelemetry'
 import { ensureIconForBookmark } from '@/services/iconCache'
 import type { BookmarkActions, BookmarkGet, BookmarkCommit } from './store-types'
 import { clone, resolveBookmarkLocations } from './common'
@@ -103,6 +104,7 @@ export function createQuickCollectActions(get: BookmarkGet, commit: BookmarkComm
       liveSub.updatedAt = now
       liveGroup.updatedAt = now
       commit(groups, bookmarks)
+      trackBookmarkCreate('ui')
 
       void ensureIconForBookmark(bookmark).then((icon) => {
         if (icon) get().assignIcon(bookmark.id, icon)

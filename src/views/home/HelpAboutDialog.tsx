@@ -8,9 +8,10 @@ export interface HelpAboutDialogProps {
   open: boolean
   onClose: () => void
   onToast: (title?: string) => void
+  onOpenPrivacy?: () => void
 }
 
-export default function HelpAboutDialog({ open, onClose, onToast }: HelpAboutDialogProps) {
+export default function HelpAboutDialog({ open, onClose, onToast, onOpenPrivacy }: HelpAboutDialogProps) {
   // Esc 关闭
   useEffect(() => {
     if (!open) return
@@ -95,6 +96,17 @@ export default function HelpAboutDialog({ open, onClose, onToast }: HelpAboutDia
                 <span>版本</span>
                 <span className="help-val">v{__APP_VERSION__}</span>
               </div>
+              {onOpenPrivacy && (
+                <>
+                  <div className="set-row-sep" />
+                  <div className="help-kv">
+                    <span>匿名使用统计</span>
+                    <button type="button" className="help-email" onClick={onOpenPrivacy}>
+                      隐私与统计设置
+                    </button>
+                  </div>
+                </>
+              )}
               <div className="set-row-sep" />
               <div className="help-kv">
                 <span>反馈邮箱</span>

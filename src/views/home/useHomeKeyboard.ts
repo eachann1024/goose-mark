@@ -36,7 +36,7 @@ export function useHomeKeyboard({
   headerSearchRef: React.RefObject<HTMLInputElement | null>
   ctx: CtxState
   navigableItems: HomeItem[]
-  openHomeItem: (item: HomeItem) => void
+  openHomeItem: (item: HomeItem, via?: 'click' | 'enter') => void
   getApplySearchValRef: () => React.RefObject<(text: string, fromSubInput?: boolean) => void>
   isUniversalFallback: boolean
   GRID_COLS: number
@@ -119,7 +119,14 @@ export function useHomeKeyboard({
           const card = eventTarget?.closest<HTMLElement>('.gcard[role="button"]')
           if (card && card === eventTarget && !e.defaultPrevented) {
             e.preventDefault()
-            card.click()
+            const itemId = card.dataset.itemId
+            const cardIdx = itemId ? navigationIndex.get(itemId) : undefined
+            const cardItem = cardIdx !== undefined ? navigableItems[cardIdx] : undefined
+            if (cardItem) {
+              openHomeItem(cardItem, 'enter')
+            } else {
+              card.click()
+            }
             return
           }
           const interactive = 'button, a[href], input, textarea, select, summary, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="link"], [role="menu"], [role^="menuitem"], [role="textbox"], [role="combobox"]'
@@ -129,7 +136,7 @@ export function useHomeKeyboard({
         const hit = index === undefined ? navigableItems[0] : navigableItems[index]
         if (hit) {
           e.preventDefault()
-          openHomeItem(hit)
+          openHomeItem(hit, 'enter')
         }
         return
       }

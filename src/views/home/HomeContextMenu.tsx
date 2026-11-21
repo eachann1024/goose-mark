@@ -2,6 +2,7 @@ import type * as React from 'react'
 import { useLayoutEffect } from 'react'
 import type { Bookmark } from '@/types/bookmark'
 import { Ico } from './icon'
+import { trackBookmarkOpen } from '@/lib/appTelemetry'
 import { bookmarkToHomeItem, getBookmarkIndex, type HomeItem } from './viewModel'
 import { type Screen, type CtxState } from './homeTypes'
 import { type HomeBookmarkBindings } from './homeInteractionTypes'
@@ -52,13 +53,16 @@ export function HomeContextMenu({
                 closeCtx()
                 if (ctxItem) {
                   const realBookmark = getBookmarkIndex(bookmarks).get(ctxItem.id)
-                  if (realBookmark && !realBookmark.isDeleted) openBookmarkLink(realBookmark)
+                  if (realBookmark && !realBookmark.isDeleted) openBookmarkLink(realBookmark, { via: 'click' })
                 }
               }}><Ico name="external-link" />打开</button>
               <button onClick={() => {
                 closeCtx()
                 // 反转：默认走内置浏览器时，右键提供「用系统默认浏览器打开」，反之亦然
-                if (currentItem) (useUtoolsBrowser ? openUrlInDefaultBrowser : openUrlInUtoolsBrowser)(currentItem.url)
+                if (currentItem) {
+                  trackBookmarkOpen('click', /{[^}]+}/.test(currentItem.url))
+                  ;(useUtoolsBrowser ? openUrlInDefaultBrowser : openUrlInUtoolsBrowser)(currentItem.url)
+                }
               }}><Ico name="globe" />{useUtoolsBrowser ? '用默认浏览器打开' : '在内置浏览器打开'}</button>
               <button onClick={() => {
                 closeCtx()

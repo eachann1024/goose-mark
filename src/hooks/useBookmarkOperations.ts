@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 import type { Bookmark } from '@/types/bookmark'
 import { getTemplateLabel, resolveBookmarkLaunchUrl } from '@/lib/utils'
 import { addBehaviorLog } from '@/lib/debugReport'
+import { trackBookmarkOpen, type BookmarkOpenVia } from '@/lib/appTelemetry'
 import { useBookmarkStore, TRASH_GROUP_ID } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { useUIManager } from './useUIManager'
@@ -30,6 +31,7 @@ type OpenBookmarkOptions = {
   useUiQuery?: boolean
   /** 调用来源，如 'template' 表示由模板书签触发 */
   source?: string
+  via?: BookmarkOpenVia
 }
 
 const openExternalUrl = (url: string) => {
@@ -173,6 +175,7 @@ export function useBookmarkOperations() {
 
       // 记录本地使用排序数据：lastUsed = now、visits++（驱动「最近使用」虚拟视图）
       store.recordBookmarkUse(bookmark.id)
+      trackBookmarkOpen(options.via ?? 'click', hasTemplate)
       openUrl(url)
     },
     [isDevRuntime, openUrl]

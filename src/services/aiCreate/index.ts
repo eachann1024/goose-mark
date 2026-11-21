@@ -1,6 +1,7 @@
 import { runAIText, type AIStructuredOutput } from '@/lib/aiProvider'
 import { parseAIJsonObject, truncateAIText } from '@/lib/aiOutput'
 import { TRASH_GROUP_ID, useBookmarkStore } from '@/stores/bookmark'
+import { trackBookmarkCreate } from '@/lib/appTelemetry'
 import { fetchAndCacheIcon } from '@/services/iconCache'
 import { fetchPageContent } from '@/services/metadata/content'
 import { isSamePage } from '@/services/metadata/quality'
@@ -253,6 +254,7 @@ async function runSteps(input: string, emit: (event: AICreateEvent) => void): Pr
     [{ groupId: placement.groupId, subGroupId: placement.subGroupId }]
   )
   if (!created) throw new Error('无法创建书签：数据只读或所选分类已失效')
+  trackBookmarkCreate('ui')
   emit({ type: 'done', title, placement })
   return { status: 'created', title, placement }
 }

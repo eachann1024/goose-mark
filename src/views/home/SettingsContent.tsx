@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import type * as React from 'react'
 import { Ico } from './icon'
 import { useFeedbackUnread } from '@/lib/feedback'
+import { isTelemetryEnabled, setTelemetryEnabled, subscribeTelemetry, telemetryPreview } from '@/lib/telemetry'
 import { type ViewMode, type Theme, type ThemePref } from './homeTypes'
 import { SettingsGeneral } from './SettingsGeneral'
 import { SettingsDisplay } from './SettingsDisplay'
@@ -16,7 +18,10 @@ export const SET_NAV: Array<[string, string, string]> = [
   ['网格设置', 'layout-grid', 'set-grid'],
   ['导入与备份', 'database', 'set-data'],
   ['分组管理', 'folder', 'set-categories'],
+  ['隐私与统计', 'shield', 'set-privacy'],
 ]
+
+export const PRIVACY_NAV_INDEX = SET_NAV.findIndex(([, , id]) => id === 'set-privacy')
 
 const EDITABLE_SECTIONS = new Set(['set-general', 'set-list', 'set-grid', 'set-ai'])
 
@@ -108,6 +113,100 @@ export function SettingsGroups({ onGoToGroups }: { onGoToGroups?: () => void }) 
   )
 }
 
+export function SettingsPrivacy() {
+  const [enabled, setEnabled] = useState(() => isTelemetryEnabled())
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewJson, setPreviewJson] = useState('')
+
+  useEffect(() => {
+    const sync = () => {
+      setEnabled(isTelemetryEnabled())
+      if (previewOpen) {
+        setPreviewJson(JSON.stringify(telemetryPreview(), null, 2))
+      }
+    }
+    sync()
+    return subscribeTelemetry(sync)
+  }, [previewOpen])
+
+  useEffect(() => {
+    if (!previewOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPreviewOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [previewOpen])
+
+  const openPreview = () => {
+    setPreviewJson(JSON.stringify(telemetryPreview(), null, 2))
+    setPreviewOpen(true)
+  }
+
+  return (
+    <>
+      <div className="set-section" id="set-privacy">
+        <h2><Ico name="shield" />隐私与统计</h2>
+        <div className="set-card">
+          <div className="set-row">
+            <div>
+              <div className="rt">发送匿名使用统计</div>
+              <div className="rd">只统计功能使用次数和报错类型，不含任何书签、分组或搜索词等内容，关闭后会删除匿名编号</div>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={enabled}
+              aria-label="发送匿名使用统计"
+              className={`g-switch${enabled ? ' on' : ''}`}
+              onClick={() => setTelemetryEnabled(!enabled)}
+            />
+          </div>
+          <div className="set-row set-row-action">
+            <div>
+              <div className="rt">查看上报内容</div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ height: 34, fontSize: 12.5 }}
+              onClick={openPreview}
+            >
+              <Ico name="eye" />查看上报内容
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {previewOpen && (
+        <div
+          className="help-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="上报内容预览"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setPreviewOpen(false)
+          }}
+        >
+          <div className="help-panel telemetry-preview-panel">
+            <div className="help-header">
+              <span className="help-title">上报内容预览</span>
+              <button type="button" className="help-close" onClick={() => setPreviewOpen(false)} title="关闭 (Esc)" aria-label="关闭">
+                <Ico name="x" />
+              </button>
+            </div>
+            <div className="help-body">
+              <pre className="telemetry-preview-pre" aria-readonly="true" tabIndex={0}>
+                {previewJson}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 export function SettingsContent({
   sectionId,
   theme,
@@ -132,6 +231,7 @@ export function SettingsContent({
     if (sectionId === 'set-grid') return <SettingsDisplay section="grid" />
     if (sectionId === 'set-ai') return <SettingsAI />
     if (sectionId === 'set-data') return <SettingsData onToast={onToast} />
+    if (sectionId === 'set-privacy') return <SettingsPrivacy />
     return <SettingsGroups onGoToGroups={onGoToGroups} />
   })()
   if (!EDITABLE_SECTIONS.has(sectionId)) return body

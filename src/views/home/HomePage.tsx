@@ -4,6 +4,7 @@ import { checkFeedbackUnread } from '@/lib/feedback'
 import { useBookmarkStore } from '@/stores/bookmark'
 import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
+import { setTelemetryModule } from '@/lib/appTelemetry'
 import { useUToolsMcpBridge } from '@/hooks/useUToolsMcpBridge'
 import { useUTools } from '@/hooks/useUTools'
 import { buildHomeGroups, trashCount, getHomeGroupIndex, type HomeGroup, type HomeItem } from './viewModel'
@@ -41,7 +42,7 @@ import { HomeHeader } from './HomeHeader'
 import { HomeTabMenu } from './HomeTabMenu'
 import { HomeTemplatePage } from './HomeTemplatePage'
 import { HomeBookmarkPanels } from './HomeBookmarkPanels'
-import { HomeSettingsPage } from './SettingsContent'
+import { HomeSettingsPage, PRIVACY_NAV_INDEX } from './SettingsContent'
 import { HomeContextMenu } from './HomeContextMenu'
 import { HomeToast } from './HomeToast'
 import { FeedbackSheet } from './FeedbackSheet'
@@ -573,6 +574,24 @@ export default function HomePage() {
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const openFeedback = useCallback(() => setFeedbackOpen(true), [])
 
+  useEffect(() => {
+    const mod = feedbackOpen
+      ? 'feedback'
+      : helpOpen
+        ? 'help'
+        : activeTemplateBookmark
+          ? 'template'
+          : screen
+    setTelemetryModule(mod)
+  }, [feedbackOpen, helpOpen, activeTemplateBookmark, screen])
+
+  const openPrivacySettings = useCallback(() => {
+    setHelpOpen(false)
+    setSetNavIdx(PRIVACY_NAV_INDEX)
+    setScreen('settings')
+    if (setMainRef.current) setMainRef.current.scrollTop = 0
+  }, [setScreen])
+
   return (
     <div ref={rootRef} className={rootCls} data-theme={theme} data-screen={screen} data-density={density} data-ui-scale={uiScale} data-platform={RUNTIME_PLATFORM} data-search-surface={searchSurface} data-feedback-open={feedbackOpen ? '' : undefined}>
       {theme === 'dark' && easterEggEnabled && easterEggVariant === 'starry' && (
@@ -656,7 +675,7 @@ export default function HomePage() {
           onOpenHelp={() => { setPaOpen(false); setHelpOpen(true) }}
         />
         {/* 帮助与关于弹窗 */}
-        <HelpAboutDialog open={helpOpen} onClose={() => setHelpOpen(false)} onToast={fireToast} />
+        <HelpAboutDialog open={helpOpen} onClose={() => setHelpOpen(false)} onToast={fireToast} onOpenPrivacy={openPrivacySettings} />
 
         {/* 模板输入页：整页接管，大 logo + 宽输入，Enter 打开 / Esc 退出 */}
         <HomeTemplatePage
