@@ -397,5 +397,12 @@ if (typeof window !== 'undefined') {
   // 说明：uTools 插件环境下该能力可用；普通浏览器环境下不会执行 preload
   if (typeof require === 'function') {
     window.require = require
+    try {
+      const os = require('os')
+      window.__gooseSystemInfo = {
+        osVersion: typeof os.release === 'function' ? os.release() : '',
+        arch: typeof process !== 'undefined' && typeof process.arch === 'string' ? process.arch : '',
+      }
+    } catch {}
   }
 }
