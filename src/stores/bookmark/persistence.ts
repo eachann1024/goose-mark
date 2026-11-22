@@ -8,6 +8,7 @@ import { clearSavedBookmarkRecovery, preserveBookmarkRecovery, scheduleBookmarkC
 import { getPersistentItem, utoolsStorage } from '@/lib/utoolsStorage'
 import type { BookmarkStore, BookmarkPersistenceRuntime, BookmarkStoreAccess } from './store-types'
 import { clone } from './common'
+import { getBookmarkContentVersion } from './selection-actions'
 
 const UTOOLS_PLUGIN_OUT_EVENT = 'goose-marks:plugin-out'
 const BOOKMARK_PERSIST_DEBOUNCE_MS = 120
@@ -219,7 +220,12 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     if (!refChanged) {
       return
     }
-    // visits / lastUsed 由 bookmarkUsage 按设备独立落库；仅本地使用计数变化时不触发整库快照写与 3.7MB 恢复文件落盘。
+    // 打开书签只更新本机使用记录。跳过整库序列化，也不延后队列里已有的内容编辑。
+    if (state.groups === runtime.lastQueuedGroups && runtime.lastQueuedBookmarks &&
+        getBookmarkContentVersion(state.bookmarks) === getBookmarkContentVersion(runtime.lastQueuedBookmarks)) {
+      runtime.lastQueuedBookmarks = state.bookmarks
+      return
+    }
     const nextSyncedContent = serializeSyncedContent(state)
     if (!contentDirty && nextSyncedContent === lastSyncedContent) {
       runtime.lastQueuedGroups = state.groups

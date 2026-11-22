@@ -1,7 +1,13 @@
-import type { BookmarkLocation } from '@/types/bookmark'
+import type { Bookmark, BookmarkLocation } from '@/types/bookmark'
 import { recordBookmarkUsage } from '@/lib/bookmarkUsage'
 import { TRASH_GROUP_ID } from '@/stores/bookmarkSeed'
 import type { BookmarkActions, BookmarkSet, BookmarkGet } from './store-types'
+
+// 使用次数和打开时间变化时，供首页和同步队列复用上一次内容版本。
+const bookmarkContentVersions = new WeakMap<Bookmark[], Bookmark[]>()
+export function getBookmarkContentVersion(bookmarks: Bookmark[]): Bookmark[] {
+  return bookmarkContentVersions.get(bookmarks) ?? bookmarks
+}
 
 export function createSelectionActions(set: BookmarkSet, get: BookmarkGet): Pick<BookmarkActions, 'setSearch' | 'setActiveView' | 'setActiveGroup' | 'setActiveSubGroup' | 'setReadOnly' | 'selectGroup' | 'selectSubGroup' | 'recordBookmarkUse' | 'ensureValidSelection' | 'getBookmarkLocations' | 'isBookmarkInTrash'> {
   const select = (groupId: string, subId?: string) => {
@@ -34,13 +40,15 @@ export function createSelectionActions(set: BookmarkSet, get: BookmarkGet): Pick
     // 记录书签使用：lastUsed = now、visits++。本地排序数据。
     // 不走 scheduleBookmarkSync（避免把高频本地使用记录推送到同步通道）。
     recordBookmarkUse: (id) => {
-      const bookmarks = [...get().bookmarks]
-      const idx = bookmarks.findIndex((b) => b.id === id)
+      const previous = get().bookmarks
+      const idx = previous.findIndex((b) => b.id === id)
       if (idx === -1) return
+      const bookmarks = previous.slice()
       const prev = bookmarks[idx]
       const lastUsed = Date.now()
       const visits = (prev.visits ?? 0) + 1
-      bookmarks.splice(idx, 1, { ...prev, lastUsed, visits })
+      bookmarks[idx] = { ...prev, lastUsed, visits }
+      bookmarkContentVersions.set(bookmarks, getBookmarkContentVersion(previous))
       // 统计只写本机；持久化层不会把 visits/lastUsed 写入同步的书签文档。
       recordBookmarkUsage(id, { visits, lastUsed })
       set({ bookmarks })

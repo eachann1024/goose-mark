@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Bookmark, BookmarkLocation } from '@/types/bookmark'
 import { checkFeedbackUnread } from '@/lib/feedback'
 import { useBookmarkStore } from '@/stores/bookmark'
+import { getBookmarkContentVersion } from '@/stores/bookmark/selection-actions'
 import { useSettingsStore } from '@/stores/settings'
 import { useBookmarkOperations } from '@/hooks/useBookmarkOperations'
 import { setTelemetryModule } from '@/lib/appTelemetry'
@@ -49,7 +50,7 @@ import { FeedbackSheet } from './FeedbackSheet'
 
 export default function HomePage() {
   const groups = useBookmarkStore((s) => s.groups)
-  const bookmarks = useBookmarkStore((s) => s.bookmarks)
+  const bookmarks = useBookmarkStore((s) => getBookmarkContentVersion(s.bookmarks))
   const activeGroupId = useBookmarkStore((s) => s.activeGroupId)
   const activeSubGroupId = useBookmarkStore((s) => s.activeSubGroupId)
   const setActiveGroup = useBookmarkStore((s) => s.setActiveGroup)
