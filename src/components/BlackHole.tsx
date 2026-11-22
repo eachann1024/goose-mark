@@ -46,7 +46,7 @@
  *             prefers-reduced-motion 时只渲染一帧静态画面。
  */
 
-import { useEffect, useRef, CSSProperties } from 'react'
+import { memo, useEffect, useRef, CSSProperties } from 'react'
 
 // ─── 类型 ────────────────────────────────────────────────────────────────────
 
@@ -454,7 +454,7 @@ function createProgram(gl: WebGLRenderingContext, steps: number, dtScale: number
 
 // ─── 组件实现 ────────────────────────────────────────────────────────────────
 
-export function BlackHole({
+export const BlackHole = memo(function BlackHole({
   className,
   style,
   resolutionScale,
@@ -820,19 +820,6 @@ export function BlackHole({
     canvas.addEventListener('webglcontextlost', onLost)
     canvas.addEventListener('webglcontextrestored', onRestored)
 
-    // ── 鼠标事件：挂 window 而非 wrap ───────────────────────────────────
-    // 问题 3 修复：interactive 时若挂在 wrap 上会因 pointerEvents:'auto' 拦截上层点击；
-    // 改为挂 window，用 getBoundingClientRect 算相对坐标，pointer-events 始终 none。
-    const onMouseMove = (e: MouseEvent) => {
-      if (!propsRef.current.interactive) return
-      const rect = wrap.getBoundingClientRect()
-      const m    = mouseRef.current
-      m.tx = ((e.clientX - rect.left) / rect.width  - 0.5) * 2
-      m.ty = ((e.clientY - rect.top)  / rect.height - 0.5) * -2  // y 轴翻转
-    }
-
-    window.addEventListener('mousemove', onMouseMove)
-
     // ── 清理 ─────────────────────────────────────────────────────────────
     return () => {
       cancelAnimationFrame(rafRef.current)
@@ -842,7 +829,6 @@ export function BlackHole({
       document.removeEventListener('visibilitychange', onVisibility)
       canvas.removeEventListener('webglcontextlost', onLost)
       canvas.removeEventListener('webglcontextrestored', onRestored)
-      window.removeEventListener('mousemove', onMouseMove)
 
       if (state) glCtx.deleteProgram(state.prog)
       if (buf)  glCtx.deleteBuffer(buf)
@@ -863,6 +849,21 @@ export function BlackHole({
     }
   }, [paused])
 
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (!wrap || !interactive || paused) return
+    const onMouseMove = (event: MouseEvent) => {
+      if (document.hidden) return
+      const rect = wrap.getBoundingClientRect()
+      if (!rect.width || !rect.height) return
+      const mouse = mouseRef.current
+      mouse.tx = ((event.clientX - rect.left) / rect.width - 0.5) * 2
+      mouse.ty = ((event.clientY - rect.top) / rect.height - 0.5) * -2
+    }
+    window.addEventListener('mousemove', onMouseMove, { passive: true })
+    return () => window.removeEventListener('mousemove', onMouseMove)
+  }, [interactive, paused])
+
   // ── 外层 div 样式 ─────────────────────────────────────────────────────────
   // 问题 3 修复：pointer-events 始终 none，不拦截上层 UI 点击；
   // interactive 效果由挂在 window 上的 mousemove 监听器实现。
@@ -877,6 +878,6 @@ export function BlackHole({
 
   // canvas 由 effect 动态创建（见 useEffect 内注释），这里只渲染容器
   return <div ref={wrapRef} className={className} style={wrapStyle} />
-}
+})
 
 export default BlackHole

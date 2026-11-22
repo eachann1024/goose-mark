@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
 
 /**
  * StarryBackground（React 版）—— 星空彩蛋
@@ -63,7 +63,7 @@ export interface StarryBackgroundProps {
   paused?: boolean
 }
 
-export function StarryBackground({ paused = false }: StarryBackgroundProps) {
+export const StarryBackground = memo(function StarryBackground({ paused = false }: StarryBackgroundProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const pausedRef = useRef(paused)
   pausedRef.current = paused
@@ -332,6 +332,6 @@ export function StarryBackground({ paused = false }: StarryBackgroundProps) {
       <canvas ref={canvasRef} className="absolute inset-0 block h-full w-full" />
     </div>
   )
-}
+})
 
 export default StarryBackground
