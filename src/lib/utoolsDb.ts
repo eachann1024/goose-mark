@@ -127,7 +127,7 @@ export const putDoc = <T>(id: string, data: T, rev?: string): UToolsDbResult => 
   const db = getUtoolsApi()?.db
   if (!db) return { ok: false, id, error: 'uTools db unavailable' }
   try {
-    return db.put({ _id: id, _rev: rev, data })
+    return db.put(rev ? { _id: id, _rev: rev, data } : { _id: id, data })
   } catch (error) {
     return { ok: false, id, error }
   }
@@ -136,7 +136,7 @@ export const putDoc = <T>(id: string, data: T, rev?: string): UToolsDbResult => 
 export const putDocWithRetry = <T>(id: string, data: T): UToolsDbResult => {
   const current = getDoc<T>(id)
   let result = putDoc(id, data, current?._rev)
-  if (result.ok !== false) return result
+  if (!isFailedResult(result)) return result
 
   const latest = getDoc<T>(id)
   result = putDoc(id, data, latest?._rev)
@@ -145,6 +145,12 @@ export const putDocWithRetry = <T>(id: string, data: T): UToolsDbResult => {
 
 const isFailedResult = (result: UToolsDbResult | undefined): boolean =>
   !result || result.ok !== true || Boolean(result.error)
+
+const normalizeWriteDoc = (doc: HostWriteDoc): HostWriteDoc => {
+  if (doc._rev !== undefined) return doc
+  const { _rev: _ignored, ...rest } = doc
+  return rest
+}
 
 /**
  * 优先走 uTools 官方 promises.bulkDocs，把多次同步 host 调用合并为一次异步批量写。
@@ -155,16 +161,17 @@ export const bulkWriteDocs = async (docs: HostWriteDoc[]): Promise<{ ok: boolean
   if (docs.length === 0) return { ok: true, failedIds: [], results: [] }
   const db = getUtoolsApi()?.db
   if (!db) return { ok: false, failedIds: docs.map((doc) => doc._id), results: [] }
+  const payload = docs.map(normalizeWriteDoc)
 
   let results: UToolsDbResult[]
   try {
     if (db.promises?.bulkDocs) {
-      results = await db.promises.bulkDocs(docs)
+      results = await db.promises.bulkDocs(payload)
     } else if (db.bulkDocs) {
-      results = db.bulkDocs(docs)
+      results = db.bulkDocs(payload)
     } else {
       results = []
-      for (const doc of docs) {
+      for (const doc of payload) {
         try { results.push(db.put(doc)) }
         catch (error) { results.push({ ok: false, id: doc._id, error }) }
         if (isFailedResult(results.at(-1))) break
@@ -175,7 +182,41 @@ export const bulkWriteDocs = async (docs: HostWriteDoc[]): Promise<{ ok: boolean
   }
 
   const failedIds: string[] = []
-  docs.forEach((doc, index) => {
+  payload.forEach((doc, index) => {
+    if (!isFailedResult(results[index])) return
+    failedIds.push(doc._id)
+  })
+  return { ok: failedIds.length === 0, failedIds, results }
+}
+
+/**
+ * 同步批量写入：仅在 onPluginOut / pagehide / beforeunload 等宿主即将挂起或销毁窗口的退出路径使用，
+ * 确保尚未落盘的新增/编辑在渲染进程退出前同步写入 uTools 数据库。
+ */
+export const bulkWriteDocsSync = (docs: HostWriteDoc[]): { ok: boolean; failedIds: string[]; results: UToolsDbResult[] } => {
+  if (docs.length === 0) return { ok: true, failedIds: [], results: [] }
+  const db = getUtoolsApi()?.db
+  if (!db) return { ok: false, failedIds: docs.map((doc) => doc._id), results: [] }
+  const payload = docs.map(normalizeWriteDoc)
+
+  let results: UToolsDbResult[]
+  try {
+    if (db.bulkDocs) {
+      results = db.bulkDocs(payload)
+    } else {
+      results = []
+      for (const doc of payload) {
+        try { results.push(db.put(doc)) }
+        catch (error) { results.push({ ok: false, id: doc._id, error }) }
+        if (isFailedResult(results.at(-1))) break
+      }
+    }
+  } catch {
+    results = []
+  }
+
+  const failedIds: string[] = []
+  payload.forEach((doc, index) => {
     if (!isFailedResult(results[index])) return
     failedIds.push(doc._id)
   })

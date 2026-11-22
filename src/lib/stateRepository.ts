@@ -3,8 +3,10 @@ import type { Bookmark, Group, IconSource } from '@/types/bookmark'
 import type { SettingsState } from '@/stores/settings'
 import { overlayBookmarkUsage } from '@/lib/bookmarkUsage'
 import {
+  allDocs,
   allDocsAsync,
   bulkWriteDocs,
+  bulkWriteDocsSync,
   getAttachmentAsync,
   getAttachmentTypeAsync,
   getDbStorage,
@@ -123,6 +125,18 @@ const readBookmarkDocs = async (): Promise<Map<string, HostDoc<unknown>>> => {
     ...bookmarks.filter(isPersistedBookmarkDoc), ...groups, ...(meta ? [meta] : [])
   ].map(doc => [doc._id, clone(doc)]))
 }
+
+const readBookmarkDocsSync = (): Map<string, HostDoc<unknown>> => {
+  const bookmarks = allDocs<PersistedBookmark>(BOOKMARK_DOC_PREFIX)
+  const groups = allDocs<PersistedGroup>(GROUP_DOC_PREFIX)
+  const meta = getDoc<BookmarkMetaDoc>(BOOKMARK_META_DOC_ID)
+  return new Map<string, HostDoc<unknown>>([
+    ...bookmarks.filter(isPersistedBookmarkDoc), ...groups, ...(meta ? [meta] : [])
+  ].map(doc => [doc._id, clone(doc)]))
+}
+
+const makeWriteDoc = <T>(id: string, data: T, rev?: string): HostWriteDoc<T> =>
+  rev ? { _id: id, _rev: rev, data } : { _id: id, data }
 
 const sameDoc = (left?: HostDoc<unknown>, right?: HostDoc<unknown>): boolean =>
   left?._rev === right?._rev && JSON.stringify(left?.data) === JSON.stringify(right?.data)
@@ -490,7 +504,7 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
     const data = { ...clone(group), orderIndex } satisfies PersistedGroup
     const previous = previousGroupMap.get(id)
     if (!previous || !isSamePersistedData(previous.data, data)) {
-      mutations.push({ _id: id, _rev: previous?._rev, data })
+      mutations.push(makeWriteDoc(id, data, previous?._rev))
       dataChanged = true
     }
   }
@@ -512,7 +526,7 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
       }
     }
     if (!previous || !isSamePersistedData(previous.data, persistedBookmark)) {
-      mutations.push({ _id: id, _rev: previous?._rev, data: persistedBookmark })
+      mutations.push(makeWriteDoc(id, persistedBookmark, previous?._rev))
       dataChanged = true
     }
   }
@@ -524,16 +538,12 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
     previousMetaData.activeSubGroupId !== snapshot.activeSubGroupId ||
     previousMetaData.schemaVersion !== BOOKMARK_SCHEMA_VERSION
   if (metaChanged) {
-    mutations.push({
-      _id: BOOKMARK_META_DOC_ID,
-      _rev: previousMeta?._rev,
-      data: {
-        activeGroupId: snapshot.activeGroupId,
-        activeSubGroupId: snapshot.activeSubGroupId,
-        updatedAt: Date.now(),
-        schemaVersion: BOOKMARK_SCHEMA_VERSION
-      } satisfies BookmarkMetaDoc
-    })
+    mutations.push(makeWriteDoc(BOOKMARK_META_DOC_ID, {
+      activeGroupId: snapshot.activeGroupId,
+      activeSubGroupId: snapshot.activeSubGroupId,
+      updatedAt: Date.now(),
+      schemaVersion: BOOKMARK_SCHEMA_VERSION
+    } satisfies BookmarkMetaDoc, previousMeta?._rev))
   }
 
   const nextGroupIds = new Set(snapshot.groups.map((group) => `${GROUP_DOC_PREFIX}${group.id}`))
@@ -600,6 +610,180 @@ export const saveBookmarkSnapshot = async (snapshot: BookmarkSnapshot): Promise<
     else baseline.set(doc._id, { _id: doc._id, _rev: rev, data: clone(doc.data) })
   }
   // 附件按内容寻址，其他设备/尚未到齐的文档可能仍引用，保存快照时不做跨设备 GC。
+  if (bookmarkMigrationPending) {
+    bookmarkMigrationPending = false
+    if (legacyBookmarkStoragePending) {
+      legacyBookmarkStoragePending = false
+      cleanupLegacyKeySet(LEGACY_KEYS.bookmark)
+    }
+  }
+
+  return { serialized: JSON.stringify(snapshot), dataChanged }
+}
+
+const toPersistedIconSync = (icon?: IconSource): PersistedIconSource | undefined => {
+  if (!icon) return undefined
+  if (icon.type === 'remote') {
+    const next: BookmarkIconRef = { ...icon }
+    const cachedRef = typeof icon.cache === 'string' && isDataUrl(icon.cache)
+      ? attachmentRefCache.get(icon.cache)
+      : undefined
+    if (cachedRef) {
+      delete next.cache
+      next.cacheRef = cachedRef
+      return next
+    }
+    if (next.cacheRef?.startsWith(ATTACHMENT_REF_PREFIX) && !isDataUrl(next.cache || '')) {
+      delete next.cache
+      return next
+    }
+    return clone(next)
+  }
+  if (icon.type === 'custom') {
+    const next: BookmarkCustomIconRef = { ...icon }
+    const cachedRef = typeof icon.data === 'string' && isDataUrl(icon.data)
+      ? attachmentRefCache.get(icon.data)
+      : undefined
+    if (cachedRef) {
+      delete next.data
+      next.dataRef = cachedRef
+      return next
+    }
+    if (next.dataRef?.startsWith(ATTACHMENT_REF_PREFIX) && !isDataUrl(next.data || '')) {
+      delete next.data
+      return next
+    }
+    return clone(next)
+  }
+  return clone(icon)
+}
+
+/**
+ * 退出/失焦路径专用同步落盘：
+ * 在 onPluginOut / pagehide / beforeunload 时绕过异步微任务与防抖等待，直接同步写入 uTools DB，
+ * 避免用户刚添加完书签就按 Esc 或关闭插件导致异步保存被宿主中断而丢数据。
+ */
+export const saveBookmarkSnapshotSync = (snapshot: BookmarkSnapshot): SaveBookmarkSnapshotResult => {
+  if (!isUToolsDbAvailable()) {
+    throw new Error('uTools db 不可用，无法保存书签')
+  }
+
+  assertHostSession()
+  assertBookmarkIntegrity(snapshot)
+  const currentDocs = readBookmarkDocsSync()
+  assertHostSession()
+  assertBookmarkBaseline(currentDocs)
+  const baseline = bookmarkBaseline!
+  const previousBookmarks = [...baseline.values()].filter(doc => doc._id.startsWith(BOOKMARK_DOC_PREFIX)) as HostDoc<PersistedBookmark>[]
+  const previousGroups = [...baseline.values()].filter(doc => doc._id.startsWith(GROUP_DOC_PREFIX)) as HostDoc<PersistedGroup>[]
+  const previousMeta = baseline.get(BOOKMARK_META_DOC_ID) as HostDoc<BookmarkMetaDoc> | undefined
+  const previousBookmarkMap = new Map(previousBookmarks.map((doc) => [doc._id, doc]))
+  const previousGroupMap = new Map(previousGroups.map((doc) => [doc._id, doc]))
+  const mutations: HostWriteDoc[] = []
+  let dataChanged = false
+
+  for (const [orderIndex, group] of snapshot.groups.entries()) {
+    const id = `${GROUP_DOC_PREFIX}${group.id}`
+    const data = { ...clone(group), orderIndex } satisfies PersistedGroup
+    const previous = previousGroupMap.get(id)
+    if (!previous || !isSamePersistedData(previous.data, data)) {
+      mutations.push(makeWriteDoc(id, data, previous?._rev))
+      dataChanged = true
+    }
+  }
+
+  for (const bookmark of snapshot.bookmarks) {
+    const persistedIcon = toPersistedIconSync(bookmark.icon)
+    const persistedBookmark: PersistedBookmark = {
+      ...clone(bookmark),
+      ...(persistedIcon ? { icon: persistedIcon } : {})
+    }
+    const id = `${BOOKMARK_DOC_PREFIX}${bookmark.id}`
+    const previous = previousBookmarkMap.get(id)
+    if (previous) {
+      for (const key of ['visits', 'lastUsed'] as const) {
+        if (key in previous.data) (persistedBookmark as Record<string, unknown>)[key] = previous.data[key]
+        else delete persistedBookmark[key]
+      }
+    }
+    if (!previous || !isSamePersistedData(previous.data, persistedBookmark)) {
+      mutations.push(makeWriteDoc(id, persistedBookmark, previous?._rev))
+      dataChanged = true
+    }
+  }
+
+  const previousMetaData = previousMeta?.data
+  const metaChanged =
+    !previousMetaData ||
+    previousMetaData.activeGroupId !== snapshot.activeGroupId ||
+    previousMetaData.activeSubGroupId !== snapshot.activeSubGroupId ||
+    previousMetaData.schemaVersion !== BOOKMARK_SCHEMA_VERSION
+  if (metaChanged) {
+    mutations.push(makeWriteDoc(BOOKMARK_META_DOC_ID, {
+      activeGroupId: snapshot.activeGroupId,
+      activeSubGroupId: snapshot.activeSubGroupId,
+      updatedAt: Date.now(),
+      schemaVersion: BOOKMARK_SCHEMA_VERSION
+    } satisfies BookmarkMetaDoc, previousMeta?._rev))
+  }
+
+  const nextGroupIds = new Set(snapshot.groups.map((group) => `${GROUP_DOC_PREFIX}${group.id}`))
+  previousGroups.forEach((doc) => {
+    if (!nextGroupIds.has(doc._id)) {
+      mutations.push({ _id: doc._id, _rev: doc._rev, _deleted: true })
+      dataChanged = true
+    }
+  })
+
+  const nextBookmarkIds = new Set(snapshot.bookmarks.map((bookmark) => `${BOOKMARK_DOC_PREFIX}${bookmark.id}`))
+  previousBookmarks.forEach((doc) => {
+    if (!nextBookmarkIds.has(doc._id)) {
+      mutations.push({ _id: doc._id, _rev: doc._rev, _deleted: true })
+      dataChanged = true
+    }
+  })
+
+  const stages = [
+    mutations.filter(doc => !doc._deleted && doc._id.startsWith(BOOKMARK_DOC_PREFIX)),
+    mutations.filter(doc => !doc._deleted && !doc._id.startsWith(BOOKMARK_DOC_PREFIX)),
+    mutations.filter(doc => doc._deleted)
+  ]
+  const completed: Array<{ doc: HostWriteDoc; rev: string }> = []
+  let exclusivelyConflicted = false
+  let failed: ReturnType<typeof bulkWriteDocsSync> | undefined
+  for (const stage of stages) {
+    if (!stage.length) continue
+    assertHostSession()
+    const result = bulkWriteDocsSync(stage)
+    assertHostSession()
+    stage.forEach((doc, index) => {
+      const written = result.results[index]
+      if (written?.ok === true && !written.error && written.rev) completed.push({ doc, rev: written.rev })
+    })
+    if (!result.ok || stage.some((_, index) => !result.results[index]?.rev)) {
+      failed = result
+      exclusivelyConflicted = result.results.length === stage.length && result.results.every(written => written.ok !== true && (written.name === 'conflict' || written.error === 'conflict' || /conflict/i.test(written.message || '')))
+      break
+    }
+  }
+  if (failed) {
+    let restored = true
+    for (const { doc, rev } of [...completed].reverse()) {
+      const previous = baseline.get(doc._id)
+      const undo: HostWriteDoc = previous
+        ? { _id: doc._id, _rev: rev, data: clone(previous.data) }
+        : { _id: doc._id, _rev: rev, _deleted: true }
+      assertHostSession()
+      const result = bulkWriteDocsSync([undo])
+      if (!result.ok) restored = false
+    }
+    if (!completed.length && exclusivelyConflicted) throw new BookmarkSyncConflictError()
+    throw new Error(restored ? '同步保存未完成，已补偿可确认的写入；本机编辑已保留。' : '同步保存未完成且存在后续修改，已停止写入并保留本机编辑。')
+  }
+  for (const { doc, rev } of completed) {
+    if (doc._deleted) baseline.delete(doc._id)
+    else baseline.set(doc._id, { _id: doc._id, _rev: rev, data: clone(doc.data) })
+  }
   if (bookmarkMigrationPending) {
     bookmarkMigrationPending = false
     if (legacyBookmarkStoragePending) {

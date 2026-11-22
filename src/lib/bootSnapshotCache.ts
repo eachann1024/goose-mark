@@ -189,6 +189,45 @@ export function scheduleBookmarkBootCacheWrite(snapshot: BookmarkSnapshot): void
   }, BOOT_CACHE_DEBOUNCE_MS)
 }
 
+/** 退出路径同步刷新首屏缓存，避免 500ms 防抖未触发时重启读到旧快照。 */
+export function flushBookmarkBootCacheSync(snapshot: BookmarkSnapshot): void {
+  if (bootCacheTimer != null) {
+    clearTimeout(bootCacheTimer)
+    bootCacheTimer = null
+  }
+  pendingBootSnapshot = null
+  if (typeof window === 'undefined') return
+  const account = readCurrentAccountFingerprint()
+  try { window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_ACCOUNT_KEY, account) } catch {}
+
+  const native = resolveNativeBootCacheFile()
+  if (native?.fs) {
+    try {
+      const dir = native.path.dirname(native.file)
+      native.fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+      const payload: PersistedBookmarkBootPayload = { version: 1, account, snapshot }
+      const temp = `${native.file}.${crypto.randomUUID()}.tmp`
+      try {
+        native.fs.writeFileSync(temp, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 })
+        native.fs.renameSync(temp, native.file)
+        try { window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_PATH_KEY, native.file) } catch {}
+      } finally {
+        if (native.fs.existsSync(temp)) native.fs.unlinkSync(temp)
+      }
+      return
+    } catch {}
+  }
+
+  try {
+    const webPayload: PersistedBookmarkBootPayload = {
+      version: 1,
+      account,
+      snapshot: trimSnapshotForWebStorage(snapshot)
+    }
+    window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_WEB_KEY, JSON.stringify(webPayload))
+  } catch {}
+}
+
 export function clearBookmarkBootCache(): void {
   if (bootCacheTimer != null) {
     clearTimeout(bootCacheTimer)

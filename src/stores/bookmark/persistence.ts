@@ -1,7 +1,7 @@
 import { patchBookmarksWithBuiltinSeedIcons } from '@/stores/bookmarkSeed'
 import { emitStorageSync, isUToolsDbAvailable } from '@/lib/utoolsDb'
-import { clearBookmarkBootCache, readBookmarkBootCache, scheduleBookmarkBootCacheWrite } from '@/lib/bootSnapshotCache'
-import { BookmarkAccountChangedError, BookmarkSyncConflictError, isBookmarkMigrationPending, loadBookmarkSnapshot, saveBookmarkSnapshot, warmAttachmentDataUrlCache, type BookmarkSnapshot } from '@/lib/stateRepository'
+import { clearBookmarkBootCache, flushBookmarkBootCacheSync, readBookmarkBootCache, scheduleBookmarkBootCacheWrite } from '@/lib/bootSnapshotCache'
+import { BookmarkAccountChangedError, BookmarkSyncConflictError, isBookmarkMigrationPending, loadBookmarkSnapshot, saveBookmarkSnapshot, saveBookmarkSnapshotSync, warmAttachmentDataUrlCache, type BookmarkSnapshot } from '@/lib/stateRepository'
 import { assertBookmarkIntegrity, BookmarkDataPendingError, migrateLegacyBookmarkLocations } from '@/lib/bookmarkIntegrity'
 import { mergeBookmarkSnapshots } from '@/lib/mergeBookmarkSnapshots'
 import { clearSavedBookmarkRecovery, preserveBookmarkRecovery, scheduleBookmarkCheckpoint } from '@/lib/bookmarkRecovery'
@@ -37,6 +37,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
   let lastSyncedContent = ''
   let lastSnapshotLoadedAt = 0
   let bootCacheHydrated = false
+  let bootHydratedBaseline: BookmarkSnapshot | null = null
   let bootInitialActiveGroupId = ''
   let bootInitialActiveSubGroupId = ''
   let hydrated = false
@@ -343,6 +344,37 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     runtime.bookmarkPersistenceFlushEventsStarted = true
 
     const flush = (event?: Event) => {
+      persistSelection()
+      const state = store.getState()
+      const hasUnsaved = contentDirty || Boolean(runtime.pendingBookmarkPersistJob) || Boolean(runtime.bookmarkPersistTimer)
+      if (hasUnsaved && !state.isReadOnly && !refreshBlocked && !refreshing && !runtime.bookmarkPersistPromise && isUToolsDbAvailable()) {
+        // 退出/失焦时 uTools 可能随时挂起或销毁窗口，异步保存来不及落盘；
+        // 优先走同步写入直接落进 uTools DB 与首屏缓存，避免重启后新增书签丢失。
+        if (runtime.bookmarkPersistTimer) {
+          clearTimeout(runtime.bookmarkPersistTimer)
+          runtime.bookmarkPersistTimer = null
+        }
+        runtime.pendingBookmarkPersistJob = null
+        const snapshot = pickBookmarkSnapshot(state)
+        try {
+          const written = saveBookmarkSnapshotSync(snapshot)
+          flushBookmarkBootCacheSync(snapshot)
+          acceptedSnapshot = clone(snapshot)
+          lastSyncedContent = serializeSyncedContent(snapshot)
+          lastSnapshotLoadedAt = Date.now()
+          runtime.lastPersistedBookmarkState = JSON.stringify(snapshot)
+          runtime.lastQueuedGroups = state.groups
+          runtime.lastQueuedBookmarks = state.bookmarks
+          runtime.lastQueuedActiveGroupId = state.activeGroupId
+          runtime.lastQueuedActiveSubGroupId = state.activeSubGroupId
+          contentDirty = false
+          clearSavedBookmarkRecovery()
+          if (written.dataChanged) emitStorageSync('bookmark', written.serialized)
+          return
+        } catch (error) {
+          console.warn('[bookmark] 退出同步保存未完成，回退到恢复副本与异步保存:', error)
+        }
+      }
       if (contentDirty || runtime.bookmarkPersistPromise || runtime.pendingBookmarkPersistJob) {
         // 退出时不能依赖异步 host 写入完成；同步/保存途中也先同步保留本机副本。
         try { preserveBookmarkRecovery(pickBookmarkSnapshot(store.getState())) }
@@ -394,6 +426,7 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
     store.getState().ensureValidSelection()
     bootInitialActiveGroupId = store.getState().activeGroupId
     bootInitialActiveSubGroupId = store.getState().activeSubGroupId
+    bootHydratedBaseline = pickBookmarkSnapshot(store.getState())
     return true
   }
 
@@ -403,18 +436,24 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
       return
     }
     try {
-      const userSelectedBeforeReady =
-        bootCacheHydrated &&
-        (store.getState().activeGroupId !== bootInitialActiveGroupId ||
-          store.getState().activeSubGroupId !== bootInitialActiveSubGroupId)
-          ? {
-              activeGroupId: store.getState().activeGroupId,
-              activeSubGroupId: store.getState().activeSubGroupId
-            }
-          : null
+      const preLoadBaseline = bootHydratedBaseline ?? pickBookmarkSnapshot(store.getState())
 
       // 恢复文件可能属于旧账号、旧窗口或包含坏数据，绝不自动替换当前数据库。
       const persisted = await loadStableSnapshot(true)
+
+      // 记录在数据库异步加载期间用户可能已完成的新增/编辑及分组切换，避免加载完成后覆盖丢失。
+      const earlyUserSnapshot = pickBookmarkSnapshot(store.getState())
+      const hasEarlyUserEdit = !sameContent(earlyUserSnapshot, preLoadBaseline)
+      const userSelectedBeforeReady =
+        bootCacheHydrated &&
+        (earlyUserSnapshot.activeGroupId !== bootInitialActiveGroupId ||
+          earlyUserSnapshot.activeSubGroupId !== bootInitialActiveSubGroupId)
+          ? {
+              activeGroupId: earlyUserSnapshot.activeGroupId,
+              activeSubGroupId: earlyUserSnapshot.activeSubGroupId
+            }
+          : null
+
       if (persisted) {
         // 在任何迁移、默认字段补齐之前保留原始快照，数据库基线仍由 repository 保持。
         if (isBookmarkMigrationPending()) preserveBookmarkRecovery(persisted, 'checkpoint')
@@ -451,7 +490,14 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
 
       const postInitSnapshot = pickBookmarkSnapshot(store.getState())
       if (!isUToolsDbAvailable()) {
-        scheduleBookmarkBootCacheWrite(postInitSnapshot)
+        if (hasEarlyUserEdit) {
+          try {
+            const mergedEarly = mergeBookmarkSnapshots(preLoadBaseline, earlyUserSnapshot, postInitSnapshot)
+            store.setState(mergedEarly)
+            store.getState().ensureValidSelection()
+          } catch {}
+        }
+        scheduleBookmarkBootCacheWrite(pickBookmarkSnapshot(store.getState()))
         return
       }
       scheduleBookmarkCheckpoint(postInitSnapshot)
@@ -478,15 +524,39 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
         catch (error) { pausePersistence(error) }
       }
 
+      const dbReadySnapshot = pickBookmarkSnapshot(store.getState())
+      let shouldPersistEarlyEdit = false
+      if (hasEarlyUserEdit && !refreshBlocked && !store.getState().isReadOnly) {
+        try {
+          const mergedEarly = mergeBookmarkSnapshots(preLoadBaseline, earlyUserSnapshot, dbReadySnapshot)
+          assertBookmarkIntegrity(mergedEarly)
+          applyingRemote = true
+          try {
+            store.setState(mergedEarly)
+            store.getState().ensureValidSelection(
+              userSelectedBeforeReady?.activeGroupId ?? mergedEarly.activeGroupId,
+              userSelectedBeforeReady?.activeSubGroupId ?? mergedEarly.activeSubGroupId
+            )
+          } finally {
+            applyingRemote = false
+          }
+          shouldPersistEarlyEdit = !sameContent(pickBookmarkSnapshot(store.getState()), dbReadySnapshot)
+        } catch (error) {
+          preserveBookmarkRecovery(earlyUserSnapshot, 'conflict')
+          preserveBookmarkRecovery(dbReadySnapshot, 'conflict')
+          pausePersistence(error)
+        }
+      }
+
       runtime.bookmarkPersistenceStarted = true
       const readySnapshot = pickBookmarkSnapshot(store.getState())
       if (!refreshBlocked && !store.getState().isReadOnly) {
         scheduleBookmarkBootCacheWrite(readySnapshot)
       }
       // 初始化、补默认字段和选择修正不构成用户编辑；打开旧设备不能触发整库写回。
-      runtime.lastPersistedBookmarkState = JSON.stringify(readySnapshot)
-      acceptedSnapshot = readySnapshot
-      lastSyncedContent = serializeSyncedContent(readySnapshot)
+      runtime.lastPersistedBookmarkState = JSON.stringify(dbReadySnapshot)
+      acceptedSnapshot = clone(dbReadySnapshot)
+      lastSyncedContent = serializeSyncedContent(dbReadySnapshot)
       lastSnapshotLoadedAt = Date.now()
       runtime.lastQueuedGroups = store.getState().groups
       runtime.lastQueuedBookmarks = store.getState().bookmarks
@@ -497,6 +567,12 @@ export function createBookmarkPersistence(runtime: BookmarkPersistenceRuntime, s
         enqueueBookmarkPersist(state)
       })
       bindBookmarkPersistenceFlushEvents()
+      if (shouldPersistEarlyEdit && !store.getState().isReadOnly) {
+        contentDirty = true
+        if (queueBookmarkPersistJob(store.getState(), true)) {
+          drainBookmarkPersistQueueInBackground()
+        }
+      }
       window.utools?.onDbPull?.((docs) => {
         if (docs.some(doc => doc._id?.startsWith('gm:bookmark:') || doc._id?.startsWith('gm:group:') || doc._id?.startsWith('gm:icon/') || doc._id === 'gm:meta:bookmark')) {
           void refreshBookmarkSnapshot()

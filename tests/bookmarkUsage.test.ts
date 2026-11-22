@@ -94,7 +94,7 @@ describe('saveBookmarkSnapshot ignores usage', () => {
   test('usage-only change writes no documents', async () => {
     put({ _id: 'gm:group:g1', data: { ...groups()[0], orderIndex: 0 } })
     put({ _id: 'gm:bookmark:b1', data: bookmark({ visits: 1, lastUsed: 10 }) })
-    put({ _id: 'gm:meta:bookmark', data: { activeGroupId: 'g1', activeSubGroupId: 's1', updatedAt: 1, schemaVersion: 1 } })
+    put({ _id: 'gm:meta:bookmark', data: { activeGroupId: 'g1', activeSubGroupId: 's1', updatedAt: 1, schemaVersion: 2 } })
     await loadBookmarkSnapshot()
     written.length = 0
 
@@ -107,7 +107,7 @@ describe('saveBookmarkSnapshot ignores usage', () => {
   test('legacy doc without usage fields stays without them', async () => {
     put({ _id: 'gm:group:g1', data: { ...groups()[0], orderIndex: 0 } })
     put({ _id: 'gm:bookmark:b1', data: bookmark() })
-    put({ _id: 'gm:meta:bookmark', data: { activeGroupId: 'g1', activeSubGroupId: 's1', updatedAt: 1, schemaVersion: 1 } })
+    put({ _id: 'gm:meta:bookmark', data: { activeGroupId: 'g1', activeSubGroupId: 's1', updatedAt: 1, schemaVersion: 2 } })
     await loadBookmarkSnapshot()
     written.length = 0
     await saveBookmarkSnapshot(snap(bookmark({ visits: 3, lastUsed: 5 })))
@@ -117,7 +117,7 @@ describe('saveBookmarkSnapshot ignores usage', () => {
   test('a real edit writes the doc but keeps the old usage values verbatim', async () => {
     put({ _id: 'gm:group:g1', data: { ...groups()[0], orderIndex: 0 } })
     put({ _id: 'gm:bookmark:b1', data: bookmark({ visits: 1, lastUsed: 10 }) })
-    put({ _id: 'gm:meta:bookmark', data: { activeGroupId: 'g1', activeSubGroupId: 's1', updatedAt: 1, schemaVersion: 1 } })
+    put({ _id: 'gm:meta:bookmark', data: { activeGroupId: 'g1', activeSubGroupId: 's1', updatedAt: 1, schemaVersion: 2 } })
     await loadBookmarkSnapshot()
     written.length = 0
     await saveBookmarkSnapshot(snap(bookmark({ title: 'New', visits: 50, lastUsed: 500 })))
