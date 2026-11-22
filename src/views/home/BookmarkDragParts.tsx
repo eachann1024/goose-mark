@@ -13,8 +13,8 @@ export interface SortableTabProps {
   id: string
   name: string
   isActive: boolean
-  onTabClick: () => void
-  onTabContextMenu: (e: React.MouseEvent) => void
+  onTabClick: (id: string) => void
+  onTabContextMenu: (e: React.MouseEvent, id: string) => void
 }
 
 
@@ -36,8 +36,8 @@ export function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }
       className={`group-tab${isActive ? ' on' : ''}${isDragging ? ' dragging' : ''}`}
       data-group-id={id}
       title={name}
-      onClick={onTabClick}
-      onContextMenu={onTabContextMenu}
+      onClick={() => onTabClick(id)}
+      onContextMenu={(e) => onTabContextMenu(e, id)}
     >
       <span className="group-tab-name">{name}</span>
     </button>

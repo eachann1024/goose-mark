@@ -1,5 +1,5 @@
 import type * as React from 'react'
-import { memo } from 'react'
+import { memo, useCallback, useMemo, useRef } from 'react'
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
 import { InstantTooltip } from '@/components/ui/overflow-tooltip'
@@ -12,6 +12,8 @@ import { type Screen } from './homeTypes'
 import { SortableTab } from './BookmarkDragParts'
 import { type HomeSearchBindings } from './homeInteractionTypes'
 import type { SensorDescriptor, SensorOptions } from '@dnd-kit/core'
+
+const GroupTab = memo(SortableTab)
 
 export const HomeHeader = memo(function HomeHeader({
   tabSensors,
@@ -77,6 +79,14 @@ export const HomeHeader = memo(function HomeHeader({
   onFeedback: () => void
 }) {
   const unreadFeedback = useFeedbackUnread()
+  const tabIds = useMemo(() => homeGroups.map((group) => group.id), [homeGroups])
+  const navigation = useRef({ isSearching, clearSearch, changeActiveGroup })
+  navigation.current = { isSearching, clearSearch, changeActiveGroup }
+  const selectTab = useCallback((id: string) => {
+    const { isSearching, clearSearch, changeActiveGroup } = navigation.current
+    if (isSearching) clearSearch()
+    changeActiveGroup(id)
+  }, [])
   return (
     <header className="app-header" onKeyDown={(e) => {
       const target = e.target as HTMLElement
@@ -92,7 +102,7 @@ export const HomeHeader = memo(function HomeHeader({
     }}>
           {/* 一级分组 Tab 栏（可拖拽排序 + 右键管理） */}
           <DndContext sensors={tabSensors} collisionDetection={closestCenter} autoScroll={false} onDragEnd={handleTabDragEnd}>
-            <SortableContext items={homeGroups.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
+            <SortableContext items={tabIds} strategy={horizontalListSortingStrategy}>
               <div className="group-tabs">
                 {homeGroups.map((g) =>
                   tabRenaming === g.id ? (
@@ -114,16 +124,13 @@ export const HomeHeader = memo(function HomeHeader({
                       onBlur={() => deferInlineRenameCommit(commitTabRename)}
                     />
                   ) : (
-                    <SortableTab
+                    <GroupTab
                       key={g.id}
                       id={g.id}
                       name={g.name}
                       isActive={screen !== 'settings' && screen !== 'groups' && !isSearching && activeGroupId === g.id}
-                      onTabClick={() => {
-                        if (isSearching) clearSearch()
-                        changeActiveGroup(g.id)
-                      }}
-                      onTabContextMenu={(e) => openTabCtx(e, g.id)}
+                      onTabClick={selectTab}
+                      onTabContextMenu={openTabCtx}
                     />
                   )
                 )}
