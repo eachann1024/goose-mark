@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { VirtualBookmarkContent } from './VirtualBookmarkContent'
 import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
 import { useSettingsStore } from '@/stores/settings'
@@ -8,17 +8,14 @@ import { Fav } from './BookmarkCard'
 import { AICreateCommand, SearchEmptyUniversal } from './SearchEmptyUniversal'
 
 /** 搜索结果行（列表布局）：密度按搜索场景收紧，扁平无分组段 */
-export function SearchResultRow({
-  item,
-  selected,
-  onSelect,
-  onOpen,
-}: {
+type SearchResultProps = {
   item: HomeItem
   selected?: boolean
   onSelect: (id: string) => void
   onOpen?: (item: HomeItem) => void
-}) {
+}
+
+export const SearchResultRow = memo(function SearchResultRow({ item, selected, onSelect, onOpen }: SearchResultProps) {
   const showTags = useSettingsStore((s) => s.listShowTags)
   const sub = item.dsc?.trim() || item.url || item.host
   return (
@@ -47,9 +44,17 @@ export function SearchResultRow({
       </div>
     </div>
   )
-}
+})
 
-
+const SearchResultTile = memo(function SearchResultTile({ item, selected, onSelect, onOpen }: SearchResultProps) {
+  return (
+    <OverflowHoverTooltip className={`gcard${selected ? ' sel' : ''}`} title={item.ttl} data-item-id={item.id} onClick={() => { onSelect(item.id); onOpen?.(item) }}>
+      <Fav item={item} />
+      <div className="ttl">{item.ttl}</div>
+      <div className="url">{item.host || item.regDomain}</div>
+    </OverflowHoverTooltip>
+  )
+})
 
 /** 搜索独立结果面：工具条 + 列表/格子两版布局；搜索态禁用拖拽（无分组上下文） */
 export function SearchResultsSurface({
@@ -78,9 +83,10 @@ export function SearchResultsSurface({
   onClear: () => void
 }) {
   const resultGroups = useMemo(() => [{ id: 'search-results', name: '', subs: [{ id: 'search-results-items', name: '', items }] }], [items])
-  const renderResult = useCallback((item: HomeItem, selected: boolean) => viewMode === 'list'
-    ? <SearchResultRow item={item} selected={selected} onSelect={onSelect} onOpen={onOpen} />
-    : <OverflowHoverTooltip className={`gcard${selected ? ' sel' : ''}`} title={item.ttl} data-item-id={item.id} onClick={() => { onSelect(item.id); onOpen?.(item) }}><Fav item={item} /><div className="ttl">{item.ttl}</div><div className="url">{item.host || item.regDomain}</div></OverflowHoverTooltip>, [viewMode, onSelect, onOpen])
+  const renderResult = useCallback((item: HomeItem, selected: boolean) => {
+    const Result = viewMode === 'list' ? SearchResultRow : SearchResultTile
+    return <Result item={item} selected={selected} onSelect={onSelect} onOpen={onOpen} />
+  }, [viewMode, onSelect, onOpen])
   const count = items.length
   const hasUniversal = count === 0 && universalItems.length > 0
   const hasCommands = count === 0 && (hasUniversal || !!aiItem)

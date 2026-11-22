@@ -47,6 +47,19 @@ export function useHomeSearchFocus({
   return { focusSearchInput }
 }
 
+const searchTextCache = new WeakMap<HomeItem, { text: string; compactAscii: string | null }>()
+
+function getSearchText(item: HomeItem) {
+  let cached = searchTextCache.get(item)
+  if (!cached) {
+    const text = [item.ttl, item.url, item.dsc, item.tags.join(' ')].join(' ').toLowerCase()
+    const compactAscii = /[^\x20-\x7e]/.test(text) ? null : text.replaceAll(' ', '')
+    cached = { text, compactAscii }
+    searchTextCache.set(item, cached)
+  }
+  return cached
+}
+
 export function useHomeSearchResults({
   activeGroupId,
   homeGroups,
@@ -67,56 +80,38 @@ export function useHomeSearchResults({
   aiCreateFnRef: React.RefObject<(text: string) => void>
 }) {
 
-  // 面板内联搜索：searchVal 非空时跨全部分组过滤，
-  // 支持标题/链接/描述/标签 + 拼音匹配；UI 以扁平结果面展示。
-  const filteredGroups = useMemo<HomeGroup[]>(() => {
-    const q = searchVal.trim().toLowerCase()
-    // 非搜索态：两层导航 —— 只显示当前选中的一级分组（activeGroupId 为空则回退首个）
-    if (!q) {
-      const current = activeGroupId
-        ? homeGroups.filter((g) => g.id === activeGroupId)
-        : homeGroups.slice(0, 1)
-      return current.length ? current : homeGroups.slice(0, 1)
-    }
-    // 搜索态：跨所有一级分组全量匹配
-    const match = (b: HomeItem) => {
-      const haystack = [b.ttl, b.url, b.dsc, b.tags.join(' ')].join(' ').toLowerCase()
-      if (haystack.includes(q)) return true
-      return !!PinyinMatch.match(haystack, q)
-    }
-    return homeGroups
-      .map((g) => ({
-        ...g,
-        subs: g.subs
-          .map((s) => ({ ...s, items: s.items.filter(match) }))
-          .filter((s) => s.items.length > 0)
-      }))
-      .filter((g) => g.subs.length > 0)
-  }, [homeGroups, searchVal, activeGroupId])
-
-  // 仅挂载当前分组；滚动/选择由按组内存恢复，避免历史面板积累 DOM 和拖拽订阅。
-  const keptGroups = useMemo(() => {
-    if (isSearching) return [] as HomeGroup[]
-    const group = homeGroups.find((g) => g.id === activeGroupId) ?? homeGroups[0]
-    return group ? [group] : []
-  }, [homeGroups, activeGroupId, isSearching])
-
-  // 搜索态：全局匹配的扁平结果（按 id 去重），列表/格子共用，不再按分组分段展示。
-  const searchResultItems = useMemo<HomeItem[]>(() => {
+  // 切换 Tab 只改变当前分组，跨分组搜索复用按原顺序去重后的书签。
+  const activeGroup = homeGroups.find((group) => group.id === activeGroupId) ?? homeGroups[0]
+  const keptGroups = useMemo(() => !isSearching && activeGroup ? [activeGroup] : [], [activeGroup, isSearching])
+  const searchableItems = useMemo(() => {
     if (!isSearching) return []
-    const seen = new Set<string>()
-    return filteredGroups
-      .flatMap((g) => g.subs.flatMap((s) => s.items))
-      .filter((b) => (seen.has(b.id) ? false : (seen.add(b.id), true)))
-  }, [isSearching, filteredGroups])
+    const byId = new Map<string, HomeItem>()
+    for (const group of homeGroups) {
+      for (const item of getHomeGroupIndex(group).navigableItems) {
+        if (!byId.has(item.id)) byId.set(item.id, item)
+      }
+    }
+    return Array.from(byId.values())
+  }, [homeGroups, isSearching])
 
-  // 搜索无本地匹配时：展示已开启 allowUniversal 的模板/全局搜索书签，回车用当前搜索词跳转。
+  const query = searchVal.trim().toLowerCase()
+  const searchResultItems = useMemo(() => {
+    if (!query) return []
+    const plainQuery = /^[a-z0-9]+$/.test(query)
+    return searchableItems.filter((item) => {
+      const { text, compactAscii } = getSearchText(item)
+      if (text.includes(query)) return true
+      // 纯 ASCII 文本没有拼音字，普通字母/数字查询仍保留跨空格匹配。
+      if (plainQuery && compactAscii !== null) return compactAscii.includes(query)
+      return !!PinyinMatch.match(text, query)
+    })
+  }, [query, searchableItems])
+
+  const needsFallback = isSearching && searchResultItems.length === 0
   const universalFallbackItems = useMemo<HomeItem[]>(() => {
-    if (!isSearching) return []
+    if (!needsFallback) return []
     const store = useBookmarkStore.getState()
-    const hasLocalMatch = filteredGroups.some((g) => g.subs.some((s) => s.items.length > 0))
-    if (hasLocalMatch) return []
-    return store.bookmarks
+    return bookmarks
       .filter(
         (b) =>
           b.allowUniversal === true &&
@@ -125,7 +120,7 @@ export function useHomeSearchResults({
           !!b.title.trim()
       )
       .map(bookmarkToHomeItem)
-  }, [isSearching, filteredGroups, bookmarks])
+  }, [needsFallback, bookmarks, homeGroups])
   const isUniversalFallback = isSearching && universalFallbackItems.length > 0
 
   // 开启 AI 后，任意搜索词都给出「AI 创建书签」，不要求文本里已有网址
@@ -140,15 +135,17 @@ export function useHomeSearchResults({
   // 搜索无匹配且有全局搜索书签时，导航落到底部命令条。
   const navigableItems = useMemo<HomeItem[]>(() => {
     if (isUniversalFallback) return aiCreateItem ? [aiCreateItem, ...universalFallbackItems] : universalFallbackItems
-    const local = !isSearching && filteredGroups[0]
-      ? getHomeGroupIndex(filteredGroups[0]).navigableItems
-      : searchResultItems
+    const local = !isSearching && activeGroup ? getHomeGroupIndex(activeGroup).navigableItems : searchResultItems
     return aiCreateItem ? [...local, aiCreateItem] : local
-  }, [filteredGroups, isSearching, searchResultItems, isUniversalFallback, universalFallbackItems, aiCreateItem])
+  }, [activeGroup, isSearching, searchResultItems, isUniversalFallback, universalFallbackItems, aiCreateItem])
+
+  const searchContext = useRef({ searchVal, isUniversalFallback })
+  searchContext.current = { searchVal, isUniversalFallback }
 
   /** 打开列表项：全局搜索回退态用当前搜索词填模板并直跳；其余走常规 open（含模板输入页） */
   const openHomeItem = useCallback(
     (item: HomeItem, via: 'click' | 'enter' = 'click') => {
+      const { searchVal, isUniversalFallback } = searchContext.current
       if (item.id === AI_CREATE_ID) {
         aiCreateFnRef.current(searchVal)
         return
@@ -170,7 +167,7 @@ export function useHomeSearchResults({
       // 模板入口由 enterTemplateMode 清搜索；直开由 openBookmarkLink 清搜索
       openBookmarkLink(realBookmark, { via })
     },
-    [bookmarks, isUniversalFallback, searchVal, openBookmarkLinkBase, openBookmarkLink]
+    [bookmarks, openBookmarkLinkBase, openBookmarkLink]
   )
 
   // 防抖记录搜索：停止输入后最多记一次，绝不带搜索词
