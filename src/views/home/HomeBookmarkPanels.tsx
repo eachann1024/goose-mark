@@ -151,7 +151,7 @@ export const HomeBookmarkPanels = memo(function HomeBookmarkPanels({
                       onContextMenu={isActivePanel ? openCtx : undefined}
                     >
                       <VirtualBookmarkContent
-                        groups={[group]}
+                        groups={keptGroups}
                         view={view}
                         columns={gridColumns}
                         selectedId={selectedId}

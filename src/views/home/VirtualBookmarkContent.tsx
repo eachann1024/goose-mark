@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from 'react'
 import { SortableContext, rectSortingStrategy, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { useSettingsStore } from '@/stores/settings'
 import { BookmarkCard, Fav, GRID_ICON_SIZE_PX } from './BookmarkCard'
 import { OverflowHoverTooltip } from '@/components/ui/overflow-tooltip'
-import { DropGap, SecBlock, SortableCard, SortableGridCell, useDragDropGap } from './BookmarkDragParts'
+import { DropGap, BookmarkSection, SecBlock, SortableCard, SortableGridCell, useDragDropGap } from './BookmarkDragParts'
 import { bookmarkDragId } from './bookmarkDragId'
 import { getHomeGroupIndex, getHomeSubItemIndex, type HomeGroup, type HomeItem, type HomeSub } from './viewModel'
 import './virtual-bookmark-content.css'
@@ -119,14 +119,11 @@ function itemsToken(items: HomeItem[]) {
   return token
 }
 
-export function VirtualBookmarkContent({ groups, view, columns, selectedId, onSelect, onOpen, scrollElement, overscan = 2, renderItem, showHeaders = true, draggable = true }: VirtualBookmarkContentProps) {
+export const VirtualBookmarkContent = memo(function VirtualBookmarkContent({ groups, view, columns, selectedId, onSelect, onOpen, scrollElement, overscan = 2, renderItem, showHeaders = true, draggable = true }: VirtualBookmarkContentProps) {
   const marker = useRef<HTMLDivElement>(null)
   const [root, setRoot] = useState<HTMLElement | null>(scrollElement ?? null)
   const [viewport, setViewport] = useState(0)
   const atBottom = useRef(false)
-  const dropGap = useDragDropGap(groups, view)
-  let totalRows = 0
-  for (const group of groups) for (const sub of group.subs) totalRows += Math.ceil((sub.items.length + 1) / (view === 'grid' ? Math.max(1, columns) : 1))
   useLayoutEffect(() => {
     setRoot(scrollElement ?? marker.current?.closest<HTMLElement>('.content') ?? null)
   }, [scrollElement])
@@ -173,18 +170,36 @@ export function VirtualBookmarkContent({ groups, view, columns, selectedId, onSe
     return () => root.removeEventListener(SELECT_EVENT, locate)
   }, [groups, root])
   const safeColumns = Math.max(1, columns)
-  let remainingInitialRows = view === 'grid' ? 8 : 16
+  const SectionList = draggable ? DraggableSections : VirtualSections
   return <div ref={marker} className={`virtual-bookmark-content${showHeaders ? '' : ' is-headerless'}`}>
-    {groups.map((group) => group.subs.map((sub) => {
-      const subRows = Math.ceil(sub.items.length / (view === 'grid' ? safeColumns : 1))
-      const initialRows = Math.min(subRows, remainingInitialRows)
-      remainingInitialRows = Math.max(0, remainingInitialRows - initialRows)
-      return <VirtualSection key={`${group.id}-${sub.id}`} groupId={group.id} sub={sub} view={view} columns={safeColumns} selectedId={selectedId} onSelect={onSelect} onOpen={onOpen} root={root} viewport={viewport} overscan={Math.max(0, overscan)} totalRows={totalRows} initialRows={initialRows} gap={draggable && dropGap?.subId === sub.id ? dropGap : null} renderItem={renderItem} draggable={draggable} atBottom={atBottom} />
-    }))}
+    <SectionList groups={groups} view={view} columns={safeColumns} selectedId={selectedId} onSelect={onSelect} onOpen={onOpen} root={root} viewport={viewport} overscan={Math.max(0, overscan)} renderItem={renderItem} draggable={draggable} atBottom={atBottom} />
   </div>
+})
+
+type SectionsProps = Pick<VirtualBookmarkContentProps, 'groups' | 'view' | 'columns' | 'selectedId' | 'onSelect' | 'onOpen' | 'renderItem'> & {
+  root: HTMLElement | null; viewport: number; overscan: number; draggable: boolean; atBottom: React.RefObject<boolean>
 }
 
-function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onOpen, root, viewport, overscan, totalRows, initialRows, gap, renderItem, draggable, atBottom }: {
+function DraggableSections(props: SectionsProps) {
+  const gap = useDragDropGap(props.groups, props.view)
+  return <VirtualSections {...props} dropGap={gap} />
+}
+
+const VirtualSections = memo(function VirtualSections({ groups, view, columns, dropGap, ...sectionProps }: SectionsProps & {
+  dropGap?: ReturnType<typeof useDragDropGap>
+}) {
+  const rowColumns = view === 'grid' ? columns : 1
+  let totalRows = 0
+  for (const group of groups) for (const sub of group.subs) totalRows += Math.ceil((sub.items.length + 1) / rowColumns)
+  let remainingInitialRows = view === 'grid' ? 8 : 16
+  return groups.map((group) => group.subs.map((sub) => {
+    const initialRows = Math.min(Math.ceil(sub.items.length / rowColumns), remainingInitialRows)
+    remainingInitialRows -= initialRows
+    return <VirtualSection key={`${group.id}-${sub.id}`} {...sectionProps} groupId={group.id} sub={sub} view={view} columns={columns} totalRows={totalRows} initialRows={initialRows} gap={dropGap?.subId === sub.id ? dropGap : null} />
+  }))
+})
+
+const VirtualSection = memo(function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onOpen, root, viewport, overscan, totalRows, initialRows, gap, renderItem, draggable, atBottom }: {
   groupId: string; sub: HomeSub; view: View; columns: number; selectedId: string | null
   onSelect: (id: string) => void; onOpen?: (item: HomeItem) => void; root: HTMLElement | null
   viewport: number; overscan: number; totalRows: number; initialRows: number; gap: ReturnType<typeof useDragDropGap>
@@ -298,37 +313,39 @@ function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onO
     else if (rect.top < rootRect.top) root.scrollTop += rect.top - rootRect.top
     else if (rect.bottom > rootRect.bottom) root.scrollTop += rect.bottom - rootRect.bottom
   }, [root, range.start, range.end, revision, sub.items])
+  const locateBookmark = useEffectEvent((event: Event) => {
+    if (!root) return
+    const target = (event as CustomEvent<VirtualBookmarkLocation>).detail
+    if (!target || target.groupId !== groupId || target.subId !== sub.id || !body.current || !sub.items.length) return
+    const index = Math.max(0, Math.min(sub.items.length - 1, target.index))
+    const visualIndex = index + (gap && index >= gap.index ? 1 : 0)
+    const row = Math.floor(visualIndex / rowColumns)
+    pendingLocation.current = { id: sub.items[index].id, index, align: target.align ?? 'nearest', offset: target.offset, atEnd: target.atEnd }
+    const pending = pendingLocation.current
+    window.clearTimeout(pendingLocationTimer.current)
+    pendingLocationTimer.current = window.setTimeout(() => {
+      if (pendingLocation.current !== pending) return
+      pendingLocation.current = null
+      setRevision((n) => n + 1)
+    }, 250)
+    const bodyTop = body.current.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
+    const top = bodyTop + toPhysical(model.offset(row), mapping)
+    const bottom = top + model.offset(row + 1) - model.offset(row)
+    if (target.align === 'center') root.scrollTop = top - (root.clientHeight - (bottom - top)) / 2
+    else if (top < root.scrollTop) root.scrollTop = top
+    else if (bottom > root.scrollTop + root.clientHeight) root.scrollTop = bottom - root.clientHeight
+    const visibleRows = Math.ceil(root.clientHeight / model.minimumHeight()) + overscan + 2
+    const start = Math.max(0, row - visibleRows)
+    const end = Math.min(rowCount, row + visibleRows)
+    setRange({ start, end })
+    setRevision((n) => n + 1)
+  })
   useEffect(() => {
     if (!root) return
-    const locate = (event: Event) => {
-      const target = (event as CustomEvent<VirtualBookmarkLocation>).detail
-      if (!target || target.groupId !== groupId || target.subId !== sub.id || !body.current || !sub.items.length) return
-      const index = Math.max(0, Math.min(sub.items.length - 1, target.index))
-      const visualIndex = index + (gap && index >= gap.index ? 1 : 0)
-      const row = Math.floor(visualIndex / rowColumns)
-      pendingLocation.current = { id: sub.items[index].id, index, align: target.align ?? 'nearest', offset: target.offset, atEnd: target.atEnd }
-      const pending = pendingLocation.current
-      window.clearTimeout(pendingLocationTimer.current)
-      pendingLocationTimer.current = window.setTimeout(() => {
-        if (pendingLocation.current !== pending) return
-        pendingLocation.current = null
-        setRevision((n) => n + 1)
-      }, 250)
-      const bodyTop = body.current.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop
-      const top = bodyTop + toPhysical(model.offset(row), mapping)
-      const bottom = top + model.offset(row + 1) - model.offset(row)
-      if (target.align === 'center') root.scrollTop = top - (root.clientHeight - (bottom - top)) / 2
-      else if (top < root.scrollTop) root.scrollTop = top
-      else if (bottom > root.scrollTop + root.clientHeight) root.scrollTop = bottom - root.clientHeight
-      const visibleRows = Math.ceil(root.clientHeight / model.minimumHeight()) + overscan + 2
-      const start = Math.max(0, row - visibleRows)
-      const end = Math.min(rowCount, row + visibleRows)
-      setRange({ start, end })
-      setRevision((n) => n + 1)
-    }
+    const locate = (event: Event) => locateBookmark(event)
     root.addEventListener(LOCATE_EVENT, locate)
     return () => root.removeEventListener(LOCATE_EVENT, locate)
-  }, [root, groupId, sub.id, sub.items, gap, rowColumns, model, range.start, range.end, scale, revision, rowCount, overscan])
+  }, [root])
   const ids: string[] = []
   const rows = []
   for (let row = range.start; row < range.end; row++) {
@@ -352,14 +369,15 @@ function VirtualSection({ groupId, sub, view, columns, selectedId, onSelect, onO
   }
   const before = mapping.before * scale
   const after = Math.max(0, (total - mapping.end) * scale)
-  return <SecBlock groupId={groupId} subId={sub.id} subName={sub.name} count={sub.items.length} view={view}>
+  const Section = draggable ? SecBlock : BookmarkSection
+  return <Section groupId={groupId} subId={sub.id} subName={sub.name} count={sub.items.length} view={view}>
     {!count ? <div className="sec-empty">暂无书签</div> : <div ref={body} className="virtual-bookmark-body">
       <div className="virtual-bookmark-spacer" style={{ height: before }} aria-hidden />
       {draggable ? <SortableContext items={ids} strategy={view === 'grid' ? rectSortingStrategy : verticalListSortingStrategy}>{rows}</SortableContext> : rows}
       <div className="virtual-bookmark-spacer" style={{ height: after }} aria-hidden />
     </div>}
-  </SecBlock>
-}
+  </Section>
+})
 
 function MeasuredRow({ index, model, onMeasure, view, columns, iconSize, children }: {
   index: number; model: RowMeasurements; onMeasure: () => void; view: View; columns: number; iconSize: string; children: React.ReactNode

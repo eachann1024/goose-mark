@@ -48,13 +48,13 @@ export function SortableTab({ id, name, isActive, onTabClick, onTabContextMenu }
 
 // ── 书签拖拽：碰撞策略（优先指针命中，空则回退到最近中心，兼顾「拖到段落空白/侧栏」与同段排序）──
 export const bookmarkCollision: CollisionDetection = (args) => {
-  // 保活的隐藏面板仍在注册表中，不能用它们缓存的矩形决定落点。
+  const activeData = args.active.data.current
   const droppableContainers = args.droppableContainers.filter((container) => {
-    const node = container.node.current
-    if (!node || node.getClientRects().length === 0) return false
-    if (args.active.data.current?.type === 'sub') {
+    const rect = args.droppableRects.get(container.id)
+    if (!container.node.current?.isConnected || !rect?.width || !rect.height) return false
+    if (activeData?.type === 'sub') {
       return container.data.current?.type === 'sub'
-        && container.data.current.groupId === args.active.data.current.groupId
+        && container.data.current.groupId === activeData.groupId
     }
     return true
   })
@@ -104,28 +104,31 @@ export function insertDropGap(nodes: ReactElement[], gap: DropGapInfo | null): R
 
 
 // ── SecBlock：子分组段容器（droppable），让空段与段落空白区也能接收书签 ──────────
-export function SecBlock({
-  groupId,
-  subId,
-  subName,
-  count,
-  view,
-  children,
-}: {
+type BookmarkSectionProps = {
   groupId: string
   subId: string
   subName: string
   count: number
   view: 'list' | 'grid'
   children: React.ReactNode
-}) {
+}
+
+export function SecBlock(props: BookmarkSectionProps) {
+  const { groupId, subId } = props
   const { setNodeRef, isOver } = useDroppable({
     id: `area:${groupId}:${subId}`,
     data: { type: 'sub-area', groupId, subId },
   })
+  return <BookmarkSection {...props} sectionRef={setNodeRef} isOver={isOver} />
+}
+
+export function BookmarkSection({ groupId, subId, subName, count, view, children, sectionRef, isOver }: BookmarkSectionProps & {
+  sectionRef?: React.Ref<HTMLDivElement>
+  isOver?: boolean
+}) {
   return (
     <div
-      ref={setNodeRef}
+      ref={sectionRef}
       className={`sec-block${isOver ? ' drop-over' : ''}`}
       data-sec-id={`sec-${groupId}-${subId}`}
       data-sub-id={subId}
@@ -162,24 +165,20 @@ export function SortableCard({
     id: bookmarkDragId(groupId, subId, item.id),
     data: { type: 'bookmark', groupId, subId, bookmarkId: item.id, item },
   })
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : undefined,
-  }
-  return (
+  const translate = CSS.Transform.toString(transform)
+  return useMemo(() => (
     <BookmarkCard
       item={item}
       selected={selected}
       groupId={groupId}
       subId={subId}
-      style={style}
+      style={{ transform: translate, transition, opacity: isDragging ? 0.4 : undefined }}
       anchorRef={setNodeRef}
       disabled={isDragging}
       dndProps={{ ...attributes, ...listeners }}
       onClick={() => { onSelect(item.id); onOpen?.(item) }}
     />
-  )
+  ), [item, groupId, subId, selected, translate, transition, isDragging, setNodeRef, attributes, listeners, onSelect, onOpen])
 }
 
 
@@ -208,15 +207,11 @@ export function SortableGridCell({
     id: bookmarkDragId(groupId, subId, item.id),
     data: { type: 'bookmark', groupId, subId, bookmarkId: item.id, item },
   })
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : undefined,
-  }
-  return (
+  const translate = CSS.Transform.toString(transform)
+  return useMemo(() => (
     <OverflowHoverTooltip
       anchorRef={setNodeRef}
-      style={style}
+      style={{ transform: translate, transition, opacity: isDragging ? 0.4 : undefined }}
       title={item.ttl}
       description={subClass === 'dsc' ? subText : undefined}
       disabled={isDragging}
@@ -232,5 +227,5 @@ export function SortableGridCell({
       <div className="ttl">{item.ttl}</div>
       {subText && <div className={subClass}>{subText}</div>}
     </OverflowHoverTooltip>
-  )
+  ), [item, groupId, subId, selected, subText, subClass, translate, transition, isDragging, setNodeRef, attributes, listeners, onSelect, onOpen])
 }

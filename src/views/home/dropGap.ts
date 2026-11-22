@@ -1,5 +1,5 @@
 import type { Active, Over } from '@dnd-kit/core'
-import { type HomeGroup } from './viewModel'
+import { getHomeSubItemIndex, type HomeGroup } from './viewModel'
 
 /** 拖拽落点占位：跨子分组拖拽时在目标段插入它，让后续卡片/格子真正让位 */
 export interface DropGapInfo {
@@ -49,8 +49,8 @@ export function resolveDropGap(
 
   if (o.type === 'bookmark') {
     if (!o.subId || o.subId === a.subId) return null
-    const sub = findSub(groups, o.subId)
-    const at = sub?.items.findIndex((b) => b.id === o.bookmarkId) ?? -1
+    const group = groups.find((entry) => entry.id === o.groupId)
+    const at = group && o.bookmarkId ? getHomeSubItemIndex(group, o.bookmarkId, o.subId) : -1
     if (at < 0) return null
     targetSubId = o.subId
     index = at
