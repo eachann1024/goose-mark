@@ -164,6 +164,28 @@ export function trackExport(format: 'json') {
   track('export', { format })
 }
 
+const KNOWN_MCP_TOOLS = new Set([
+  'get_mcp_capabilities',
+  'get_bookmark_tree',
+  'list_groups',
+  'list_bookmarks',
+  'search_bookmarks',
+  'get_bookmark',
+  'open_bookmark',
+  'create_group',
+  'update_group',
+  'remove_group',
+  'create_sub_group',
+  'update_sub_group',
+  'remove_sub_group',
+  'create_bookmark',
+  'update_bookmark',
+  'set_bookmark_locations',
+  'remove_bookmark',
+  'restore_bookmark',
+])
+
 export function trackMcpCall(tool: string, ok: boolean) {
-  track('mcp.call', { tool, ok })
+  const safeTool = KNOWN_MCP_TOOLS.has(tool) ? tool : 'other'
+  track('mcp.call', { tool: safeTool, ok })
 }
