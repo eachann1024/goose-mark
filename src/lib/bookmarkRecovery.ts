@@ -19,18 +19,8 @@ const stripUsageForHash = (bookmarks: BookmarkSnapshot['bookmarks']) =>
     .sort((a, b) => a.id.localeCompare(b.id))
     .map(({ visits: _visits, lastUsed: _lastUsed, ...rest }) => rest)
 
-function nativeDirectory() {
-  if (!window.require) return null
-  const fs = window.require('node:fs') as typeof import('node:fs')
-  const path = window.require('node:path') as typeof import('node:path')
-  let root: string | undefined
-  try { root = window.utools?.getPluginLocalDataPath?.() } catch { /* 兼容旧宿主 */ }
-  if (!root) {
-    const home = window.utools?.getPath('home')
-    if (!home) return null
-    root = path.join(home, '.goose-marks')
-  }
-  return { fs, path, directory: path.join(root, 'bookmark-recovery') }
+function getRecoveryBridge() {
+  return typeof window !== 'undefined' ? window.__gooseBookmarkRecovery ?? null : null
 }
 
 export function preserveBookmarkRecovery(snapshot: BookmarkSnapshot, kind: 'pending' | 'checkpoint' | 'conflict' = 'pending'): void {
@@ -41,51 +31,25 @@ export function preserveBookmarkRecovery(snapshot: BookmarkSnapshot, kind: 'pend
     : `${PREFIX}conflict.${Date.now()}.${crypto.randomUUID()}`
   let contentHash: string | undefined
   try {
-    const native = nativeDirectory()
-    if (native) {
+    const bridge = getRecoveryBridge()
+    if (bridge) {
       // 已确认快照和冲突副本按内容命名，反复启动或往返同步不会无限复制同一份数据。
       if (kind !== 'pending') {
-        contentHash = (window.require!('node:crypto') as typeof import('node:crypto')).createHash('sha256').update(content!).digest('hex')
+        contentHash = bridge.sha256(content!)
         if (kind === 'checkpoint' && contentHash === lastCheckpointHash) return
         key = `${PREFIX}${kind}.${contentHash}`
       }
-      // 只轮换本版本新建的已确认 checkpoint，旧文件、pending 和真实冲突副本不参与清理。
-      const directory = kind === 'checkpoint' ? native.path.join(native.directory, 'checkpoints') : native.directory
-      native.fs.mkdirSync(directory, { recursive: true, mode: 0o700 })
-      const file = native.path.join(directory, `${key}.json`)
-      if (kind !== 'pending' && native.fs.existsSync(file)) {
+      const filename = `${key}.json`
+      const result = bridge.writeFileSync(kind === 'checkpoint', filename, JSON.stringify(snapshot), kind !== 'pending')
+      if (result.existed) {
         if (kind === 'checkpoint') lastCheckpointHash = contentHash
         if (kind === 'conflict') lastConflictContent = content
         return
       }
-      const raw = JSON.stringify(snapshot)
-      const temporary = `${file}.${crypto.randomUUID()}.tmp`
-      try {
-        const fd = native.fs.openSync(temporary, 'wx', 0o600)
-        try {
-          native.fs.writeFileSync(fd, raw, 'utf8')
-          native.fs.fsyncSync(fd)
-        } finally { native.fs.closeSync(fd) }
-        native.fs.renameSync(temporary, file)
-      } finally {
-        if (native.fs.existsSync(temporary)) native.fs.unlinkSync(temporary)
-      }
       if (kind === 'checkpoint') {
         lastCheckpointHash = contentHash
         try {
-          const files = native.fs.readdirSync(directory).filter(name => /^goose-marks\.bookmark-recovery\.checkpoint\.[a-f0-9]{64}\.json$/.test(name)).map(name => {
-            const target = native.path.join(directory, name)
-            return { target, stat: native.fs.lstatSync(target) }
-          }).filter(entry => entry.stat.isFile()).sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs || a.target.localeCompare(b.target))
-          let bytes = files.reduce((total, entry) => total + entry.stat.size, 0), count = files.length
-          for (const entry of files) {
-            if (count <= CHECKPOINT_LIMIT && (bytes <= CHECKPOINT_BYTES || count <= 2)) break
-            if (entry.target === file) continue
-            const current = native.fs.lstatSync(entry.target)
-            if (current.ino !== entry.stat.ino || current.mtimeMs !== entry.stat.mtimeMs) continue
-            native.fs.unlinkSync(entry.target)
-            bytes -= entry.stat.size; count--
-          }
+          bridge.rotateCheckpointsSync(filename, CHECKPOINT_LIMIT, CHECKPOINT_BYTES)
         } catch (error) { console.warn('[bookmark] 已保存，本机历史快照暂未轮换:', error) }
       }
       try { window.localStorage.removeItem(key) } catch { /* 原生副本已落盘；旧副本不自动恢复。 */ }
@@ -118,72 +82,23 @@ export function preserveBookmarkRecovery(snapshot: BookmarkSnapshot, kind: 'pend
 }
 
 async function writeBookmarkCheckpointAsync(snapshot: BookmarkSnapshot): Promise<void> {
-  const native = nativeDirectory()
-  if (!native?.fs?.promises) {
+  const bridge = getRecoveryBridge()
+  if (!bridge) {
     preserveBookmarkRecovery(snapshot, 'checkpoint')
     return
   }
-  const fsp = native.fs.promises
   const content = JSON.stringify([snapshot.groups, stripUsageForHash(snapshot.bookmarks)])
-  const hash = (window.require!('node:crypto') as typeof import('node:crypto')).createHash('sha256').update(content).digest('hex')
+  const hash = bridge.sha256(content)
   if (hash === lastCheckpointHash) return
 
   const key = `${PREFIX}checkpoint.${hash}`
-  const directory = native.path.join(native.directory, 'checkpoints')
-  await fsp.mkdir(directory, { recursive: true, mode: 0o700 })
-  const file = native.path.join(directory, `${key}.json`)
-  try {
-    await fsp.access(file)
-    lastCheckpointHash = hash
-    return
-  } catch {
-    // file does not exist yet
-  }
-
-  const raw = JSON.stringify(snapshot)
-  const temporary = `${file}.${crypto.randomUUID()}.tmp`
-  try {
-    const handle = await fsp.open(temporary, 'wx', 0o600)
-    try {
-      await handle.writeFile(raw, 'utf8')
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-    await fsp.rename(temporary, file)
-    lastCheckpointHash = hash
-  } finally {
-    await fsp.unlink(temporary).catch(() => {})
-  }
+  const filename = `${key}.json`
+  const result = await bridge.writeFileAsync(true, filename, JSON.stringify(snapshot), true)
+  lastCheckpointHash = hash
+  if (result.existed) return
 
   try {
-    const names = (await fsp.readdir(directory)).filter(name => /^goose-marks\.bookmark-recovery\.checkpoint\.[a-f0-9]{64}\.json$/.test(name))
-    const stats = await Promise.all(names.map(async (name) => {
-      const target = native.path.join(directory, name)
-      try {
-        return { target, stat: await fsp.lstat(target) }
-      } catch {
-        return null
-      }
-    }))
-    const files = stats
-      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry && entry.stat.isFile()))
-      .sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs || a.target.localeCompare(b.target))
-    let bytes = files.reduce((total, entry) => total + entry.stat.size, 0)
-    let count = files.length
-    for (const entry of files) {
-      if (count <= CHECKPOINT_LIMIT && (bytes <= CHECKPOINT_BYTES || count <= 2)) break
-      if (entry.target === file) continue
-      try {
-        const current = await fsp.lstat(entry.target)
-        if (current.ino !== entry.stat.ino || current.mtimeMs !== entry.stat.mtimeMs) continue
-        await fsp.unlink(entry.target)
-        bytes -= entry.stat.size
-        count--
-      } catch {
-        // ignore concurrent cleanup
-      }
-    }
+    await bridge.rotateCheckpointsAsync(filename, CHECKPOINT_LIMIT, CHECKPOINT_BYTES)
   } catch (error) {
     console.warn('[bookmark] 已保存，本机历史快照暂未轮换:', error)
   }
@@ -209,10 +124,6 @@ export function clearSavedBookmarkRecovery(): void {
   // 只清除本窗口已成功保存的待写副本，绝不删除历史或其他窗口的恢复内容。
   try { window.localStorage.removeItem(pendingKey) } catch { /* 保留副本不影响正常启动。 */ }
   try {
-    const native = nativeDirectory()
-    if (native) {
-      const file = native.path.join(native.directory, `${pendingKey}.json`)
-      if (native.fs.existsSync(file)) native.fs.unlinkSync(file)
-    }
+    getRecoveryBridge()?.removePendingSync(`${pendingKey}.json`)
   } catch (error) { console.warn('[bookmark] 已保存，本机待写副本仍保留:', error) }
 }

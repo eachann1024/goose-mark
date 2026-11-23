@@ -12,21 +12,27 @@ if (!fs.existsSync(distDir)) {
 }
 
 /**
- * 递归删除 dist 下所有 .map 文件（uTools 正式构建用 sourcemap='hidden'：写 .map 但 JS 无
- * //# 注释，这里删除以免源码随插件包外泄/增体积）。GOOSE_DEBUG=1 调试构建跳过，保留 map 供断点。
+ * 递归删除 dist 下所有 .map 和 .DS_Store 文件（uTools 正式构建用 sourcemap='hidden'：
+ * 写 .map 但 JS 无 //# 注释，这里删除以免源码随插件包外泄/增体积；同时清理打包残留）。
  */
-function removeMapFiles(dir) {
-  let removed = 0;
+function removeJunkFiles(dir, { removeMaps }) {
+  let removedMaps = 0;
+  let removedDsStore = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      removed += removeMapFiles(full);
-    } else if (entry.name.endsWith('.map')) {
+      const sub = removeJunkFiles(full, { removeMaps });
+      removedMaps += sub.removedMaps;
+      removedDsStore += sub.removedDsStore;
+    } else if (entry.name === '.DS_Store') {
       fs.rmSync(full);
-      removed += 1;
+      removedDsStore += 1;
+    } else if (removeMaps && entry.name.endsWith('.map')) {
+      fs.rmSync(full);
+      removedMaps += 1;
     }
   }
-  return removed;
+  return { removedMaps, removedDsStore };
 }
 
 try {
@@ -82,12 +88,15 @@ try {
        console.error('❌ 未找到根目录 plugin.json');
   }
 
-  // 4. 清理 sourcemap：正式构建删除 .map（'hidden' 模式写了盘）；debug 构建保留。
+  // 4. 清理 .DS_Store 及 sourcemap（debug 构建保留 .map 供断点）。
+  const { removedMaps, removedDsStore } = removeJunkFiles(distDir, { removeMaps: !isDebugBuild });
+  if (removedDsStore > 0) {
+    console.log(`✅ 已清理 ${removedDsStore} 个 .DS_Store 文件`);
+  }
   if (isDebugBuild) {
     console.log('🐛 GOOSE_DEBUG=1：保留 .map 文件供调试。');
   } else {
-    const removed = removeMapFiles(distDir);
-    console.log(`✅ 已删除 ${removed} 个 .map 文件（正式构建不外泄源码）`);
+    console.log(`✅ 已删除 ${removedMaps} 个 .map 文件（正式构建不外泄源码）`);
   }
 
   console.log('🎉 uTools 发布文件准备就绪！请直接打包 dist 目录。');

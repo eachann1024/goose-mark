@@ -2,10 +2,8 @@ import type { BookmarkSnapshot } from './stateRepository'
 import type { SettingsState } from '@/stores/settings'
 
 const SETTINGS_BOOT_CACHE_KEY = 'goose-marks.boot-settings-v1'
-const BOOKMARK_BOOT_CACHE_PATH_KEY = 'goose-marks.boot-cache-path-v1'
 const BOOKMARK_BOOT_CACHE_ACCOUNT_KEY = 'goose-marks.boot-account-v1'
 const BOOKMARK_BOOT_CACHE_WEB_KEY = 'goose-marks.boot-bookmarks-web-v1'
-const BOOT_SNAPSHOT_FILENAME = 'boot-snapshot-v1.json'
 const BOOT_CACHE_DEBOUNCE_MS = 500
 const WEB_FIRST_SCREEN_ICON_LIMIT = 30
 const WEB_MAX_ICON_CHARS = 32_768
@@ -26,29 +24,6 @@ const readCurrentAccountFingerprint = (): string => {
     return JSON.stringify(user ? [user.nickname, user.avatar] : null)
   } catch {
     return 'null'
-  }
-}
-
-const resolveNativeBootCacheFile = (): { fs: typeof import('node:fs'); path: typeof import('node:path'); file: string } | null => {
-  if (typeof window === 'undefined' || typeof window.require !== 'function') return null
-  try {
-    const fs = window.require('node:fs') as typeof import('node:fs')
-    const path = window.require('node:path') as typeof import('node:path')
-    const cachedFile = window.localStorage?.getItem?.(BOOKMARK_BOOT_CACHE_PATH_KEY)
-    if (cachedFile) return { fs, path, file: cachedFile }
-
-    let root: string | undefined
-    try { root = window.utools?.getPluginLocalDataPath?.() } catch {}
-    if (!root) {
-      const home = window.utools?.getPath?.('home')
-      if (!home) return null
-      root = path.join(home, '.goose-marks')
-    }
-    const file = path.join(root, BOOT_SNAPSHOT_FILENAME)
-    try { window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_PATH_KEY, file) } catch {}
-    return { fs, path, file }
-  } catch {
-    return null
   }
 }
 
@@ -84,19 +59,16 @@ const isValidSnapshotShape = (value: unknown): value is BookmarkSnapshot => {
 export function readBookmarkBootCache(): BookmarkSnapshot | null {
   if (typeof window === 'undefined') return null
   try {
-    const cachedFile = window.localStorage?.getItem?.(BOOKMARK_BOOT_CACHE_PATH_KEY)
     const expectedAccount = window.localStorage?.getItem?.(BOOKMARK_BOOT_CACHE_ACCOUNT_KEY)
-    if (cachedFile && typeof window.require === 'function') {
-      const fs = window.require('node:fs') as typeof import('node:fs')
-      if (fs.existsSync(cachedFile)) {
-        const parsed = JSON.parse(fs.readFileSync(cachedFile, 'utf8')) as Partial<PersistedBookmarkBootPayload>
-        if (
-          parsed?.version === 1 &&
-          (expectedAccount == null || parsed.account === expectedAccount) &&
-          isValidSnapshotShape(parsed.snapshot)
-        ) {
-          return parsed.snapshot
-        }
+    const nativeRaw = window.__gooseBootCache?.readSync?.()
+    if (nativeRaw) {
+      const parsed = JSON.parse(nativeRaw) as Partial<PersistedBookmarkBootPayload>
+      if (
+        parsed?.version === 1 &&
+        (expectedAccount == null || parsed.account === expectedAccount) &&
+        isValidSnapshotShape(parsed.snapshot)
+      ) {
+        return parsed.snapshot
       }
     }
 
@@ -148,21 +120,10 @@ async function writeBookmarkBootCacheAsync(snapshot: BookmarkSnapshot): Promise<
   const account = readCurrentAccountFingerprint()
   try { window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_ACCOUNT_KEY, account) } catch {}
 
-  const native = resolveNativeBootCacheFile()
-  if (native?.fs?.promises) {
-    const fsp = native.fs.promises
-    const dir = native.path.dirname(native.file)
-    await fsp.mkdir(dir, { recursive: true, mode: 0o700 })
+  if (window.__gooseBootCache?.writeAsync) {
     const payload: PersistedBookmarkBootPayload = { version: 1, account, snapshot }
-    const temp = `${native.file}.${crypto.randomUUID()}.tmp`
-    try {
-      await fsp.writeFile(temp, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 })
-      await fsp.rename(temp, native.file)
-      try { window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_PATH_KEY, native.file) } catch {}
-    } finally {
-      await fsp.unlink(temp).catch(() => {})
-    }
-    return
+    const ok = await window.__gooseBootCache.writeAsync(JSON.stringify(payload))
+    if (ok) return
   }
 
   try {
@@ -200,22 +161,9 @@ export function flushBookmarkBootCacheSync(snapshot: BookmarkSnapshot): void {
   const account = readCurrentAccountFingerprint()
   try { window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_ACCOUNT_KEY, account) } catch {}
 
-  const native = resolveNativeBootCacheFile()
-  if (native?.fs) {
-    try {
-      const dir = native.path.dirname(native.file)
-      native.fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
-      const payload: PersistedBookmarkBootPayload = { version: 1, account, snapshot }
-      const temp = `${native.file}.${crypto.randomUUID()}.tmp`
-      try {
-        native.fs.writeFileSync(temp, JSON.stringify(payload), { encoding: 'utf8', mode: 0o600 })
-        native.fs.renameSync(temp, native.file)
-        try { window.localStorage?.setItem?.(BOOKMARK_BOOT_CACHE_PATH_KEY, native.file) } catch {}
-      } finally {
-        if (native.fs.existsSync(temp)) native.fs.unlinkSync(temp)
-      }
-      return
-    } catch {}
+  if (window.__gooseBootCache?.writeSync) {
+    const payload: PersistedBookmarkBootPayload = { version: 1, account, snapshot }
+    if (window.__gooseBootCache.writeSync(JSON.stringify(payload))) return
   }
 
   try {
@@ -236,12 +184,8 @@ export function clearBookmarkBootCache(): void {
   pendingBootSnapshot = null
   if (typeof window === 'undefined') return
   try {
-    const cachedFile = window.localStorage?.getItem?.(BOOKMARK_BOOT_CACHE_PATH_KEY)
     window.localStorage?.removeItem?.(BOOKMARK_BOOT_CACHE_ACCOUNT_KEY)
     window.localStorage?.removeItem?.(BOOKMARK_BOOT_CACHE_WEB_KEY)
-    if (cachedFile && typeof window.require === 'function') {
-      const fs = window.require('node:fs') as typeof import('node:fs')
-      if (fs.existsSync(cachedFile)) fs.unlinkSync(cachedFile)
-    }
+    window.__gooseBootCache?.clear?.()
   } catch {}
 }

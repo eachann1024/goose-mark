@@ -12,12 +12,6 @@ const faviconOriginCooldowns = new Map<string, number>()
 const getRuntimeWindow = (): (Window & typeof globalThis) | null =>
   typeof window !== 'undefined' ? window : null
 
-const getNodeRequire = (): ((id: string) => any) | null => {
-  const w = getRuntimeWindow() as (Window & { require?: (id: string) => any }) | null
-  if (w && typeof w.require === 'function') return w.require.bind(w)
-  return null
-}
-
 const isWindowsUToolsRuntime = () => {
   try {
     const w = getRuntimeWindow()
@@ -86,72 +80,6 @@ const withTimeout = async <T>(promise: Promise<T>, timeoutMs = ICON_FETCH_TIMEOU
   }
 }
 
-/** uTools 下优先 gooseWeb（代理感知）下图转 base64；失败再 require 直连。 */
-const fetchImageViaRequire = (url: string, redirectDepth = 0): Promise<string | null> => {
-  const req = getNodeRequire()
-  if (typeof req !== 'function' || redirectDepth > 3) return Promise.resolve(null)
-  return new Promise((resolve) => {
-    let settled = false
-    let request: any = null
-    const deadline = setTimeout(() => {
-      try { request?.destroy?.() } catch {}
-      finish(null)
-    }, ICON_FETCH_TIMEOUT_MS)
-    const finish = (v: string | null) => {
-      if (settled) return
-      settled = true
-      clearTimeout(deadline)
-      resolve(v)
-    }
-    try {
-      const lib = req(url.startsWith('https:') ? 'https' : 'http')
-      const { Buffer } = req('buffer')
-      request = lib.get(url, (res: any) => {
-        const status = res.statusCode || 0
-        const location = res.headers?.location
-        // 跟随重定向（favicon 常有 301/302）
-        if (status >= 300 && status < 400 && location) {
-          res.resume()
-          let next: string
-          try { next = new URL(location, url).href } catch { finish(null); return }
-          if (settled) return
-          settled = true
-          clearTimeout(deadline)
-          resolve(fetchImageViaRequire(next, redirectDepth + 1))
-          return
-        }
-        if (status !== 200) { res.resume(); finish(null); return }
-        const contentType = String(res.headers?.['content-type'] || '')
-        if (!contentType.startsWith('image/')) { res.resume(); finish(null); return }
-        const contentLength = Number(res.headers?.['content-length'] || 0)
-        if (Number.isFinite(contentLength) && contentLength > MAX_ICON_BYTES) {
-          res.destroy()
-          finish(null)
-          return
-        }
-        const chunks: Uint8Array[] = []
-        let receivedBytes = 0
-        res.on('data', (c: Uint8Array) => {
-          receivedBytes += c.byteLength
-          if (receivedBytes > MAX_ICON_BYTES) {
-            res.destroy()
-            try { request.destroy() } catch {}
-            finish(null)
-            return
-          }
-          chunks.push(c)
-        })
-        res.on('end', () => finish(`data:${contentType.split(';')[0].trim()};base64,${Buffer.concat(chunks).toString('base64')}`))
-        res.on('error', () => finish(null))
-      })
-      request.on('error', () => finish(null))
-      request.setTimeout(ICON_FETCH_TIMEOUT_MS, () => { try { request.destroy() } catch {} finish(null) })
-    } catch {
-      finish(null)
-    }
-  })
-}
-
 /** favicon 等常返回空 content-type 或 application/octet-stream */
 const isLikelyImagePath = (url: string) => {
   try {
@@ -175,29 +103,29 @@ const guessImageMimeFromUrl = (url: string) => {
   return 'image/x-icon'
 }
 
+/** uTools 下通过 gooseWeb（代理与 SSRF 防护）下图转 base64。 */
 const fetchImageViaNode = async (url: string): Promise<string | null> => {
   const w = getRuntimeWindow()
-  if (w?.gooseWeb?.fetchBinary) {
-    try {
-      const result = await w.gooseWeb.fetchBinary(url, {
-        timeoutMs: ICON_FETCH_TIMEOUT_MS,
-        maxBytes: MAX_ICON_BYTES
-      })
-      if (result.ok && result.base64) {
-        const rawType = String(result.contentType || '').split(';')[0].trim()
-        if (rawType.startsWith('image/')) {
-          return `data:${rawType};base64,${result.base64}`
-        }
-        // 空 type / octet-stream：按 URL 路径放行 favicon 与常见图片后缀
-        if ((!rawType || rawType === 'application/octet-stream') && isLikelyImagePath(url)) {
-          return `data:${guessImageMimeFromUrl(url)};base64,${result.base64}`
-        }
+  if (!w?.gooseWeb?.fetchBinary) return null
+  try {
+    const result = await w.gooseWeb.fetchBinary(url, {
+      timeoutMs: ICON_FETCH_TIMEOUT_MS,
+      maxBytes: MAX_ICON_BYTES
+    })
+    if (result.ok && result.base64) {
+      const rawType = String(result.contentType || '').split(';')[0].trim()
+      if (rawType.startsWith('image/')) {
+        return `data:${rawType};base64,${result.base64}`
       }
-    } catch {
-      // 失败回退 require
+      // 空 type / octet-stream：按 URL 路径放行 favicon 与常见图片后缀
+      if ((!rawType || rawType === 'application/octet-stream') && isLikelyImagePath(url)) {
+        return `data:${guessImageMimeFromUrl(url)};base64,${result.base64}`
+      }
     }
+  } catch {
+    // 抓取失败返回 null
   }
-  return fetchImageViaRequire(url)
+  return null
 }
 
 const MAX_HTML_BYTES = 512 * 1024
@@ -243,17 +171,8 @@ const metaFromHtmlText = (html: string): { title: string | null; description: st
   return meta.title || meta.description ? meta : null
 }
 
-/** base64 → Uint8Array；优先 require('buffer')，否则 atob。 */
+/** base64 → Uint8Array。 */
 const base64ToUint8Array = (base64: string): Uint8Array => {
-  const req = getNodeRequire()
-  if (typeof req === 'function') {
-    try {
-      const { Buffer } = req('buffer')
-      return new Uint8Array(Buffer.from(base64, 'base64'))
-    } catch {
-      // fall through
-    }
-  }
   const bin = atob(base64)
   const out = new Uint8Array(bin.length)
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
@@ -264,88 +183,6 @@ const base64ToUint8Array = (base64: string): Uint8Array => {
 const decodeHtmlBytes = (bytes: Uint8Array, contentType: string): string => {
   const sample = new TextDecoder('latin1').decode(bytes.slice(0, 4096))
   return new TextDecoder(pickHtmlCharset(contentType, sample)).decode(bytes)
-}
-
-/** Node 抓 HTML 提取 title/description：优先 gooseWeb（代理感知）。 */
-const fetchPageMetaViaRequire = (
-  url: string,
-  redirectDepth = 0
-): Promise<{ title: string | null; description: string | null } | null> => {
-  const req = getNodeRequire()
-  if (typeof req !== 'function' || redirectDepth > 3) return Promise.resolve(null)
-  return new Promise((resolve) => {
-    let settled = false
-    let request: any = null
-    const deadline = setTimeout(() => {
-      try { request?.destroy?.() } catch {}
-      finish(null)
-    }, ICON_FETCH_TIMEOUT_MS)
-    const finish = (v: { title: string | null; description: string | null } | null) => {
-      if (settled) return
-      settled = true
-      clearTimeout(deadline)
-      resolve(v)
-    }
-    try {
-      const lib = req(url.startsWith('https:') ? 'https' : 'http')
-      const { Buffer } = req('buffer')
-      request = lib.get(
-        url,
-        {
-          headers: {
-            // 部分站点（豆瓣等）会拒绝无 UA 的 Node 请求
-            'User-Agent':
-              'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36',
-            Accept: 'text/html,application/xhtml+xml'
-          }
-        },
-        (res: any) => {
-          const status = res.statusCode || 0
-          const location = res.headers?.location
-          if (status >= 300 && status < 400 && location) {
-            res.resume()
-            let next: string
-            try { next = new URL(location, url).href } catch { finish(null); return }
-            if (settled) return
-            settled = true
-            clearTimeout(deadline)
-            resolve(fetchPageMetaViaRequire(next, redirectDepth + 1))
-            return
-          }
-          if (status !== 200) { res.resume(); finish(null); return }
-          const contentType = String(res.headers?.['content-type'] || '')
-          if (contentType && !/text\/html|application\/xhtml/i.test(contentType)) { res.resume(); finish(null); return }
-          const chunks: Uint8Array[] = []
-          let received = 0
-          // title/description 都在 <head>，截断后直接解析已收到的部分即可
-          const parseAndFinish = () => {
-            try {
-              const buf = Buffer.concat(chunks)
-              const sample = new TextDecoder('latin1').decode(buf.slice(0, 4096))
-              const html = new TextDecoder(pickHtmlCharset(contentType, sample)).decode(buf)
-              finish(metaFromHtmlText(html))
-            } catch {
-              finish(null)
-            }
-          }
-          res.on('data', (c: Uint8Array) => {
-            if (received < MAX_HTML_BYTES) chunks.push(c)
-            received += c.byteLength
-            if (received > MAX_HTML_BYTES) {
-              try { res.destroy() } catch {}
-              parseAndFinish()
-            }
-          })
-          res.on('end', parseAndFinish)
-          res.on('error', () => finish(null))
-        }
-      )
-      request.on('error', () => finish(null))
-      request.setTimeout(ICON_FETCH_TIMEOUT_MS, () => { try { request.destroy() } catch {} finish(null) })
-    } catch {
-      finish(null)
-    }
-  })
 }
 
 const fetchPageMetaViaNode = async (
@@ -365,7 +202,7 @@ const fetchPageMetaViaNode = async (
         return metaFromHtmlText(html)
       }
     } catch {
-      // 失败再试 fetchText / require
+      // 失败再试 fetchText
     }
   }
   if (w?.gooseWeb?.fetchText) {
@@ -376,19 +213,19 @@ const fetchPageMetaViaNode = async (
       })
       if (result.ok && result.text) return metaFromHtmlText(result.text)
     } catch {
-      // 失败回退 require
+      // 抓取失败返回 null
     }
   }
-  return fetchPageMetaViaRequire(url)
+  return null
 }
 
 export const fetchAsDataUrl = async (url: string): Promise<string | null> => {
   if (!url) return null
   if (isOriginInCooldown(url)) return null
 
-  const w = getRuntimeWindow() as (Window & { require?: unknown }) | null
-  // 优先 gooseWeb / require 下载（无 CORS、代理感知）
-  if (w?.gooseWeb?.fetchBinary || typeof w?.require === 'function') {
+  const w = getRuntimeWindow()
+  // 优先 gooseWeb 下载（无 CORS、代理感知、SSRF 防护）
+  if (w?.gooseWeb?.fetchBinary) {
     const viaNode = await fetchImageViaNode(url)
     if (viaNode) clearOriginCooldown(url)
     return viaNode

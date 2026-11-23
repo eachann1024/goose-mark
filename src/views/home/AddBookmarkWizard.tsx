@@ -199,11 +199,27 @@ export default function AddBookmarkWizard({
   )
 }
 
-/** 把 URL 中的 {占位符} 标蓝，供镜像层渲染（任意 {q}/{关键词}/… 均匹配） */
-function highlightTemplateTokens(url: string): string {
-  const escape = (s: string) =>
-    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  return escape(url).replace(/\{[^}]+\}/g, (token) => `<span class="gm-url-token">${token}</span>`)
+/** 把 URL 中的 {占位符} 拆分为 React 节点，供镜像层高亮渲染（避免 dangerouslySetInnerHTML）。 */
+function renderHighlightedTemplateUrl(url: string): ReactNode[] {
+  const parts: ReactNode[] = []
+  const re = /\{[^}]+\}/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  while ((match = re.exec(url)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(url.slice(lastIndex, match.index))
+    }
+    parts.push(
+      <span key={match.index} className="gm-url-token">
+        {match[0]}
+      </span>
+    )
+    lastIndex = re.lastIndex
+  }
+  if (lastIndex < url.length) {
+    parts.push(url.slice(lastIndex))
+  }
+  return parts
 }
 
 function ConfirmStep({
@@ -326,8 +342,9 @@ function ConfirmStep({
                 ref={mirrorRef}
                 className="gm-url-mirror"
                 aria-hidden="true"
-                dangerouslySetInnerHTML={{ __html: highlightTemplateTokens(draft.url) }}
-              />
+              >
+                {renderHighlightedTemplateUrl(draft.url)}
+              </div>
             )}
             <input
               ref={urlInputRef}

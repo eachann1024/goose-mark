@@ -9,9 +9,7 @@ export const ERROR_REPORT_PROJECT = 'goose-marks'
 export const ERROR_REPORT_FLUSH_MS = 2000
 
 export type ErrorReportHttpRequest = {
-  url: string
-  method?: string
-  headers?: Record<string, string>
+  contentType?: string
   body: string | Uint8Array
 }
 
@@ -71,8 +69,7 @@ export const createFlushQueue = <T>(
 }
 
 type QueuedRequest = {
-  url: string
-  headers?: Record<string, string>
+  contentType?: string
   body: string | Uint8Array
   resolve: (response: {
     statusCode?: number
@@ -94,9 +91,7 @@ export const makeQueuedNodeTransport = (
       await Promise.all(batch.map(async (item) => {
         try {
           const response = await send({
-            url: item.url,
-            method: 'POST',
-            headers: item.headers,
+            contentType: item.contentType,
             body: item.body,
           })
           item.resolve({
@@ -115,8 +110,7 @@ export const makeQueuedNodeTransport = (
     const transport = createTransport(options, (request) => {
       return new Promise((resolve, reject) => {
         queue.enqueue({
-          url: options.url,
-          headers: options.headers,
+          contentType: options.headers?.['Content-Type'] ?? options.headers?.['content-type'],
           body: request.body,
           resolve,
           reject,

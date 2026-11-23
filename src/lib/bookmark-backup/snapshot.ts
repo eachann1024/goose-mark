@@ -6,29 +6,10 @@ import { normalizeInlineIcon } from '@/lib/inlineIcon'
 const MAX_BYTES = 100 * 1024 * 1024
 const MAX_ICON_BYTES = 2 * 1024 * 1024
 export type Snapshot = { groups: Group[]; bookmarks: Bookmark[]; settings?: FileSettings }
-type Fs = typeof import('node:fs/promises')
-type NativeFs = typeof import('node:fs')
-let fs: Fs | undefined
-let nativeFs: NativeFs | undefined
-function modules() {
-  if (!window.require) throw new Error('当前环境不支持文件访问')
-  fs ??= window.require('node:fs/promises') as Fs
-  nativeFs ??= window.require('node:fs') as NativeFs
-  return { fs, nativeFs }
-}
 
-async function readRegularFile(file: string, max: number) {
-  const { fs, nativeFs } = modules()
-  const before = await fs.lstat(file)
-  if (!before.isFile() || before.isSymbolicLink() || before.size > max) throw new Error('文件缺失、不是普通文件或超过大小限制')
-  const handle = await fs.open(file, nativeFs.constants.O_RDONLY | nativeFs.constants.O_NOFOLLOW)
-  try {
-    const after = await handle.stat()
-    if (!after.isFile() || after.dev !== before.dev || after.ino !== before.ino) throw new Error('文件在读取时发生变化')
-    const bytes = await handle.readFile()
-    if (bytes.byteLength > max) throw new Error('文件超过大小限制')
-    return bytes
-  } finally { await handle.close() }
+async function readIconFileAsBase64(file: string): Promise<string> {
+  if (!window.__gooseBackup?.readIconFile) throw new Error('当前环境不支持文件访问')
+  return window.__gooseBackup.readIconFile(file)
 }
 
 export function parse(text: string): Snapshot {
@@ -85,14 +66,13 @@ export async function portableSnapshot(snapshot: Snapshot): Promise<string> {
     const icon = normalizeInlineIcon(bookmark.icon)
     bookmark.icon = icon
     if (icon.type === 'file') {
-      let bytes: Buffer
-      try { bytes = await readRegularFile(icon.path, MAX_ICON_BYTES) as Buffer }
+      let base64: string
+      try { base64 = await readIconFileAsBase64(icon.path) }
       catch { throw new Error(`图标文件不可用，未写入：${bookmark.title}`) }
-      if (bytes.byteLength > MAX_ICON_BYTES) throw new Error(`图标过大，未写入：${bookmark.title}`)
       const ext = icon.path.split('.').pop()?.toLowerCase()
       const mime: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', svg: 'image/svg+xml', ico: 'image/x-icon' }
       if (!ext || !mime[ext]) throw new Error(`图标格式不支持，未写入：${bookmark.title}`)
-      bookmark.icon = { type: 'custom', data: `data:${mime[ext]};base64,${bytes.toString('base64')}`, bgColor: icon.bgColor }
+      bookmark.icon = { type: 'custom', data: `data:${mime[ext]};base64,${base64}`, bgColor: icon.bgColor }
     } else if (icon.type === 'remote' && icon.cache?.startsWith('data:image/')) {
       icon.cache = validateIconData(icon.cache, bookmark.title)
     } else if (icon.type === 'custom') {

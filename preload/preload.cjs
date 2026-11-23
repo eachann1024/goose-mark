@@ -393,16 +393,338 @@ if (typeof window !== 'undefined') {
     }
   }
 
-  // 暴露 Node require，供渲染层按需加载 fs/path/os/crypto 等模块
-  // 说明：uTools 插件环境下该能力可用；普通浏览器环境下不会执行 preload
-  if (typeof require === 'function') {
-    window.require = require
-    try {
-      const os = require('os')
-      window.__gooseSystemInfo = {
-        osVersion: typeof os.release === 'function' ? os.release() : '',
-        arch: typeof process !== 'undefined' && typeof process.arch === 'string' ? process.arch : '',
+  // 不向渲染层暴露通用 window.require；仅提供固定用途、带根目录白名单与 realpath 校验的桥接。
+  try {
+    const os = require('os')
+    window.__gooseSystemInfo = {
+      osVersion: typeof os.release === 'function' ? os.release() : '',
+      arch: typeof process !== 'undefined' && typeof process.arch === 'string' ? process.arch : '',
+    }
+  } catch {}
+
+  try {
+    const fs = require('fs')
+    const fsp = fs.promises
+    const path = require('path')
+    const crypto = require('crypto')
+    const os = require('os')
+
+    const isInsideRoot = (rootDir, targetPath) => {
+      const resolvedRoot = path.resolve(rootDir)
+      const resolvedTarget = path.resolve(targetPath)
+      const rel = path.relative(resolvedRoot, resolvedTarget)
+      return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+    }
+
+    const ensureSafeDir = (rootDir, subPath = '') => {
+      fs.mkdirSync(rootDir, { recursive: true, mode: 0o700 })
+      const realRoot = fs.realpathSync(rootDir)
+      const dir = subPath ? path.join(realRoot, subPath) : realRoot
+      fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+      const realDir = fs.realpathSync(dir)
+      if (!isInsideRoot(realRoot, realDir)) {
+        throw new Error('路径越界')
       }
-    } catch {}
-  }
+      return realDir
+    }
+
+    const getPluginDataRoot = () => {
+      let root
+      try {
+        root = typeof utools !== 'undefined' ? utools.getPluginLocalDataPath?.() : undefined
+      } catch {}
+      if (!root) {
+        let home
+        try {
+          home = typeof utools !== 'undefined' ? utools.getPath?.('home') : undefined
+        } catch {}
+        root = path.join(home || os.homedir(), '.goose-marks')
+      }
+      return path.resolve(root)
+    }
+
+    const BOOT_SNAPSHOT_FILENAME = 'boot-snapshot-v1.json'
+    const LOCAL_CREDENTIALS_FILENAME = 'ai-credentials.json'
+    const RECOVERY_FILENAME_RE = /^goose-marks\.bookmark-recovery\.[A-Za-z0-9._-]+\.json$/
+    const CHECKPOINT_FILENAME_RE = /^goose-marks\.bookmark-recovery\.checkpoint\.[a-f0-9]{64}\.json$/
+    const MAX_ICON_BYTES = 2 * 1024 * 1024
+    const ICON_EXT_RE = /\.(png|jpe?g|webp|gif|svg|ico)$/i
+
+    window.__gooseBootCache = {
+      readSync() {
+        try {
+          const root = getPluginDataRoot()
+          const file = path.join(root, BOOT_SNAPSHOT_FILENAME)
+          if (!fs.existsSync(file)) return null
+          const realRoot = fs.realpathSync(root)
+          const realFile = fs.realpathSync(file)
+          if (!isInsideRoot(realRoot, realFile)) return null
+          return fs.readFileSync(realFile, 'utf8')
+        } catch {
+          return null
+        }
+      },
+      writeSync(content) {
+        if (typeof content !== 'string') return false
+        try {
+          const realDir = ensureSafeDir(getPluginDataRoot())
+          const file = path.join(realDir, BOOT_SNAPSHOT_FILENAME)
+          const temp = `${file}.${crypto.randomUUID()}.tmp`
+          try {
+            fs.writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600 })
+            fs.renameSync(temp, file)
+            return true
+          } finally {
+            if (fs.existsSync(temp)) fs.unlinkSync(temp)
+          }
+        } catch {
+          return false
+        }
+      },
+      async writeAsync(content) {
+        if (typeof content !== 'string') return false
+        try {
+          const realDir = ensureSafeDir(getPluginDataRoot())
+          const file = path.join(realDir, BOOT_SNAPSHOT_FILENAME)
+          const temp = `${file}.${crypto.randomUUID()}.tmp`
+          try {
+            await fsp.writeFile(temp, content, { encoding: 'utf8', mode: 0o600 })
+            await fsp.rename(temp, file)
+            return true
+          } finally {
+            await fsp.unlink(temp).catch(() => {})
+          }
+        } catch {
+          return false
+        }
+      },
+      clear() {
+        try {
+          const root = getPluginDataRoot()
+          const file = path.join(root, BOOT_SNAPSHOT_FILENAME)
+          if (!fs.existsSync(file)) return
+          const realRoot = fs.realpathSync(root)
+          const realFile = fs.realpathSync(file)
+          if (isInsideRoot(realRoot, realFile)) {
+            fs.unlinkSync(realFile)
+          }
+        } catch {}
+      },
+    }
+
+    const resolveRecoveryFile = (isCheckpoint, filename) => {
+      if (typeof filename !== 'string' || !RECOVERY_FILENAME_RE.test(filename)) {
+        throw new Error('无效的恢复文件名')
+      }
+      const baseDir = ensureSafeDir(getPluginDataRoot(), 'bookmark-recovery')
+      const dir = isCheckpoint ? ensureSafeDir(baseDir, 'checkpoints') : baseDir
+      const target = path.join(dir, filename)
+      if (!isInsideRoot(dir, target)) {
+        throw new Error('恢复文件路径越界')
+      }
+      return { dir, target }
+    }
+
+    window.__gooseBookmarkRecovery = {
+      sha256(content) {
+        return crypto.createHash('sha256').update(String(content ?? '')).digest('hex')
+      },
+      writeFileSync(isCheckpoint, filename, content, skipIfExists) {
+        const { target } = resolveRecoveryFile(!!isCheckpoint, filename)
+        if (skipIfExists && fs.existsSync(target)) {
+          return { written: false, existed: true }
+        }
+        const temp = `${target}.${crypto.randomUUID()}.tmp`
+        try {
+          const fd = fs.openSync(temp, 'wx', 0o600)
+          try {
+            fs.writeFileSync(fd, String(content), 'utf8')
+            fs.fsyncSync(fd)
+          } finally {
+            fs.closeSync(fd)
+          }
+          fs.renameSync(temp, target)
+          return { written: true, existed: false }
+        } finally {
+          if (fs.existsSync(temp)) fs.unlinkSync(temp)
+        }
+      },
+      async writeFileAsync(isCheckpoint, filename, content, skipIfExists) {
+        const { target } = resolveRecoveryFile(!!isCheckpoint, filename)
+        if (skipIfExists) {
+          try {
+            await fsp.access(target)
+            return { written: false, existed: true }
+          } catch {}
+        }
+        const temp = `${target}.${crypto.randomUUID()}.tmp`
+        try {
+          const handle = await fsp.open(temp, 'wx', 0o600)
+          try {
+            await handle.writeFile(String(content), 'utf8')
+            await handle.sync()
+          } finally {
+            await handle.close()
+          }
+          await fsp.rename(temp, target)
+          return { written: true, existed: false }
+        } finally {
+          await fsp.unlink(temp).catch(() => {})
+        }
+      },
+      rotateCheckpointsSync(keepFilename, limit, maxBytes) {
+        const dir = ensureSafeDir(ensureSafeDir(getPluginDataRoot(), 'bookmark-recovery'), 'checkpoints')
+        const files = fs.readdirSync(dir)
+          .filter((name) => CHECKPOINT_FILENAME_RE.test(name))
+          .map((name) => {
+            const target = path.join(dir, name)
+            return { name, target, stat: fs.lstatSync(target) }
+          })
+          .filter((entry) => entry.stat.isFile())
+          .sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs || a.target.localeCompare(b.target))
+        let bytes = files.reduce((total, entry) => total + entry.stat.size, 0)
+        let count = files.length
+        for (const entry of files) {
+          if (count <= limit && (bytes <= maxBytes || count <= 2)) break
+          if (entry.name === keepFilename) continue
+          const current = fs.lstatSync(entry.target)
+          if (current.ino !== entry.stat.ino || current.mtimeMs !== entry.stat.mtimeMs) continue
+          fs.unlinkSync(entry.target)
+          bytes -= entry.stat.size
+          count--
+        }
+      },
+      async rotateCheckpointsAsync(keepFilename, limit, maxBytes) {
+        const dir = ensureSafeDir(ensureSafeDir(getPluginDataRoot(), 'bookmark-recovery'), 'checkpoints')
+        const names = (await fsp.readdir(dir)).filter((name) => CHECKPOINT_FILENAME_RE.test(name))
+        const stats = await Promise.all(names.map(async (name) => {
+          const target = path.join(dir, name)
+          try {
+            return { name, target, stat: await fsp.lstat(target) }
+          } catch {
+            return null
+          }
+        }))
+        const files = stats
+          .filter((entry) => entry && entry.stat.isFile())
+          .sort((a, b) => a.stat.mtimeMs - b.stat.mtimeMs || a.target.localeCompare(b.target))
+        let bytes = files.reduce((total, entry) => total + entry.stat.size, 0)
+        let count = files.length
+        for (const entry of files) {
+          if (count <= limit && (bytes <= maxBytes || count <= 2)) break
+          if (entry.name === keepFilename) continue
+          try {
+            const current = await fsp.lstat(entry.target)
+            if (current.ino !== entry.stat.ino || current.mtimeMs !== entry.stat.mtimeMs) continue
+            await fsp.unlink(entry.target)
+            bytes -= entry.stat.size
+            count--
+          } catch {}
+        }
+      },
+      removePendingSync(filename) {
+        try {
+          const { target } = resolveRecoveryFile(false, filename)
+          if (fs.existsSync(target)) fs.unlinkSync(target)
+        } catch {}
+      },
+    }
+
+    window.__gooseBackup = {
+      async saveWithDialog(defaultName, content) {
+        if (typeof utools === 'undefined' || typeof utools.showSaveDialog !== 'function') {
+          throw new Error('当前环境不支持保存对话框')
+        }
+        const safeName = path.basename(String(defaultName || 'goose-marks-backup.json'))
+        const target = await utools.showSaveDialog({
+          title: '导出完整备份',
+          defaultPath: safeName,
+          filters: [{ name: 'JSON', extensions: ['json'] }],
+        })
+        if (!target) return 'cancelled'
+        const file = await fsp.open(target, 'wx', 0o600)
+        try {
+          await file.writeFile(String(content ?? ''), 'utf8')
+          await file.sync()
+        } finally {
+          await file.close()
+        }
+        return 'saved'
+      },
+      async readIconFile(filePath) {
+        if (typeof filePath !== 'string' || !filePath || !ICON_EXT_RE.test(filePath)) {
+          throw new Error('不支持的图标文件类型')
+        }
+        const allowedRoots = [getPluginDataRoot()]
+        try {
+          const userData = typeof utools !== 'undefined' ? utools.getPath?.('userData') : undefined
+          if (userData) allowedRoots.push(path.resolve(userData))
+        } catch {}
+
+        const before = await fsp.lstat(filePath)
+        if (!before.isFile() || before.isSymbolicLink() || before.size > MAX_ICON_BYTES) {
+          throw new Error('文件缺失、不是普通文件或超过大小限制')
+        }
+        const realTarget = await fsp.realpath(filePath)
+        const inAllowedRoot = allowedRoots.some((root) => {
+          try {
+            if (!fs.existsSync(root)) return false
+            return isInsideRoot(fs.realpathSync(root), realTarget)
+          } catch {
+            return false
+          }
+        })
+        if (!inAllowedRoot) {
+          throw new Error('图标文件路径不在允许的数据目录内')
+        }
+        const handle = await fsp.open(realTarget, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW)
+        try {
+          const after = await handle.stat()
+          if (!after.isFile() || after.dev !== before.dev || after.ino !== before.ino) {
+            throw new Error('文件在读取时发生变化')
+          }
+          const bytes = await handle.readFile()
+          if (bytes.byteLength > MAX_ICON_BYTES) {
+            throw new Error('文件超过大小限制')
+          }
+          return bytes.toString('base64')
+        } finally {
+          await handle.close()
+        }
+      },
+    }
+
+    window.__gooseLocalCredentials = {
+      read() {
+        try {
+          const root = getPluginDataRoot()
+          const file = path.join(root, LOCAL_CREDENTIALS_FILENAME)
+          if (!fs.existsSync(file)) return null
+          const realRoot = fs.realpathSync(root)
+          const realFile = fs.realpathSync(file)
+          if (!isInsideRoot(realRoot, realFile)) return null
+          return fs.readFileSync(realFile, 'utf8')
+        } catch {
+          return null
+        }
+      },
+      write(content) {
+        if (typeof content !== 'string') return false
+        try {
+          const realDir = ensureSafeDir(getPluginDataRoot())
+          const file = path.join(realDir, LOCAL_CREDENTIALS_FILENAME)
+          const temp = `${file}.${crypto.randomUUID()}.tmp`
+          try {
+            fs.writeFileSync(temp, content, { encoding: 'utf8', mode: 0o600 })
+            fs.renameSync(temp, file)
+            return true
+          } finally {
+            if (fs.existsSync(temp)) fs.unlinkSync(temp)
+          }
+        } catch {
+          return false
+        }
+      },
+    }
+  } catch {}
 }

@@ -139,9 +139,7 @@ interface UToolsApi {
 
 
 interface GooseErrorReportHttpRequest {
-  url: string
-  method?: string
-  headers?: Record<string, string>
+  contentType?: string
   body: string | Uint8Array
 }
 
@@ -153,6 +151,42 @@ interface GooseErrorReportHttpResponse {
 interface GooseErrorReportBridge {
   getConfig: () => { enabled: boolean; dsn?: string }
   send: (request: GooseErrorReportHttpRequest) => Promise<GooseErrorReportHttpResponse>
+}
+
+interface GooseBootCacheBridge {
+  readSync: () => string | null
+  writeSync: (content: string) => boolean
+  writeAsync: (content: string) => Promise<boolean>
+  clear: () => void
+}
+
+interface GooseBookmarkRecoveryBridge {
+  sha256: (content: string) => string
+  writeFileSync: (
+    isCheckpoint: boolean,
+    filename: string,
+    content: string,
+    skipIfExists: boolean
+  ) => { written: boolean; existed: boolean }
+  writeFileAsync: (
+    isCheckpoint: boolean,
+    filename: string,
+    content: string,
+    skipIfExists: boolean
+  ) => Promise<{ written: boolean; existed: boolean }>
+  rotateCheckpointsSync: (keepFilename: string, limit: number, maxBytes: number) => void
+  rotateCheckpointsAsync: (keepFilename: string, limit: number, maxBytes: number) => Promise<void>
+  removePendingSync: (filename: string) => void
+}
+
+interface GooseBackupBridge {
+  saveWithDialog: (defaultName: string, content: string) => Promise<'saved' | 'cancelled'>
+  readIconFile: (filePath: string) => Promise<string>
+}
+
+interface GooseLocalCredentialsBridge {
+  read: () => string | null
+  write: (content: string) => boolean
 }
 
 declare global {
@@ -184,7 +218,10 @@ declare global {
     }
     __gooseMarksWindowControl?: GooseMarksWindowControl
     __gooseSystemInfo?: { osVersion?: string; arch?: string }
-    require?: NodeRequire
+    __gooseBootCache?: GooseBootCacheBridge
+    __gooseBookmarkRecovery?: GooseBookmarkRecoveryBridge
+    __gooseBackup?: GooseBackupBridge
+    __gooseLocalCredentials?: GooseLocalCredentialsBridge
     __gooseMarksPluginEnterSerial?: number
     __gooseMarksLastPluginEnterSerial?: number
     __gooseMarksLastHandledPluginEnterSerial?: number

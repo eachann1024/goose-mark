@@ -16,6 +16,104 @@ import { getPersistentItem } from '@/lib/utoolsStorage'
 
 const THEME_MIRROR_KEY = 'goose-marks.theme-mode'
 const WINDOW_HEIGHT_MIRROR_KEY = 'goose-marks.window-height'
+const LOCAL_AI_CREDENTIALS_KEY = 'goose-marks.local-ai-credentials-v1'
+
+type LocalAiCredentials = Partial<Record<AIProtocol, string>>
+
+const readLocalAiCredentials = (): LocalAiCredentials => {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.__gooseLocalCredentials?.read?.() ?? window.localStorage?.getItem?.(LOCAL_AI_CREDENTIALS_KEY) ?? null
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+    const result: LocalAiCredentials = {}
+    for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (isAIProtocol(k) && typeof v === 'string' && v.trim()) {
+        result[k] = v.trim()
+      }
+    }
+    return result
+  } catch {
+    return {}
+  }
+}
+
+let lastWrittenLocalCredentials = ''
+
+const writeLocalAiCredentials = (creds: LocalAiCredentials): void => {
+  if (typeof window === 'undefined') return
+  const clean: LocalAiCredentials = {}
+  for (const [k, v] of Object.entries(creds)) {
+    if (isAIProtocol(k) && typeof v === 'string' && v.trim()) {
+      clean[k] = v.trim()
+    }
+  }
+  const serialized = JSON.stringify(clean)
+  if (serialized === lastWrittenLocalCredentials) return
+  try {
+    if (window.__gooseLocalCredentials?.write?.(serialized)) {
+      lastWrittenLocalCredentials = serialized
+      return
+    }
+    window.localStorage?.setItem?.(LOCAL_AI_CREDENTIALS_KEY, serialized)
+    lastWrittenLocalCredentials = serialized
+  } catch {}
+}
+
+const extractLocalAiCredentials = (state: {
+  aiProtocol: AIProtocol
+  aiCustomApiKey: string
+  aiProtocolConfigs: AIProtocolConfigs
+}): LocalAiCredentials => {
+  const creds: LocalAiCredentials = {}
+  for (const [k, entry] of Object.entries(state.aiProtocolConfigs || {})) {
+    if (isAIProtocol(k) && typeof entry?.apiKey === 'string' && entry.apiKey.trim()) {
+      creds[k] = entry.apiKey.trim()
+    }
+  }
+  if (isAIProtocol(state.aiProtocol) && typeof state.aiCustomApiKey === 'string' && state.aiCustomApiKey.trim()) {
+    creds[state.aiProtocol] = state.aiCustomApiKey.trim()
+  }
+  return creds
+}
+
+const applyLocalAiCredentials = (
+  patch: Partial<SettingsState>,
+  creds: LocalAiCredentials,
+  fallbackProtocol: AIProtocol = 'openai-responses'
+): void => {
+  const protocol = patch.aiProtocol && isAIProtocol(patch.aiProtocol) ? patch.aiProtocol : fallbackProtocol
+  const configs: AIProtocolConfigs = { ...(patch.aiProtocolConfigs || {}) }
+  for (const [k, apiKey] of Object.entries(creds)) {
+    if (!isAIProtocol(k) || !apiKey) continue
+    const existing = configs[k]
+    configs[k] = createProtocolConfig(k, {
+      baseURL: existing?.baseURL,
+      apiKey,
+      modelOptions: existing?.modelOptions,
+      selectedModelId: existing?.selectedModelId,
+    })
+  }
+  patch.aiProtocolConfigs = configs
+  const activeKey = configs[protocol]?.apiKey ?? creds[protocol]
+  if (typeof activeKey === 'string') {
+    patch.aiCustomApiKey = activeKey
+  }
+}
+
+const stripSecretsForSyncedSettings = (payload: PersistedSettingsState): PersistedSettingsState => {
+  const strippedConfigs: AIProtocolConfigs = {}
+  for (const [k, entry] of Object.entries(payload.aiProtocolConfigs || {})) {
+    if (!isAIProtocol(k) || !entry) continue
+    strippedConfigs[k] = { ...entry, apiKey: '' }
+  }
+  return {
+    ...payload,
+    aiCustomApiKey: '',
+    aiProtocolConfigs: strippedConfigs,
+  }
+}
 
 const syncBootSettingsMirror = (themePreference: SettingsState['themePreference'], windowHeight: number): void => {
   if (typeof window === 'undefined') return
@@ -523,7 +621,8 @@ let settingsPersistenceFlushEventsStarted = false
 
 const enqueueSettingsPersist = (state: SettingsStore): void => {
   syncBootSettingsMirror(state.themePreference, state.windowHeight)
-  const payload = pickPersistedSettings(state)
+  writeLocalAiCredentials(extractLocalAiCredentials(state))
+  const payload = stripSecretsForSyncedSettings(pickPersistedSettings(state))
   writeSettingsBootCache(payload)
   const serialized = JSON.stringify(payload)
   if (serialized === lastPersistedSettings) return
@@ -546,7 +645,8 @@ const enqueueSettingsPersist = (state: SettingsStore): void => {
 export const flushSettingsStorePersistence = (): void => {
   const state = useSettingsStore.getState()
   syncBootSettingsMirror(state.themePreference, state.windowHeight)
-  const payload = pickPersistedSettings(state)
+  writeLocalAiCredentials(extractLocalAiCredentials(state))
+  const payload = stripSecretsForSyncedSettings(pickPersistedSettings(state))
   writeSettingsBootCache(payload)
   if (!isUToolsDbAvailable()) return
   const serialized = JSON.stringify(payload)
@@ -583,6 +683,10 @@ export const hydrateSettingsStoreFromBootCache = (): boolean => {
   const cached = readSettingsBootCache()
   if (!cached) return false
   const normalized = normalizePersistedSettings(cached)
+  const localCreds = readLocalAiCredentials()
+  if (Object.keys(localCreds).length > 0) {
+    applyLocalAiCredentials(normalized, localCreds, normalized.aiProtocol)
+  }
   if (Object.keys(normalized).length > 0) {
     useSettingsStore.setState(normalized as Partial<SettingsStore>)
   }
@@ -601,20 +705,37 @@ export const initializeSettingsStorePersistence = async (): Promise<void> => {
     const legacyTheme = getPersistentItem('goose-marks.theme-mode', ['vueuse-color-scheme'])
     if (legacyTheme === 'dark' || legacyTheme === 'light' || legacyTheme === 'system') persisted.themePreference = legacyTheme
   }
+
+  // 凭据仅存本机；若旧版同步库仍残留明文 apiKey，迁移到本机后由后续持久化从同步库清除。
+  const localCreds = readLocalAiCredentials()
+  const legacyCreds = persisted.aiProtocol && persisted.aiProtocolConfigs
+    ? extractLocalAiCredentials({
+        aiProtocol: persisted.aiProtocol,
+        aiCustomApiKey: persisted.aiCustomApiKey || '',
+        aiProtocolConfigs: persisted.aiProtocolConfigs,
+      })
+    : {}
+  const mergedCreds: LocalAiCredentials = { ...legacyCreds, ...localCreds }
+  if (Object.keys(mergedCreds).length > 0) {
+    writeLocalAiCredentials(mergedCreds)
+    applyLocalAiCredentials(persisted, mergedCreds, persisted.aiProtocol)
+  }
+
   if (Object.keys(persisted).length > 0) {
     useSettingsStore.setState(persisted as Partial<SettingsStore>)
   }
 
   const initialState = useSettingsStore.getState()
   syncBootSettingsMirror(initialState.themePreference, initialState.windowHeight)
-  writeSettingsBootCache(pickPersistedSettings(initialState))
+  const sanitizedPayload = stripSecretsForSyncedSettings(pickPersistedSettings(initialState))
+  writeSettingsBootCache(sanitizedPayload)
 
   if (!isUToolsDbAvailable()) return
 
-  const currentSerialized = JSON.stringify(pickPersistedSettings(initialState))
+  const currentSerialized = JSON.stringify(sanitizedPayload)
   const savedNormalizedMatches =
     saved != null && JSON.stringify(pickPersistedSettings({ ...initialState, ...(saved as Partial<SettingsState>) })) === currentSerialized &&
-    Object.keys(saved).every((key) => key in pickPersistedSettings(initialState))
+    Object.keys(saved).every((key) => key in sanitizedPayload)
 
   lastPersistedSettings = savedNormalizedMatches ? currentSerialized : ''
 
